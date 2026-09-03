@@ -1,0 +1,759 @@
+<title>Retícula Estructural</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#EEF1F4; --sheet:#FFFFFF; --panel:#F7F9FA; --line:#C9D2DA; --line-soft:#E1E7EC;
+    --ink:#1A2029; --ink-2:#4A5763; --ink-3:#7B8894;
+    --acc:#0F6E8C; --acc-soft:#DCEBF1; --acc-ink:#0A4E64;
+    --col:#0F6E8C; --viga:#A85A2B;
+    --alig:#7FA0AE; --alig-f:rgba(127,160,174,.20);
+    --maci:#5B7686; --maci-f:rgba(91,118,134,.34);
+    --nerv:#8FA8A0; --nerv-f:rgba(143,168,160,.22);
+    --trib:#C0392B; --trib-fill:rgba(192,57,43,.09); --grid:#9FB0BC;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#10151A; --sheet:#171E25; --panel:#141B21; --line:#2C3843; --line-soft:#212B34;
+      --ink:#E4EAEF; --ink-2:#A9B6C1; --ink-3:#77848F;
+      --acc:#4FB3D1; --acc-soft:#12313D; --acc-ink:#9AD6E8;
+      --col:#4FB3D1; --viga:#D08A5A;
+      --alig:#6E8C99; --alig-f:rgba(110,140,153,.22);
+      --maci:#9BB6C4; --maci-f:rgba(155,182,196,.30);
+      --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22);
+      --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A5A66;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#10151A; --sheet:#171E25; --panel:#141B21; --line:#2C3843; --line-soft:#212B34;
+    --ink:#E4EAEF; --ink-2:#A9B6C1; --ink-3:#77848F;
+    --acc:#4FB3D1; --acc-soft:#12313D; --acc-ink:#9AD6E8;
+    --col:#4FB3D1; --viga:#D08A5A;
+    --alig:#6E8C99; --alig-f:rgba(110,140,153,.22);
+    --maci:#9BB6C4; --maci-f:rgba(155,182,196,.30);
+    --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22);
+    --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A5A66;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;font-size:13px;line-height:1.45}
+  .lbl{font-family:"Barlow Condensed","Arial Narrow",sans-serif;text-transform:uppercase;
+       letter-spacing:.09em;font-weight:600;color:var(--ink-3);font-size:12px}
+  .app{max-width:1240px;margin:0 auto;padding:18px 20px 40px}
+  header.bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;padding-bottom:12px;
+             border-bottom:2px solid var(--ink)}
+  h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:31px;
+     letter-spacing:.02em;margin:0}
+  .sub{color:var(--ink-2);font-size:12.5px;max-width:58ch}
+  .chip{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.1em;
+        font-size:11px;font-weight:600;color:var(--acc-ink);background:var(--acc-soft);
+        border:1px solid var(--acc);border-radius:2px;padding:2px 7px;white-space:nowrap}
+
+  .niv{display:flex;align-items:stretch;border:1px solid var(--line);border-top:none;
+       background:var(--panel);overflow-x:auto}
+  .niv>.lbl{padding:9px 12px;border-right:1px solid var(--line-soft);white-space:nowrap;align-self:center}
+  .nbtn{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:13px;letter-spacing:.05em;
+        padding:8px 14px;border:none;border-right:1px solid var(--line-soft);background:none;
+        color:var(--ink-2);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent}
+  .nbtn[aria-current="true"]{color:var(--acc-ink);background:var(--sheet);border-bottom-color:var(--acc)}
+  .nbtn:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .niv .acts{margin-left:auto;display:flex;gap:6px;padding:6px 10px;align-items:center}
+
+  .cintra{display:flex;flex-wrap:wrap;align-items:center;gap:0;border:1px solid var(--line);
+          border-top:none;background:var(--sheet)}
+  .celda{padding:7px 13px;border-right:1px solid var(--line-soft);display:flex;align-items:baseline;gap:7px}
+  .celda:last-child{border-right:none}
+  .celda .v{font:500 14px "IBM Plex Mono",monospace;color:var(--acc-ink);font-variant-numeric:tabular-nums}
+  .celda input{width:64px;background:var(--panel);color:var(--ink);border:1px solid var(--line);
+       border-radius:2px;padding:2px 5px;font:500 13px "IBM Plex Mono",monospace;text-align:right}
+  .celda input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+
+  .work{display:grid;grid-template-columns:132px minmax(0,1fr) 292px;
+        border:1px solid var(--line);border-top:none;background:var(--sheet)}
+  @media(max-width:980px){.work{grid-template-columns:1fr}}
+  .tools{border-right:1px solid var(--line);background:var(--panel);padding:10px 8px;display:flex;
+         flex-direction:column;gap:4px}
+  .tool{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid transparent;
+        border-radius:3px;background:none;color:var(--ink);cursor:pointer;text-align:left;font:inherit;width:100%}
+  .tool:hover{background:var(--sheet);border-color:var(--line-soft)}
+  .tool[aria-pressed="true"]{background:var(--acc-soft);border-color:var(--acc);color:var(--acc-ink);font-weight:600}
+  .tool:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .swatch{width:15px;height:15px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
+  .tool small{display:block;font-size:10.5px;color:var(--ink-3)}
+  .tools select{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+        border-radius:2px;padding:4px 5px;font:500 12px "IBM Plex Sans",sans-serif;margin-top:2px}
+
+  .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
+  svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
+  .hit{cursor:pointer;fill:transparent}
+  .hint{position:absolute;left:14px;bottom:10px;font-size:11.5px;color:var(--ink-3);
+        background:var(--sheet);padding:2px 6px;border:1px solid var(--line-soft);border-radius:2px}
+  .zoom{position:absolute;right:14px;top:10px;display:flex;gap:4px}
+  .zoom button{width:26px;height:24px;border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);
+        border-radius:2px;cursor:pointer;font:600 13px sans-serif;line-height:1}
+  .zoom button:hover{border-color:var(--acc);color:var(--acc-ink)}
+
+  .insp{border-left:1px solid var(--line);background:var(--panel);padding:12px;display:flex;
+        flex-direction:column;gap:11px}
+  .insp h2{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.09em;
+           font-size:12px;color:var(--ink-3);margin:0;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+  .name{font:600 14.5px "IBM Plex Mono",monospace;color:var(--acc-ink);word-break:break-all;line-height:1.3}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:baseline;margin:0}
+  .kv dt{color:var(--ink-2);font-size:12px}
+  .kv dd{margin:0;font:500 13px "IBM Plex Mono",monospace;text-align:right;font-variant-numeric:tabular-nums}
+  .kv dd.env{color:var(--trib)}
+  .tag{display:inline-block;font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;
+       letter-spacing:.08em;font-size:11px;font-weight:600;padding:1px 6px;border-radius:2px;border:1px solid currentColor}
+  .empty{color:var(--ink-3);font-size:12.5px;font-style:italic;margin:0}
+  .rule{height:1px;background:var(--line-soft)}
+  .calcnote{font-size:11.5px;color:var(--ink-3);border-left:2px solid var(--line);padding-left:8px;margin:0}
+  .btn{font:600 12px "IBM Plex Sans",sans-serif;padding:6px 10px;border:1px solid var(--line);
+       background:var(--sheet);color:var(--ink);border-radius:2px;cursor:pointer}
+  .btn:hover{border-color:var(--acc);color:var(--acc-ink)}
+  .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+  .btn.pri:hover{filter:brightness(1.08);color:#fff}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .row{display:flex;gap:6px;flex-wrap:wrap}
+  .ejes{display:flex;flex-direction:column;gap:3px}
+  .eje{display:grid;grid-template-columns:36px 1fr 22px 22px;gap:4px;align-items:center}
+  .eje span{font:500 11.5px "IBM Plex Mono",monospace;color:var(--ink-2)}
+  .eje input{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+             border-radius:2px;padding:3px 5px;font:500 12px "IBM Plex Mono",monospace;text-align:right}
+  .eje input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+  .mini{border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);border-radius:2px;
+        cursor:pointer;font:600 12px sans-serif;padding:2px 0;line-height:1.1}
+  .mini:hover{border-color:var(--acc);color:var(--acc-ink)}
+
+  .sum{border:1px solid var(--line);border-top:none;background:var(--sheet)}
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  .tab{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;
+       font-weight:600;font-size:12px;padding:8px 12px;border:none;border-right:1px solid var(--line-soft);
+       border-bottom:2px solid transparent;background:none;color:var(--ink-2);cursor:pointer}
+  .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--acc);background:var(--sheet)}
+  .tabwrap{overflow:auto;max-height:240px}
+  table{border-collapse:collapse;width:100%;min-width:600px}
+  th,td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  th{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.07em;
+     font-size:11.5px;color:var(--ink-3);font-weight:600;border-bottom:1px solid var(--line);
+     position:sticky;top:0;background:var(--sheet)}
+  th:first-child,td:first-child{text-align:left}
+  td{font:400 12.5px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+  td.calc{color:var(--ink-3);font-style:italic}
+  tbody tr:hover{background:var(--panel)}
+  .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+        padding:9px 12px;border-top:1px solid var(--line);background:var(--panel)}
+  .notes{margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));border:1px solid var(--line)}
+  .note{padding:12px 14px;border-right:1px solid var(--line-soft);background:var(--sheet)}
+  .note:last-child{border-right:none}
+  .note h3{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.08em;
+           font-size:12px;margin:0 0 5px;color:var(--acc-ink)}
+  .note p{margin:0;font-size:12.5px;color:var(--ink-2)}
+  .note code{font:500 12px "IBM Plex Mono",monospace;color:var(--ink)}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);opacity:0;
+         background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:3px;font-size:12.5px;
+         pointer-events:none;transition:opacity .18s,transform .18s;z-index:9;max-width:80vw}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <h1>Retícula Estructural</h1>
+    <span class="chip">Prototipo · panel de Excel</span>
+    <p class="sub">Modela la planta de cada nivel y mide lo que Excel no puede saber solo. El cálculo se queda en las hojas.</p>
+  </header>
+
+  <div class="niv" id="niveles"></div>
+
+  <div class="cintra">
+    <div class="celda"><span class="lbl">Altura de entrepiso</span>
+      <input id="hEnt" type="number" min="2" max="8" step="0.05" value="2.80"><span class="lbl">m</span></div>
+    <div class="celda"><span class="lbl">Área techada del nivel</span><span class="v" id="areaNiv">—</span></div>
+    <div class="celda"><span class="lbl">Área total del edificio</span><span class="v" id="areaTot">—</span></div>
+    <div class="celda"><span class="lbl">Altura acumulada</span><span class="v" id="hAcum">—</span></div>
+    <div class="celda"><span class="lbl">Sobrecarga</span>
+      <select id="sc" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:2px;padding:2px 5px;font:500 12px 'IBM Plex Sans',sans-serif">
+        <option value="200">200 kg/m²</option><option value="250">250</option><option value="300">300</option>
+        <option value="400">400</option><option value="500">500</option></select></div>
+  </div>
+
+  <div class="work">
+    <div class="tools" role="group" aria-label="Herramientas">
+      <span class="lbl" style="padding:2px 8px 6px">Dibujar</span>
+      <button class="tool" data-tool="sel" aria-pressed="true"><span class="swatch" style="background:var(--sheet)"></span>
+        <span>Selección<small>ver medidas</small></span></button>
+      <button class="tool" data-tool="col" aria-pressed="false"><span class="swatch" style="background:var(--col)"></span>
+        <span>Columna<small>clic o arrastra</small></span></button>
+      <button class="tool" data-tool="viga" aria-pressed="false"><span class="swatch" style="background:var(--viga)"></span>
+        <span>Viga<small>clic o arrastra</small></span></button>
+      <button class="tool" data-tool="losa" aria-pressed="false"><span class="swatch" id="swLosa" style="background:var(--alig)"></span>
+        <span>Losa<small>clic o arrastra</small></span></button>
+      <select id="tipoLosa" aria-label="Tipo de losa">
+        <option value="aligerada">Aligerada</option><option value="maciza">Maciza</option>
+        <option value="nervada">Nervada</option><option value="vacio">Vacío (quitar)</option></select>
+      <div class="rule" style="margin:8px 2px"></div>
+      <div class="row" style="padding:0 2px">
+        <button class="btn" id="undo" title="Ctrl+Z">↶</button>
+        <button class="btn" id="redo" title="Ctrl+Y">↷</button>
+      </div>
+      <span class="lbl" style="padding:8px 8px 4px">Plantas tipo</span>
+      <button class="btn" id="pR" style="margin:0 2px">Rectangular</button>
+      <button class="btn" id="pL" style="margin:4px 2px 0">En L</button>
+      <button class="btn" id="pU" style="margin:4px 2px 0">Con patio</button>
+    </div>
+
+    <div class="stage">
+      <div class="zoom"><button id="zOut" aria-label="Alejar">−</button>
+        <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
+      <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
+      <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
+    </div>
+
+    <aside class="insp">
+      <h2 id="inspTitle">Elemento</h2>
+      <div id="inspBody"><p class="empty">Selecciona un elemento de la planta.</p></div>
+      <div class="rule"></div>
+      <h2>Ejes ↔ <span id="totX"></span></h2>
+      <div class="ejes" id="ejesX"></div>
+      <h2>Ejes ↕ <span id="totY"></span></h2>
+      <div class="ejes" id="ejesY"></div>
+    </aside>
+  </div>
+
+  <section class="sum">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-t="col">PRE_COLUMNA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="viga">PRE_VIGA_PRINCIPAL</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="aligerada">PRE_LOSA_ALIGERADA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="maciza">PRE_LOSA_MACIZA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="nervada">PRE_LOSA_NERVADA</button>
+    </div>
+    <div class="tabwrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
+    <div class="foot">
+      <span class="lbl" id="foottxt">—</span>
+      <div class="row">
+        <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
+          <input type="checkbox" id="todos"> Todos los niveles</label>
+        <button class="btn" id="btnCheck">Revisar modelo</button>
+        <button class="btn pri" id="btnSend">Enviar a las hojas</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="notes">
+    <div class="note"><h3>Tipo de losa por paño</h3><p>Cada paño puede ser aligerada, maciza o nervada. El tipo decide a cuál de las tres hojas va su fila, y se distingue por trama en el dibujo.</p></div>
+    <div class="note"><h3>Arrastra para pintar</h3><p>Mantén el clic y recorre la planta: asigna o quita en bloque. Con <code>Ctrl+Z</code> deshaces y con <code>Ctrl+Y</code> rehaces.</p></div>
+    <div class="note"><h3>Se guarda solo</h3><p>El modelo queda en el navegador al cerrar. En el complemento real vivirá dentro del propio archivo de Excel.</p></div>
+    <div class="note"><h3>Pendientes</h3><p>Muros de corte, irregularidades E.030, metrados, vista 3D y renombrar ejes quedan anotados para después.</p></div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  var LETRAS="ABCDEFGHIJKLMN".split("");
+  var ORD=["1er","2do","3er","4to","5to","6to","7mo","8vo","9no","10mo","11vo","12vo","13vo","14vo","15vo"];
+  var TIPOS={aligerada:{c:"--alig",f:"--alig-f",n:"Aligerada"},
+             maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
+             nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
+  var $=function(s){return document.querySelector(s)};
+
+  function plantaLlena(dx,dy,h){
+    var m={h:h||2.80,dx:dx.slice(),dy:dy.slice(),cols:{},vigas:{},losas:{}},i,j,
+        nX=dx.length+1,nY=dy.length+1;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)m.cols[i+":"+j]=1;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)m.vigas["h:"+i+":"+j]=1;
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)m.vigas["v:"+i+":"+j]=1;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)m.losas[i+":"+j]={dir:"y",tipo:"aligerada"};
+    return m;
+  }
+  var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1};
+  var UNDO=[],REDO=[];
+  function N(){return S.niveles[S.act]}
+  function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
+  function key(){return Array.prototype.join.call(arguments,":")}
+  function posX(i){var s=0,d=N().dx;for(var k=0;k<i;k++)s+=d[k];return s}
+  function posY(j){var s=0,d=N().dy;for(var k=0;k<j;k++)s+=d[k];return s}
+
+  /* ---------- historial ---------- */
+  function snap(){UNDO.push(JSON.stringify(S.niveles));if(UNDO.length>60)UNDO.shift();REDO.length=0}
+  function undo(){if(!UNDO.length)return;REDO.push(JSON.stringify(S.niveles));
+    S.niveles=JSON.parse(UNDO.pop());S.act=Math.min(S.act,S.niveles.length-1);S.sel=null;render()}
+  function redo(){if(!REDO.length)return;UNDO.push(JSON.stringify(S.niveles));
+    S.niveles=JSON.parse(REDO.pop());S.act=Math.min(S.act,S.niveles.length-1);S.sel=null;render()}
+  document.addEventListener("keydown",function(e){
+    if(!(e.ctrlKey||e.metaKey))return;
+    var k=e.key.toLowerCase();
+    if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
+
+  /* ---------- guardado ---------- */
+  function guardar(){try{localStorage.setItem("reticula",JSON.stringify({n:S.niveles,sc:$("#sc").value}))}catch(e){}}
+  function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
+    if(d&&d.n&&d.n.length){S.niveles=d.n;if(d.sc)$("#sc").value=d.sc;}}catch(e){}}
+
+  /* ---------- geometria ---------- */
+  function panos(i,j,m){
+    m=m||N();var nX=m.dx.length+1,nY=m.dy.length+1,r=[];
+    [[i-1,j-1],[i,j-1],[i-1,j],[i,j]].forEach(function(p){
+      if(p[0]>=0&&p[1]>=0&&p[0]<nX-1&&p[1]<nY-1&&m.losas[p[0]+":"+p[1]])r.push(p);});
+    return r;
+  }
+  function limpiarSueltos(){
+    var m=N(),i,j;
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
+      if(!m.losas[key(i,j)]&&!m.losas[key(i,j-1)])delete m.vigas[key("h",i,j)];
+    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
+      if(!m.losas[key(i,j)]&&!m.losas[key(i-1,j)])delete m.vigas[key("v",i,j)];
+    for(i=0;i<nx();i++)for(j=0;j<ny();j++)if(!panos(i,j).length)delete m.cols[key(i,j)];
+  }
+  function areaNivel(m){var a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j])a+=m.dx[i]*m.dy[j];return a}
+  function medCol(i,j,m){
+    m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0;
+    ps.forEach(function(q){at+=m.dx[q[0]]/2*m.dy[q[1]]/2});
+    if(ps.some(function(q){return q[0]===i-1}))bx+=m.dx[i-1]/2;
+    if(ps.some(function(q){return q[0]===i}))bx+=m.dx[i]/2;
+    if(ps.some(function(q){return q[1]===j-1}))by+=m.dy[j-1]/2;
+    if(ps.some(function(q){return q[1]===j}))by+=m.dy[j]/2;
+    var n=ps.length;
+    return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",at:at,bx:bx,by:by,n:n};
+  }
+  function medViga(o,i,j,m){
+    m=m||N();var L,B=0;
+    if(o==="h"){L=m.dx[i];
+      if(m.losas[key(i,j-1)])B+=m.dy[j-1]/2; if(m.losas[key(i,j)])B+=m.dy[j]/2;}
+    else{L=m.dy[j];
+      if(m.losas[key(i-1,j)])B+=m.dx[i-1]/2; if(m.losas[key(i,j)])B+=m.dx[i]/2;}
+    return{L:L,Ln:Math.max(L-0.50,0.5),B:B};
+  }
+  function medLosa(i,j,m){
+    m=m||N();var o=m.losas[key(i,j)],L=o.dir==="y"?m.dy[j]:m.dx[i];
+    return{dir:o.dir,tipo:o.tipo||"aligerada",L:L,Ln:Math.max(L-0.30,0.5)};
+  }
+  function alfa(tipo){var s=+$("#sc").value;
+    if(tipo==="maciza")return 35; if(tipo==="nervada")return 18;
+    return s<=200?25:s<=300?23:s<=400?21:19}
+  function pisosQueCarga(niv){return S.niveles.length-niv}
+
+  function nombres(niv){
+    var m=S.niveles[niv],p=ORD[niv]||("N"+(niv+1)),nX=m.dx.length+1,nY=m.dy.length+1,
+        C={},V={},L={},c=0,v=0,l=0,i,j;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){c++;
+      C[i+":"+j]=p+"_C"+c+"_"+medCol(i,j,m).tipo;}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j]){v++;V["h:"+i+":"+j]=p+"_V"+v+"_X";}
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j]){v++;V["v:"+i+":"+j]=p+"_V"+v+"_Y";}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){l++;
+      L[i+":"+j]=p+"_L"+l+"_"+m.losas[i+":"+j].dir.toUpperCase();}
+    return{C:C,V:V,L:L};
+  }
+
+  /* ---------- dibujo ---------- */
+  var SVG="http://www.w3.org/2000/svg";
+  function el(n,a){var e=document.createElementNS(SVG,n);for(var k in a)e.setAttribute(k,a[k]);return e}
+  function txt(g,x,y,s,col,size,anchor){
+    var t=el("text",{x:x,y:y,"text-anchor":anchor||"middle","font-size":size||10,fill:col||"var(--ink-3)",
+      "font-family":"IBM Plex Mono, monospace"});t.textContent=s;g.appendChild(t);return t}
+  function draw(){
+    var s=$("#plano");while(s.firstChild)s.removeChild(s.firstChild);
+    var m=N(),W=posX(nx()-1),H=posY(ny()-1),mg=56;
+    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
+    var w=W*esc+2*mg,h=H*esc+2*mg;
+    s.setAttribute("viewBox","0 0 "+w+" "+h);
+    s.style.maxWidth=(S.zoom>1?w+"px":"100%");
+    var X=function(i){return mg+posX(i)*esc},Y=function(j){return mg+posY(j)*esc};
+    var defs=el("defs",{});
+    var mk=el("marker",{id:"ar",viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"5",markerHeight:"5",orient:"auto"});
+    mk.appendChild(el("path",{d:"M0,0 L8,4 L0,8 z",fill:"currentColor"}));defs.appendChild(mk);
+    var pt=el("pattern",{id:"hatch",width:"7",height:"7",patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"});
+    pt.appendChild(el("rect",{width:"7",height:"7",fill:"var(--nerv-f)"}));
+    pt.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"7",stroke:"var(--nerv)","stroke-width":"1.6"}));
+    defs.appendChild(pt);s.appendChild(defs);
+    var g=el("g",{});s.appendChild(g);
+    var i,j;
+
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+      var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
+      if(o){
+        var tp=TIPOS[o.tipo||"aligerada"];
+        g.appendChild(el("rect",{x:X(i),y:Y(j),width:X(i+1)-X(i),height:Y(j+1)-Y(j),
+          fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
+        var cx=(X(i)+X(i+1))/2,cy=(Y(j)+Y(j+1))/2,r=Math.min(X(i+1)-X(i),Y(j+1)-Y(j))*0.26;
+        var ln=o.dir==="y"?el("line",{x1:cx,y1:cy-r,x2:cx,y2:cy+r}):el("line",{x1:cx-r,y1:cy,x2:cx+r,y2:cy});
+        ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
+        ln.setAttribute("color","var("+tp.c+")");
+        ln.setAttribute("marker-end","url(#ar)");ln.setAttribute("marker-start","url(#ar)");g.appendChild(ln);
+      }
+      var hit=el("rect",{x:X(i)+7,y:Y(j)+7,width:Math.max(2,X(i+1)-X(i)-14),
+        height:Math.max(2,Y(j+1)-Y(j)-14),"class":"hit"});
+      hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
+    }
+    for(i=0;i<nx();i++){
+      g.appendChild(el("line",{x1:X(i),y1:mg-26,x2:X(i),y2:Y(ny()-1)+16,stroke:"var(--grid)",
+        "stroke-width":.8,"stroke-dasharray":"7 3 1 3"}));
+      g.appendChild(el("circle",{cx:X(i),cy:mg-34,r:9.5,fill:"var(--sheet)",stroke:"var(--ink-2)","stroke-width":.9}));
+      txt(g,X(i),mg-30.5,LETRAS[i],"var(--ink)",10.5);
+    }
+    for(j=0;j<ny();j++){
+      g.appendChild(el("line",{x1:mg-26,y1:Y(j),x2:X(nx()-1)+16,y2:Y(j),stroke:"var(--grid)",
+        "stroke-width":.8,"stroke-dasharray":"7 3 1 3"}));
+      g.appendChild(el("circle",{cx:mg-34,cy:Y(j),r:9.5,fill:"var(--sheet)",stroke:"var(--ink-2)","stroke-width":.9}));
+      txt(g,mg-34,Y(j)+3.5,String(j+1),"var(--ink)",10.5);
+    }
+    for(i=0;i<nx()-1;i++)txt(g,(X(i)+X(i+1))/2,h-16,m.dx[i].toFixed(2));
+    for(j=0;j<ny()-1;j++)txt(g,16,(Y(j)+Y(j+1))/2+3,m.dy[j].toFixed(2));
+
+    function viga(o,i,j){
+      var x1,y1,x2,y2;
+      if(o==="h"){x1=X(i);y1=Y(j);x2=X(i+1);y2=Y(j)}else{x1=X(i);y1=Y(j);x2=X(i);y2=Y(j+1)}
+      if(m.vigas[key(o,i,j)]){
+        var sl=S.sel&&S.sel.t==="viga"&&S.sel.o===o&&S.sel.i===i&&S.sel.j===j;
+        g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:sl?"var(--trib)":"var(--viga)",
+          "stroke-width":sl?6:4,opacity:sl?1:.85}));
+      }
+      var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":13,"class":"hit"});
+      hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
+    }
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)viga("h",i,j);
+    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)viga("v",i,j);
+
+    for(i=0;i<nx();i++)for(j=0;j<ny();j++){
+      if(m.cols[key(i,j)]){
+        var sel=S.sel&&S.sel.t==="col"&&S.sel.i===i&&S.sel.j===j,lado=sel?15:12;
+        g.appendChild(el("rect",{x:X(i)-lado/2,y:Y(j)-lado/2,width:lado,height:lado,
+          fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1}));
+      }
+      var hc=el("circle",{cx:X(i),cy:Y(j),r:11,"class":"hit"});
+      hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
+    }
+
+    var q=S.sel;
+    if(q&&q.t==="col"&&m.cols[key(q.i,q.j)]){
+      var d0=medCol(q.i,q.j),ps=panos(q.i,q.j);
+      if(ps.length){
+        var x0=X(q.i)-(ps.some(function(p){return p[0]===q.i-1})?m.dx[q.i-1]/2*esc:0),
+            x1b=X(q.i)+(ps.some(function(p){return p[0]===q.i})?m.dx[q.i]/2*esc:0),
+            y0=Y(q.j)-(ps.some(function(p){return p[1]===q.j-1})?m.dy[q.j-1]/2*esc:0),
+            y1b=Y(q.j)+(ps.some(function(p){return p[1]===q.j})?m.dy[q.j]/2*esc:0);
+        g.appendChild(el("rect",{x:x0,y:y0,width:x1b-x0,height:y1b-y0,fill:"var(--trib-fill)",
+          stroke:"var(--trib)","stroke-width":1.6,"stroke-dasharray":"7 4"}));
+        g.appendChild(el("line",{x1:x0,y1:y0-13,x2:x1b,y2:y0-13,stroke:"var(--trib)","stroke-width":.9}));
+        txt(g,(x0+x1b)/2,y0-17,d0.bx.toFixed(3)+" m","var(--trib)",10);
+        g.appendChild(el("line",{x1:x1b+13,y1:y0,x2:x1b+13,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
+        txt(g,x1b+17,(y0+y1b)/2+3,d0.by.toFixed(3)+" m","var(--trib)",10,"start");
+      }
+    }
+    if(q&&q.t==="viga"&&m.vigas[key(q.o,q.i,q.j)]){
+      var v=medViga(q.o,q.i,q.j);
+      if(q.o==="h"){
+        var ya=Y(q.j)-(m.losas[key(q.i,q.j-1)]?m.dy[q.j-1]/2*esc:0),
+            yb2=Y(q.j)+(m.losas[key(q.i,q.j)]?m.dy[q.j]/2*esc:0);
+        g.appendChild(el("rect",{x:X(q.i),y:ya,width:X(q.i+1)-X(q.i),height:yb2-ya,fill:"var(--trib-fill)",
+          stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
+        txt(g,(X(q.i)+X(q.i+1))/2,Y(q.j)-8,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10);
+        txt(g,(X(q.i)+X(q.i+1))/2,yb2+13,"B = "+v.B.toFixed(3)+" m","var(--trib)",10);
+      }else{
+        var xa=X(q.i)-(m.losas[key(q.i-1,q.j)]?m.dx[q.i-1]/2*esc:0),
+            xb2=X(q.i)+(m.losas[key(q.i,q.j)]?m.dx[q.i]/2*esc:0);
+        g.appendChild(el("rect",{x:xa,y:Y(q.j),width:xb2-xa,height:Y(q.j+1)-Y(q.j),fill:"var(--trib-fill)",
+          stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
+        txt(g,X(q.i)+6,(Y(q.j)+Y(q.j+1))/2,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10,"start");
+        txt(g,xb2+5,(Y(q.j)+Y(q.j+1))/2+14,"B = "+v.B.toFixed(3)+" m","var(--trib)",10,"start");
+      }
+    }
+    if(q&&q.t==="losa"&&m.losas[key(q.i,q.j)]){
+      var lo=medLosa(q.i,q.j);
+      txt(g,(X(q.i)+X(q.i+1))/2,(Y(q.j)+Y(q.j+1))/2-8,"Ln = "+lo.Ln.toFixed(2)+" m","var(--trib)",10);
+    }
+  }
+
+  /* ---------- pintar (clic y arrastre) ---------- */
+  var pintando=false,modo=null,tocados={};
+  function aplicar(nodo,primero){
+    if(!nodo||!nodo.dataset||!nodo.dataset.t)return;
+    var d=nodo.dataset,i=+d.i,j=+d.j,m=N(),id=d.t+":"+(d.o||"")+":"+i+":"+j;
+    if(tocados[id])return; tocados[id]=1;
+    if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
+    if(S.tool==="col"&&d.t==="col"){
+      if(primero)modo=m.cols[key(i,j)]?"off":"on";
+      if(modo==="on")m.cols[key(i,j)]=1;else delete m.cols[key(i,j)];
+    }else if(S.tool==="viga"&&d.t==="viga"){
+      var k2=key(d.o,i,j);
+      if(primero)modo=m.vigas[k2]?"off":"on";
+      if(modo==="on")m.vigas[k2]=1;else delete m.vigas[k2];
+    }else if(S.tool==="losa"&&d.t==="losa"){
+      var lk=key(i,j),tp=$("#tipoLosa").value,ex=m.losas[lk];
+      if(tp==="vacio"){delete m.losas[lk];limpiarSueltos();}
+      else if(primero&&ex&&ex.tipo===tp){ex.dir=ex.dir==="y"?"x":"y";modo="giro";}
+      else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};}
+    }else return;
+    render();
+  }
+  var svg=$("#plano");
+  svg.addEventListener("pointerdown",function(e){
+    if(!e.target.dataset||!e.target.dataset.t)return;
+    if(S.tool!=="sel")snap();
+    pintando=true;modo=null;tocados={};aplicar(e.target,true);
+    if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}}
+  });
+  svg.addEventListener("pointermove",function(e){
+    if(!pintando||S.tool==="sel")return;
+    var n=document.elementFromPoint(e.clientX,e.clientY);aplicar(n,false);
+  });
+  window.addEventListener("pointerup",function(){if(pintando){pintando=false;tocados={};guardar()}});
+
+  document.querySelectorAll(".tool").forEach(function(b){
+    b.addEventListener("click",function(){
+      S.tool=b.dataset.tool;
+      document.querySelectorAll(".tool").forEach(function(o){o.setAttribute("aria-pressed",o===b)});
+      $("#hint").textContent={sel:"Clic en un elemento para ver sus medidas",
+        col:"Clic o arrastra sobre los cruces de ejes",
+        viga:"Clic o arrastra sobre los tramos entre ejes",
+        losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado"}[S.tool];});
+  });
+  $("#tipoLosa").addEventListener("change",function(){
+    var t=this.value;
+    $("#swLosa").style.background=t==="vacio"?"var(--sheet)":"var("+TIPOS[t].c+")";
+    document.querySelector('.tool[data-tool="losa"]').click();
+  });
+  document.querySelectorAll(".tab").forEach(function(b){
+    b.addEventListener("click",function(){S.tab=b.dataset.t;
+      document.querySelectorAll(".tab").forEach(function(o){o.setAttribute("aria-selected",o===b)});tabla();});
+  });
+  $("#undo").onclick=undo; $("#redo").onclick=redo;
+  $("#zIn").onclick=function(){S.zoom=Math.min(3,S.zoom*1.25);draw()};
+  $("#zOut").onclick=function(){S.zoom=Math.max(.5,S.zoom/1.25);draw()};
+  $("#zRes").onclick=function(){S.zoom=1;draw()};
+
+  /* ---------- niveles ---------- */
+  function pintaNiveles(){
+    var c=$("#niveles");c.innerHTML='<span class="lbl">Nivel</span>';
+    S.niveles.forEach(function(n,k){
+      var b=document.createElement("button");b.className="nbtn";
+      b.setAttribute("aria-current",k===S.act);b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
+      b.onclick=function(){S.act=k;S.sel=null;render()};c.appendChild(b);});
+    var a=document.createElement("div");a.className="acts";
+    a.innerHTML='<button class="btn" id="nAdd">+ Nivel</button><button class="btn" id="nDup">Duplicar</button>'+
+      '<button class="btn" id="nDel">Eliminar</button>';
+    c.appendChild(a);
+    $("#nAdd").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
+      snap();S.niveles.push(plantaLlena(N().dx,N().dy,N().h));S.act=S.niveles.length-1;S.sel=null;render()};
+    $("#nDup").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
+      snap();S.niveles.splice(S.act+1,0,JSON.parse(JSON.stringify(N())));S.act++;S.sel=null;render();
+      toast("Nivel duplicado")};
+    $("#nDel").onclick=function(){if(S.niveles.length<2)return toast("Debe quedar al menos un nivel.");
+      snap();S.niveles.splice(S.act,1);S.act=Math.max(0,S.act-1);S.sel=null;render()};
+  }
+  $("#hEnt").addEventListener("change",function(){var v=parseFloat(this.value);
+    if(v>0){snap();N().h=v;render()}});
+
+  /* ---------- ejes ---------- */
+  function remap(ejeX,mapa,dup){
+    var m=N(),c={},v={},l={},i,j,ni,nj,nX=nx(),nY=ny();
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]){
+      ni=ejeX?mapa(i):i;nj=ejeX?j:mapa(j);if(ni!==null&&nj!==null)c[key(ni,nj)]=1;}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas[key("h",i,j)]){
+      if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)v[key("h",x,j)]=1})}
+      else{nj=mapa(j);if(nj!==null)v[key("h",i,nj)]=1}}
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas[key("v",i,j)]){
+      if(ejeX){ni=mapa(i);if(ni!==null)v[key("v",ni,j)]=1}
+      else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)v[key("v",i,y)]=1})}}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){var o=m.losas[key(i,j)];
+      if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)l[key(x,j)]={dir:o.dir,tipo:o.tipo}})}
+      else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]={dir:o.dir,tipo:o.tipo}})}}
+    m.cols=c;m.vigas=v;m.losas=l;S.sel=null;
+  }
+  function partir(ejeX,t){var arr=ejeX?N().dx:N().dy;
+    if(arr.length>=12)return toast("Máximo 13 ejes por dirección.");
+    snap();var d=+(arr[t]/2).toFixed(3);arr.splice(t,1,d,d);
+    remap(ejeX,function(k){return k>t?k+1:k},t);render();}
+  function borrarEje(ejeX,p){var arr=ejeX?N().dx:N().dy,n=arr.length+1;
+    if(n<=2)return toast("Debe quedar al menos un tramo.");
+    snap();
+    if(p===0)arr.splice(0,1);else if(p===n-1)arr.splice(p-1,1);
+    else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(2);arr.splice(p,1)}
+    remap(ejeX,function(k){return k===p?null:(k>p?k-1:k)},-1);limpiarSueltos();render();}
+  function editorEjes(){
+    function pinta(cont,arr,ejeX){
+      cont.innerHTML="";
+      arr.forEach(function(d,t){
+        var row=document.createElement("div");row.className="eje";
+        var nom=ejeX?(LETRAS[t]+"–"+LETRAS[t+1]):((t+1)+"–"+(t+2));
+        row.innerHTML='<span>'+nom+'</span><input type="number" min="1" max="20" step="0.05" value="'+
+          d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos">÷</button>'+
+          '<button class="mini" title="Eliminar el eje siguiente">✕</button>';
+        row.querySelector("input").addEventListener("change",function(){
+          var v=parseFloat(this.value);if(!(v>0))return;snap();
+          arr[t]=Math.min(20,Math.max(1,v));render();});
+        row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t)};
+        row.querySelectorAll("button")[1].onclick=function(){borrarEje(ejeX,t+1)};
+        cont.appendChild(row);});
+      var add=document.createElement("button");add.className="btn";add.style.marginTop="4px";
+      add.textContent="+ tramo al final";
+      add.onclick=function(){if(arr.length>=12)return toast("Máximo 13 ejes.");snap();arr.push(ejeX?5:6);render()};
+      cont.appendChild(add);
+    }
+    pinta($("#ejesX"),N().dx,true);pinta($("#ejesY"),N().dy,false);
+    $("#totX").textContent=posX(nx()-1).toFixed(2)+" m";
+    $("#totY").textContent=posY(ny()-1).toFixed(2)+" m";
+  }
+
+  $("#pR").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5],[7,7,7,7],N().h);S.sel=null;render()};
+  $("#pL").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5,5],[6,6,6,6],N().h);
+    for(var i=2;i<4;i++)for(var j=0;j<2;j++)delete N().losas[key(i,j)];
+    limpiarSueltos();S.sel=null;render();toast("Planta en L")};
+  $("#pU").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,4,5],[6,4,6],N().h);
+    delete N().losas[key(1,1)];limpiarSueltos();S.sel=null;render();toast("Planta con patio")};
+
+  function toast(t){var e=$("#toast");e.textContent=t;e.classList.add("on");
+    clearTimeout(e._t);e._t=setTimeout(function(){e.classList.remove("on")},2800)}
+
+  /* ---------- inspector ---------- */
+  function kv(k,v,env){return "<dt>"+k+"</dt><dd"+(env?' class="env"':"")+">"+v+"</dd>"}
+  function inspector(){
+    var T=$("#inspTitle"),B=$("#inspBody"),q=S.sel,m=N(),nm=nombres(S.act);
+    if(!q){T.textContent="Elemento";B.innerHTML='<p class="empty">Selecciona un elemento de la planta.</p>';return}
+    var html="";
+    if(q.t==="col"){
+      if(!m.cols[key(q.i,q.j)]){T.textContent="Cruce vacío";
+        B.innerHTML='<p class="empty">Sin columna en '+LETRAS[q.i]+"-"+(q.j+1)+'.</p>';return}
+      var d=medCol(q.i,q.j);
+      T.textContent="Columna · eje "+LETRAS[q.i]+"-"+(q.j+1);
+      html='<div class="name">'+nm.C[key(q.i,q.j)]+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
+        '<dl class="kv" style="margin-top:9px">'+kv("Paños que carga",d.n+" de 4")+
+        kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
+        kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+"</dl>"+
+        '<p class="calcnote">Excel calcula: P, Ac, b y h.</p>';
+    }else if(q.t==="viga"){
+      if(!m.vigas[key(q.o,q.i,q.j)]){T.textContent="Tramo vacío";
+        B.innerHTML='<p class="empty">Sin viga en ese tramo.</p>';return}
+      var v=medViga(q.o,q.i,q.j);
+      T.textContent="Viga · dirección "+(q.o==="h"?"X":"Y");
+      html='<div class="name">'+nm.V[key(q.o,q.i,q.j)]+'</div>'+
+        '<dl class="kv" style="margin-top:9px">'+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
+        kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+kv("Ancho tributario B",v.B.toFixed(3)+" m",1)+
+        kv("α",alfa("aligerada"),1)+"</dl>"+
+        '<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>';
+    }else{
+      if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
+        B.innerHTML='<p class="empty">Este paño no tiene losa: es un vacío del edificio.</p>';return}
+      var lo=medLosa(q.i,q.j);
+      T.textContent="Losa · paño "+LETRAS[q.i]+LETRAS[q.i+1]+"-"+(q.j+1)+(q.j+2);
+      html='<div class="name">'+nm.L[key(q.i,q.j)]+'</div><span class="tag" style="color:var('+
+        TIPOS[lo.tipo].c+')">'+TIPOS[lo.tipo].n+" · armada en "+lo.dir.toUpperCase()+"</span>"+
+        '<dl class="kv" style="margin-top:9px">'+kv("Luz de cálculo",lo.L.toFixed(2)+" m")+
+        kv("Luz libre Ln",lo.Ln.toFixed(2)+" m",1)+kv("α",alfa(lo.tipo),1)+"</dl>"+
+        '<div class="row" style="margin-top:8px"><button class="btn" id="girar">Girar armado</button></div>'+
+        '<p class="calcnote">Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
+    }
+    B.innerHTML=html;
+    var gb=$("#girar");
+    if(gb)gb.onclick=function(){snap();var o=N().losas[key(q.i,q.j)];o.dir=o.dir==="y"?"x":"y";render()};
+  }
+
+  /* ---------- exportacion ---------- */
+  function filas(niv){
+    var m=S.niveles[niv],nm=nombres(niv),nX=m.dx.length+1,nY=m.dy.length+1,
+        pisos=S.niveles.length-niv,C=[],V=[],LS={aligerada:[],maciza:[],nervada:[]},i,j;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){var d=medCol(i,j,m);
+      C.push([nm.C[i+":"+j],d.tipo,pisos,d.at.toFixed(3)]);}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j]){var v=medViga("h",i,j,m);
+      V.push([nm.V["h:"+i+":"+j],v.Ln.toFixed(2),v.B.toFixed(3),alfa("aligerada")]);}
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j]){var v2=medViga("v",i,j,m);
+      V.push([nm.V["v:"+i+":"+j],v2.Ln.toFixed(2),v2.B.toFixed(3),alfa("aligerada")]);}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){var lo=medLosa(i,j,m);
+      LS[lo.tipo].push([nm.L[i+":"+j],lo.Ln.toFixed(2),alfa(lo.tipo)]);}
+    return{C:C,V:V,L:LS};
+  }
+  function tabla(){
+    var todos=$("#todos").checked,th=$("#tabla thead"),tb=$("#tabla tbody"),H,CAL,R=[];
+    var packs=todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)];
+    if(S.tab==="col"){H=["COLUMNA","Ubicación","N° pisos","A trib (m²)"];CAL=["P (t)","Ac (cm²)","b (cm)","h (cm)"];
+      packs.forEach(function(p){R=R.concat(p.C)});}
+    else if(S.tab==="viga"){H=["VIGA","Ln (m)","B (m)","α"];CAL=["h","h (cm)","b (cm)"];
+      packs.forEach(function(p){R=R.concat(p.V)});}
+    else{H=["LOSA","Ln (m)","α"];
+      CAL=S.tab==="aligerada"?["h","espesor (cm)","b"]:(S.tab==="maciza"?["h","espesor (cm)"]:["h","espesor","b","S"]);
+      packs.forEach(function(p){R=R.concat(p.L[S.tab])});}
+    th.innerHTML="<tr>"+H.map(function(x){return "<th>"+x+"</th>"}).join("")+
+      CAL.map(function(x){return '<th style="color:var(--ink-3)">'+x+" · Excel</th>"}).join("")+"</tr>";
+    tb.innerHTML=R.length?R.map(function(r){
+      return "<tr>"+r.map(function(c){return "<td>"+c+"</td>"}).join("")+
+        CAL.map(function(){return '<td class="calc">fórmula</td>'}).join("")+"</tr>";}).join("")
+      :'<tr><td colspan="8" style="color:var(--ink-3);font-style:italic">Sin elementos de este tipo.</td></tr>';
+    $("#foottxt").textContent=R.length+" filas a escribir"+(todos?" · "+S.niveles.length+" niveles":" · nivel activo");
+  }
+  $("#todos").addEventListener("change",tabla);
+  $("#sc").addEventListener("change",function(){guardar();render()});
+
+  $("#btnSend").onclick=function(){
+    var todos=$("#todos").checked,c=0,v=0,l=0;
+    (todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)]).forEach(function(p){
+      c+=p.C.length;v+=p.V.length;l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
+    toast("Prototipo: "+c+" filas a PRE_COLUMNA, "+v+" a PRE_VIGA_PRINCIPAL y "+l+" a las hojas de losa.");
+  };
+  $("#btnCheck").onclick=function(){
+    var m=N(),pr=[],i,j;
+    for(i=0;i<nx();i++)for(j=0;j<ny();j++)
+      if(panos(i,j).length&&!m.cols[key(i,j)])pr.push("nudo "+LETRAS[i]+"-"+(j+1)+" con losa sin columna");
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
+      if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
+        pr.push("borde "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+" sin viga");
+    toast(pr.length?pr.length+" aviso(s) · "+pr[0]:"Nivel consistente: cada paño apoyado en vigas y columnas.");
+  };
+
+  function render(){
+    var m=N(),tot=0,ha=0;
+    S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
+    $("#hEnt").value=(m.h||2.8).toFixed(2);
+    $("#areaNiv").textContent=areaNivel(m).toFixed(2)+" m²";
+    $("#areaTot").textContent=tot.toFixed(2)+" m²";
+    $("#hAcum").textContent=ha.toFixed(2)+" m";
+    $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
+    pintaNiveles();draw();inspector();editorEjes();tabla();guardar();
+  }
+  cargar();
+  S.sel={t:"col",i:1,j:2};
+  render();
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()}};
+})();
+</script>
+
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script>
+(function(){
+  "use strict";
+  var listo=false;
+  if(typeof Office!=="undefined"&&Office.onReady){
+    Office.onReady(function(){listo=true;});
+  }
+  function avisar(msg){
+    try{ if(listo&&Office.context&&Office.context.ui) Office.context.ui.messageParent(JSON.stringify(msg)); }
+    catch(e){}
+  }
+  // el prototipo ya guarda el modelo en localStorage["reticula"];
+  // el panel de Excel lee esa misma clave (mismo origen).
+  var send=document.getElementById("btnSend");
+  if(send){
+    send.addEventListener("click",function(){
+      if(!window.RET)return;
+      var todos=document.getElementById("todos").checked;
+      var S=window.RET.estado(),packs=[],k;
+      if(todos){for(k=0;k<S.niveles.length;k++)packs.push(window.RET.filas(k));}
+      else{packs.push(window.RET.filas(S.act));}
+      try{localStorage.setItem("reticula_filas",JSON.stringify(packs));}catch(e){}
+      avisar({accion:"enviar"});
+    });
+  }
+  var barra=document.querySelector("header.bar");
+  if(barra){
+    var b=document.createElement("button");
+    b.className="btn pri";
+    b.style.marginLeft="auto";
+    b.textContent="Guardar y cerrar";
+    b.onclick=function(){avisar({accion:"cerrar"})};
+    barra.appendChild(b);
+  }
+})();
+</script>

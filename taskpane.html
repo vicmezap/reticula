@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retícula Estructural</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{--paper:#F4F6F8;--sheet:#FFFFFF;--line:#C9D2DA;--ink:#1A2029;--ink2:#4A5763;--ink3:#7B8894;
+        --acc:#0F6E8C;--acc-soft:#DCEBF1;--ok:#2F6E4F;--warn:#B3541E}
+  *{box-sizing:border-box}
+  body{margin:0;padding:14px;background:var(--paper);color:var(--ink);
+       font:400 13px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+  h1{font-family:"Barlow Condensed",sans-serif;font-size:23px;font-weight:700;margin:0 0 2px;letter-spacing:.02em}
+  .sub{color:var(--ink2);font-size:12px;margin:0 0 14px}
+  .lbl{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.09em;
+       font-size:11.5px;font-weight:600;color:var(--ink3)}
+  .caja{background:var(--sheet);border:1px solid var(--line);border-radius:3px;padding:10px 12px;margin-bottom:10px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-size:12.5px}
+  .kv b{font:500 12.5px "IBM Plex Mono",monospace}
+  button{width:100%;font:600 13px "IBM Plex Sans",sans-serif;padding:9px 12px;border-radius:3px;
+         border:1px solid var(--line);background:var(--sheet);color:var(--ink);cursor:pointer;margin-bottom:7px}
+  button:hover{border-color:var(--acc);color:var(--acc)}
+  button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.pri:hover{filter:brightness(1.08);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  #estado{font-size:12px;padding:8px 10px;border-radius:3px;border:1px solid var(--line);
+          background:var(--sheet);color:var(--ink2);min-height:34px}
+  #estado.ok{border-color:var(--ok);color:var(--ok)}
+  #estado.err{border-color:var(--warn);color:var(--warn)}
+  ol{margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--ink2)}
+  li{margin-bottom:3px}
+</style>
+</head>
+<body>
+  <h1>Retícula Estructural</h1>
+  <p class="sub">Modelador 2D de plantas para el predimensionamiento.</p>
+
+  <div class="caja">
+    <div class="lbl" style="margin-bottom:6px">Libro actual</div>
+    <div class="kv"><span>Modelo guardado</span><b id="qModelo">—</b></div>
+    <div class="kv"><span>Niveles</span><b id="qNiv">—</b></div>
+    <div class="kv"><span>Listas de destino</span><b id="qListas">—</b></div>
+  </div>
+
+  <button class="pri" id="btnAbrir">Abrir modelador</button>
+  <button id="btnGuardar">Guardar modelo en el libro</button>
+
+  <div id="estado">Listo.</div>
+
+  <div class="caja" style="margin-top:12px">
+    <div class="lbl" style="margin-bottom:4px">Cómo se usa</div>
+    <ol>
+      <li>Abre el modelador y dibuja la planta.</li>
+      <li>Pulsa <b>Enviar a las hojas</b> dentro del modelador.</li>
+      <li>Cierra con <b>Guardar y cerrar</b>: el modelo queda dentro del libro.</li>
+    </ol>
+  </div>
+
+<script>
+"use strict";
+var HOJA_MODELO = "RETICULA_MODELO";
+var LISTAS = {
+  col:    {nombre:"LISTA_COLUMNA",   cols:[3,4,5,6]},
+  viga:   {nombre:"LISTA_VIGA",      cols:[3,5,6,7]},
+  aligerada:{nombre:"LISTA_ALIGERADA", cols:[3,5,6]},
+  maciza: {nombre:"LISTA_MACIZA",    cols:[3,5,6]},
+  nervada:{nombre:"LISTA_NERVADA",   cols:[3,5,6]}
+};
+var dialogo = null;
+
+function estado(txt, clase){
+  var e = document.getElementById("estado");
+  e.textContent = txt;
+  e.className = clase || "";
+}
+
+Office.onReady(function(info){
+  if(info.host !== Office.HostType.Excel){
+    estado("Este complemento solo funciona en Excel.", "err");
+    return;
+  }
+  document.getElementById("btnAbrir").onclick = abrirModelador;
+  document.getElementById("btnGuardar").onclick = function(){
+    guardarModelo().then(function(){ estado("Modelo guardado en el libro.", "ok"); })
+                   .catch(function(e){ estado("No se pudo guardar: " + e.message, "err"); });
+  };
+  revisar();
+});
+
+/* ---------------- lectura y escritura del modelo en el libro ---------------- */
+function hojaModelo(context, crear){
+  var wb = context.workbook;
+  var ws = wb.worksheets.getItemOrNullObject(HOJA_MODELO);
+  ws.load("isNullObject");
+  return context.sync().then(function(){
+    if(ws.isNullObject){
+      if(!crear) return null;
+      var nueva = wb.worksheets.add(HOJA_MODELO);
+      nueva.visibility = Excel.SheetVisibility.veryHidden;
+      return context.sync().then(function(){ return nueva; });
+    }
+    return ws;
+  });
+}
+
+function leerModelo(){
+  return Excel.run(function(context){
+    return hojaModelo(context, false).then(function(ws){
+      if(!ws) return null;
+      var rg = ws.getRange("A1:A400");
+      rg.load("values");
+      return context.sync().then(function(){
+        var s = "";
+        for(var i=0;i<rg.values.length;i++){
+          var v = rg.values[i][0];
+          if(v === "" || v === null) break;
+          s += v;
+        }
+        return s.length ? s : null;
+      });
+    });
+  });
+}
+
+function guardarModelo(){
+  var s = "";
+  try{ s = localStorage.getItem("reticula") || ""; }catch(e){}
+  if(!s) return Promise.reject(new Error("no hay modelo en el modelador"));
+  return Excel.run(function(context){
+    return hojaModelo(context, true).then(function(ws){
+      ws.getRange("A1:A400").clear(Excel.ClearApplyTo.contents);
+      var trozos = [], i;
+      for(i=0;i<s.length;i+=20000) trozos.push([s.substr(i,20000)]);
+      ws.getRangeByIndexes(0,0,trozos.length,1).values = trozos;
+      return context.sync();
+    });
+  });
+}
+
+/* ---------------- diagnostico ---------------- */
+function revisar(){
+  Excel.run(function(context){
+    var wb = context.workbook;
+    var faltan = [], ok = [];
+    var items = {};
+    Object.keys(LISTAS).forEach(function(k){
+      items[k] = wb.names.getItemOrNullObject(LISTAS[k].nombre);
+      items[k].load("isNullObject");
+    });
+    return context.sync().then(function(){
+      Object.keys(LISTAS).forEach(function(k){
+        if(items[k].isNullObject) faltan.push(LISTAS[k].nombre); else ok.push(k);
+      });
+      document.getElementById("qListas").textContent =
+        faltan.length ? (ok.length + " de 5") : "5 de 5";
+      if(faltan.length){
+        estado("Faltan listas en este libro: " + faltan.join(", "), "err");
+      }
+      return leerModelo();
+    }).then(function(s){
+      var q = document.getElementById("qModelo"), n = document.getElementById("qNiv");
+      if(!s){ q.textContent = "no"; n.textContent = "—"; return; }
+      q.textContent = "sí";
+      try{
+        var d = JSON.parse(s);
+        n.textContent = (d.n && d.n.length) ? d.n.length : "—";
+        localStorage.setItem("reticula", s);
+      }catch(e){ n.textContent = "—"; }
+    });
+  }).catch(function(e){ estado("Error: " + e.message, "err"); });
+}
+
+/* ---------------- ventana del modelador ---------------- */
+function abrirModelador(){
+  leerModelo().then(function(s){
+    if(s){ try{ localStorage.setItem("reticula", s); }catch(e){} }
+    var url = window.location.href.replace(/taskpane\.html.*$/, "dialogo.html");
+    Office.context.ui.displayDialogAsync(url,
+      {height:88, width:88, displayInIframe:false},
+      function(res){
+        if(res.status !== Office.AsyncResultStatus.Succeeded){
+          estado("No se pudo abrir la ventana: " + res.error.message, "err");
+          return;
+        }
+        dialogo = res.value;
+        estado("Modelador abierto.");
+        dialogo.addEventHandler(Office.EventType.DialogMessageReceived, alRecibir);
+        dialogo.addEventHandler(Office.EventType.DialogEventReceived, function(){
+          dialogo = null; revisar();
+        });
+      });
+  }).catch(function(e){ estado("Error: " + e.message, "err"); });
+}
+
+function alRecibir(arg){
+  var msg;
+  try{ msg = JSON.parse(arg.message); }catch(e){ return; }
+  if(msg.accion === "cerrar"){
+    guardarModelo().then(function(){
+      estado("Modelo guardado en el libro.", "ok");
+    }).catch(function(){}).then(function(){
+      if(dialogo){ dialogo.close(); dialogo = null; }
+      revisar();
+    });
+  }else if(msg.accion === "enviar"){
+    enviarFilas().then(function(r){
+      estado("Escrito: " + r.col + " columnas, " + r.viga + " vigas, " + r.losa + " losas.", "ok");
+    }).catch(function(e){ estado("No se pudo escribir: " + e.message, "err"); });
+  }
+}
+
+/* ---------------- escritura en las listas ---------------- */
+function escribirLote(context, wb, clave, filas){
+  var cfg = LISTAS[clave];
+  if(!filas || !filas.length) return context.sync();
+  var nm = wb.names.getItem(cfg.nombre);
+  var rg = nm.getRange();
+  rg.load(["rowIndex","rowCount","worksheet/name"]);
+  return context.sync().then(function(){
+    var ws = wb.worksheets.getItem(rg.worksheet.name);
+    var colC = ws.getRangeByIndexes(rg.rowIndex, 2, rg.rowCount, 1);
+    colC.load("values");
+    return context.sync().then(function(){
+      var libres = [], r;
+      for(r=0;r<rg.rowCount;r++){
+        var v = colC.values[r][0];
+        if(v === "" || v === null) libres.push(rg.rowIndex + r);
+      }
+      var faltan = filas.length - libres.length;
+      var ultima = rg.rowIndex + rg.rowCount - 1;
+      if(faltan > 0){
+        ws.getRangeByIndexes(ultima + 1, 0, faltan, 1).getEntireRow()
+          .insert(Excel.InsertShiftDirection.down);
+        return context.sync().then(function(){
+          var origen = ws.getRangeByIndexes(ultima, 0, 1, 12);
+          var destino = ws.getRangeByIndexes(ultima + 1, 0, faltan, 12);
+          destino.copyFrom(origen, Excel.RangeCopyType.all);
+          for(var q=0;q<faltan;q++) libres.push(ultima + 1 + q);
+          nm.formula = "='" + rg.worksheet.name + "'!$C$" + (rg.rowIndex + 1) +
+                       ":$J$" + (ultima + faltan + 1);
+          return context.sync();
+        }).then(function(){ return volcar(ws, cfg, filas, libres); });
+      }
+      return volcar(ws, cfg, filas, libres);
+    });
+  });
+}
+
+function volcar(ws, cfg, filas, libres){
+  for(var i=0;i<filas.length;i++){
+    for(var c=0;c<cfg.cols.length;c++){
+      ws.getRangeByIndexes(libres[i], cfg.cols[c]-1, 1, 1).values = [[filas[i][c]]];
+    }
+  }
+}
+
+function enviarFilas(){
+  var packs;
+  try{ packs = JSON.parse(localStorage.getItem("reticula_filas") || "[]"); }
+  catch(e){ return Promise.reject(new Error("no hay filas que enviar")); }
+  if(!packs.length) return Promise.reject(new Error("no hay filas que enviar"));
+
+  var col = [], viga = [], los = {aligerada:[], maciza:[], nervada:[]};
+  packs.forEach(function(p){
+    (p.C||[]).forEach(function(f){ col.push(f); });
+    (p.V||[]).forEach(function(f){ viga.push(f); });
+    ["aligerada","maciza","nervada"].forEach(function(t){
+      ((p.L||{})[t]||[]).forEach(function(f){ los[t].push(f); });
+    });
+  });
+
+  return Excel.run(function(context){
+    var wb = context.workbook;
+    return escribirLote(context, wb, "col", col)
+      .then(function(){ return context.sync(); })
+      .then(function(){ return escribirLote(context, wb, "viga", viga); })
+      .then(function(){ return context.sync(); })
+      .then(function(){ return escribirLote(context, wb, "aligerada", los.aligerada); })
+      .then(function(){ return context.sync(); })
+      .then(function(){ return escribirLote(context, wb, "maciza", los.maciza); })
+      .then(function(){ return context.sync(); })
+      .then(function(){ return escribirLote(context, wb, "nervada", los.nervada); })
+      .then(function(){ return context.sync(); })
+      .then(function(){
+        return {col:col.length, viga:viga.length,
+                losa:los.aligerada.length + los.maciza.length + los.nervada.length};
+      });
+  });
+}
+</script>
+</body>
+</html>
