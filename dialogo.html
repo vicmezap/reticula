@@ -332,9 +332,14 @@
     m=m||N();var o=m.losas[key(i,j)],L=o.dir==="y"?m.dy[j]:m.dx[i];
     return{dir:o.dir,tipo:o.tipo||"aligerada",L:L,Ln:Math.max(L-0.30,0.5)};
   }
+  /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
+     Maciza y nervada llevan valor fijo (pag. 26 y 27). */
   function alfa(tipo){var s=+$("#sc").value;
     if(tipo==="maciza")return 35; if(tipo==="nervada")return 18;
     return s<=200?25:s<=300?23:s<=400?21:19}
+  /* Oviedo 3.3 (pag. 51): tabla alfa de VIGAS. Es OTRA tabla, no la de losas. */
+  function alfaViga(){var s=+$("#sc").value;
+    return s<=200?12:s<=350?11:s<=600?10:9}
   function pisosQueCarga(niv){return S.niveles.length-niv}
 
   /* Codigo de identificacion: N{nivel}-{TIPO}-{NN}[-{VARIANTE}]
@@ -646,7 +651,7 @@
       html='<div class="name">'+nm.V[key(q.o,q.i,q.j)].cod+'</div>'+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[key(q.o,q.i,q.j)].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
         kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+kv("Ancho tributario B",v.B.toFixed(3)+" m",1)+
-        kv("α",alfa("aligerada"),1)+"</dl>"+
+        kv("α",alfaViga(),1)+"</dl>"+
         '<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>';
     }else{
       if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
@@ -672,9 +677,9 @@
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){var d=medCol(i,j,m),a=nm.C[i+":"+j];
       C.push([a.cod,d.tipo,pisos,d.at.toFixed(3)]);}
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j]){var v=medViga("h",i,j,m),b=nm.V["h:"+i+":"+j];
-      V.push([b.cod,b.eje,v.Ln.toFixed(2),v.B.toFixed(3),alfa("aligerada")]);}
+      V.push([b.cod,b.eje,v.Ln.toFixed(2),v.B.toFixed(3),alfaViga()]);}
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j]){var v2=medViga("v",i,j,m),b2=nm.V["v:"+i+":"+j];
-      V.push([b2.cod,b2.eje,v2.Ln.toFixed(2),v2.B.toFixed(3),alfa("aligerada")]);}
+      V.push([b2.cod,b2.eje,v2.Ln.toFixed(2),v2.B.toFixed(3),alfaViga()]);}
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
       LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfa(lo.tipo)]);}
     return{C:C,V:V,L:LS};
@@ -712,8 +717,12 @@
       if(panos(i,j).length&&!m.cols[key(i,j)])pr.push("nudo "+LETRAS[i]+"-"+(j+1)+" con losa sin columna");
     for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
       if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
-        pr.push("borde "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+" sin viga");
-    toast(pr.length?pr.length+" aviso(s) · "+pr[0]:"Nivel consistente: cada paño apoyado en vigas y columnas.");
+        pr.push("borde "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+" sin viga en X");
+    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
+      if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
+        pr.push("borde "+LETRAS[i]+"-"+(j+1)+(j+2)+" sin viga en Y");
+    toast(pr.length?pr.length+" aviso(s) · "+pr.slice(0,3).join(" · ")+(pr.length>3?" …":"")
+                   :"Nivel consistente: cada paño apoyado en vigas y columnas.");
   };
 
   function render(){
