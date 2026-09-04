@@ -180,6 +180,7 @@
   <header class="bar">
     <h1>Retícula Estructural</h1>
     <span class="chip">Prototipo · panel de Excel</span>
+    <span class="chip" id="sello" title="Versión de este archivo. Debe coincidir con la del panel." style="border-color:var(--acc);color:var(--acc-ink)">dev</span>
     <p class="sub">Modela la planta de cada nivel y mide lo que Excel no puede saber solo. El cálculo se queda en las hojas.</p>
   </header>
 
@@ -291,6 +292,11 @@
              maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
+  /* BUILD lo reemplaza gen_complemento.py en cada generacion */
+  var BUILD="v1 · 04-09-2026";
+  try{ $("#sello").textContent=BUILD; }catch(e){}
+  /* el panel lee esta clave para saber si los dos archivos son de la misma build */
+  try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
 
   function plantaLlena(dx,dy,h){
     var m={h:h||2.80,dx:dx.slice(),dy:dy.slice(),cols:{},vigas:{},losas:{},placas:{}},i,j,

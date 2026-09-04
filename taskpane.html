@@ -36,6 +36,7 @@
 <body>
   <h1>Retícula Estructural</h1>
   <p class="sub">Modelador 2D de plantas para el predimensionamiento.</p>
+  <div class="kv" style="margin:-4px 0 10px"><span>Versión</span><b id="qBuild">—</b></div>
 
   <div class="caja">
     <div class="lbl" style="margin-bottom:6px">Libro actual</div>
@@ -75,7 +76,23 @@ var LISTAS = {
   metrado:{nombre:"LISTA_METRADO",   cols:[3,4,5,6,7,8]}
 };
 var N_LISTAS = Object.keys(LISTAS).length;
+/* BUILD lo reemplaza gen_complemento.py en cada generacion */
+var BUILD = "v1 · 04-09-2026";
 var dialogo = null;
+
+/* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
+   build, es que se subio uno y no el otro: avisar en vez de fallar raro. */
+function revisarBuild(){
+  var e = document.getElementById("qBuild");
+  var otro = null;
+  try{ otro = localStorage.getItem("reticula_build_dialogo"); }catch(x){}
+  if(!otro || otro === BUILD){ e.textContent = BUILD; e.style.color = ""; return true; }
+  e.textContent = BUILD + " / modelador " + otro;
+  e.style.color = "#B03A2E";
+  estado("El panel y el modelador son de versiones distintas. Vuelve a subir los dos "
+         + "archivos a GitHub: taskpane.html y dialogo.html.", "err");
+  return false;
+}
 
 function estado(txt, clase){
   var e = document.getElementById("estado");
@@ -88,6 +105,7 @@ Office.onReady(function(info){
     estado("Este complemento solo funciona en Excel.", "err");
     return;
   }
+  revisarBuild();
   document.getElementById("btnAbrir").onclick = abrirModelador;
   document.getElementById("btnGuardar").onclick = function(){
     guardarModelo().then(function(){ estado("Modelo guardado en el libro.", "ok"); })
@@ -183,7 +201,10 @@ function revisar(){
 function abrirModelador(){
   leerModelo().then(function(s){
     if(s){ try{ localStorage.setItem("reticula", s); }catch(e){} }
-    var url = window.location.href.replace(/taskpane\.html.*$/, "dialogo.html");
+    /* la ventana del modelador cachea con ganas: la version en la URL la obliga
+       a traer el archivo nuevo despues de cada publicacion */
+    var url = window.location.href.replace(/taskpane\.html.*$/, "dialogo.html")
+              + "?v=" + encodeURIComponent(BUILD);
     Office.context.ui.displayDialogAsync(url,
       {height:88, width:88, displayInIframe:false},
       function(res){
@@ -195,7 +216,7 @@ function abrirModelador(){
         estado("Modelador abierto.");
         dialogo.addEventHandler(Office.EventType.DialogMessageReceived, alRecibir);
         dialogo.addEventHandler(Office.EventType.DialogEventReceived, function(){
-          dialogo = null; revisar();
+          dialogo = null; revisarBuild(); revisar();
         });
       });
   }).catch(function(e){ estado("Error: " + e.message, "err"); });
