@@ -66,13 +66,15 @@ var HOJA_MODELO = "RETICULA_MODELO";
 var LISTAS = {
   col:    {nombre:"LISTA_COLUMNA",   cols:[3,4,5,6]},
   viga:   {nombre:"LISTA_VIGA",      cols:[3,4,5,6,7]},
+  /* la chata salta la columna F: su peralte es el espesor de la losa y lo pone el usuario */
+  chata:  {nombre:"LISTA_CHATA",     cols:[3,4,5,7]},
   aligerada:{nombre:"LISTA_ALIGERADA", cols:[3,4,5,6]},
   maciza: {nombre:"LISTA_MACIZA",    cols:[3,4,5,6]},
-  nervada:{nombre:"LISTA_NERVADA",   cols:[3,4,5,6]}
+  nervada:{nombre:"LISTA_NERVADA",   cols:[3,4,5,6]},
+  placa:  {nombre:"LISTA_PLACA",     cols:[3,4,5,6]},
+  metrado:{nombre:"LISTA_METRADO",   cols:[3,4,5,6,7,8]}
 };
-/* el modelador todavia no dibuja vigas chatas ni placas, pero el libro
-   ya tiene sus listas: se comprueban para avisar si falta alguna. */
-var LISTAS_EXTRA = ["LISTA_CHATA", "LISTA_PLACA"];
+var N_LISTAS = Object.keys(LISTAS).length;
 var dialogo = null;
 
 function estado(txt, clase){
@@ -154,18 +156,12 @@ function revisar(){
       items[k] = wb.names.getItemOrNullObject(LISTAS[k].nombre);
       items[k].load("isNullObject");
     });
-    LISTAS_EXTRA.forEach(function(n){
-      items[n] = wb.names.getItemOrNullObject(n);
-      items[n].load("isNullObject");
-    });
+
     return context.sync().then(function(){
       Object.keys(LISTAS).forEach(function(k){
         if(items[k].isNullObject) faltan.push(LISTAS[k].nombre); else ok.push(k);
       });
-      LISTAS_EXTRA.forEach(function(n){
-        if(items[n].isNullObject) faltan.push(n); else ok.push(n);
-      });
-      document.getElementById("qListas").textContent = ok.length + " de 7";
+      document.getElementById("qListas").textContent = ok.length + " de " + N_LISTAS;
       if(faltan.length){
         estado("Faltan listas en este libro: " + faltan.join(", "), "err");
       }
@@ -273,31 +269,32 @@ function enviarFilas(){
   catch(e){ return Promise.reject(new Error("no hay filas que enviar")); }
   if(!packs.length) return Promise.reject(new Error("no hay filas que enviar"));
 
-  var col = [], viga = [], los = {aligerada:[], maciza:[], nervada:[]};
+  var lote = {col:[], viga:[], chata:[], aligerada:[], maciza:[], nervada:[], placa:[], metrado:[]};
   packs.forEach(function(p){
-    (p.C||[]).forEach(function(f){ col.push(f); });
-    (p.V||[]).forEach(function(f){ viga.push(f); });
+    (p.C||[]).forEach(function(f){ lote.col.push(f); });
+    (p.V||[]).forEach(function(f){ lote.viga.push(f); });
+    (p.VCH||[]).forEach(function(f){ lote.chata.push(f); });
+    (p.P||[]).forEach(function(f){ lote.placa.push(f); });
+    (p.M||[]).forEach(function(f){ lote.metrado.push(f); });
     ["aligerada","maciza","nervada"].forEach(function(t){
-      ((p.L||{})[t]||[]).forEach(function(f){ los[t].push(f); });
+      ((p.L||{})[t]||[]).forEach(function(f){ lote[t].push(f); });
     });
   });
 
   return Excel.run(function(context){
     var wb = context.workbook;
-    return escribirLote(context, wb, "col", col)
-      .then(function(){ return context.sync(); })
-      .then(function(){ return escribirLote(context, wb, "viga", viga); })
-      .then(function(){ return context.sync(); })
-      .then(function(){ return escribirLote(context, wb, "aligerada", los.aligerada); })
-      .then(function(){ return context.sync(); })
-      .then(function(){ return escribirLote(context, wb, "maciza", los.maciza); })
-      .then(function(){ return context.sync(); })
-      .then(function(){ return escribirLote(context, wb, "nervada", los.nervada); })
-      .then(function(){ return context.sync(); })
-      .then(function(){
-        return {col:col.length, viga:viga.length,
-                losa:los.aligerada.length + los.maciza.length + los.nervada.length};
-      });
+    /* una lista tras otra: cada escritura puede insertar filas, asi que no se paralelizan */
+    var cadena = Object.keys(LISTAS).reduce(function(prev, clave){
+      return prev
+        .then(function(){ return escribirLote(context, wb, clave, lote[clave]); })
+        .then(function(){ return context.sync(); });
+    }, context.sync());
+    return cadena.then(function(){
+      return {col:lote.col.length,
+              viga:lote.viga.length + lote.chata.length,
+              losa:lote.aligerada.length + lote.maciza.length + lote.nervada.length,
+              placa:lote.placa.length, metrado:lote.metrado.length};
+    });
   });
 }
 </script>

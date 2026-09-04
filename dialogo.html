@@ -5,7 +5,7 @@
     --paper:#EEF1F4; --sheet:#FFFFFF; --panel:#F7F9FA; --line:#C9D2DA; --line-soft:#E1E7EC;
     --ink:#1A2029; --ink-2:#4A5763; --ink-3:#7B8894;
     --acc:#0F6E8C; --acc-soft:#DCEBF1; --acc-ink:#0A4E64;
-    --col:#0F6E8C; --viga:#A85A2B;
+    --col:#0F6E8C; --viga:#A85A2B; --chata:#D9A579; --placa:#3A4750;
     --alig:#7FA0AE; --alig-f:rgba(127,160,174,.20);
     --maci:#5B7686; --maci-f:rgba(91,118,134,.34);
     --nerv:#8FA8A0; --nerv-f:rgba(143,168,160,.22);
@@ -82,6 +82,25 @@
   .tool small{display:block;font-size:10.5px;color:var(--ink-3)}
   .tools select{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
         border-radius:2px;padding:4px 5px;font:500 12px "IBM Plex Sans",sans-serif;margin-top:2px}
+  .sub{display:flex;flex-direction:column;gap:1px;margin:1px 0 3px 22px;
+       border-left:1px solid var(--line-soft);padding-left:6px}
+  .sopt{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid transparent;
+        border-radius:2px;background:none;color:var(--ink-2);cursor:pointer;text-align:left;
+        font:500 11.5px "IBM Plex Sans",sans-serif;width:100%}
+  .sopt:hover{background:var(--sheet)}
+  .sopt[aria-pressed="true"]{background:var(--acc-soft);color:var(--acc-ink);font-weight:600}
+  .sopt:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .sdot{width:10px;height:10px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
+  .edif{padding:4px 2px 10px}
+  .edif table{width:100%;border-collapse:collapse;font:400 11.5px "IBM Plex Mono",monospace}
+  .edif th{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;
+           color:var(--ink-3);text-align:right;padding:5px 8px;border-bottom:1px solid var(--line)}
+  .edif th:first-child{text-align:left}
+  .edif td{padding:4px 8px;text-align:right;border-bottom:1px solid var(--line-soft);color:var(--ink-2)}
+  .edif td:first-child{text-align:left;color:var(--ink);font-weight:500}
+  .edif tr.tot td{border-top:1px solid var(--line);border-bottom:none;font-weight:600;color:var(--ink)}
+  .edif h3{font:600 12px "IBM Plex Sans",sans-serif;color:var(--ink);margin:0 0 8px}
+  .edif p.nota{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin:10px 0 0}
 
   .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
   svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
@@ -185,13 +204,22 @@
         <span>Selección<small>ver medidas</small></span></button>
       <button class="tool" data-tool="col" aria-pressed="false"><span class="swatch" style="background:var(--col)"></span>
         <span>Columna<small>clic o arrastra</small></span></button>
-      <button class="tool" data-tool="viga" aria-pressed="false"><span class="swatch" style="background:var(--viga)"></span>
+      <button class="tool" data-tool="viga" aria-pressed="false"><span class="swatch" id="swViga" style="background:var(--viga)"></span>
         <span>Viga<small>clic o arrastra</small></span></button>
+      <div class="sub" id="subViga" hidden role="group" aria-label="Tipo de viga">
+        <button class="sopt" data-viga="principal" aria-pressed="true"><span class="sdot" style="background:var(--viga)"></span>Principal</button>
+        <button class="sopt" data-viga="chata" aria-pressed="false"><span class="sdot" style="background:var(--chata)"></span>Chata</button>
+      </div>
       <button class="tool" data-tool="losa" aria-pressed="false"><span class="swatch" id="swLosa" style="background:var(--alig)"></span>
         <span>Losa<small>clic o arrastra</small></span></button>
-      <select id="tipoLosa" aria-label="Tipo de losa">
-        <option value="aligerada">Aligerada</option><option value="maciza">Maciza</option>
-        <option value="nervada">Nervada</option><option value="vacio">Vacío (quitar)</option></select>
+      <div class="sub" id="subLosa" hidden role="group" aria-label="Tipo de losa">
+        <button class="sopt" data-losa="aligerada" aria-pressed="true"><span class="sdot" style="background:var(--alig)"></span>Aligerada</button>
+        <button class="sopt" data-losa="maciza" aria-pressed="false"><span class="sdot" style="background:var(--maci)"></span>Maciza</button>
+        <button class="sopt" data-losa="nervada" aria-pressed="false"><span class="sdot" style="background:var(--nerv)"></span>Nervada</button>
+        <button class="sopt" data-losa="vacio" aria-pressed="false"><span class="sdot" style="background:var(--sheet)"></span>Vacío (quitar)</button>
+      </div>
+      <button class="tool" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
+        <span>Placa<small>clic o arrastra</small></span></button>
       <div class="rule" style="margin:8px 2px"></div>
       <div class="row" style="padding:0 2px">
         <button class="btn" id="undo" title="Ctrl+Z">↶</button>
@@ -207,6 +235,7 @@
       <div class="zoom"><button id="zOut" aria-label="Alejar">−</button>
         <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
       <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
+      <div class="edif" id="edificio" hidden></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
     </div>
 
@@ -225,9 +254,12 @@
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-t="col">PRE_COLUMNA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="viga">PRE_VIGA_PRINCIPAL</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="chata">PRE_VIGA_CHATA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="aligerada">PRE_LOSA_ALIGERADA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="maciza">PRE_LOSA_MACIZA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="nervada">PRE_LOSA_NERVADA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="placa">PRE_PLACA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="metrado">METRADO_CARGAS</button>
     </div>
     <div class="tabwrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
     <div class="foot">
@@ -261,15 +293,19 @@
   var $=function(s){return document.querySelector(s)};
 
   function plantaLlena(dx,dy,h){
-    var m={h:h||2.80,dx:dx.slice(),dy:dy.slice(),cols:{},vigas:{},losas:{}},i,j,
+    var m={h:h||2.80,dx:dx.slice(),dy:dy.slice(),cols:{},vigas:{},losas:{},placas:{}},i,j,
         nX=dx.length+1,nY=dy.length+1;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)m.cols[i+":"+j]=1;
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)m.vigas["h:"+i+":"+j]=1;
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)m.vigas["v:"+i+":"+j]=1;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)m.vigas["h:"+i+":"+j]={t:"principal"};
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)m.vigas["v:"+i+":"+j]={t:"principal"};
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)m.losas[i+":"+j]={dir:"y",tipo:"aligerada"};
     return m;
   }
-  var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1};
+  /* Los modelos guardados antes traian m.vigas[k]=1 y no tenian placas. */
+  function tipoViga(x){return (x&&x.t)?x.t:"principal"}
+  function migrar(m){if(!m.placas)m.placas={};return m}
+  var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1,
+       tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
   function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
@@ -291,7 +327,7 @@
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",JSON.stringify({n:S.niveles,sc:$("#sc").value}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
-    if(d&&d.n&&d.n.length){S.niveles=d.n;if(d.sc)$("#sc").value=d.sc;}}catch(e){}}
+    if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -303,9 +339,9 @@
   function limpiarSueltos(){
     var m=N(),i,j;
     for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
-      if(!m.losas[key(i,j)]&&!m.losas[key(i,j-1)])delete m.vigas[key("h",i,j)];
+      if(!m.losas[key(i,j)]&&!m.losas[key(i,j-1)]){delete m.vigas[key("h",i,j)];delete m.placas[key("h",i,j)];}
     for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
-      if(!m.losas[key(i,j)]&&!m.losas[key(i-1,j)])delete m.vigas[key("v",i,j)];
+      if(!m.losas[key(i,j)]&&!m.losas[key(i-1,j)]){delete m.vigas[key("v",i,j)];delete m.placas[key("v",i,j)];}
     for(i=0;i<nx();i++)for(j=0;j<ny();j++)if(!panos(i,j).length)delete m.cols[key(i,j)];
   }
   function areaNivel(m){var a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1;
@@ -334,6 +370,23 @@
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
      Maciza y nervada llevan valor fijo (pag. 26 y 27). */
+  function medPlaca(o,i,j,m){m=m||N();
+    return{lm:(o==="h"?m.dx[i]:m.dy[j]),hm:m.h||2.80};
+  }
+  /* area techada separada por tipo de losa: es lo que necesita el metrado */
+  function areasPorTipo(m){
+    var a={aligerada:0,maciza:0,nervada:0},i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
+      if(o)a[o.tipo||"aligerada"]+=m.dx[i]*m.dy[j];}
+    return a;
+  }
+  function conteo(m){
+    var c={col:0,vp:0,vch:0,placa:0},k;
+    for(k in m.cols)if(m.cols[k])c.col++;
+    for(k in m.vigas)if(m.vigas[k]){if(tipoViga(m.vigas[k])==="chata")c.vch++;else c.vp++;}
+    for(k in m.placas)if(m.placas[k])c.placa++;
+    return c;
+  }
   function alfa(tipo){var s=+$("#sc").value;
     if(tipo==="maciza")return 35; if(tipo==="nervada")return 18;
     return s<=200?25:s<=300?23:s<=400?21:19}
@@ -353,18 +406,25 @@
   function ejeLosa(i,j){return LETRAS[i]+"-"+LETRAS[i+1]+" / "+(j+1)+"-"+(j+2)}
   function nombres(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
-        C={},V={},L={},c=0,v=0,l={aligerada:0,maciza:0,nervada:0},i,j;
+        C={},V={},L={},P={},c=0,v={principal:0,chata:0},pl=0,
+        l={aligerada:0,maciza:0,nervada:0},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){c++;
       var tp=medCol(i,j,m).tipo,sf=tp==="Interior"?"INT":(tp==="Exterior"?"EXT":"ESQ");
       C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j)};}
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j]){v++;
-      V["h:"+i+":"+j]={cod:p+"-VP-"+nn(v),eje:ejeVigaH(i,j)};}
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j]){v++;
-      V["v:"+i+":"+j]={cod:p+"-VP-"+nn(v),eje:ejeVigaV(i,j)};}
+    function regViga(k,tv,ej){v[tv]++;
+      V[k]={cod:p+"-"+(tv==="chata"?"VCH":"VP")+"-"+nn(v[tv]),eje:ej,tipo:tv};}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])
+      regViga("h:"+i+":"+j,tipoViga(m.vigas["h:"+i+":"+j]),ejeVigaH(i,j));
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])
+      regViga("v:"+i+":"+j,tipoViga(m.vigas["v:"+i+":"+j]),ejeVigaV(i,j));
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j]){pl++;
+      P["h:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaH(i,j)};}
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j]){pl++;
+      P["v:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaV(i,j)};}
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
       var t2=m.losas[i+":"+j].tipo;l[t2]++;
       L[i+":"+j]={cod:p+"-"+TIPO_LOSA[t2]+"-"+nn(l[t2]),eje:ejeLosa(i,j)};}
-    return{C:C,V:V,L:L};
+    return{C:C,V:V,L:L,P:P,nivel:p};
   }
 
   /* ---------- dibujo ---------- */
@@ -423,12 +483,19 @@
     for(j=0;j<ny()-1;j++)txt(g,16,(Y(j)+Y(j+1))/2+3,m.dy[j].toFixed(2));
 
     function viga(o,i,j){
-      var x1,y1,x2,y2;
+      var x1,y1,x2,y2,k=key(o,i,j);
       if(o==="h"){x1=X(i);y1=Y(j);x2=X(i+1);y2=Y(j)}else{x1=X(i);y1=Y(j);x2=X(i);y2=Y(j+1)}
-      if(m.vigas[key(o,i,j)]){
-        var sl=S.sel&&S.sel.t==="viga"&&S.sel.o===o&&S.sel.i===i&&S.sel.j===j;
-        g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:sl?"var(--trib)":"var(--viga)",
-          "stroke-width":sl?6:4,opacity:sl?1:.85}));
+      var sl=S.sel&&S.sel.t==="viga"&&S.sel.o===o&&S.sel.i===i&&S.sel.j===j;
+      if(m.placas[k]){          /* la placa va debajo y mas gruesa: es el muro */
+        g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--placa)",
+          "stroke-width":9,opacity:sl?1:.9,"stroke-linecap":"butt"}));
+      }
+      if(m.vigas[k]){
+        var ch=tipoViga(m.vigas[k])==="chata";
+        /* chata: mas delgada y en otro tono, porque no descuelga */
+        g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,
+          stroke:sl?"var(--trib)":(ch?"var(--chata)":"var(--viga)"),
+          "stroke-width":sl?6:(ch?2:4),opacity:sl?1:.85}));
       }
       var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":13,"class":"hit"});
       hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
@@ -497,11 +564,16 @@
       if(primero)modo=m.cols[key(i,j)]?"off":"on";
       if(modo==="on")m.cols[key(i,j)]=1;else delete m.cols[key(i,j)];
     }else if(S.tool==="viga"&&d.t==="viga"){
-      var k2=key(d.o,i,j);
-      if(primero)modo=m.vigas[k2]?"off":"on";
-      if(modo==="on")m.vigas[k2]=1;else delete m.vigas[k2];
+      var k2=key(d.o,i,j),ev=m.vigas[k2];
+      /* mismo tipo -> quita;  tipo distinto -> convierte */
+      if(primero)modo=(ev&&tipoViga(ev)===S.tipoViga)?"off":"on";
+      if(modo==="on")m.vigas[k2]={t:S.tipoViga};else delete m.vigas[k2];
+    }else if(S.tool==="placa"&&d.t==="viga"){
+      var k4=key(d.o,i,j);
+      if(primero)modo=m.placas[k4]?"off":"on";
+      if(modo==="on")m.placas[k4]=1;else delete m.placas[k4];
     }else if(S.tool==="losa"&&d.t==="losa"){
-      var lk=key(i,j),tp=$("#tipoLosa").value,ex=m.losas[lk];
+      var lk=key(i,j),tp=S.tipoLosa,ex=m.losas[lk];
       if(tp==="vacio"){delete m.losas[lk];limpiarSueltos();}
       else if(primero&&ex&&ex.tipo===tp){ex.dir=ex.dir==="y"?"x":"y";modo="giro";}
       else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};}
@@ -522,18 +594,38 @@
   window.addEventListener("pointerup",function(){if(pintando){pintando=false;tocados={};guardar()}});
 
   document.querySelectorAll(".tool").forEach(function(b){
-    b.addEventListener("click",function(){
-      S.tool=b.dataset.tool;
-      document.querySelectorAll(".tool").forEach(function(o){o.setAttribute("aria-pressed",o===b)});
-      $("#hint").textContent={sel:"Clic en un elemento para ver sus medidas",
-        col:"Clic o arrastra sobre los cruces de ejes",
-        viga:"Clic o arrastra sobre los tramos entre ejes",
-        losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado"}[S.tool];});
+    b.addEventListener("click",function(){elegirTool(b.dataset.tool)});
   });
-  $("#tipoLosa").addEventListener("change",function(){
-    var t=this.value;
-    $("#swLosa").style.background=t==="vacio"?"var(--sheet)":"var("+TIPOS[t].c+")";
-    document.querySelector('.tool[data-tool="losa"]').click();
+  var PISTAS={sel:"Clic en un elemento para ver sus medidas",
+    col:"Clic o arrastra sobre los cruces de ejes",
+    viga:"Clic o arrastra sobre los tramos · el mismo tipo lo quita, otro tipo lo convierte",
+    placa:"Clic o arrastra sobre los tramos entre ejes",
+    losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado"};
+  function elegirTool(t){
+    S.tool=t;
+    if(S.vista!=="plano"){S.vista="plano";render();}
+    document.querySelectorAll(".tool").forEach(function(o){
+      o.setAttribute("aria-pressed",o.dataset.tool===t)});
+    /* el submenu solo aparece bajo la herramienta activa */
+    $("#subViga").hidden=(t!=="viga");
+    $("#subLosa").hidden=(t!=="losa");
+    $("#hint").textContent=PISTAS[t]||"";
+  }
+  document.querySelectorAll("[data-viga]").forEach(function(b){
+    b.addEventListener("click",function(){
+      S.tipoViga=b.dataset.viga;
+      document.querySelectorAll("[data-viga]").forEach(function(o){
+        o.setAttribute("aria-pressed",o===b)});
+      $("#swViga").style.background=S.tipoViga==="chata"?"var(--chata)":"var(--viga)";
+      elegirTool("viga");});
+  });
+  document.querySelectorAll("[data-losa]").forEach(function(b){
+    b.addEventListener("click",function(){
+      S.tipoLosa=b.dataset.losa;
+      document.querySelectorAll("[data-losa]").forEach(function(o){
+        o.setAttribute("aria-pressed",o===b)});
+      $("#swLosa").style.background=S.tipoLosa==="vacio"?"var(--sheet)":"var("+TIPOS[S.tipoLosa].c+")";
+      elegirTool("losa");});
   });
   document.querySelectorAll(".tab").forEach(function(b){
     b.addEventListener("click",function(){S.tab=b.dataset.t;
@@ -549,8 +641,13 @@
     var c=$("#niveles");c.innerHTML='<span class="lbl">Nivel</span>';
     S.niveles.forEach(function(n,k){
       var b=document.createElement("button");b.className="nbtn";
-      b.setAttribute("aria-current",k===S.act);b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
-      b.onclick=function(){S.act=k;S.sel=null;render()};c.appendChild(b);});
+      b.setAttribute("aria-current",S.vista==="plano"&&k===S.act);
+      b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
+      b.onclick=function(){S.act=k;S.sel=null;S.vista="plano";render()};c.appendChild(b);});
+    var e=document.createElement("button");e.className="nbtn";
+    e.setAttribute("aria-current",S.vista==="edificio");e.textContent="Edificio";
+    e.title="Resumen de todos los niveles: lo que va a METRADO_CARGAS";
+    e.onclick=function(){S.vista="edificio";S.sel=null;render()};c.appendChild(e);
     var a=document.createElement("div");a.className="acts";
     a.innerHTML='<button class="btn" id="nAdd">+ Nivel</button><button class="btn" id="nDup">Duplicar</button>'+
       '<button class="btn" id="nDel">Eliminar</button>';
@@ -568,19 +665,25 @@
 
   /* ---------- ejes ---------- */
   function remap(ejeX,mapa,dup){
-    var m=N(),c={},v={},l={},i,j,ni,nj,nX=nx(),nY=ny();
+    var m=N(),c={},v={},l={},pc={},i,j,ni,nj,nX=nx(),nY=ny();
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]){
       ni=ejeX?mapa(i):i;nj=ejeX?j:mapa(j);if(ni!==null&&nj!==null)c[key(ni,nj)]=1;}
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas[key("h",i,j)]){
-      if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)v[key("h",x,j)]=1})}
-      else{nj=mapa(j);if(nj!==null)v[key("h",i,nj)]=1}}
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas[key("v",i,j)]){
-      if(ejeX){ni=mapa(i);if(ni!==null)v[key("v",ni,j)]=1}
-      else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)v[key("v",i,y)]=1})}}
+    /* dst recibe el MISMO objeto de origen: asi no se pierde el tipo de viga */
+    [[m.vigas,v],[m.placas,pc]].forEach(function(par){
+      var src=par[0],dst=par[1],ii,jj,x2,y2;
+      for(ii=0;ii<nX-1;ii++)for(jj=0;jj<nY;jj++)if(src[key("h",ii,jj)]){
+        var oh=src[key("h",ii,jj)];
+        if(ejeX){(dup===ii?[ii,ii+1]:[mapa(ii)]).forEach(function(x){if(x!==null)dst[key("h",x,jj)]=oh})}
+        else{y2=mapa(jj);if(y2!==null)dst[key("h",ii,y2)]=oh}}
+      for(ii=0;ii<nX;ii++)for(jj=0;jj<nY-1;jj++)if(src[key("v",ii,jj)]){
+        var ov=src[key("v",ii,jj)];
+        if(ejeX){x2=mapa(ii);if(x2!==null)dst[key("v",x2,jj)]=ov}
+        else{(dup===jj?[jj,jj+1]:[mapa(jj)]).forEach(function(y){if(y!==null)dst[key("v",ii,y)]=ov})}}
+    });
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){var o=m.losas[key(i,j)];
       if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)l[key(x,j)]={dir:o.dir,tipo:o.tipo}})}
       else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]={dir:o.dir,tipo:o.tipo}})}}
-    m.cols=c;m.vigas=v;m.losas=l;S.sel=null;
+    m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t){var arr=ejeX?N().dx:N().dy;
     if(arr.length>=12)return toast("Máximo 13 ejes por dirección.");
@@ -644,15 +747,30 @@
         kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+"</dl>"+
         '<p class="calcnote">Excel calcula: P, Ac, b y h.</p>';
     }else if(q.t==="viga"){
-      if(!m.vigas[key(q.o,q.i,q.j)]){T.textContent="Tramo vacío";
-        B.innerHTML='<p class="empty">Sin viga en ese tramo.</p>';return}
-      var v=medViga(q.o,q.i,q.j);
-      T.textContent="Viga · dirección "+(q.o==="h"?"X":"Y");
-      html='<div class="name">'+nm.V[key(q.o,q.i,q.j)].cod+'</div>'+
-        '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[key(q.o,q.i,q.j)].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
-        kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+kv("Ancho tributario B",v.B.toFixed(3)+" m",1)+
-        kv("α",alfaViga(),1)+"</dl>"+
-        '<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>';
+      var kk=key(q.o,q.i,q.j);
+      if(!m.vigas[kk]&&!m.placas[kk]){T.textContent="Tramo vacío";
+        B.innerHTML='<p class="empty">Sin viga ni placa en ese tramo.</p>';return}
+      T.textContent="Tramo · dirección "+(q.o==="h"?"X":"Y");
+      html="";
+      if(m.vigas[kk]){
+        var v=medViga(q.o,q.i,q.j),ch=tipoViga(m.vigas[kk])==="chata";
+        html+='<div class="name">'+nm.V[kk].cod+'</div><span class="tag" style="color:var('+
+          (ch?"--chata":"--viga")+')">'+(ch?"Chata":"Principal")+"</span>"+
+          '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
+          kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+
+          (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
+          kv("α",alfaViga(),1)+"</dl>"+
+          (ch?'<p class="calcnote">Excel calcula: Ln máx y b (cm). El peralte es el espesor de la losa: ponlo tú en la hoja.</p>'
+             :'<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>');
+      }
+      if(m.placas[kk]){
+        var pm=medPlaca(q.o,q.i,q.j);
+        html+=(m.vigas[kk]?'<div class="rule" style="margin:10px 0"></div>':"")+
+          '<div class="name">'+nm.P[kk].cod+'</div><span class="tag" style="color:var(--placa)">Placa</span>'+
+          '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.P[kk].eje,1)+
+          kv("Longitud lm",pm.lm.toFixed(2)+" m",1)+kv("Altura hm",pm.hm.toFixed(2)+" m",1)+"</dl>"+
+          '<p class="calcnote">Excel calcula: t mín, t (cm) y el área.</p>';
+      }
     }else{
       if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
         B.innerHTML='<p class="empty">Este paño no tiene losa: es un vacío del edificio.</p>';return}
@@ -673,16 +791,32 @@
   /* ---------- exportacion ---------- */
   function filas(niv){
     var m=S.niveles[niv],nm=nombres(niv),nX=m.dx.length+1,nY=m.dy.length+1,
-        pisos=S.niveles.length-niv,C=[],V=[],LS={aligerada:[],maciza:[],nervada:[]},i,j;
+        pisos=S.niveles.length-niv,C=[],V=[],VCH=[],PL=[],
+        LS={aligerada:[],maciza:[],nervada:[]},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){var d=medCol(i,j,m),a=nm.C[i+":"+j];
       C.push([a.cod,d.tipo,pisos,d.at.toFixed(3)]);}
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j]){var v=medViga("h",i,j,m),b=nm.V["h:"+i+":"+j];
-      V.push([b.cod,b.eje,v.Ln.toFixed(2),v.B.toFixed(3),alfaViga()]);}
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j]){var v2=medViga("v",i,j,m),b2=nm.V["v:"+i+":"+j];
-      V.push([b2.cod,b2.eje,v2.Ln.toFixed(2),v2.B.toFixed(3),alfaViga()]);}
+    function pushViga(o,i,j){
+      var k=o+":"+i+":"+j,vv=medViga(o,i,j,m),b=nm.V[k];
+      /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
+         que lo pone Excel. Van 4 datos, no 5. */
+      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),alfaViga()]);
+      else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),alfaViga()]);
+    }
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])pushViga("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])pushViga("v",i,j);
+    function pushPlaca(o,i,j){
+      var k=o+":"+i+":"+j,pm=medPlaca(o,i,j,m),b=nm.P[k];
+      PL.push([b.cod,b.eje,pm.lm.toFixed(2),pm.hm.toFixed(2)]);
+    }
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])pushPlaca("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])pushPlaca("v",i,j);
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
       LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfa(lo.tipo)]);}
-    return{C:C,V:V,L:LS};
+    /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
+    var ar=areasPorTipo(m);
+    var MET=[[nm.nivel,$("#sc").value,areaNivel(m).toFixed(2),
+              ar.aligerada.toFixed(2),ar.maciza.toFixed(2),ar.nervada.toFixed(2)]];
+    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET};
   }
   function tabla(){
     var todos=$("#todos").checked,th=$("#tabla thead"),tb=$("#tabla tbody"),H,CAL,R=[];
@@ -691,6 +825,13 @@
       packs.forEach(function(p){R=R.concat(p.C)});}
     else if(S.tab==="viga"){H=["Código","Eje","Ln (m)","B (m)","α"];CAL=["h","h (cm)","b (cm)"];
       packs.forEach(function(p){R=R.concat(p.V)});}
+    else if(S.tab==="chata"){H=["Código","Eje","Ln (m)","α"];CAL=["h losa · lo pones tú","Ln máx","b (cm)","Estado"];
+      packs.forEach(function(p){R=R.concat(p.VCH)});}
+    else if(S.tab==="placa"){H=["Código","Eje","lm (m)","hm (m)"];CAL=["t mín","t (cm)","Área (m²)","% del Ap"];
+      packs.forEach(function(p){R=R.concat(p.P)});}
+    else if(S.tab==="metrado"){H=["Nivel","S/C (kg/m²)","Área (m²)","Aligerada (m²)","Maciza (m²)","Nervada (m²)"];
+      CAL=["CM (kg/m²)","P servicio (kg/m²)"];
+      packs.forEach(function(p){R=R.concat(p.M)});}
     else{H=["Código","Eje","Ln (m)","α"];
       CAL=S.tab==="aligerada"?["h","espesor (cm)","b"]:(S.tab==="maciza"?["h","espesor (cm)"]:["h","espesor","b","S"]);
       packs.forEach(function(p){R=R.concat(p.L[S.tab])});}
@@ -706,10 +847,11 @@
   $("#sc").addEventListener("change",function(){guardar();render()});
 
   $("#btnSend").onclick=function(){
-    var todos=$("#todos").checked,c=0,v=0,l=0;
+    var todos=$("#todos").checked,c=0,v=0,ch=0,pl=0,l=0,me=0;
     (todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)]).forEach(function(p){
-      c+=p.C.length;v+=p.V.length;l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
-    toast("Prototipo: "+c+" filas a PRE_COLUMNA, "+v+" a PRE_VIGA_PRINCIPAL y "+l+" a las hojas de losa.");
+      c+=p.C.length;v+=p.V.length;ch+=p.VCH.length;pl+=p.P.length;me+=p.M.length;
+      l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
+    toast("Prototipo: "+c+" columnas · "+v+" vigas · "+ch+" chatas · "+pl+" placas · "+l+" losas · "+me+" niveles.");
   };
   $("#btnCheck").onclick=function(){
     var m=N(),pr=[],i,j;
@@ -725,6 +867,29 @@
                    :"Nivel consistente: cada paño apoyado en vigas y columnas.");
   };
 
+  /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
+  function pintaEdificio(){
+    var d=$("#edificio"),filas=[],tA=0,tAl=0,tMa=0,tNe=0,tC=0,tVP=0,tVC=0,tPL=0;
+    S.niveles.forEach(function(m,k){
+      var ar=areasPorTipo(m),cn=conteo(m),a=areaNivel(m);
+      tA+=a;tAl+=ar.aligerada;tMa+=ar.maciza;tNe+=ar.nervada;
+      tC+=cn.col;tVP+=cn.vp;tVC+=cn.vch;tPL+=cn.placa;
+      filas.push("<tr><td>N"+(k+1)+"</td><td>"+(m.h||2.8).toFixed(2)+"</td><td>"+a.toFixed(2)+
+        "</td><td>"+ar.aligerada.toFixed(2)+"</td><td>"+ar.maciza.toFixed(2)+"</td><td>"+ar.nervada.toFixed(2)+
+        "</td><td>"+cn.col+"</td><td>"+cn.vp+"</td><td>"+cn.vch+"</td><td>"+cn.placa+"</td></tr>");
+    });
+    d.innerHTML='<h3>Resumen del edificio · '+S.niveles.length+' nivel(es) · sobrecarga '+
+      $("#sc").value+' kg/m²</h3>'+
+      '<table><thead><tr><th>Nivel</th><th>h ent. (m)</th><th>Área (m²)</th>'+
+      '<th>Aligerada</th><th>Maciza</th><th>Nervada</th>'+
+      '<th>Col.</th><th>V. princ.</th><th>V. chata</th><th>Placas</th></tr></thead><tbody>'+
+      filas.join("")+'<tr class="tot"><td>Total</td><td>—</td><td>'+tA.toFixed(2)+
+      "</td><td>"+tAl.toFixed(2)+"</td><td>"+tMa.toFixed(2)+"</td><td>"+tNe.toFixed(2)+
+      "</td><td>"+tC+"</td><td>"+tVP+"</td><td>"+tVC+"</td><td>"+tPL+"</td></tr></tbody></table>"+
+      '<p class="nota">Estas áreas por tipo de losa son las que METRADO_CARGAS necesita para sacar '+
+      'el peso por m² real de cada nivel, en vez del valor fijo de la categoría.</p>';
+  }
+
   function render(){
     var m=N(),tot=0,ha=0;
     S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
@@ -733,7 +898,12 @@
     $("#areaTot").textContent=tot.toFixed(2)+" m²";
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
-    pintaNiveles();draw();inspector();editorEjes();tabla();guardar();
+    var esPlano=(S.vista==="plano");
+    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano;
+    $("#hint").hidden=!esPlano; document.querySelector(".zoom").hidden=!esPlano;
+    pintaNiveles();
+    if(esPlano){draw();inspector();}else{pintaEdificio();}
+    editorEjes();tabla();guardar();
   }
   cargar();
   S.sel={t:"col",i:1,j:2};
