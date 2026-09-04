@@ -61,13 +61,18 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
+/* cols = columnas de Excel donde cae cada dato de la fila, en orden.
+   C(3) = Codigo, D(4) = Eje (en columnas, D = Ubicacion). */
 var LISTAS = {
   col:    {nombre:"LISTA_COLUMNA",   cols:[3,4,5,6]},
-  viga:   {nombre:"LISTA_VIGA",      cols:[3,5,6,7]},
-  aligerada:{nombre:"LISTA_ALIGERADA", cols:[3,5,6]},
-  maciza: {nombre:"LISTA_MACIZA",    cols:[3,5,6]},
-  nervada:{nombre:"LISTA_NERVADA",   cols:[3,5,6]}
+  viga:   {nombre:"LISTA_VIGA",      cols:[3,4,5,6,7]},
+  aligerada:{nombre:"LISTA_ALIGERADA", cols:[3,4,5,6]},
+  maciza: {nombre:"LISTA_MACIZA",    cols:[3,4,5,6]},
+  nervada:{nombre:"LISTA_NERVADA",   cols:[3,4,5,6]}
 };
+/* el modelador todavia no dibuja vigas chatas ni placas, pero el libro
+   ya tiene sus listas: se comprueban para avisar si falta alguna. */
+var LISTAS_EXTRA = ["LISTA_CHATA", "LISTA_PLACA"];
 var dialogo = null;
 
 function estado(txt, clase){
@@ -149,12 +154,18 @@ function revisar(){
       items[k] = wb.names.getItemOrNullObject(LISTAS[k].nombre);
       items[k].load("isNullObject");
     });
+    LISTAS_EXTRA.forEach(function(n){
+      items[n] = wb.names.getItemOrNullObject(n);
+      items[n].load("isNullObject");
+    });
     return context.sync().then(function(){
       Object.keys(LISTAS).forEach(function(k){
         if(items[k].isNullObject) faltan.push(LISTAS[k].nombre); else ok.push(k);
       });
-      document.getElementById("qListas").textContent =
-        faltan.length ? (ok.length + " de 5") : "5 de 5";
+      LISTAS_EXTRA.forEach(function(n){
+        if(items[n].isNullObject) faltan.push(n); else ok.push(n);
+      });
+      document.getElementById("qListas").textContent = ok.length + " de 7";
       if(faltan.length){
         estado("Faltan listas en este libro: " + faltan.join(", "), "err");
       }
