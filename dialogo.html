@@ -70,6 +70,34 @@
 
   .work{display:grid;grid-template-columns:132px minmax(0,1fr) 292px;
         border:1px solid var(--line);border-top:none;background:var(--sheet)}
+  /* sin esto, el display:flex de .tools/.insp gana sobre el atributo hidden
+     y la retícula pasaría a tener cinco columnas */
+  .tools[hidden],.insp[hidden]{display:none}
+  .modos{display:flex;gap:0;margin:0 0 10px}
+  .modo{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:13px;letter-spacing:.06em;
+        text-transform:uppercase;padding:7px 15px;border:1px solid var(--line);background:var(--panel);
+        color:var(--ink-3);cursor:pointer}
+  .modo+.modo{border-left:none}
+  .modo[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:#fff}
+  .modo:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .nivu{display:flex;flex-direction:column;gap:2px;padding:5px 6px;border:1px solid transparent;
+        border-radius:3px;background:none;cursor:pointer;width:100%;text-align:left;font:inherit}
+  .nivu:hover{background:var(--sheet)}
+  .nivu[aria-current="true"]{background:var(--acc-soft);border-color:var(--acc)}
+  .nivu b{font:600 12px "Barlow Condensed",sans-serif;letter-spacing:.06em;color:var(--ink)}
+  .nivu small{font:400 10.5px "IBM Plex Mono",monospace;color:var(--ink-3)}
+  .barra{height:5px;background:var(--line-soft);border-radius:3px;overflow:hidden}
+  .barra i{display:block;height:100%;background:var(--acc)}
+  .insp select{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+        border-radius:2px;padding:5px;font:500 12px "IBM Plex Sans",sans-serif}
+  .insp input[type=number]{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+        border-radius:2px;padding:5px;font:500 12px "IBM Plex Mono",monospace}
+  .aviso{font-size:11.5px;color:var(--ink-2);background:var(--acc-soft);border:1px solid var(--acc);
+         border-radius:2px;padding:6px 8px;margin:0}
+  .ley{display:flex;flex-direction:column;gap:3px}
+  .leyi{display:flex;align-items:center;gap:6px;font:400 11.5px "IBM Plex Sans",sans-serif;color:var(--ink-2)}
+  .leyi span.c{width:11px;height:11px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
+  .leyi b{margin-left:auto;font:500 11px "IBM Plex Mono",monospace;color:var(--ink)}
   @media(max-width:980px){.work{grid-template-columns:1fr}}
   .tools{border-right:1px solid var(--line);background:var(--panel);padding:10px 8px;display:flex;
          flex-direction:column;gap:4px}
@@ -184,6 +212,11 @@
     <p class="sub">Modela la planta de cada nivel y mide lo que Excel no puede saber solo. El cálculo se queda en las hojas.</p>
   </header>
 
+  <div class="modos" role="group" aria-label="Modo de trabajo">
+    <button class="modo" data-modo="modelo" aria-pressed="true">Modelo 2D</button>
+    <button class="modo" data-modo="usos" aria-pressed="false">Usos y cargas</button>
+  </div>
+
   <div class="niv" id="niveles"></div>
 
   <div class="cintra">
@@ -232,6 +265,11 @@
       <button class="btn" id="pU" style="margin:4px 2px 0">Con patio</button>
     </div>
 
+    <div class="tools" id="toolsUso" hidden>
+      <span class="lbl" style="padding:2px 8px 6px">Niveles</span>
+      <div id="listaNiv" style="display:flex;flex-direction:column;gap:3px"></div>
+    </div>
+
     <div class="stage">
       <div class="zoom"><button id="zOut" aria-label="Alejar">−</button>
         <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
@@ -240,7 +278,26 @@
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
     </div>
 
-    <aside class="insp">
+    <aside class="insp" id="panelUso" hidden>
+      <h2>Uso del paño</h2>
+      <div>
+        <span class="lbl">Ocupación</span>
+        <select id="selUso" aria-label="Ocupación o uso"></select>
+      </div>
+      <div>
+        <span class="lbl">Ambiente</span>
+        <select id="selAmb" aria-label="Ambiente"></select>
+      </div>
+      <div id="cargaBox"></div>
+      <p class="empty" id="pistaUso">Clic en un paño para asignarle este ambiente. Clic de nuevo para quitarlo.</p>
+      <div class="rule"></div>
+      <h2>En este nivel</h2>
+      <div class="ley" id="leyenda"></div>
+      <div class="rule"></div>
+      <button class="btn" id="copiarUsos">Copiar usos del nivel anterior</button>
+    </aside>
+
+    <aside class="insp" id="inspector">
       <h2 id="inspTitle">Elemento</h2>
       <div id="inspBody"><p class="empty">Selecciona un elemento de la planta.</p></div>
       <div class="rule"></div>
@@ -293,7 +350,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v1 · 04-09-2026";
+  var BUILD="v3 · 05-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -310,7 +367,13 @@
   /* Los modelos guardados antes traian m.vigas[k]=1 y no tenian placas. */
   function tipoViga(x){return (x&&x.t)?x.t:"principal"}
   function migrar(m){if(!m.placas)m.placas={};return m}
+    /* La Tabla 1 de la E.020 la hornea gen_complemento.py desde la hoja NORMA E020.
+     w = null significa que la norma no tabula el valor: lo escribe el usuario. */
+  var E020=[{"u":"ALMACENAJE","a":"","w":500.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"AZOTEA Y TECHOS","a":"Techo plano, inclinación hasta 3°","w":100.0,"o":"E.020 Art. 7.1 a)"},{"u":"AZOTEA Y TECHOS","a":"Techo inclinado más de 3°","w":null,"o":"E.020 Art. 7.1 b): 100 kgf/m² menos 5 kgf/m² por cada grado sobre 3°, con mínimo 50 kgf/m²"},{"u":"AZOTEA Y TECHOS","a":"Techo curvo","w":50.0,"o":"E.020 Art. 7.1 c)"},{"u":"AZOTEA Y TECHOS","a":"Cobertura liviana (calamina, fibrocemento, plástico)","w":30.0,"o":"E.020 Art. 7.1 d), cualquiera sea su pendiente.  Con nieve, ver Art. 11"},{"u":"AZOTEA Y TECHOS","a":"Malecones y terrazas","w":null,"o":"E.020 Art. 7.1 e): se aplica la carga viva de su uso particular, según esta misma tabla"},{"u":"BAÑOS","a":"","w":300.0,"o":"Igual a la carga principal del resto del área, sin que sea necesario que exceda de 3,0 kPa (300)"},{"u":"BIBLIOTECAS","a":"Salas de lectura","w":300.0,"o":""},{"u":"BIBLIOTECAS","a":"Salas de almacenaje con estantes fijos (no apilables)","w":750.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"BIBLIOTECAS","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Aulas","w":250.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Talleres","w":350.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Auditorios, gimnasios, etc.","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"CENTROS DE EDUCACIÓN","a":"Laboratorios","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"GARAJES","a":"Parqueo exclusivo de vehículos de pasajeros, con altura de entrada menor que 2,40 m","w":250.0,"o":""},{"u":"GARAJES","a":"Para otros vehículos","w":null,"o":"Ver cargas vivas móviles (Art. 9.3)"},{"u":"HOSPITALES","a":"Salas de operación, laboratorios y áreas de servicio","w":300.0,"o":""},{"u":"HOSPITALES","a":"Cuartos","w":200.0,"o":""},{"u":"HOSPITALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"HOTELES","a":"Cuartos","w":200.0,"o":""},{"u":"HOTELES","a":"Salas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"HOTELES","a":"Almacenaje y servicios","w":500.0,"o":""},{"u":"HOTELES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"INDUSTRIA","a":"","w":null,"o":"Verificar conformidad (Art. 6.4)"},{"u":"INSTITUCIONES PENALES","a":"Celdas y zona de habitación","w":200.0,"o":""},{"u":"INSTITUCIONES PENALES","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"INSTITUCIONES PENALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos fijos","w":300.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos movibles","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Salones de baile, restaurantes, museos, gimnasios y vestíbulos de teatros y cines","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Graderías y tribunas","w":500.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"OFICINAS","a":"Exceptuando salas de archivo y computación","w":250.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de archivo","w":500.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de computación","w":250.0,"o":"Verificar conformidad (Art. 6.4) - No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Corredores y escaleras","w":400.0,"o":"No incluye la posible tabiquería móvil"},{"u":"TEATROS","a":"Vestidores","w":200.0,"o":""},{"u":"TEATROS","a":"Cuarto de proyección","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"TEATROS","a":"Escenario","w":750.0,"o":""},{"u":"TEATROS","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"TIENDAS","a":"","w":500.0,"o":""},{"u":"TIENDAS","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"VIVIENDAS","a":"","w":200.0,"o":""},{"u":"VIVIENDAS","a":"Corredores y escaleras","w":200.0,"o":""}];
+  var PAL=["#7FA0AE","#C08552","#8FA8A0","#9B8AA6","#C0A02B","#6E93B8",
+           "#B07C7C","#5B8C7B","#A5885C","#8797A8"];
   var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1,
+       modo:"modelo",uso:"",amb:"",manual:{},
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
@@ -331,9 +394,11 @@
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
 
   /* ---------- guardado ---------- */
-  function guardar(){try{localStorage.setItem("reticula",JSON.stringify({n:S.niveles,sc:$("#sc").value}))}catch(e){}}
+  function guardar(){try{localStorage.setItem("reticula",
+    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
-    if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;}}catch(e){}}
+    if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
+      if(d.man)S.manual=d.man;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -376,6 +441,50 @@
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
      Maciza y nervada llevan valor fijo (pag. 26 y 27). */
+  /* ---------- usos y cargas ---------- */
+  function claveAmb(u,a){return u+"|"+a}
+  function ocupaciones(){var v=[],k;for(k=0;k<E020.length;k++)
+    if(v.indexOf(E020[k].u)<0)v.push(E020[k].u); return v}
+  function ambientesDe(u){return E020.filter(function(f){return f.u===u})}
+  function fichaAmb(u,a){for(var k=0;k<E020.length;k++)
+    if(E020[k].u===u&&E020[k].a===a)return E020[k]; return null}
+  /* peso de un ambiente: el de la norma, o el que escribio el usuario si la
+     norma no lo tabula. Devuelve null si falta: eso bloquea el envio. */
+  function pesoAmb(u,a){
+    var f=fichaAmb(u,a); if(!f)return null;
+    if(f.w!==null&&f.w!==undefined)return f.w;
+    var v=S.manual[claveAmb(u,a)];
+    return (v===undefined||v===""||!(+v>0))?null:+v;
+  }
+  /* Color estable por ambiente: se reparte por orden de aparicion en todo el
+     modelo, no por nivel, para que un ambiente no cambie de color al cambiar de piso. */
+  function coloresAmb(){
+    var mapa={},n=0;
+    S.niveles.forEach(function(m){
+      var i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
+        if(o&&o.uso){var k=claveAmb(o.uso,o.amb||"");
+          if(!(k in mapa)){mapa[k]=PAL[n%PAL.length];n++;}}}
+    });
+    return mapa;
+  }
+  function avance(m){
+    var t=0,a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
+      if(o){t++; if(o.uso)a++;}}
+    return{total:t,hechos:a};
+  }
+  /* area por ambiente de un nivel: lo que necesita la carga viva del metrado */
+  function areasPorAmb(m){
+    var r={},i,j,nX=m.dx.length+1,nY=m.dy.length+1,o,k;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
+      if(!o)continue;
+      k=o.uso?claveAmb(o.uso,o.amb||""):"";
+      if(!r[k])r[k]={uso:o.uso||"",amb:o.amb||"",area:0};
+      r[k].area+=m.dx[i]*m.dy[j];}
+    return r;
+  }
+
   function medPlaca(o,i,j,m){m=m||N();
     return{lm:(o==="h"?m.dx[i]:m.dy[j]),hm:m.h||2.80};
   }
@@ -439,6 +548,137 @@
   function txt(g,x,y,s,col,size,anchor){
     var t=el("text",{x:x,y:y,"text-anchor":anchor||"middle","font-size":size||10,fill:col||"var(--ink-3)",
       "font-family":"IBM Plex Mono, monospace"});t.textContent=s;g.appendChild(t);return t}
+  /* Planta de solo lectura: la geometria no se toca aqui, solo el uso.
+     Vigas y columnas van en gris tenue para reconocer el plano sin competir
+     con el color del ambiente. */
+  function drawUsos(){
+    var sv=$("#plano");while(sv.firstChild)sv.removeChild(sv.firstChild);
+    var m=N(),W=posX(nx()-1),H=posY(ny()-1),mg=56;
+    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
+    var w=W*esc+2*mg,h=H*esc+2*mg;
+    sv.setAttribute("viewBox","0 0 "+w+" "+h);
+    sv.style.maxWidth=(S.zoom>1?w+"px":"100%");
+    var X=function(i){return mg+posX(i)*esc},Y=function(j){return mg+posY(j)*esc};
+    var defs=el("defs",{});
+    var pt=el("pattern",{id:"sinuso",width:"8",height:"8",patternUnits:"userSpaceOnUse",
+                         patternTransform:"rotate(45)"});
+    pt.appendChild(el("rect",{width:"8",height:"8",fill:"var(--panel)"}));
+    pt.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"8",stroke:"var(--line)","stroke-width":"2"}));
+    defs.appendChild(pt);sv.appendChild(defs);
+    var g=el("g",{});sv.appendChild(g);
+    var col=coloresAmb(),i,j;
+
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+      var o=m.losas[key(i,j)];
+      if(!o)continue;
+      var x=X(i),y=Y(j),an=X(i+1)-x,al=Y(j+1)-y,cx=x+an/2,cy=y+al/2;
+      var asignado=!!o.uso;
+      g.appendChild(el("rect",{x:x,y:y,width:an,height:al,
+        fill:asignado?col[claveAmb(o.uso,o.amb||"")]:"url(#sinuso)",
+        "fill-opacity":asignado?0.42:1,
+        stroke:asignado?col[claveAmb(o.uso,o.amb||"")]:"var(--line)","stroke-width":1}));
+      if(asignado){
+        var pw=pesoAmb(o.uso,o.amb||"");
+        var nom=(o.amb||o.uso);
+        /* el nombre se recorta segun lo ancho que sea el paño */
+        var cabe=Math.max(6,Math.floor(an/5.6));
+        if(nom.length>cabe)nom=nom.slice(0,cabe-1)+"…";
+        txt(g,cx,cy-1,nom,"var(--ink)",10.5);
+        txt(g,cx,cy+12,(pw===null?"falta carga":pw+" kg/m²"),
+            pw===null?"var(--trib)":"var(--ink-2)",10.5);
+      }else{
+        txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);
+      }
+      var hit=el("rect",{x:x+5,y:y+5,width:Math.max(2,an-10),height:Math.max(2,al-10),"class":"hit"});
+      hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
+    }
+    /* estructura en gris: contexto, no protagonista */
+    function tenue(o,i,j){
+      var x1,y1,x2,y2;
+      if(o==="h"){x1=X(i);y1=Y(j);x2=X(i+1);y2=Y(j)}else{x1=X(i);y1=Y(j);x2=X(i);y2=Y(j+1)}
+      if(m.vigas[key(o,i,j)]||m.placas[key(o,i,j)])
+        g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--ink-3)",
+          "stroke-width":m.placas[key(o,i,j)]?5:2,opacity:.45}));
+    }
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)tenue("h",i,j);
+    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)tenue("v",i,j);
+    for(i=0;i<nx();i++)for(j=0;j<ny();j++)if(m.cols[key(i,j)])
+      g.appendChild(el("rect",{x:X(i)-4,y:Y(j)-4,width:8,height:8,fill:"var(--ink-3)",opacity:.55}));
+
+    for(i=0;i<nx();i++){
+      g.appendChild(el("circle",{cx:X(i),cy:mg-34,r:9.5,fill:"var(--sheet)",
+        stroke:"var(--ink-2)","stroke-width":.9}));
+      txt(g,X(i),mg-30.5,LETRAS[i],"var(--ink)",10.5);
+    }
+    for(j=0;j<ny();j++){
+      g.appendChild(el("circle",{cx:mg-34,cy:Y(j),r:9.5,fill:"var(--sheet)",
+        stroke:"var(--ink-2)","stroke-width":.9}));
+      txt(g,mg-34,Y(j)+3.5,String(j+1),"var(--ink)",10.5);
+    }
+    for(i=0;i<nx()-1;i++)txt(g,(X(i)+X(i+1))/2,h-16,m.dx[i].toFixed(2));
+    for(j=0;j<ny()-1;j++)txt(g,16,(Y(j)+Y(j+1))/2+3,m.dy[j].toFixed(2));
+  }
+
+  /* ---------- secciones 1 y 3 ---------- */
+  function pintaListaNiv(){
+    var c=$("#listaNiv");c.innerHTML="";
+    S.niveles.forEach(function(m,k){
+      var a=avance(m),pct=a.total?Math.round(a.hechos*100/a.total):0;
+      var b=document.createElement("button");b.className="nivu";
+      b.setAttribute("aria-current",k===S.act);
+      b.innerHTML="<b>N"+(k+1)+(a.total&&a.hechos===a.total?" ✓":"")+"</b>"+
+        '<div class="barra"><i style="width:'+pct+'%"></i></div>'+
+        "<small>"+a.hechos+" de "+a.total+" paños</small>";
+      b.onclick=function(){S.act=k;S.sel=null;render()};
+      c.appendChild(b);
+    });
+  }
+
+  function pintaSelector(){
+    var su=$("#selUso"),sa=$("#selAmb"),ocs=ocupaciones();
+    if(!S.uso&&ocs.length)S.uso=ocs[0];
+    su.innerHTML=ocs.map(function(u){
+      return '<option value="'+u+'"'+(u===S.uso?" selected":"")+">"+u+"</option>"}).join("");
+    var ambs=ambientesDe(S.uso);
+    if(!ambs.some(function(f){return f.a===S.amb}))S.amb=ambs.length?ambs[0].a:"";
+    sa.innerHTML=ambs.map(function(f){
+      var t=f.a||"— sin subdivisión —";
+      return '<option value="'+f.a+'"'+(f.a===S.amb?" selected":"")+">"+t+"</option>"}).join("");
+
+    var f=fichaAmb(S.uso,S.amb),box=$("#cargaBox"),html="";
+    if(f&&f.w!==null&&f.w!==undefined){
+      html='<dl class="kv" style="margin-top:8px">'+kv("Carga viva",f.w+" kg/m²",1)+"</dl>";
+      if(f.o)html+='<p class="empty" style="margin-top:6px">'+f.o+"</p>";
+    }else if(f){
+      var v=S.manual[claveAmb(S.uso,S.amb)];
+      html='<div style="margin-top:8px"><span class="lbl">Carga viva (kg/m²)</span>'+
+        '<input type="number" id="wman" min="1" step="10" value="'+(v===undefined?"":v)+'"></div>'+
+        '<p class="aviso" style="margin-top:6px">La norma no tabula este valor: escríbelo tú.'+
+        (f.o?" "+f.o:"")+"</p>";
+    }
+    box.innerHTML=html;
+    var inp=$("#wman");
+    if(inp)inp.onchange=function(){S.manual[claveAmb(S.uso,S.amb)]=this.value;guardar();render()};
+  }
+
+  function pintaLeyenda(){
+    var m=N(),col=coloresAmb(),ar=areasPorAmb(m),c=$("#leyenda"),html="",k;
+    var claves=Object.keys(ar).sort();
+    if(!claves.length){c.innerHTML='<p class="empty">Este nivel no tiene losas.</p>';return}
+    claves.forEach(function(k){
+      var d=ar[k];
+      if(!d.uso){
+        html+='<div class="leyi"><span class="c" style="background:var(--panel)"></span>'+
+          "Sin asignar<b>"+d.area.toFixed(2)+" m²</b></div>";
+      }else{
+        var pw=pesoAmb(d.uso,d.amb);
+        html+='<div class="leyi"><span class="c" style="background:'+col[k]+'"></span>'+
+          (d.amb||d.uso)+'<b>'+(pw===null?"—":pw)+" · "+d.area.toFixed(2)+" m²</b></div>";
+      }
+    });
+    c.innerHTML=html;
+  }
+
   function draw(){
     var s=$("#plano");while(s.firstChild)s.removeChild(s.firstChild);
     var m=N(),W=posX(nx()-1),H=posY(ny()-1),mg=56;
@@ -565,6 +805,16 @@
     if(!nodo||!nodo.dataset||!nodo.dataset.t)return;
     var d=nodo.dataset,i=+d.i,j=+d.j,m=N(),id=d.t+":"+(d.o||"")+":"+i+":"+j;
     if(tocados[id])return; tocados[id]=1;
+    if(S.modo==="usos"){
+      /* en este modo el clic solo asigna uso: la geometria no se toca */
+      if(d.t!=="losa")return;
+      var lo=m.losas[key(i,j)]; if(!lo)return;
+      var mismo=(lo.uso===S.uso&&(lo.amb||"")===(S.amb||""));
+      if(primero)modo=mismo?"off":"on";
+      if(modo==="on"){lo.uso=S.uso;lo.amb=S.amb;}
+      else{delete lo.uso;delete lo.amb;}
+      render();return;
+    }
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
     if(S.tool==="col"&&d.t==="col"){
       if(primero)modo=m.cols[key(i,j)]?"off":"on";
@@ -617,6 +867,28 @@
     $("#subLosa").hidden=(t!=="losa");
     $("#hint").textContent=PISTAS[t]||"";
   }
+  function elegirModo(md){
+    S.modo=md;S.sel=null;
+    if(md==="usos")S.vista="plano";
+    document.querySelectorAll(".modo").forEach(function(o){
+      o.setAttribute("aria-pressed",o.dataset.modo===md)});
+    render();
+  }
+  document.querySelectorAll(".modo").forEach(function(b){
+    b.addEventListener("click",function(){elegirModo(b.dataset.modo)});
+  });
+  $("#selUso").addEventListener("change",function(){S.uso=this.value;S.amb="";render()});
+  $("#selAmb").addEventListener("change",function(){S.amb=this.value;render()});
+  $("#copiarUsos").addEventListener("click",function(){
+    if(S.act===0)return toast("El primer nivel no tiene un nivel anterior.");
+    var ant=S.niveles[S.act-1],m=N(),n=0,i,j,o,p2;
+    snap();
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+      o=m.losas[key(i,j)];p2=ant.losas[key(i,j)];
+      if(o&&p2&&p2.uso){o.uso=p2.uso;o.amb=p2.amb;n++;}
+    }
+    render();toast(n?("Copiados "+n+" paños desde N"+S.act+"."):"El nivel anterior no tiene usos asignados.");
+  });
   document.querySelectorAll("[data-viga]").forEach(function(b){
     b.addEventListener("click",function(){
       S.tipoViga=b.dataset.viga;
@@ -650,6 +922,8 @@
       b.setAttribute("aria-current",S.vista==="plano"&&k===S.act);
       b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
       b.onclick=function(){S.act=k;S.sel=null;S.vista="plano";render()};c.appendChild(b);});
+    /* en modo usos no se toca la estructura del edificio: solo se asignan usos */
+    if(S.modo==="usos")return;
     var e=document.createElement("button");e.className="nbtn";
     e.setAttribute("aria-current",S.vista==="edificio");e.textContent="Edificio";
     e.title="Resumen de todos los niveles: lo que va a METRADO_CARGAS";
@@ -904,12 +1178,20 @@
     $("#areaTot").textContent=tot.toFixed(2)+" m²";
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
+    var usos=(S.modo==="usos");
     var esPlano=(S.vista==="plano");
+    document.querySelector(".tools:not(#toolsUso)").hidden=usos;
+    $("#toolsUso").hidden=!usos;
+    $("#inspector").hidden=usos;
+    $("#panelUso").hidden=!usos;
     $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano;
-    $("#hint").hidden=!esPlano; document.querySelector(".zoom").hidden=!esPlano;
+    $("#hint").hidden=!esPlano||usos; document.querySelector(".zoom").hidden=!esPlano;
     pintaNiveles();
-    if(esPlano){draw();inspector();}else{pintaEdificio();}
-    editorEjes();tabla();guardar();
+    if(!esPlano){pintaEdificio();}
+    else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
+    else{draw();inspector();}
+    if(!usos)editorEjes();
+    tabla();guardar();
   }
   cargar();
   S.sel={t:"col",i:1,j:2};
