@@ -225,7 +225,7 @@
     <div class="celda"><span class="lbl">Área techada del nivel</span><span class="v" id="areaNiv">—</span></div>
     <div class="celda"><span class="lbl">Área total del edificio</span><span class="v" id="areaTot">—</span></div>
     <div class="celda"><span class="lbl">Altura acumulada</span><span class="v" id="hAcum">—</span></div>
-    <div class="celda"><span class="lbl">Sobrecarga</span>
+    <div class="celda"><span class="lbl" title="Se aplica solo a los paños que todavía no tienen uso asignado">S/C por defecto</span>
       <select id="sc" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:2px;padding:2px 5px;font:500 12px 'IBM Plex Sans',sans-serif">
         <option value="200">200 kg/m²</option><option value="250">250</option><option value="300">300</option>
         <option value="400">400</option><option value="500">500</option></select></div>
@@ -350,7 +350,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v4 · 05-09-2026";
+  var BUILD="v5 · 05-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -502,12 +502,35 @@
     for(k in m.placas)if(m.placas[k])c.placa++;
     return c;
   }
-  function alfa(tipo){var s=+$("#sc").value;
-    if(tipo==="maciza")return 35; if(tipo==="nervada")return 18;
-    return s<=200?25:s<=300?23:s<=400?21:19}
+  /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga. */
+  function tablaLosa(s){return s<=200?25:s<=300?23:s<=400?21:19}
   /* Oviedo 3.3 (pag. 51): tabla alfa de VIGAS. Es OTRA tabla, no la de losas. */
-  function alfaViga(){var s=+$("#sc").value;
-    return s<=200?12:s<=350?11:s<=600?10:9}
+  function tablaViga(s){return s<=200?12:s<=350?11:s<=600?10:9}
+  function scDefecto(){return +$("#sc").value}
+
+  /* Sobrecarga que gobierna un paño: la de su ambiente si ya lo asignaste,
+     y si no la sobrecarga por defecto del selector de arriba. */
+  function scPano(o){
+    if(o&&o.uso){var w=pesoAmb(o.uso,o.amb||"");if(w!==null)return w;}
+    return scDefecto();
+  }
+  /* Un paño con almacen (500) y otro con vivienda (200) ya no comparten alfa. */
+  function alfaLosa(o){
+    var t=(o&&o.tipo)||"aligerada";
+    if(t==="maciza")return 35; if(t==="nervada")return 18;
+    return tablaLosa(scPano(o));
+  }
+  /* La viga toma la sobrecarga MAYOR de los paños que carga: del lado seguro. */
+  function scViga(o,i,j,m){
+    m=m||N();
+    var ps=(o==="h")?[m.losas[key(i,j-1)],m.losas[key(i,j)]]
+                    :[m.losas[key(i-1,j)],m.losas[key(i,j)]],mx=0;
+    ps.forEach(function(q){if(q)mx=Math.max(mx,scPano(q))});
+    return mx>0?mx:scDefecto();
+  }
+  function alfaViga(o,i,j,m){return tablaViga(scViga(o,i,j,m))}
+  /* compatibilidad: alfa() sin paño usa la sobrecarga por defecto */
+  function alfa(tipo){return alfaLosa({tipo:tipo})}
   function pisosQueCarga(niv){return S.niveles.length-niv}
 
   /* Codigo de identificacion: N{nivel}-{TIPO}-{NN}[-{VARIANTE}]
@@ -1039,7 +1062,8 @@
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
           kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
-          kv("α",alfaViga(),1)+"</dl>"+
+          kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
+          kv("α",alfaViga(q.o,q.i,q.j),1)+"</dl>"+
           (ch?'<p class="calcnote">Excel calcula: Ln máx y b (cm). El peralte es el espesor de la losa: ponlo tú en la hoja.</p>'
              :'<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>');
       }
@@ -1059,7 +1083,10 @@
       html='<div class="name">'+nm.L[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var('+
         TIPOS[lo.tipo].c+')">'+TIPOS[lo.tipo].n+" · armada en "+lo.dir.toUpperCase()+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.L[key(q.i,q.j)].eje,1)+kv("Luz de cálculo",lo.L.toFixed(2)+" m")+
-        kv("Luz libre Ln",lo.Ln.toFixed(2)+" m",1)+kv("α",alfa(lo.tipo),1)+"</dl>"+
+        kv("Luz libre Ln",lo.Ln.toFixed(2)+" m",1)+
+        kv("Uso",(m.losas[key(q.i,q.j)].amb||m.losas[key(q.i,q.j)].uso||"sin asignar"),1)+
+        kv("S/C",scPano(m.losas[key(q.i,q.j)])+" kg/m²",1)+
+        kv("α",alfaLosa(m.losas[key(q.i,q.j)]),1)+"</dl>"+
         '<div class="row" style="margin-top:8px"><button class="btn" id="girar">Girar armado</button></div>'+
         '<p class="calcnote">Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
     }
@@ -1079,8 +1106,9 @@
       var k=o+":"+i+":"+j,vv=medViga(o,i,j,m),b=nm.V[k];
       /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
          que lo pone Excel. Van 4 datos, no 5. */
-      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),alfaViga()]);
-      else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),alfaViga()]);
+      var av=alfaViga(o,i,j,m);
+      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),av]);
+      else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),av]);
     }
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])pushViga("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])pushViga("v",i,j);
@@ -1091,7 +1119,7 @@
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])pushPlaca("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])pushPlaca("v",i,j);
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
-      LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfa(lo.tipo)]);}
+      LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfaLosa(m.losas[i+":"+j])]);}
     /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
     var ar=areasPorTipo(m);
     var MET=[[nm.nivel,$("#sc").value,areaNivel(m).toFixed(2),
