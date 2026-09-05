@@ -77,7 +77,7 @@ var LISTAS = {
 };
 var N_LISTAS = Object.keys(LISTAS).length;
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v3 · 05-09-2026";
+var BUILD = "v4 · 05-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -89,8 +89,9 @@ function revisarBuild(){
   if(!otro || otro === BUILD){ e.textContent = BUILD; e.style.color = ""; return true; }
   e.textContent = BUILD + " / modelador " + otro;
   e.style.color = "#B03A2E";
-  estado("El panel y el modelador son de versiones distintas. Vuelve a subir los dos "
-         + "archivos a GitHub: taskpane.html y dialogo.html.", "err");
+  estado("Este panel es " + BUILD + " pero el modelador es " + otro + ". "
+         + "Si ya subiste los dos archivos, el panel quedo viejo en cache: cierralo "
+         + "y vuelve a abrirlo desde Insertar > Mis complementos.", "err");
   return false;
 }
 
@@ -201,10 +202,13 @@ function revisar(){
 function abrirModelador(){
   leerModelo().then(function(s){
     if(s){ try{ localStorage.setItem("reticula", s); }catch(e){} }
-    /* la ventana del modelador cachea con ganas: la version en la URL la obliga
-       a traer el archivo nuevo despues de cada publicacion */
+    /* La ventana del modelador cachea con ganas. Poner solo BUILD no basta:
+       si el propio panel quedo viejo en cache, pediria la URL vieja y WebView2
+       le devolveria el dialogo viejo. El sello de minuto rompe esa cadena:
+       el dialogo siempre llega fresco y su propio sello delata el desfase. */
     var url = window.location.href.replace(/taskpane\.html.*$/, "dialogo.html")
-              + "?v=" + encodeURIComponent(BUILD);
+              + "?v=" + encodeURIComponent(BUILD)
+              + "&t=" + Math.floor(Date.now() / 60000);
     Office.context.ui.displayDialogAsync(url,
       {height:88, width:88, displayInIframe:false},
       function(res){
