@@ -350,7 +350,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v7 · 06-09-2026";
+  var BUILD="v8 · 06-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -374,6 +374,9 @@
            "#B07C7C","#5B8C7B","#A5885C","#8797A8"];
   var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1,
        modo:"modelo",uso:"",amb:"",manual:{},
+       /* lado de columna supuesto: lo unico del descuento que el modelador
+          no puede saber solo, porque la seccion la calcula Excel */
+       ladoCol:0.50,
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
@@ -395,10 +398,10 @@
 
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",
-    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual}))}catch(e){}}
+    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
-      if(d.man)S.manual=d.man;}}catch(e){}}
+      if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -427,17 +430,34 @@
     var n=ps.length;
     return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",at:at,bx:bx,by:by,n:n};
   }
+  /* Ancho tributario de una viga: medio paño a cada lado que tenga losa. */
+  function anchoTrib(o,i,j,m){
+    m=m||N();var B=0;
+    if(o==="h"){if(m.losas[key(i,j-1)])B+=m.dy[j-1]/2; if(m.losas[key(i,j)])B+=m.dy[j]/2;}
+    else{if(m.losas[key(i-1,j)])B+=m.dx[i-1]/2; if(m.losas[key(i,j)])B+=m.dx[i]/2;}
+    return B;
+  }
+  /* Oviedo: b = B/20 >= 0.25 m. Depende solo del ancho tributario, que es
+     geometria pura, asi que el modelador lo sabe sin preguntarle a Excel.
+     Donde no hay viga se usa el minimo: "Revisar" ya avisa de ese hueco. */
+  function bViga(o,i,j,m){
+    m=m||N();
+    if(!m.vigas[key(o,i,j)])return 0.25;
+    return Math.max(anchoTrib(o,i,j,m)/20,0.25);
+  }
+  /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
+     Con apoyos iguales el descuento total es justo el ancho del apoyo. */
   function medViga(o,i,j,m){
-    m=m||N();var L,B=0;
-    if(o==="h"){L=m.dx[i];
-      if(m.losas[key(i,j-1)])B+=m.dy[j-1]/2; if(m.losas[key(i,j)])B+=m.dy[j]/2;}
-    else{L=m.dy[j];
-      if(m.losas[key(i-1,j)])B+=m.dx[i-1]/2; if(m.losas[key(i,j)])B+=m.dx[i]/2;}
-    return{L:L,Ln:Math.max(L-0.50,0.5),B:B};
+    m=m||N();
+    var L=(o==="h")?m.dx[i]:m.dy[j],d=S.ladoCol;
+    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d};
   }
   function medLosa(i,j,m){
-    m=m||N();var o=m.losas[key(i,j)],L=o.dir==="y"?m.dy[j]:m.dx[i];
-    return{dir:o.dir,tipo:o.tipo||"aligerada",L:L,Ln:Math.max(L-0.30,0.5)};
+    m=m||N();var o=m.losas[key(i,j)],L,b1,b2;
+    if(o.dir==="y"){L=m.dy[j]; b1=bViga("h",i,j,m); b2=bViga("h",i,j+1,m);}
+    else            {L=m.dx[i]; b1=bViga("v",i,j,m); b2=bViga("v",i+1,j,m);}
+    var d=(b1+b2)/2;
+    return{dir:o.dir,tipo:o.tipo||"aligerada",L:L,Ln:Math.max(L-d,0.5),desc:d};
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
      Maciza y nervada llevan valor fijo (pag. 26 y 27). */
@@ -536,6 +556,13 @@
     var t=(o&&o.tipo)||"aligerada";
     if(t==="maciza")return 35; if(t==="nervada")return 18;
     return tablaLosa(scPano(o));
+  }
+  /* La tabla de losas de Oviedo se corta en 500 kg/m²; la de vigas llega a 750.
+     Arriba de 500 se sigue usando 19 pero hay que decirlo: extrapolar en
+     silencio seria inventar un valor que el libro no da. */
+  function losaFueraTabla(o){
+    var t=(o&&o.tipo)||"aligerada";
+    return t==="aligerada" && scPano(o)>500;
   }
   /* La viga toma la sobrecarga MAYOR de los paños que carga: del lado seguro. */
   function scViga(o,i,j,m){
@@ -1079,7 +1106,8 @@
         html+='<div class="name">'+nm.V[kk].cod+'</div><span class="tag" style="color:var('+
           (ch?"--chata":"--viga")+')">'+(ch?"Chata":"Principal")+"</span>"+
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
-          kv("Luz libre Ln",v.Ln.toFixed(2)+" m",1)+
+          kv("Lado de columna",v.desc.toFixed(2)+" m",1)+
+          kv("Luz libre Ln",v.L.toFixed(2)+" − "+v.desc.toFixed(2)+" = "+v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
           kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
           kv("α",alfaViga(q.o,q.i,q.j),1)+"</dl>"+
@@ -1102,10 +1130,16 @@
       html='<div class="name">'+nm.L[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var('+
         TIPOS[lo.tipo].c+')">'+TIPOS[lo.tipo].n+" · armada en "+lo.dir.toUpperCase()+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.L[key(q.i,q.j)].eje,1)+kv("Luz de cálculo",lo.L.toFixed(2)+" m")+
-        kv("Luz libre Ln",lo.Ln.toFixed(2)+" m",1)+
+        kv("Ancho de las vigas",lo.desc.toFixed(2)+" m",1)+
+        kv("Luz libre Ln",lo.L.toFixed(2)+" − "+lo.desc.toFixed(2)+" = "+lo.Ln.toFixed(2)+" m",1)+
         kv("Uso",(m.losas[key(q.i,q.j)].amb||m.losas[key(q.i,q.j)].uso||"sin asignar"),1)+
         kv("S/C",scPano(m.losas[key(q.i,q.j)])+" kg/m²",1)+
         kv("α",alfaLosa(m.losas[key(q.i,q.j)]),1)+"</dl>"+
+        (losaFueraTabla(m.losas[key(q.i,q.j)])
+          ? '<p class="aviso" style="margin-top:8px">S/C de '+scPano(m.losas[key(q.i,q.j)])+
+            " kg/m²: la tabla α de losas de Oviedo llega hasta 500. Se usa 19, pero el valor "+
+            "queda fuera del libro y lo tienes que revisar tú.</p>"
+          : "")+
         '<div class="row" style="margin-top:8px"><button class="btn" id="girar">Girar armado</button></div>'+
         '<p class="calcnote">Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
     }
@@ -1199,6 +1233,12 @@
     for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
       if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
         pr.push("borde "+LETRAS[i]+"-"+(j+1)+(j+2)+" sin viga en Y");
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+      var lo2=m.losas[key(i,j)];
+      if(lo2&&losaFueraTabla(lo2))
+        pr.push("paño "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+(j+2)+" con S/C "+scPano(lo2)+
+                " kg/m²: fuera de la tabla α de losas (máx 500)");
+    }
     toast(pr.length?pr.length+" aviso(s) · "+pr.slice(0,3).join(" · ")+(pr.length>3?" …":"")
                    :"Nivel consistente: cada paño apoyado en vigas y columnas.");
   };
@@ -1223,7 +1263,22 @@
       "</td><td>"+tAl.toFixed(2)+"</td><td>"+tMa.toFixed(2)+"</td><td>"+tNe.toFixed(2)+
       "</td><td>"+tC+"</td><td>"+tVP+"</td><td>"+tVC+"</td><td>"+tPL+"</td></tr></tbody></table>"+
       '<p class="nota">Estas áreas por tipo de losa son las que METRADO_CARGAS necesita para sacar '+
-      'el peso por m² real de cada nivel, en vez del valor fijo de la categoría.</p>';
+      'el peso por m² real de cada nivel, en vez del valor fijo de la categoría.</p>'+
+      '<div class="rule" style="margin:14px 0 10px"></div>'+
+      '<h3>Supuesto de apoyo</h3>'+
+      '<div class="row" style="align-items:center;gap:8px">'+
+      '<label class="lbl" for="lcol">Lado de columna (m)</label>'+
+      '<input type="number" id="lcol" min="0.20" max="1.50" step="0.05" value="'+
+      S.ladoCol.toFixed(2)+'" style="width:90px;background:var(--sheet);color:var(--ink);'+
+      'border:1px solid var(--line);border-radius:2px;padding:5px;'+
+      'font:500 12px \'IBM Plex Mono\',monospace"></div>'+
+      '<p class="nota">De aquí sale la luz libre de las vigas: <code>Ln = L − lado</code>. '+
+      'El ancho de las vigas no se supone: sale del ancho tributario de cada una, así que '+
+      'la luz libre de las losas ya es exacta. La sección de la columna la calcula Excel, '+
+      'por eso esta sí es un supuesto: ajústala en la segunda pasada.</p>';
+    var lc=$("#lcol");
+    if(lc)lc.onchange=function(){var v=parseFloat(this.value);
+      if(v>0){snap();S.ladoCol=v;render();}};
   }
 
   function render(){
