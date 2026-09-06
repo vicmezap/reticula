@@ -350,7 +350,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v5 · 05-09-2026";
+  var BUILD="v6 · 05-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -483,6 +483,23 @@
       if(!r[k])r[k]={uso:o.uso||"",amb:o.amb||"",area:0};
       r[k].area+=m.dx[i]*m.dy[j];}
     return r;
+  }
+
+  /* Problemas que impiden enviar: un ambiente asignado sin carga viva metida
+     mandaria una fila vacia y el promedio del nivel saldria mal sin avisar. */
+  function faltanCargas(){
+    var pr=[],vistos={};
+    S.niveles.forEach(function(m,k){
+      var i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
+        if(!o||!o.uso)continue;
+        if(pesoAmb(o.uso,o.amb||"")===null){
+          var c="N"+(k+1)+"|"+o.uso+"|"+(o.amb||"");
+          if(!vistos[c]){vistos[c]=1;
+            pr.push("N"+(k+1)+": "+(o.amb||o.uso)+" no tiene carga viva. Escríbela en Usos y cargas.");}
+        }}
+    });
+    return pr;
   }
 
   function medPlaca(o,i,j,m){m=m||N();
@@ -1122,9 +1139,18 @@
       LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfaLosa(m.losas[i+":"+j])]);}
     /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
     var ar=areasPorTipo(m);
-    var MET=[[nm.nivel,$("#sc").value,areaNivel(m).toFixed(2),
+    /* La S/C del nivel ya no viaja: Excel la calcula ponderando los ambientes. */
+    var MET=[[nm.nivel,areaNivel(m).toFixed(2),
               ar.aligerada.toFixed(2),ar.maciza.toFixed(2),ar.nervada.toFixed(2)]];
-    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET};
+    /* Una fila por ambiente presente en el nivel. Los paños sin uso no van:
+       si los mandara con S/C 0, bajarian el promedio sin que se note. */
+    var am=areasPorAmb(m),AMB=[];
+    Object.keys(am).forEach(function(k){
+      var d=am[k]; if(!d.uso)return;
+      var w=pesoAmb(d.uso,d.amb);
+      AMB.push([nm.nivel,d.uso,d.amb||"—",d.area.toFixed(2),w===null?"":w]);
+    });
+    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB};
   }
   function tabla(){
     var todos=$("#todos").checked,th=$("#tabla thead"),tb=$("#tabla tbody"),H,CAL,R=[];
@@ -1157,9 +1183,9 @@
   $("#btnSend").onclick=function(){
     var todos=$("#todos").checked,c=0,v=0,ch=0,pl=0,l=0,me=0;
     (todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)]).forEach(function(p){
-      c+=p.C.length;v+=p.V.length;ch+=p.VCH.length;pl+=p.P.length;me+=p.M.length;
+      c+=p.C.length;v+=p.V.length;ch+=p.VCH.length;pl+=p.P.length;me+=p.A.length;
       l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
-    toast("Prototipo: "+c+" columnas · "+v+" vigas · "+ch+" chatas · "+pl+" placas · "+l+" losas · "+me+" niveles.");
+    toast("Prototipo: "+c+" columnas · "+v+" vigas · "+ch+" chatas · "+pl+" placas · "+l+" losas · "+me+" ambientes.");
   };
   $("#btnCheck").onclick=function(){
     var m=N(),pr=[],i,j;
@@ -1224,7 +1250,7 @@
   cargar();
   S.sel={t:"col",i:1,j:2};
   render();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas};
 })();
 </script>
 
@@ -1246,6 +1272,8 @@
   if(send){
     send.addEventListener("click",function(){
       if(!window.RET)return;
+      var pr=window.RET.faltan?window.RET.faltan():[];
+      if(pr.length){ alert("No se puede enviar todavia:" + String.fromCharCode(10,10) + pr.slice(0,6).join(String.fromCharCode(10))); return; }
       var todos=document.getElementById("todos").checked;
       var S=window.RET.estado(),packs=[],k;
       if(todos){for(k=0;k<S.niveles.length;k++)packs.push(window.RET.filas(k));}
