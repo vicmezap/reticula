@@ -350,7 +350,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v6 · 05-09-2026";
+  var BUILD="v7 · 06-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -620,11 +620,13 @@
       if(asignado){
         var pw=pesoAmb(o.uso,o.amb||"");
         var nom=(o.amb||o.uso);
-        /* el nombre se recorta segun lo ancho que sea el paño */
-        var cabe=Math.max(6,Math.floor(an/5.6));
-        if(nom.length>cabe)nom=nom.slice(0,cabe-1)+"…";
-        txt(g,cx,cy-1,nom,"var(--ink)",10.5);
-        txt(g,cx,cy+12,(pw===null?"falta carga":pw+" kg/m²"),
+        /* IBM Plex Mono a 10.5px mide ~6.9px por caracter, y el texto va
+           centrado: si me quedo corto se desborda por los dos lados. */
+        var cabe=Math.floor((an-10)/6.9);
+        if(cabe<4){nom="";}                       /* paño muy angosto: solo el peso */
+        else if(nom.length>cabe)nom=nom.slice(0,cabe-1)+"…";
+        if(nom)txt(g,cx,cy-1,nom,"var(--ink)",10.5);
+        txt(g,cx,nom?cy+12:cy+4,(pw===null?"falta carga":pw+" kg/m²"),
             pw===null?"var(--trib)":"var(--ink-2)",10.5);
       }else{
         txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);

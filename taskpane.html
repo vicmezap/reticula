@@ -73,11 +73,13 @@ var LISTAS = {
   maciza: {nombre:"LISTA_MACIZA",    cols:[3,4,5,6]},
   nervada:{nombre:"LISTA_NERVADA",   cols:[3,4,5,6]},
   placa:  {nombre:"LISTA_PLACA",     cols:[3,4,5,6]},
-  metrado:{nombre:"LISTA_METRADO",   cols:[3,4,5,6,7,8]}
+  metrado:{nombre:"LISTA_METRADO",   cols:[3,5,6,7,8]},
+  /* la S/C del nivel (columna D) ya no se escribe: Excel la pondera desde aqui */
+  ambientes:{nombre:"LISTA_AMBIENTES", cols:[3,4,6,8,9]}
 };
 var N_LISTAS = Object.keys(LISTAS).length;
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v5 · 05-09-2026";
+var BUILD = "v7 · 06-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -294,13 +296,15 @@ function enviarFilas(){
   catch(e){ return Promise.reject(new Error("no hay filas que enviar")); }
   if(!packs.length) return Promise.reject(new Error("no hay filas que enviar"));
 
-  var lote = {col:[], viga:[], chata:[], aligerada:[], maciza:[], nervada:[], placa:[], metrado:[]};
+  var lote = {col:[], viga:[], chata:[], aligerada:[], maciza:[], nervada:[],
+              placa:[], metrado:[], ambientes:[]};
   packs.forEach(function(p){
     (p.C||[]).forEach(function(f){ lote.col.push(f); });
     (p.V||[]).forEach(function(f){ lote.viga.push(f); });
     (p.VCH||[]).forEach(function(f){ lote.chata.push(f); });
     (p.P||[]).forEach(function(f){ lote.placa.push(f); });
     (p.M||[]).forEach(function(f){ lote.metrado.push(f); });
+    (p.A||[]).forEach(function(f){ lote.ambientes.push(f); });
     ["aligerada","maciza","nervada"].forEach(function(t){
       ((p.L||{})[t]||[]).forEach(function(f){ lote[t].push(f); });
     });
@@ -318,7 +322,7 @@ function enviarFilas(){
       return {col:lote.col.length,
               viga:lote.viga.length + lote.chata.length,
               losa:lote.aligerada.length + lote.maciza.length + lote.nervada.length,
-              placa:lote.placa.length, metrado:lote.metrado.length};
+              placa:lote.placa.length, metrado:lote.ambientes.length};
     });
   });
 }
