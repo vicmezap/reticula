@@ -325,6 +325,8 @@
       <div class="row">
         <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
           <input type="checkbox" id="todos"> Todos los niveles</label>
+        <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
+          <input type="checkbox" id="verDims" checked> Ver dimensiones</label>
         <button class="btn" id="btnLeer" title="Trae de Excel las secciones ya calculadas">Leer dimensiones</button>
         <button class="btn" id="btnCheck">Revisar modelo</button>
         <button class="btn pri" id="btnSend">Enviar a las hojas</button>
@@ -351,7 +353,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v9 · 06-09-2026";
+  var BUILD="v10 · 06-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -387,7 +389,7 @@
        modo:"modelo",uso:"",amb:"",manual:{},
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
-       ladoCol:0.50,dimsFecha:0,dimsHuella:"",
+       ladoCol:0.50,dimsFecha:0,dimsHuella:"",verDims:true,envioHuella:"",
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
@@ -410,11 +412,12 @@
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",
     JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
-                    df:S.dimsFecha,dh:S.dimsHuella}))}catch(e){}}
+                    df:S.dimsFecha,dh:S.dimsHuella,vd:S.verDims,eh:S.envioHuella}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
-      if(d.df)S.dimsFecha=d.df; if(d.dh)S.dimsHuella=d.dh;}}catch(e){}}
+      if(d.df)S.dimsFecha=d.df; if(d.dh)S.dimsHuella=d.dh;
+      if(d.vd!==undefined)S.verDims=!!d.vd; if(d.eh)S.envioHuella=d.eh;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -557,6 +560,21 @@
     }).join("#");
   }
   function dimsVigentes(){return !!S.dimsFecha && S.dimsHuella===huella()}
+  function hayCambiosSinEnviar(){return !!S.envioHuella && S.envioHuella!==huella()}
+  function marcarEnvio(){S.envioHuella=huella();guardar();render();}
+
+  /* Cuantos elementos de cada tipo ya traen su dimension de Excel.
+     Es la misma metrica contable que la barra de "usos y cargas". */
+  function estadoDims(){
+    var r={losa:{n:0,t:0},viga:{n:0,t:0},col:{n:0,t:0},placa:{n:0,t:0}},k;
+    S.niveles.forEach(function(m){
+      for(k in m.losas) {r.losa.t++;  if(m.losas[k].e>0)r.losa.n++;}
+      for(k in m.vigas) {r.viga.t++;  if(m.vigas[k].sec&&m.vigas[k].sec.b>0)r.viga.n++;}
+      for(k in m.cols)  {r.col.t++;   if(m.cols[k].sec&&m.cols[k].sec.b>0)r.col.n++;}
+      for(k in m.placas){r.placa.t++; if(m.placas[k].t>0)r.placa.n++;}
+    });
+    return r;
+  }
 
   /* Recorre el modelo y cuelga en cada elemento lo que Excel calculo para su
      codigo. Se hace UNA vez, al leer; despues nadie vuelve a emparejar. */
@@ -842,6 +860,9 @@
         ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
         ln.setAttribute("color","var("+tp.c+")");
         ln.setAttribute("marker-end","url(#ar)");ln.setAttribute("marker-start","url(#ar)");g.appendChild(ln);
+        if(S.verDims&&o.e>0)
+          txt(g,cx,cy+r+13,"e = "+o.e+" cm",
+              dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
       }
       var hit=el("rect",{x:X(i)+7,y:Y(j)+7,width:Math.max(2,X(i+1)-X(i)-14),
         height:Math.max(2,Y(j+1)-Y(j)-14),"class":"hit"});
@@ -877,6 +898,13 @@
           stroke:sl?"var(--trib)":(ch?"var(--chata)":"var(--viga)"),
           "stroke-width":sl?6:(ch?2:4),opacity:sl?1:.85}));
       }
+      var pl=m.placas[k];
+      if(S.verDims&&pl&&pl.t>0){
+        /* desplazado perpendicular al tramo para no pisar la linea */
+        var mx=(x1+x2)/2,my=(y1+y2)/2;
+        txt(g,o==="h"?mx:mx+22,o==="h"?my-9:my,"t = "+pl.t,
+            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
+      }
       var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":13,"class":"hit"});
       hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
     }
@@ -889,6 +917,10 @@
         g.appendChild(el("rect",{x:X(i)-lado/2,y:Y(j)-lado/2,width:lado,height:lado,
           fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1}));
       }
+      var cc=m.cols[key(i,j)];
+      if(S.verDims&&cc&&cc.sec&&cc.sec.b>0)
+        txt(g,X(i),Y(j)-11,cc.sec.b+"×"+cc.sec.h,
+            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
       var hc=el("circle",{cx:X(i),cy:Y(j),r:11,"class":"hit"});
       hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
     }
@@ -1162,7 +1194,10 @@
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños que carga",d.n+" de 4")+
         kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
-        kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+"</dl>"+
+        kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+
+        ((m.cols[key(q.i,q.j)].sec&&m.cols[key(q.i,q.j)].sec.b>0)
+          ? kv("Sección de Excel",m.cols[key(q.i,q.j)].sec.b+" × "+m.cols[key(q.i,q.j)].sec.h+" cm"+
+               (dimsVigentes()?"":"  (obsoleta)"),1) : "")+"</dl>"+
         '<p class="calcnote">Excel calcula: P, Ac, b y h.</p>';
     }else if(q.t==="viga"){
       var kk=key(q.o,q.i,q.j);
@@ -1179,7 +1214,10 @@
           kv("Luz libre Ln",v.L.toFixed(2)+" − "+v.desc.toFixed(2)+" = "+v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
           kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
-          kv("α",alfaViga(q.o,q.i,q.j),1)+"</dl>"+
+          kv("α",alfaViga(q.o,q.i,q.j),1)+
+          ((m.vigas[kk].sec&&m.vigas[kk].sec.b>0)
+            ? kv("Sección de Excel",m.vigas[kk].sec.b+" × "+m.vigas[kk].sec.h+" cm"+
+                 (dimsVigentes()?"":"  (obsoleta)"),1) : "")+"</dl>"+
           (ch?'<p class="calcnote">Excel calcula: Ln máx y b (cm). El peralte es el espesor de la losa: ponlo tú en la hoja.</p>'
              :'<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>');
       }
@@ -1283,6 +1321,7 @@
     $("#foottxt").textContent=R.length+" filas a escribir"+(todos?" · "+S.niveles.length+" niveles":" · nivel activo");
   }
   $("#todos").addEventListener("change",tabla);
+  $("#verDims").addEventListener("change",function(){S.verDims=this.checked;render()});
   $("#sc").addEventListener("change",function(){guardar();render()});
 
   $("#btnSend").onclick=function(){
@@ -1339,6 +1378,9 @@
       '<p class="nota">Estas áreas por tipo de losa son las que METRADO_CARGAS necesita para sacar '+
       'el peso por m² real de cada nivel, en vez del valor fijo de la categoría.</p>'+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
+      '<h3>Dimensiones traídas de Excel</h3>'+
+      tarjetasDims()+
+      '<div class="rule" style="margin:14px 0 10px"></div>'+
       '<h3>Supuesto de apoyo</h3>'+
       '<div class="row" style="align-items:center;gap:8px">'+
       '<label class="lbl" for="lcol">Lado de columna (m)</label>'+
@@ -1353,6 +1395,30 @@
     var lc=$("#lcol");
     if(lc)lc.onchange=function(){var v=parseFloat(this.value);
       if(v>0){snap();S.ladoCol=v;render();}};
+  }
+
+  /* Mismo lenguaje visual que las tarjetas de niveles de "usos y cargas". */
+  function tarjetasDims(){
+    var e=estadoDims(),vig=dimsVigentes(),html="",filas=[
+      ["Losas",e.losa,"con espesor"],["Vigas",e.viga,"con sección"],
+      ["Columnas",e.col,"con sección"],["Placas",e.placa,"con espesor"]];
+    html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">';
+    filas.forEach(function(f){
+      var d=f[1],pct=d.t?Math.round(d.n*100/d.t):0;
+      var est=!d.t?"sin elementos":(d.n===0?"falta leer":(d.n<d.t?"parcial":(vig?"al día":"obsoleta")));
+      html+='<div class="nivu" style="cursor:default"><b>'+f[0]+(d.n&&d.n===d.t&&vig?" ✓":"")+"</b>"+
+        '<div class="barra"><i style="width:'+pct+'%;background:'+
+        (vig?"var(--acc)":"var(--ink-3)")+'"></i></div>'+
+        "<small>"+d.n+" de "+d.t+" "+f[2]+" · "+est+"</small></div>";
+    });
+    html+="</div>";
+    if(hayCambiosSinEnviar())
+      html+='<p class="aviso" style="margin-top:10px">Tocaste la retícula después del último envío. '+
+             "Vuelve a enviar antes de leer, o lo que traigas no va a corresponder.</p>";
+    else if(S.dimsFecha&&!vig)
+      html+='<p class="aviso" style="margin-top:10px">Las dimensiones que ves son de una geometría '+
+             "anterior. Envía de nuevo y vuelve a leer.</p>";
+    return html;
   }
 
   function render(){
@@ -1381,7 +1447,7 @@
   cargar();
   S.sel={t:"col",i:1,j:2};
   render();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio};
 })();
 </script>
 
@@ -1410,6 +1476,7 @@
       if(todos){for(k=0;k<S.niveles.length;k++)packs.push(window.RET.filas(k));}
       else{packs.push(window.RET.filas(S.act));}
       try{localStorage.setItem("reticula_filas",JSON.stringify(packs));}catch(e){}
+      if(window.RET&&window.RET.marcarEnvio)window.RET.marcarEnvio();
       avisar({accion:"enviar"});
     });
   }
