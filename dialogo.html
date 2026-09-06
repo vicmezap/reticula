@@ -325,6 +325,7 @@
       <div class="row">
         <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
           <input type="checkbox" id="todos"> Todos los niveles</label>
+        <button class="btn" id="btnLeer" title="Trae de Excel las secciones ya calculadas">Leer dimensiones</button>
         <button class="btn" id="btnCheck">Revisar modelo</button>
         <button class="btn pri" id="btnSend">Enviar a las hojas</button>
       </div>
@@ -350,7 +351,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v8 · 06-09-2026";
+  var BUILD="v9 · 06-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -358,15 +359,25 @@
   function plantaLlena(dx,dy,h){
     var m={h:h||2.80,dx:dx.slice(),dy:dy.slice(),cols:{},vigas:{},losas:{},placas:{}},i,j,
         nX=dx.length+1,nY=dy.length+1;
-    for(i=0;i<nX;i++)for(j=0;j<nY;j++)m.cols[i+":"+j]=1;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)m.cols[i+":"+j]={};
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)m.vigas["h:"+i+":"+j]={t:"principal"};
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)m.vigas["v:"+i+":"+j]={t:"principal"};
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)m.losas[i+":"+j]={dir:"y",tipo:"aligerada"};
     return m;
   }
-  /* Los modelos guardados antes traian m.vigas[k]=1 y no tenian placas. */
+  /* Los modelos guardados antes traian m.vigas[k]=1 y no tenian placas.
+     Ahora cols y placas tambien son objetos, para poder colgarles la seccion
+     que se lee de Excel. */
   function tipoViga(x){return (x&&x.t)?x.t:"principal"}
-  function migrar(m){if(!m.placas)m.placas={};return m}
+  function clon(o){return (o&&typeof o==="object")?JSON.parse(JSON.stringify(o)):o}
+  function migrar(m){
+    if(!m.placas)m.placas={};
+    var k;
+    for(k in m.cols)  if(typeof m.cols[k]  !=="object")m.cols[k]={};
+    for(k in m.placas)if(typeof m.placas[k]!=="object")m.placas[k]={};
+    for(k in m.vigas) if(typeof m.vigas[k] !=="object")m.vigas[k]={t:"principal"};
+    return m;
+  }
     /* La Tabla 1 de la E.020 la hornea gen_complemento.py desde la hoja NORMA E020.
      w = null significa que la norma no tabula el valor: lo escribe el usuario. */
   var E020=[{"u":"ALMACENAJE","a":"","w":500.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"AZOTEA Y TECHOS","a":"Techo plano, inclinación hasta 3°","w":100.0,"o":"E.020 Art. 7.1 a)"},{"u":"AZOTEA Y TECHOS","a":"Techo inclinado más de 3°","w":null,"o":"E.020 Art. 7.1 b): 100 kgf/m² menos 5 kgf/m² por cada grado sobre 3°, con mínimo 50 kgf/m²"},{"u":"AZOTEA Y TECHOS","a":"Techo curvo","w":50.0,"o":"E.020 Art. 7.1 c)"},{"u":"AZOTEA Y TECHOS","a":"Cobertura liviana (calamina, fibrocemento, plástico)","w":30.0,"o":"E.020 Art. 7.1 d), cualquiera sea su pendiente.  Con nieve, ver Art. 11"},{"u":"AZOTEA Y TECHOS","a":"Malecones y terrazas","w":null,"o":"E.020 Art. 7.1 e): se aplica la carga viva de su uso particular, según esta misma tabla"},{"u":"BAÑOS","a":"","w":300.0,"o":"Igual a la carga principal del resto del área, sin que sea necesario que exceda de 3,0 kPa (300)"},{"u":"BIBLIOTECAS","a":"Salas de lectura","w":300.0,"o":""},{"u":"BIBLIOTECAS","a":"Salas de almacenaje con estantes fijos (no apilables)","w":750.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"BIBLIOTECAS","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Aulas","w":250.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Talleres","w":350.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Auditorios, gimnasios, etc.","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"CENTROS DE EDUCACIÓN","a":"Laboratorios","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"GARAJES","a":"Parqueo exclusivo de vehículos de pasajeros, con altura de entrada menor que 2,40 m","w":250.0,"o":""},{"u":"GARAJES","a":"Para otros vehículos","w":null,"o":"Ver cargas vivas móviles (Art. 9.3)"},{"u":"HOSPITALES","a":"Salas de operación, laboratorios y áreas de servicio","w":300.0,"o":""},{"u":"HOSPITALES","a":"Cuartos","w":200.0,"o":""},{"u":"HOSPITALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"HOTELES","a":"Cuartos","w":200.0,"o":""},{"u":"HOTELES","a":"Salas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"HOTELES","a":"Almacenaje y servicios","w":500.0,"o":""},{"u":"HOTELES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"INDUSTRIA","a":"","w":null,"o":"Verificar conformidad (Art. 6.4)"},{"u":"INSTITUCIONES PENALES","a":"Celdas y zona de habitación","w":200.0,"o":""},{"u":"INSTITUCIONES PENALES","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"INSTITUCIONES PENALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos fijos","w":300.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos movibles","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Salones de baile, restaurantes, museos, gimnasios y vestíbulos de teatros y cines","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Graderías y tribunas","w":500.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"OFICINAS","a":"Exceptuando salas de archivo y computación","w":250.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de archivo","w":500.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de computación","w":250.0,"o":"Verificar conformidad (Art. 6.4) - No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Corredores y escaleras","w":400.0,"o":"No incluye la posible tabiquería móvil"},{"u":"TEATROS","a":"Vestidores","w":200.0,"o":""},{"u":"TEATROS","a":"Cuarto de proyección","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"TEATROS","a":"Escenario","w":750.0,"o":""},{"u":"TEATROS","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"TIENDAS","a":"","w":500.0,"o":""},{"u":"TIENDAS","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"VIVIENDAS","a":"","w":200.0,"o":""},{"u":"VIVIENDAS","a":"Corredores y escaleras","w":200.0,"o":""}];
@@ -376,7 +387,7 @@
        modo:"modelo",uso:"",amb:"",manual:{},
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
-       ladoCol:0.50,
+       ladoCol:0.50,dimsFecha:0,dimsHuella:"",
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
@@ -398,10 +409,12 @@
 
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",
-    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol}))}catch(e){}}
+    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
+                    df:S.dimsFecha,dh:S.dimsHuella}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
-      if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;}}catch(e){}}
+      if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
+      if(d.df)S.dimsFecha=d.df; if(d.dh)S.dimsHuella=d.dh;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -442,15 +455,23 @@
      Donde no hay viga se usa el minimo: "Revisar" ya avisa de ese hueco. */
   function bViga(o,i,j,m){
     m=m||N();
-    if(!m.vigas[key(o,i,j)])return 0.25;
+    var v=m.vigas[key(o,i,j)];
+    if(!v)return 0.25;
+    /* si Excel ya calculo esta viga, se usa su ancho real y se deja de
+       repetir aqui la formula b = B/20 que ya vive en la hoja */
+    if(v.sec&&v.sec.b>0&&dimsVigentes())return v.sec.b/100;
     return Math.max(anchoTrib(o,i,j,m)/20,0.25);
   }
   /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
      Con apoyos iguales el descuento total es justo el ancho del apoyo. */
   function medViga(o,i,j,m){
     m=m||N();
-    var L=(o==="h")?m.dx[i]:m.dy[j],d=S.ladoCol;
-    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d};
+    var L=(o==="h")?m.dx[i]:m.dy[j],c1,c2,real=false,d;
+    if(o==="h"){c1=ladoCol(i,j,m); c2=ladoCol(i+1,j,m);}
+    else       {c1=ladoCol(i,j,m); c2=ladoCol(i,j+1,m);}
+    if(c1!==null&&c2!==null&&dimsVigentes()){d=(c1+c2)/2;real=true;}
+    else d=S.ladoCol;
+    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d,real:real};
   }
   function medLosa(i,j,m){
     m=m||N();var o=m.losas[key(i,j)],L,b1,b2;
@@ -520,6 +541,50 @@
         }}
     });
     return pr;
+  }
+
+  /* ---------- dimensiones leidas de Excel ---------- */
+  /* Firma de la geometria: si cambia, lo leido queda obsoleto y hay que avisar.
+     No hace falta para emparejar (las secciones viven en el elemento), solo
+     para saber si lo que se ve sigue correspondiendo a lo que calculo Excel. */
+  function huella(){
+    return S.niveles.map(function(m){
+      return m.dx.join(",")+"|"+m.dy.join(",")+"|"+
+             Object.keys(m.cols).sort().join(" ")+"|"+
+             Object.keys(m.vigas).sort().join(" ")+"|"+
+             Object.keys(m.losas).sort().join(" ")+"|"+
+             Object.keys(m.placas).sort().join(" ");
+    }).join("#");
+  }
+  function dimsVigentes(){return !!S.dimsFecha && S.dimsHuella===huella()}
+
+  /* Recorre el modelo y cuelga en cada elemento lo que Excel calculo para su
+     codigo. Se hace UNA vez, al leer; despues nadie vuelve a emparejar. */
+  function aplicarDims(mapa){
+    var n=0;
+    S.niveles.forEach(function(m,k){
+      var nm=nombres(k),key2;
+      for(key2 in nm.C){var d=mapa[nm.C[key2].cod];
+        if(d&&m.cols[key2]&&d.b>0&&d.h>0){m.cols[key2].sec={b:d.b,h:d.h};n++;}}
+      for(key2 in nm.V){var v=mapa[nm.V[key2].cod];
+        if(v&&m.vigas[key2]&&v.b>0){m.vigas[key2].sec={b:v.b,h:v.h||0};n++;}}
+      for(key2 in nm.L){var l=mapa[nm.L[key2].cod];
+        if(l&&m.losas[key2]&&l.e>0){m.losas[key2].e=l.e;n++;}}
+      for(key2 in nm.P){var p2=mapa[nm.P[key2].cod];
+        if(p2&&m.placas[key2]&&p2.t>0){m.placas[key2].t=p2.t;n++;}}
+    });
+    S.dimsFecha=Date.now(); S.dimsHuella=huella();
+    guardar(); render();
+    return n;
+  }
+
+  /* Lado de la columna del nudo (i,j), en metros, si ya se leyo.
+     Se toma la MENOR de b y h: no sabemos como quedo orientada, y la menor
+     deja la luz libre mas larga, o sea del lado seguro para la viga. */
+  function ladoCol(i,j,m){
+    var c=m.cols[key(i,j)];
+    if(!c||!c.sec||!(c.sec.b>0)||!(c.sec.h>0))return null;
+    return Math.min(c.sec.b,c.sec.h)/100;
   }
 
   function medPlaca(o,i,j,m){m=m||N();
@@ -887,7 +952,7 @@
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
     if(S.tool==="col"&&d.t==="col"){
       if(primero)modo=m.cols[key(i,j)]?"off":"on";
-      if(modo==="on")m.cols[key(i,j)]=1;else delete m.cols[key(i,j)];
+      if(modo==="on"){if(!m.cols[key(i,j)])m.cols[key(i,j)]={};}else delete m.cols[key(i,j)];
     }else if(S.tool==="viga"&&d.t==="viga"){
       var k2=key(d.o,i,j),ev=m.vigas[k2];
       /* mismo tipo -> quita;  tipo distinto -> convierte */
@@ -896,7 +961,7 @@
     }else if(S.tool==="placa"&&d.t==="viga"){
       var k4=key(d.o,i,j);
       if(primero)modo=m.placas[k4]?"off":"on";
-      if(modo==="on")m.placas[k4]=1;else delete m.placas[k4];
+      if(modo==="on"){if(!m.placas[k4])m.placas[k4]={};}else delete m.placas[k4];
     }else if(S.tool==="losa"&&d.t==="losa"){
       var lk=key(i,j),tp=S.tipoLosa,ex=m.losas[lk];
       if(tp==="vacio"){delete m.losas[lk];limpiarSueltos();}
@@ -1016,22 +1081,26 @@
   function remap(ejeX,mapa,dup){
     var m=N(),c={},v={},l={},pc={},i,j,ni,nj,nX=nx(),nY=ny();
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]){
-      ni=ejeX?mapa(i):i;nj=ejeX?j:mapa(j);if(ni!==null&&nj!==null)c[key(ni,nj)]=1;}
+      ni=ejeX?mapa(i):i;nj=ejeX?j:mapa(j);
+      /* se mueve el objeto entero: la seccion leida viaja con su columna */
+      if(ni!==null&&nj!==null)c[key(ni,nj)]=m.cols[key(i,j)];}
     /* dst recibe el MISMO objeto de origen: asi no se pierde el tipo de viga */
     [[m.vigas,v],[m.placas,pc]].forEach(function(par){
       var src=par[0],dst=par[1],ii,jj,x2,y2;
       for(ii=0;ii<nX-1;ii++)for(jj=0;jj<nY;jj++)if(src[key("h",ii,jj)]){
         var oh=src[key("h",ii,jj)];
-        if(ejeX){(dup===ii?[ii,ii+1]:[mapa(ii)]).forEach(function(x){if(x!==null)dst[key("h",x,jj)]=oh})}
+        if(ejeX){(dup===ii?[ii,ii+1]:[mapa(ii)]).forEach(function(x){
+          if(x!==null)dst[key("h",x,jj)]=(dup===ii?clon(oh):oh)})}
         else{y2=mapa(jj);if(y2!==null)dst[key("h",ii,y2)]=oh}}
       for(ii=0;ii<nX;ii++)for(jj=0;jj<nY-1;jj++)if(src[key("v",ii,jj)]){
         var ov=src[key("v",ii,jj)];
         if(ejeX){x2=mapa(ii);if(x2!==null)dst[key("v",x2,jj)]=ov}
-        else{(dup===jj?[jj,jj+1]:[mapa(jj)]).forEach(function(y){if(y!==null)dst[key("v",ii,y)]=ov})}}
+        else{(dup===jj?[jj,jj+1]:[mapa(jj)]).forEach(function(y){
+          if(y!==null)dst[key("v",ii,y)]=(dup===jj?clon(ov):ov)})}}
     });
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){var o=m.losas[key(i,j)];
-      if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)l[key(x,j)]={dir:o.dir,tipo:o.tipo}})}
-      else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]={dir:o.dir,tipo:o.tipo}})}}
+      if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)l[key(x,j)]=clon(o)})}
+      else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]=clon(o)})}}
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t){var arr=ejeX?N().dx:N().dy;
@@ -1106,7 +1175,7 @@
         html+='<div class="name">'+nm.V[kk].cod+'</div><span class="tag" style="color:var('+
           (ch?"--chata":"--viga")+')">'+(ch?"Chata":"Principal")+"</span>"+
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
-          kv("Lado de columna",v.desc.toFixed(2)+" m",1)+
+          kv("Lado de columna",v.desc.toFixed(2)+" m"+(v.real?"":"  (supuesto)"),1)+
           kv("Luz libre Ln",v.L.toFixed(2)+" − "+v.desc.toFixed(2)+" = "+v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
           kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
@@ -1223,6 +1292,11 @@
       l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
     toast("Prototipo: "+c+" columnas · "+v+" vigas · "+ch+" chatas · "+pl+" placas · "+l+" losas · "+me+" ambientes.");
   };
+  $("#btnLeer").onclick=function(){
+    /* en el prototipo suelto no hay Excel: el puente del complemento
+       reemplaza esto por la lectura de verdad */
+    toast("La lectura de dimensiones necesita Excel: abre el modelador desde el panel.");
+  };
   $("#btnCheck").onclick=function(){
     var m=N(),pr=[],i,j;
     for(i=0;i<nx();i++)for(j=0;j<ny();j++)
@@ -1307,7 +1381,7 @@
   cargar();
   S.sel={t:"col",i:1,j:2};
   render();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims};
 })();
 </script>
 
@@ -1338,6 +1412,36 @@
       try{localStorage.setItem("reticula_filas",JSON.stringify(packs));}catch(e){}
       avisar({accion:"enviar"});
     });
+  }
+  /* El dialogo no habla con Excel: le pide al panel que lea y espera a que
+     aparezca el resultado en localStorage, que comparten por ser mismo origen.
+     Se sondea porque messageChild no esta en todas las versiones de Office. */
+  var leer=document.getElementById("btnLeer");
+  if(leer){
+    leer.onclick=function(){
+      if(!window.RET||!window.RET.aplicarDims)return;
+      var antes=0;
+      try{ antes=(JSON.parse(localStorage.getItem("reticula_dims")||"{}").t)||0; }catch(e){}
+      leer.disabled=true; leer.textContent="Leyendo...";
+      avisar({accion:"leer"});
+      var t0=Date.now();
+      var reloj=setInterval(function(){
+        var d=null;
+        try{ d=JSON.parse(localStorage.getItem("reticula_dims")||"null"); }catch(e){}
+        if(d&&d.t>antes){
+          clearInterval(reloj);
+          leer.disabled=false; leer.textContent="Leer dimensiones";
+          if(d.err){ alert("No se pudo leer del libro: "+d.err); return; }
+          var n=window.RET.aplicarDims(d.d||{});
+          alert(n?("Se aplicaron "+n+" dimensiones desde Excel."):
+                  "El libro todavia no tiene dimensiones calculadas para este modelo.");
+        }else if(Date.now()-t0>15000){
+          clearInterval(reloj);
+          leer.disabled=false; leer.textContent="Leer dimensiones";
+          alert("El panel no respondio. Cierra y vuelve a abrir el modelador.");
+        }
+      },250);
+    };
   }
   var barra=document.querySelector("header.bar");
   if(barra){

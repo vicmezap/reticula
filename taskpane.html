@@ -78,8 +78,56 @@ var LISTAS = {
   ambientes:{nombre:"LISTA_AMBIENTES", cols:[3,4,6,8,9]}
 };
 var N_LISTAS = Object.keys(LISTAS).length;
+
+/* Lo que se puede LEER de vuelta. Los indices son la posicion de la columna
+   dentro del rango C:J (C=1 ... J=8), no la columna de la hoja. */
+var LEIBLES = {
+  col:      {nombre:"LISTA_COLUMNA",   campos:{b:7, h:8}},
+  viga:     {nombre:"LISTA_VIGA",      campos:{h:7, b:8}},
+  chata:    {nombre:"LISTA_CHATA",     campos:{b:7}},
+  aligerada:{nombre:"LISTA_ALIGERADA", campos:{e:6}},
+  maciza:   {nombre:"LISTA_MACIZA",    campos:{e:7}},
+  nervada:  {nombre:"LISTA_NERVADA",   campos:{e:6}},
+  placa:    {nombre:"LISTA_PLACA",     campos:{t:6}}
+};
+
+/* Devuelve {codigo: {b,h,e,t}} con lo que Excel ya calculo. */
+function leerDimensiones(){
+  return Excel.run(function(context){
+    var wb = context.workbook, nombres = {};
+    Object.keys(LEIBLES).forEach(function(k){
+      nombres[k] = wb.names.getItemOrNullObject(LEIBLES[k].nombre);
+      nombres[k].load("isNullObject");
+    });
+    return context.sync().then(function(){
+      var rangos = {};
+      Object.keys(LEIBLES).forEach(function(k){
+        if(nombres[k].isNullObject) return;
+        rangos[k] = nombres[k].getRange();
+        rangos[k].load("values");
+      });
+      return context.sync().then(function(){
+        var dims = {}, n = 0;
+        Object.keys(rangos).forEach(function(k){
+          var campos = LEIBLES[k].campos, filas = rangos[k].values, i, f, cod, o, v;
+          for(i = 0; i < filas.length; i++){
+            cod = filas[i][0];
+            if(typeof cod !== "string" || !cod) continue;
+            o = {};
+            for(f in campos){
+              v = filas[i][campos[f] - 1];
+              if(typeof v === "number" && v > 0) o[f] = v;
+            }
+            if(Object.keys(o).length){ dims[cod] = o; n++; }
+          }
+        });
+        return {dims: dims, n: n};
+      });
+    });
+  });
+}
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v8 · 06-09-2026";
+var BUILD = "v9 · 06-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -237,6 +285,17 @@ function alRecibir(arg){
     }).catch(function(){}).then(function(){
       if(dialogo){ dialogo.close(); dialogo = null; }
       revisar();
+    });
+  }else if(msg.accion === "leer"){
+    leerDimensiones().then(function(r){
+      /* el dialogo comparte origen, asi que lo recoge de aqui */
+      try{ localStorage.setItem("reticula_dims",
+             JSON.stringify({t: Date.now(), d: r.dims})); }catch(e){}
+      estado("Leidas " + r.n + " dimensiones del libro.", "ok");
+    }).catch(function(e){
+      try{ localStorage.setItem("reticula_dims",
+             JSON.stringify({t: Date.now(), d: {}, err: e.message})); }catch(x){}
+      estado("No se pudo leer: " + e.message, "err");
     });
   }else if(msg.accion === "enviar"){
     enviarFilas().then(function(r){
