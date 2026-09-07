@@ -751,7 +751,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v13 · 07-09-2026";
+  var BUILD="v14 · 07-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1819,6 +1819,73 @@
         : 'Todavía no hay placas dibujadas en ningún nivel.')+'</p>';
   }
 
+  /* ---------- diagnostico de carga ----------------------------------
+     Mide de donde se va el tiempo al abrir esta ventana, en la maquina y la
+     conexion reales.  transferSize === 0 con decodedBodySize > 0 significa
+     servido de cache: no costo red. */
+  function ms(v){ return (v==null||!isFinite(v)) ? "—" : (Math.round(v)+" ms"); }
+  function kb(v){ return (v==null||!isFinite(v)) ? "—" : (v/1024).toFixed(1)+" KB"; }
+
+  function medirCarga(){
+    var out={nav:null,grupos:[],total:{red:0,bytes:0,n:0,cache:0}};
+    try{
+      var nav=(performance.getEntriesByType("navigation")||[])[0];
+      if(nav) out.nav={
+        dns:  nav.domainLookupEnd-nav.domainLookupStart,
+        tls:  nav.connectEnd-nav.connectStart,
+        html: nav.responseEnd-nav.requestStart,
+        bytes:nav.transferSize,
+        dom:  nav.domContentLoadedEventEnd-nav.startTime,
+        load: nav.loadEventEnd-nav.startTime
+      };
+      var res=performance.getEntriesByType("resource")||[];
+      var cajas={"office.js":[],"CSS de fuentes":[],"archivos de fuente":[],"otros":[]};
+      res.forEach(function(r){
+        var d = r.name.indexOf("appsforoffice")>-1 ? "office.js"
+              : r.name.indexOf("fonts.googleapis")>-1 ? "CSS de fuentes"
+              : r.name.indexOf("fonts.gstatic")>-1 ? "archivos de fuente" : "otros";
+        cajas[d].push(r);
+      });
+      Object.keys(cajas).forEach(function(k){
+        var v=cajas[k]; if(!v.length) return;
+        var dur=0,by=0,cache=0;
+        v.forEach(function(r){
+          dur=Math.max(dur, r.responseEnd);           /* cuando termino el ultimo */
+          by+=(r.transferSize||0);
+          if(!r.transferSize && r.decodedBodySize) cache++;
+        });
+        out.grupos.push({nombre:k,n:v.length,hasta:dur,bytes:by,cache:cache});
+        out.total.n+=v.length; out.total.bytes+=by; out.total.cache+=cache;
+        out.total.red=Math.max(out.total.red,dur);
+      });
+    }catch(e){ out.error=e.message; }
+    return out;
+  }
+
+  function bloqueCarga(){
+    var d=medirCarga();
+    if(d.error) return '<h3>Diagnóstico de carga</h3><p class="nota">No disponible: '+d.error+'</p>';
+    var f=[];
+    if(d.nav) f.push("<tr><td>Este HTML ("+kb(d.nav.bytes)+")</td><td>1</td><td>"+
+      ms(d.nav.html)+"</td><td>DNS "+ms(d.nav.dns)+" · TLS "+ms(d.nav.tls)+"</td></tr>");
+    d.grupos.forEach(function(g){
+      f.push("<tr><td>"+g.nombre+"</td><td>"+g.n+"</td><td>"+ms(g.hasta)+"</td><td>"+
+        kb(g.bytes)+(g.cache?"  ·  "+g.cache+" de caché":"")+"</td></tr>");
+    });
+    return '<h3>Diagnóstico de carga</h3>'+
+      '<table><thead><tr><th>Qué</th><th>N.º</th><th>Listo a los</th><th>Detalle</th>'+
+      '</tr></thead><tbody>'+f.join("")+
+      (d.nav?'<tr class="tot"><td>DOM listo</td><td>—</td><td>'+ms(d.nav.dom)+
+             '</td><td>página usable</td></tr>'+
+             '<tr class="tot"><td>Carga completa</td><td>—</td><td>'+ms(d.nav.load)+
+             '</td><td>todo descargado</td></tr>':'')+
+      '</tbody></table>'+
+      '<p class="nota">«Listo a los» se cuenta desde que empezó a abrirse la ventana. '+
+      'Lo que dice «de caché» no costó red esta vez. Si las fuentes salen altas en la '+
+      'primera apertura y bajas en la segunda, el coste es de primera carga; si salen '+
+      'altas siempre, hay que traerlas dentro del archivo.</p>';
+  }
+
   /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
   function pintaEdificio(){
     var d=$("#edificio"),filas=[],tA=0,tAl=0,tMa=0,tNe=0,tC=0,tVP=0,tVC=0,tPL=0;
@@ -1856,7 +1923,9 @@
       '<p class="nota">De aquí sale la luz libre de las vigas: <code>Ln = L − lado</code>. '+
       'El ancho de las vigas no se supone: sale del ancho tributario de cada una, así que '+
       'la luz libre de las losas ya es exacta. La sección de la columna la calcula Excel, '+
-      'por eso esta sí es un supuesto: ajústala en la segunda pasada.</p>';
+      'por eso esta sí es un supuesto: ajústala en la segunda pasada.</p>'+
+      '<div class="rule" style="margin:14px 0 10px"></div>'+
+      bloqueCarga();
     var lc=$("#lcol");
     if(lc)lc.onchange=function(){var v=parseFloat(this.value);
       if(v>0){snap();S.ladoCol=v;render();}};
