@@ -343,6 +343,404 @@
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- Los criterios y el calculo viven en oviedo/*.js, no aqui.
+     gen_complemento.py los inlinea al construir dialogo.html. -->
+<script>
+/* ===== criterios.js (inlinado) ===== */
+/* =====================================================================
+   criterios.js — LOS CRITERIOS DE OVIEDO, EN UN SOLO SITIO
+
+   Fuente: Oviedo Sarmiento, Ricardo. Predimensionamiento en Edificios de
+   Concreto Armado, 1ra ed. 2025.  Verificado pagina a pagina contra el PDF
+   (auditoria del 7-sep-2026).  Documentacion: vault "Concreto Armado".
+
+   REGLA: ningun numero de este archivo se copia a otro sitio.  Ni al Excel,
+   ni al modelador, ni a mano.  Si un criterio cambia, cambia aqui.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.CRITERIOS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  /* --- categoria de la edificacion (pags. 79, 80, 165) ------------- */
+  var CATEGORIA = {
+    esencial:   { peso: 1500, U: 1.50, pctSC: 0.50, pctPlaca: 0.0100 },
+    importante: { peso: 1300, U: 1.30, pctSC: 0.50, pctPlaca: 0.0080 },
+    comun:      { peso: 1000, U: 1.00, pctSC: 0.25, pctPlaca: 0.0050 }
+  };
+
+  /* --- factor alfa ------------------------------------------------- */
+  /* Tramos por sobrecarga.  Cada elemento tiene los SUYOS: la aligerada
+     corta en 200/300/400/500 (pag. 25) y la colaborante en 250/350/500
+     (pag. 29).  Mezclarlos da un alfa equivocado.                      */
+  var ALFA_LOSA = {
+    aligerada:    { tipo: "tramos", tope: 500, tramos: [[200,25],[300,23],[400,21],[500,19]] },
+    colaborante:  { tipo: "tramos", tope: 500, tramos: [[250,32],[350,30],[500,28]] },
+    maciza:       { tipo: "fijo", alfa: 35 },
+    nervada:      { tipo: "fijo", alfa: 18 },
+    encasetonada: { tipo: "fijo", alfa: 21 },
+    postensada:   { tipo: "estructuracion", opciones: {
+                      "maciza-1dir-con-vigas":   48,
+                      "maciza-2dir-sin-vigas":   45,
+                      "maciza-2dir-con-abacos":  50,
+                      "maciza-2dir-con-vigas":   55,
+                      "nervada-1dir-con-vigas":  40,
+                      "nervada-2dir-sin-vigas":  35 } },
+    cimentacion:  { tipo: "propio" }          /* area por sigma, peralte por ldg */
+  };
+
+  /* Vigas: la tabla llega hasta 750, la de losas se corta en 500 (pag. 51) */
+  var ALFA_VIGA = {
+    principal:   { tipo: "tramos", tope: 750, tramos: [[200,12],[350,11],[600,10],[750,9]] },
+    amarre:      { tipo: "fijo", alfa: 14 },
+    chata:       { tipo: "fijo", alfa: 14, alfaPrincipal: 12 },   /* pags. 61, 62 */
+    voladizo:    { tipo: "fijo", alfa: 5 },
+    seccionT:    { tipo: "fijo", alfa: 16 },
+    cimentacion: { tipo: "fijo", alfa: 8 },
+    postensada:  { tipo: "fijo", alfa: 20, luzMaxima: 35.0 }
+  };
+
+  /* --- minimos y proporciones ------------------------------------- */
+  var MINIMOS = {
+    viguetaAligerada: 0.10,   /* b >= 0.10 (pag. 26) */
+    nervadura:        0.10,   /* (pag. 27) */
+    losita:           0.05,   /* hf > 0.05 */
+    baseViga:         0.25,   /* b >= 0.25 en todas las vigas con recuadro */
+    almaT:            0.25,   /* bw >= 0.25 (pag. 54) */
+    anchoColumna:     0.25,   /* b >= 0.25 (pags. 82, 83) */
+    espesorPlaca:     0.15    /* t >= 0.15 (pag. 165) */
+  };
+
+  var PROPORCION = {
+    viguetaAligerada: 2.5,    /* b = h/2.5 */
+    nervadura:        2.5,
+    nervaduraCaseton: 3.5,    /* b = h/3.5 (pag. 27) */
+    baseViga:         2.5,    /* b = h/2.5 salvo principal y cimentacion */
+    baseVigaPrincipal: 20,    /* b = B/20 (pag. 52) */
+    baseVigaCimentacion: 2,   /* b >= h/2 (pag. 54) */
+    separacionAligerada: 0.40,/* S <= 0.40 */
+    separacionCaseton:   0.75 /* S <= 0.75 (pag. 27) */
+  };
+
+  /* --- columnas (pags. 82, 83) ------------------------------------ */
+  var COLUMNA = {
+    C: { interior: 0.30, exterior: 0.20, esquinera: 0.10 },
+    /* Ac = k(b*l) + b^2 con b >= 0.40*l  (pag. 102) */
+    poliedrica: { L: 2, T: 3, cruz: 4, relacionB: 0.40 }
+  };
+
+  /* --- zapatas (pags. 116-123) ------------------------------------ */
+  var ZAPATA = {
+    incrementoPesoPropio: 1.10,          /* +10 % (pag. 117) */
+    Fsismo: { centrada: 1.00, medianera: 1.50, esquinera: 1.50,
+              combinada: 1.00, corrida: 1.00 },
+    divisorPeralte: { centrada: 4, medianera: 4, combinada: 4, corrida: 4,
+                      esquinera: 2 },    /* ver nota */
+    redondeoLado: 0.10,                  /* al múltiplo de 10 cm superior */
+    redondeoPeralte: 0.10
+  };
+  /* NOTA esquinera: el formulario de la pag. 121 dice /4, pero los dos
+     ejemplos que existen (pags. 134 y 136) usan /2 de forma consistente.
+     Se adopta /2.  Ver "El peralte de la zapata esquinera" en el vault. */
+
+  /* --- placas (pags. 160, 165) ------------------------------------ */
+  var PLACA = {
+    divisorAltura: 20,      /* t >= hm/20 */
+    divisorLongitud: 25,    /* t >= lm/25  (el libro lo enuncia y no lo aplica) */
+    repartoPorEje: 0.50,    /* 50 % en X, 50 % en Y */
+    phiCorte: 0.85,         /* metodo por cortante basal */
+    coefCorte: 0.53
+  };
+
+  /* --- E.020, version reducida del libro (pag. 25) ---------------- */
+  var SOBRECARGA = {
+    "vivienda": 200, "aulas": 250, "oficinas": 250, "salas de lectura": 300,
+    "corredores y escaleras": 400, "graderias y tribunas": 500
+  };
+
+  /* ================= consultas ==================================== */
+
+  function porTramos(cfg, sc) {
+    var ultimo = cfg.tramos[cfg.tramos.length - 1][1];
+    if (sc == null) return { alfa: cfg.tramos[0][1], sinSobrecarga: true };
+    for (var i = 0; i < cfg.tramos.length; i++)
+      if (sc <= cfg.tramos[i][0]) return { alfa: cfg.tramos[i][1] };
+    /* Por encima del tope el libro no da alfa.  Se devuelve el ultimo tramo
+       para poder seguir dibujando, pero con la bandera puesta: extrapolar en
+       silencio seria inventar un valor que el libro no da. */
+    return { alfa: ultimo, fueraDeTabla: true, tope: cfg.tope };
+  }
+
+  function alfaLosa(subtipo, sc, estructuracion) {
+    var cfg = ALFA_LOSA[subtipo];
+    if (!cfg) throw new Error("losa desconocida: " + subtipo);
+    if (cfg.tipo === "fijo") return { alfa: cfg.alfa };
+    if (cfg.tipo === "tramos") return porTramos(cfg, sc);
+    if (cfg.tipo === "estructuracion") {
+      var a = cfg.opciones[estructuracion];
+      if (a == null) throw new Error("estructuracion desconocida: " + estructuracion);
+      return { alfa: a };
+    }
+    return { alfa: null, criterioPropio: true };
+  }
+
+  function alfaViga(subtipo, sc, esPrincipal) {
+    var cfg = ALFA_VIGA[subtipo];
+    if (!cfg) throw new Error("viga desconocida: " + subtipo);
+    if (cfg.tipo === "tramos") return porTramos(cfg, sc);
+    if (subtipo === "chata") return { alfa: esPrincipal ? cfg.alfaPrincipal : cfg.alfa };
+    return { alfa: cfg.alfa };
+  }
+
+  return {
+    CATEGORIA: CATEGORIA, ALFA_LOSA: ALFA_LOSA, ALFA_VIGA: ALFA_VIGA,
+    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA,
+    ZAPATA: ZAPATA, PLACA: PLACA, SOBRECARGA: SOBRECARGA,
+    alfaLosa: alfaLosa, alfaViga: alfaViga
+  };
+});
+</script>
+<script>
+/* ===== calculo.js (inlinado) ===== */
+/* =====================================================================
+   calculo.js — el predimensionamiento, en el complemento.
+
+   Toma geometria (Ln, ancho tributario, sobrecarga) y devuelve secciones.
+   No conoce el modelo ni el DOM: entra un objeto, sale un objeto.
+   Los criterios los pide a criterios.js; aqui no hay numeros del libro.
+
+   REDONDEO.  El libro adopta al multiplo de 5 cm superior, salvo la losa
+   colaborante, que va al centimetro (ej. 12, pag. 43: 0.107 -> 0.11).
+   Verificado contra los 29 ejemplos de losas y vigas.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./criterios.js"));
+  else raiz.CALCULO = definir(raiz.CRITERIOS);
+})(typeof self !== "undefined" ? self : this, function (C) {
+  "use strict";
+
+  var PASO = 0.05, PASO_FINO = 0.01, EPS = 1e-9;
+
+  function arriba(v, paso) { return Math.ceil(v / paso - EPS) * paso; }
+  function r2(v) { return Math.round(v * 1000) / 1000; }
+
+  /* ------------------------------------------------------------------
+     LOSA.  entrada: {subtipo, Ln, sc, estructuracion}
+     ------------------------------------------------------------------ */
+  function losa(e) {
+    var sub = e.subtipo || "aligerada";
+    var a = C.alfaLosa(sub, e.sc, e.estructuracion);
+    if (a.alfa == null) return { subtipo: sub, criterioPropio: true };
+
+    var paso = (sub === "colaborante") ? PASO_FINO : PASO;
+    var hT = e.Ln / a.alfa, h = arriba(hT, paso), r;
+
+    r = { subtipo: sub, alfa: a.alfa, fueraDeTabla: !!a.fueraDeTabla,
+          Ln: e.Ln, h_teorico: r2(hT), h: r2(h) };
+
+    if (sub === "aligerada" || sub === "nervada" || sub === "encasetonada") {
+      var div = (sub === "encasetonada") ? C.PROPORCION.nervaduraCaseton
+                                         : C.PROPORCION.viguetaAligerada;
+      var min = (sub === "aligerada") ? C.MINIMOS.viguetaAligerada : C.MINIMOS.nervadura;
+      r.b_teorico = r2(h / div);
+      r.b = r2(Math.max(arriba(h / div, PASO), min));
+      /* s y hf el libro los ELIGE dentro de un limite; se dan los limites,
+         no un valor: adoptarlos es criterio del proyectista. */
+      if (sub === "aligerada")    r.s_max = C.PROPORCION.separacionAligerada;
+      if (sub === "nervada")      r.s_max = r2(2.5 * h);
+      if (sub === "encasetonada") r.s_max = C.PROPORCION.separacionCaseton;
+      r.hf_min = C.MINIMOS.losita;
+    }
+    return r;
+  }
+
+  /* ------------------------------------------------------------------
+     VIGA.  entrada: {subtipo, Ln, B, sc, h_losa, principal}
+     ------------------------------------------------------------------ */
+  function viga(e) {
+    var sub = e.subtipo || "principal";
+    var a = C.alfaViga(sub, e.sc, e.principal);
+    var r = { subtipo: sub, alfa: a.alfa, fueraDeTabla: !!a.fueraDeTabla };
+
+    /* la chata no calcula peralte: lo hereda de la losa y devuelve la luz
+       libre MAXIMA que puede cubrir con ese peralte (pags. 53, 61, 62) */
+    if (sub === "chata") {
+      r.h = r2(e.h_losa);
+      r.Ln_max = r2(e.h_losa * a.alfa);
+      r.b = r2(Math.max(arriba(e.h_losa / C.PROPORCION.baseViga, PASO), C.MINIMOS.baseViga));
+      return r;
+    }
+
+    var hT = e.Ln / a.alfa, h = arriba(hT, PASO);
+    r.Ln = e.Ln; r.h_teorico = r2(hT); r.h = r2(h);
+
+    if (sub === "principal") {
+      r.B = e.B;
+      r.b_teorico = r2(e.B / C.PROPORCION.baseVigaPrincipal);
+      r.b = r2(Math.max(arriba(e.B / C.PROPORCION.baseVigaPrincipal, PASO), C.MINIMOS.baseViga));
+    } else if (sub === "cimentacion") {
+      /* el ancho sale del peralte YA ADOPTADO, no del teorico (pags. 69, 70) */
+      r.b_teorico = r2(h / C.PROPORCION.baseVigaCimentacion);
+      r.b = r2(arriba(h / C.PROPORCION.baseVigaCimentacion, PASO));
+    } else if (sub === "seccionT") {
+      /* bw y bf el libro los elige dentro de los limites; se dan los limites */
+      r.bw_min = C.MINIMOS.almaT;
+      r.bw_max = e.h_losa != null ? r2(2 * e.h_losa) : null;
+      r.nota = "bf <= 4·bw   ·   hf > 0.50·bw";
+    } else {
+      r.b_teorico = r2(h / C.PROPORCION.baseViga);
+      r.b = r2(Math.max(arriba(h / C.PROPORCION.baseViga, PASO), C.MINIMOS.baseViga));
+    }
+    if (sub === "postensada" && e.Ln > C.ALFA_VIGA.postensada.luzMaxima)
+      r.excedeLuzMaxima = C.ALFA_VIGA.postensada.luzMaxima;
+    return r;
+  }
+
+  /* ------------------------------------------------------------------
+     COLUMNA.  entrada: {ubicacion, niveles, area_trib, peso|categoria, fc}
+
+     Devuelve el area requerida y lo DERIVABLE.  La seccion rectangular
+     b x h el libro la ELIGE -3175 cm2 se resuelve con 0.40x0.80 sin regla
+     que lo deduzca-, asi que aqui se verifica una propuesta, no se impone.
+     ------------------------------------------------------------------ */
+  function columna(e) {
+    var peso = e.peso != null ? e.peso : C.CATEGORIA[e.categoria].peso;
+    var k = C.COLUMNA.C[e.ubicacion];
+    if (!k) throw new Error("ubicacion desconocida: " + e.ubicacion);
+    var P = e.niveles * e.area_trib * peso;
+    var Ac = P / (k * e.fc);
+    var lado = Math.sqrt(Ac) / 100;
+    var D = Math.sqrt(4 * Ac / Math.PI) / 100;
+    return {
+      ubicacion: e.ubicacion, C: k, P_servicio: r2(P / 1000), Ac: Math.round(Ac),
+      lado_teorico: r2(lado), cuadrada: r2(arriba(lado, PASO)),
+      D_teorico: r2(D),      circular: r2(arriba(D, PASO)),
+      minimo: C.MINIMOS.anchoColumna,
+      verifica: function (b, h) {
+        return { area: r2(b * h * 10000), requerida: Math.round(Ac),
+                 cumple: b * h * 10000 >= Ac - 0.5,
+                 anchoOk: Math.min(b, h) >= C.MINIMOS.anchoColumna - 1e-9 };
+      }
+    };
+  }
+
+  /* Poliedrica: Ac = k(b*l) + b^2, con b >= 0.40 l  (pag. 102) */
+  function columnaPoliedrica(forma, b, l) {
+    var k = C.COLUMNA.poliedrica[forma];
+    if (!k) throw new Error("forma desconocida: " + forma);
+    return { forma: forma, b: b, l: l,
+             area: r2((k * (b * l) + b * b) * 10000),
+             relacionOk: b >= C.COLUMNA.poliedrica.relacionB * l - 1e-9 };
+  }
+
+  /* ------------------------------------------------------------------
+     ZAPATA.  {subtipo, niveles, area_trib, peso|categoria, sigma_s,
+               col_b, col_h, Dc}
+     ------------------------------------------------------------------ */
+  function zapata(e) {
+    var Zc = C.ZAPATA;
+    var peso = e.peso != null ? e.peso : C.CATEGORIA[e.categoria].peso;
+    var F = e.F_sismo != null ? e.F_sismo : (Zc.Fsismo[e.subtipo] || 1.0);
+    var Pt = e.niveles * e.area_trib * peso / 1000;
+    var Az = Zc.incrementoPesoPropio * Pt * F / e.sigma_s;
+    var s = Math.sqrt(Az);
+    var r = { subtipo: e.subtipo, P_servicio: r2(Pt), F_sismo: F, Az: r2(Az) };
+    var mayor, menor, d;
+
+    if (e.subtipo === "medianera") {
+      menor = Math.sqrt(Az / 2); mayor = 2 * menor;
+    } else if (e.subtipo === "combinada") {
+      d = (e.Dc - e.col_b) / 2; mayor = s + d; menor = s - d;
+    } else {
+      d = (e.col_h - e.col_b) / 2; mayor = s + d; menor = s - d;
+    }
+    r.mayor_teorico = r2(mayor); r.menor_teorico = r2(menor);
+    r.mayor = r2(arriba(mayor, Zc.redondeoLado));
+    r.menor = r2(arriba(menor, Zc.redondeoLado));
+
+    /* EL PUNTO.  La construccion s +- d conserva la SUMA de los lados, no el
+       producto: (s+d)(s-d) = Az - d^2.  Siempre da de menos.  En aisladas el
+       deficit es 1-2 % y el redondeo lo tapa; en combinadas llega al 15 % y NO
+       lo tapa.  El libro lo arregla en silencio saltando 40 cm por lado.
+       Aqui se comprueba y se propone el lado que si cumple. */
+    r.area_redondeada = r2(r.mayor * r.menor);
+    r.holgura_pct = r2(100 * (r.area_redondeada - Az) / Az);
+    if (r.area_redondeada < Az - 1e-9) {
+      r.insuficiente = true;
+      r.mayor_corregido = r2(arriba(Az / r.menor, Zc.redondeoLado));
+      r.area_corregida = r2(r.mayor_corregido * r.menor);
+    }
+
+    var div = Zc.divisorPeralte[e.subtipo] || 4;
+    var ladoH = (e.subtipo === "combinada") ? r.menor : r.mayor;
+    var elem  = (e.subtipo === "combinada") ? e.col_b : e.col_h;
+    r.divisorPeralte = div;
+    r.H_teorico = r2((ladoH - elem) / div);
+    r.H = r2(arriba((ladoH - elem) / div, Zc.redondeoPeralte));
+    return r;
+  }
+
+  /* ------------------------------------------------------------------
+     PLACA.  {categoria, area_techada, hm, lm}
+     ------------------------------------------------------------------ */
+  function placa(e) {
+    var pct = C.CATEGORIA[e.categoria].pctPlaca;
+    var Ap = pct * e.area_techada;
+    var porAltura = e.hm / C.PLACA.divisorAltura;
+    var porLongitud = (e.lm != null) ? e.lm / C.PLACA.divisorLongitud : null;
+    var piso = C.MINIMOS.espesorPlaca;
+    var tmin = Math.max(porAltura, piso, porLongitud || 0);
+    var gobierna = (porLongitud != null && porLongitud >= porAltura && porLongitud >= piso)
+                 ? "lm/25" : (porAltura >= piso ? "hm/20" : "minimo 0.15");
+    var t = arriba(tmin, PASO);
+    return { pct: pct, Ap: r2(Ap),
+             t_por_altura: r2(porAltura),
+             t_por_longitud: (porLongitud == null) ? null : r2(porLongitud),
+             t_minimo: r2(tmin), gobierna: gobierna, t: r2(t),
+             Lp: r2(Ap / t), reparto_por_eje: r2(Ap / t * C.PLACA.repartoPorEje) };
+  }
+
+  /* Verificacion POR DIRECCION: el criterio real del capitulo VI.
+     El area total no basta, tiene que estar repartida (pags. 167, 173-177).
+     Un edificio con toda su placa en X pasa la suma y no resiste en Y.
+     placas = [{dir:"X"|"Y", lm, t}] */
+  function verificaPlacas(placas, Ap, tolerancia) {
+    var tol = (tolerancia == null) ? 0.97 : tolerancia;
+    var req = Ap * C.PLACA.repartoPorEje;
+    function eje(d) {
+      var sel = placas.filter(function (p) { return p.dir === d; });
+      var lon = sel.reduce(function (a, p) { return a + p.lm; }, 0);
+      var are = sel.reduce(function (a, p) { return a + p.lm * p.t; }, 0);
+      return { direccion: d, n: sel.length, longitud: r2(lon), area: r2(are),
+               requerida: r2(req),
+               cobertura: req > 0 ? r2(are / req) : null,
+               estado: (are >= req - 1e-9) ? "CUMPLE"
+                     : (are >= tol * req)  ? "AJUSTADO" : "FALTA" };
+    }
+    var X = eje("X"), Y = eje("Y"), total = r2(X.area + Y.area);
+    var peor = (X.estado === "FALTA" || Y.estado === "FALTA") ? "FALTA"
+             : (X.estado === "AJUSTADO" || Y.estado === "AJUSTADO") ? "AJUSTADO"
+             : "CUMPLE";
+    return { X: X, Y: Y,
+             total: { area: total, requerida: r2(Ap),
+                      cobertura: Ap > 0 ? r2(total / Ap) : null, estado: peor } };
+  }
+
+  /* El ancho de una viga principal depende SOLO del ancho tributario, que es
+     geometria pura.  Se expone aparte para que el modelador lo pida sin tener
+     que conocer la luz libre. */
+  function anchoVigaPrincipal(B) {
+    return r2(Math.max(arriba(B / C.PROPORCION.baseVigaPrincipal, PASO), C.MINIMOS.baseViga));
+  }
+
+  return { losa: losa, viga: viga, columna: columna,
+           columnaPoliedrica: columnaPoliedrica, zapata: zapata,
+           placa: placa, verificaPlacas: verificaPlacas,
+           anchoVigaPrincipal: anchoVigaPrincipal, arriba: arriba };
+});
+</script>
 <script>
 (function(){
   "use strict";
@@ -353,7 +751,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v10 · 06-09-2026";
+  var BUILD="v13 · 07-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -390,7 +788,9 @@
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
        ladoCol:0.50,dimsFecha:0,dimsHuella:"",verDims:true,envioHuella:"",
-       tipoViga:"principal",tipoLosa:"aligerada",vista:"plano"};
+       tipoViga:"principal",tipoLosa:"aligerada",vista:"plano",
+       /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
+       categoria:"comun"};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
   function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
@@ -459,11 +859,11 @@
   function bViga(o,i,j,m){
     m=m||N();
     var v=m.vigas[key(o,i,j)];
-    if(!v)return 0.25;
-    /* si Excel ya calculo esta viga, se usa su ancho real y se deja de
-       repetir aqui la formula b = B/20 que ya vive en la hoja */
+    if(!v)return CRITERIOS.MINIMOS.baseViga;
+    /* si ya hay una seccion leida de Excel se respeta; en cuanto el calculo
+       termine de mudarse aqui, esta rama desaparece */
     if(v.sec&&v.sec.b>0&&dimsVigentes())return v.sec.b/100;
-    return Math.max(anchoTrib(o,i,j,m)/20,0.25);
+    return CALCULO.anchoVigaPrincipal(anchoTrib(o,i,j,m));
   }
   /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
      Con apoyos iguales el descuento total es justo el ancho del apoyo. */
@@ -623,9 +1023,8 @@
     return c;
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga. */
-  function tablaLosa(s){return s<=200?25:s<=300?23:s<=400?21:19}
-  /* Oviedo 3.3 (pag. 51): tabla alfa de VIGAS. Es OTRA tabla, no la de losas. */
-  function tablaViga(s){return s<=200?12:s<=350?11:s<=600?10:9}
+  /* Las tablas alfa ya NO viven aqui: estan en oviedo/criterios.js, que es
+     la unica copia y la que prueban los 60 ejemplos del libro. */
   function scDefecto(){return +$("#sc").value}
 
   /* Sobrecarga que gobierna un paño: la de su ambiente si ya lo asignaste,
@@ -636,16 +1035,13 @@
   }
   /* Un paño con almacen (500) y otro con vivienda (200) ya no comparten alfa. */
   function alfaLosa(o){
-    var t=(o&&o.tipo)||"aligerada";
-    if(t==="maciza")return 35; if(t==="nervada")return 18;
-    return tablaLosa(scPano(o));
+    return CRITERIOS.alfaLosa((o&&o.tipo)||"aligerada", scPano(o)).alfa;
   }
   /* La tabla de losas de Oviedo se corta en 500 kg/m²; la de vigas llega a 750.
      Arriba de 500 se sigue usando 19 pero hay que decirlo: extrapolar en
      silencio seria inventar un valor que el libro no da. */
   function losaFueraTabla(o){
-    var t=(o&&o.tipo)||"aligerada";
-    return t==="aligerada" && scPano(o)>500;
+    return CRITERIOS.alfaLosa((o&&o.tipo)||"aligerada", scPano(o)).fueraDeTabla===true;
   }
   /* La viga toma la sobrecarga MAYOR de los paños que carga: del lado seguro. */
   function scViga(o,i,j,m){
@@ -655,7 +1051,9 @@
     ps.forEach(function(q){if(q)mx=Math.max(mx,scPano(q))});
     return mx>0?mx:scDefecto();
   }
-  function alfaViga(o,i,j,m){return tablaViga(scViga(o,i,j,m))}
+  function alfaViga(o,i,j,m){
+    return CRITERIOS.alfaViga("principal", scViga(o,i,j,m)).alfa;
+  }
   /* compatibilidad: alfa() sin paño usa la sobrecarga por defecto */
   function alfa(tipo){return alfaLosa({tipo:tipo})}
   function pisosQueCarga(niv){return S.niveles.length-niv}
@@ -897,6 +1295,13 @@
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,
           stroke:sl?"var(--trib)":(ch?"var(--chata)":"var(--viga)"),
           "stroke-width":sl?6:(ch?2:4),opacity:sl?1:.85}));
+      }
+      var vv2=m.vigas[k];
+      if(S.verDims&&vv2&&vv2.sec&&vv2.sec.b>0){
+        /* a lo largo del tramo, corrido para no caer sobre la linea */
+        var vx=(x1+x2)/2,vy=(y1+y2)/2;
+        txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,vv2.sec.b+"×"+vv2.sec.h,
+            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9);
       }
       var pl=m.placas[k];
       if(S.verDims&&pl&&pl.t>0){
@@ -1356,6 +1761,64 @@
                    :"Nivel consistente: cada paño apoyado en vigas y columnas.");
   };
 
+  /* ---------- verificacion de placas por direccion (Oviedo cap. VI) ----------
+     El area total NO es el criterio: tiene que estar repartida 50/50 entre los
+     dos ejes (pags. 167, 173-177).  Un edificio con toda su placa en X pasa la
+     suma y no resiste en Y.  Excel suma sin mirar direccion; aqui no. */
+  function tPlaca(p,lm,m){
+    if(p&&p.t>0)return p.t/100;              /* si Excel ya la calculo, se respeta */
+    return CALCULO.placa({categoria:S.categoria,area_techada:areaNivel(m),
+                          hm:m.h||2.80,lm:lm}).t;
+  }
+  /* h: corre a lo largo de X y resiste en X.  v: idem en Y. */
+  function placasDeNivel(m){
+    var r=[],i,j,nX=m.dx.length+1,nY=m.dy.length+1,p;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++){p=m.placas["h:"+i+":"+j];
+      if(p)r.push({dir:"X",lm:m.dx[i],t:tPlaca(p,m.dx[i],m)});}
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++){p=m.placas["v:"+i+":"+j];
+      if(p)r.push({dir:"Y",lm:m.dy[j],t:tPlaca(p,m.dy[j],m)});}
+    return r;
+  }
+  function verifPlacasNivel(m){
+    var q=CALCULO.placa({categoria:S.categoria,area_techada:areaNivel(m),hm:m.h||2.80});
+    return{Ap:q.Ap,t:q.t,v:CALCULO.verificaPlacas(placasDeNivel(m),q.Ap)};
+  }
+  var COL_EST={CUMPLE:"#2e7d32",AJUSTADO:"#b26a00",FALTA:"#c62828"};
+  function pinta(e){return '<b style="color:'+COL_EST[e]+'">'+e+'</b>'}
+
+  function bloquePlacas(){
+    var filas=[],hay=false;
+    S.niveles.forEach(function(m,k){
+      var r=verifPlacasNivel(m),v=r.v;
+      if(v.X.n+v.Y.n>0)hay=true;
+      filas.push("<tr><td>N"+(k+1)+"</td><td>"+r.Ap.toFixed(3)+"</td><td>"+r.t.toFixed(2)+
+        "</td><td>"+v.X.n+"</td><td>"+v.X.area.toFixed(3)+"</td><td>"+pinta(v.X.estado)+
+        "</td><td>"+v.Y.n+"</td><td>"+v.Y.area.toFixed(3)+"</td><td>"+pinta(v.Y.estado)+
+        "</td><td>"+pinta(v.total.estado)+"</td></tr>");
+    });
+    return '<h3>Placas · verificación por dirección</h3>'+
+      '<div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'+
+      '<label class="lbl" for="catEd">Categoría</label>'+
+      '<select id="catEd" style="background:var(--sheet);color:var(--ink);'+
+      'border:1px solid var(--line);border-radius:2px;padding:5px;'+
+      'font:500 12px \'IBM Plex Mono\',monospace">'+
+      ['comun','importante','esencial'].map(function(c){
+        return '<option value="'+c+'"'+(S.categoria===c?' selected':'')+'>'+
+               c.charAt(0).toUpperCase()+c.slice(1)+' · '+
+               (CRITERIOS.CATEGORIA[c].pctPlaca*100).toFixed(2)+' %</option>'}).join("")+
+      '</select></div>'+
+      '<table><thead><tr><th>Nivel</th><th>Ap (m²)</th><th>t (m)</th>'+
+      '<th>n X</th><th>Área X</th><th>Estado X</th>'+
+      '<th>n Y</th><th>Área Y</th><th>Estado Y</th><th>Total</th></tr></thead><tbody>'+
+      filas.join("")+'</tbody></table>'+
+      '<p class="nota">'+(hay
+        ? 'Cada eje necesita <code>Ap/2</code>. <b>El área total no basta:</b> toda la '+
+          'placa en un eje deja el otro sin rigidez. <i>AJUSTADO</i> es 97–100 %, el '+
+          'margen que el propio libro se permite al redondear la longitud a medida '+
+          'constructiva.'
+        : 'Todavía no hay placas dibujadas en ningún nivel.')+'</p>';
+  }
+
   /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
   function pintaEdificio(){
     var d=$("#edificio"),filas=[],tA=0,tAl=0,tMa=0,tNe=0,tC=0,tVP=0,tVC=0,tPL=0;
@@ -1378,6 +1841,8 @@
       '<p class="nota">Estas áreas por tipo de losa son las que METRADO_CARGAS necesita para sacar '+
       'el peso por m² real de cada nivel, en vez del valor fijo de la categoría.</p>'+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
+      bloquePlacas()+
+      '<div class="rule" style="margin:14px 0 10px"></div>'+
       '<h3>Dimensiones traídas de Excel</h3>'+
       tarjetasDims()+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
@@ -1395,6 +1860,8 @@
     var lc=$("#lcol");
     if(lc)lc.onchange=function(){var v=parseFloat(this.value);
       if(v>0){snap();S.ladoCol=v;render();}};
+    var ce=$("#catEd");
+    if(ce)ce.onchange=function(){S.categoria=this.value;guardar();render();};
   }
 
   /* Mismo lenguaje visual que las tarjetas de niveles de "usos y cargas". */

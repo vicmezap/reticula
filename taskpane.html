@@ -127,7 +127,7 @@ function leerDimensiones(){
   });
 }
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v10 · 06-09-2026";
+var BUILD = "v13 · 07-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -329,7 +329,15 @@ function escribirLote(context, wb, clave, filas){
         return context.sync().then(function(){
           var origen = ws.getRangeByIndexes(ultima, 0, 1, 12);
           var destino = ws.getRangeByIndexes(ultima + 1, 0, faltan, 12);
+          /* "all" trae formato Y formulas Y VALORES. Las formulas de las
+             columnas calculadas hay que heredarlas, pero los valores de la
+             fila de origen no: si volcar() no alcanza a pisarlos todos,
+             quedan filas fantasma identicas a la ultima. Se limpian aparte. */
           destino.copyFrom(origen, Excel.RangeCopyType.all);
+          cfg.cols.forEach(function(col){
+            ws.getRangeByIndexes(ultima + 1, col - 1, faltan, 1).clear(
+              Excel.ClearApplyTo.contents);
+          });
           for(var q=0;q<faltan;q++) libres.push(ultima + 1 + q);
           nm.formula = "='" + rg.worksheet.name + "'!$C$" + (rg.rowIndex + 1) +
                        ":$J$" + (ultima + faltan + 1);
@@ -342,11 +350,16 @@ function escribirLote(context, wb, clave, filas){
 }
 
 function volcar(ws, cfg, filas, libres){
-  for(var i=0;i<filas.length;i++){
+  /* nunca escribir mas filas de las que hay sitio: si no cuadra, es mejor
+     escribir menos y avisar que salirse del rango */
+  var n = Math.min(filas.length, libres.length);
+  for(var i=0;i<n;i++){
     for(var c=0;c<cfg.cols.length;c++){
       ws.getRangeByIndexes(libres[i], cfg.cols[c]-1, 1, 1).values = [[filas[i][c]]];
     }
   }
+  if(n < filas.length)
+    estado("Solo cupieron " + n + " de " + filas.length + " filas en " + cfg.nombre + ".", "err");
 }
 
 function enviarFilas(){
