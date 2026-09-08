@@ -404,10 +404,17 @@
     for (kk in car) pt[kk] = carAPuntos(car[kk]);
     var P = { nombre: nombre, anchos: pt, anchosCar: car,
               alturas: [], valores: [], merges: [], formatos: [],
-              numfmt: [], sinCuadricula: true, ultima: 1 };
+              numfmt: [], sinCuadricula: true, ultima: 1, tieneFormulas: false };
 
     function alto(r, h) { P.alturas.push({ fila: r, alto: h }); if (r > P.ultima) P.ultima = r; }
-    function val(r, c, v) { P.valores.push({ r: r, c: c, v: v }); if (r > P.ultima) P.ultima = r; }
+    function val(r, c, v) {
+      P.valores.push({ r: r, c: c, v: v });
+      /* Una hoja con formulas se escribe con .formulas, no con .values: es la
+         propiedad documentada para formulas y admite tambien literales.  El
+         plan lo dice para que el escritor no tenga que olfatear celda a celda. */
+      if (typeof v === "string" && v.charAt(0) === "=") P.tieneFormulas = true;
+      if (r > P.ultima) P.ultima = r;
+    }
     function fmt(o) { P.formatos.push(o); }
     function merge(r1, c1, r2, c2) { if (c2 > c1 || r2 > r1) P.merges.push(ref(r1, c1, r2, c2)); }
 
@@ -653,20 +660,28 @@
     for (k in plan.anchos) ws.getRange(k + ":" + k).format.columnWidth = plan.anchos[k];
 
     /* 2 · valores, en UNA escritura.  Se calcula el bloque que los contiene
-           y se rellena con null lo que no toca. */
+           y se rellena lo que no toca.
+
+           Si el plan lleva formulas se escribe .formulas, que es la propiedad
+           documentada para formulas y admite tambien numeros y texto; el hueco
+           va como "" y no como null, porque null en .formulas no esta definido
+           igual en todas las versiones.  Sin formulas se mantiene .values con
+           null, que es el camino que ya estaba probado. */
     if (plan.valores.length) {
       var r1 = Infinity, c1 = Infinity, r2 = 0, c2 = 0;
       plan.valores.forEach(function (v) {
         if (v.r < r1) r1 = v.r; if (v.r > r2) r2 = v.r;
         if (v.c < c1) c1 = v.c; if (v.c > c2) c2 = v.c;
       });
+      var hueco = plan.tieneFormulas ? "" : null;
       var m = [], f, c;
       for (f = 0; f <= r2 - r1; f++) {
         m[f] = [];
-        for (c = 0; c <= c2 - c1; c++) m[f][c] = null;
+        for (c = 0; c <= c2 - c1; c++) m[f][c] = hueco;
       }
       plan.valores.forEach(function (v) { m[v.r - r1][v.c - c1] = v.v; });
-      ws.getRangeByIndexes(r1 - 1, c1 - 1, r2 - r1 + 1, c2 - c1 + 1).values = m;
+      var bloque = ws.getRangeByIndexes(r1 - 1, c1 - 1, r2 - r1 + 1, c2 - c1 + 1);
+      if (plan.tieneFormulas) bloque.formulas = m; else bloque.values = m;
     }
 
     /* 3 · combinar.  DESPUES de escribir: al combinar, Excel se queda con la
@@ -704,27 +719,78 @@
       }
     });
 
-    /* 6 · formatos de numero */
-    plan.numfmt.forEach(function (n) {
-      var rg = ws.getRange(n.rango);
-      rg.numberFormat = [[n.formato]];
+    /* 6 · formatos de numero, agrupados igual que los formatos.
+           Una hoja de 30 vigas trae 90 rangos con solo tres formatos
+           distintos: sin agrupar son 90 proxies y 90 ordenes. */
+    var porFmt = {}, ordenFmt = [];
+    plan.numfmt.forEach(function (nf) {
+      if (!porFmt[nf.formato]) { porFmt[nf.formato] = []; ordenFmt.push(nf.formato); }
+      porFmt[nf.formato].push(nf.rango);
+    });
+    var numUsadas = 0;
+    ordenFmt.forEach(function (fm) {
+      var rangos = porFmt[fm];
+      if (o.rangeAreas && rangos.length > 1) {
+        var lote = [], largo = 0, j;
+        for (j = 0; j < rangos.length; j++) {
+          if (largo + rangos[j].length > 240) {
+            ws.getRanges(lote.join(",")).numberFormat = fm; numUsadas++;
+            lote = []; largo = 0;
+          }
+          lote.push(rangos[j]); largo += rangos[j].length + 1;
+        }
+        if (lote.length) { ws.getRanges(lote.join(",")).numberFormat = fm; numUsadas++; }
+      } else {
+        rangos.forEach(function (rg) {
+          ws.getRange(rg).numberFormat = [[fm]]; numUsadas++;
+        });
+      }
     });
 
-    /* 7 · alturas de fila, agrupadas por altura igual */
-    var porAlto = {};
+    /* 7 · alturas de fila.  Era lo mas caro de todo: una hoja de 124 filas
+           creaba 124 rangos.  Se agrupan por altura igual y ademas se juntan
+           las filas CONSECUTIVAS en un solo rango, que es el caso normal en
+           una tabla: veinte filas de 18 puntos son un A30:A49, no veinte. */
+    var porAlto = {}, ordenAlto = [];
     plan.alturas.forEach(function (a) {
-      (porAlto[a.alto] = porAlto[a.alto] || []).push(a.fila);
+      if (!porAlto[a.alto]) { porAlto[a.alto] = []; ordenAlto.push(a.alto); }
+      porAlto[a.alto].push(a.fila);
     });
-    for (k in porAlto) {
-      porAlto[k].forEach(function (fl) {
-        ws.getRange("A" + fl + ":A" + fl).format.rowHeight = +k;
-      });
-    }
+    var altoUsadas = 0;
+    ordenAlto.forEach(function (alt) {
+      var filas = porAlto[alt].slice().sort(function (x, y) { return x - y; });
+      var tramos = [], ini = filas[0], prev = filas[0], j;
+      for (j = 1; j <= filas.length; j++) {
+        if (j === filas.length || filas[j] !== prev + 1) {
+          tramos.push("A" + ini + ":A" + prev);
+          if (j < filas.length) { ini = filas[j]; }
+        }
+        prev = filas[j];
+      }
+      if (o.rangeAreas && tramos.length > 1) {
+        var lote = [], largo = 0, t;
+        for (t = 0; t < tramos.length; t++) {
+          if (largo + tramos[t].length > 240) {
+            ws.getRanges(lote.join(",")).format.rowHeight = +alt; altoUsadas++;
+            lote = []; largo = 0;
+          }
+          lote.push(tramos[t]); largo += tramos[t].length + 1;
+        }
+        if (lote.length) { ws.getRanges(lote.join(",")).format.rowHeight = +alt; altoUsadas++; }
+      } else {
+        tramos.forEach(function (rg) {
+          ws.getRange(rg).format.rowHeight = +alt; altoUsadas++;
+        });
+      }
+    });
 
     if (plan.sinCuadricula) ws.showGridlines = false;
 
     return { formatosAplicados: usadas, grupos: orden.length,
-             merges: plan.merges.length, valores: plan.valores.length };
+             merges: plan.merges.length, valores: plan.valores.length,
+             numfmt: plan.numfmt.length, numfmtOrdenes: numUsadas,
+             alturas: plan.alturas.length, alturaOrdenes: altoUsadas,
+             formulas: !!plan.tieneFormulas };
   }
 
   /* Genera una hoja entera y devuelve cuanto tardo.  Si ya existe, se borra
@@ -753,6 +819,707 @@
   }
 
   return { generar: generar, encolar: encolar, col: col };
+});
+</script>
+<script>
+/* ===== hojas_pre.js (inlinado) ===== */
+/* =====================================================================
+   hojas_pre.js — las OCHO hojas de predimensionamiento del proyecto.
+
+   Se separan de hojas.js porque son de otra naturaleza: NORMA E020 y
+   CRITERIOS_OVIEDO son referencia -salen solas-, y estas ocho son el
+   proyecto: necesitan el modelo.
+
+   DOS REGLAS QUE NO SE ROMPEN AQUI:
+
+   1. Ninguna formula cruza de hoja.  Las hojas se generan CONDICIONALMENTE
+      -si no hay placas no hay PRE_PLACA-, asi que una referencia a otra hoja
+      es un #REF! esperando.  Lo que otra hoja calcularia, lo calcula el
+      complemento y se escribe como valor, diciendo de donde sale.
+
+   2. Los datos van como valores y los resultados como formulas que apuntan
+      a ellos.  El complemento YA calculo: la formula no es una dependencia,
+      es la explicacion de la fila, y se puede auditar celda a celda.
+
+   Lo que desaparece: el boton AGREGAR, los rangos con nombre y las doce
+   filas vacias.  Existian porque Excel tenia que calcular y porque habia
+   que meter los elementos a mano.  Ahora la lista llega llena.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./formato.js"), require("./criterios.js"));
+  else raiz.HOJAS_PRE = definir(raiz.FORMATO, raiz.CRITERIOS);
+})(typeof self !== "undefined" ? self : this, function (F, C) {
+  "use strict";
+
+  /* ---------------- geometria de las listas ---------------- */
+  var L8 = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10]];
+  var L7_ALIG = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,9],[10,10]];
+  var L6_MAC = [[3,3],[4,4],[5,5],[6,6],[7,8],[9,10]];
+  var L_AMB = [[3,3],[4,5],[6,7],[8,8],[9,9],[10,10]];
+  var L_DATO = [[3,5],[6,7],[8,10]];          /* Dato | Valor | Observacion */
+  var L_PESO = [[3,4],[5,6],[7,7],[8,10]];    /* Material | Espesor | Peso | Origen */
+  var L2 = [[3,6],[7,10]];
+  var L3 = [[3,4],[5,7],[8,10]];
+
+  var ALTO_LISTA = 28.05;
+  var CENTRO = ["Center","Center","Center","Center","Center","Center","Center","Center"];
+  /* Una observacion de dos lineas centrada es ilegible: las columnas de texto
+     largo van a la izquierda, como en la hoja del libro. */
+  var D3 = ["Left","Center","Left"];                    /* Dato | Valor | Obs */
+  var D4 = ["Left","Center","Center","Left"];           /* Tipo | Esp | Peso | Origen */
+  var D5 = ["Left","Center","Center","Center","Left"];  /* Cat | U | % | Peso | Edif */
+  var DFIN = ["Left","Left"];                           /* Concepto | Expresion */
+
+  var TEXTO_CAT = {
+    esencial: "Hospitales y clínicas, aeropuertos, estación de tren, local municipal, "
+      + "estación de bomberos, instituciones educativas",
+    importante: "Cine, teatro, coliseo, centro comercial, terminal de buses, museos",
+    comun: "Vivienda, oficina, hotel, restaurante, depósitos, industria"
+  };
+
+  function col(n) { return F.col(n); }
+  function pct(v) { return (v * 100).toFixed(2).replace(/\.00$/, "") + " %"; }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  /* Tramos [[tope, alfa]] -> filas legibles */
+  function filasTramos(tramos) {
+    var f = [], ant = 0;
+    tramos.forEach(function (t) {
+      f.push([(ant === 0 ? "S/C ≤ " + t[0] : ant + " < S/C ≤ " + t[0]) + " kg/m²", t[1]]);
+      ant = t[0];
+    });
+    return f;
+  }
+
+  /* Redondeo al multiplo de 5 cm superior, en centimetros enteros.
+     Es lo mismo que hace CEILING(x*100,5) en la hoja: se calcula aqui
+     cuando el numero tiene que viajar a OTRA hoja como valor. */
+  function a5(m) { return Math.ceil(m * 100 / 5) * 5; }
+
+  /* Escribe una lista con formulas que se refieren a su propia fila. */
+  function lista(h, r, layout, encab, filas, hacer, numfmt) {
+    r = h.encabezado(r, layout, encab, ALTO_LISTA);
+    filas.forEach(function (f) {
+      h.fila(r, layout, hacer(f, r), numfmt, { alinear: CENTRO });
+      r++;
+    });
+    return { fin: r, primera: r - filas.length, ultima: r - 1 };
+  }
+
+  function vacio(n, que) {
+    if (!n) throw new Error("no hay " + que + " en el modelo");
+  }
+
+  /* =====================================================================
+     1 · LOSAS
+     ===================================================================== */
+
+  /* Tabla de obra: espesor de losa y de ladrillo segun la luz.  Estaba en
+     la hoja del libro de Excel, pero NO esta en el banco de 60 ejemplos ni
+     en las notas verificadas contra el PDF.  Se conserva porque es la que
+     se usa en obra, marcada como lo que es.  Los tramos se solapan tal como
+     estaban escritos (4-5.5 y 5-6.5): se reproduce sin corregir. */
+  var ESPESOR_POR_LUZ = [
+    ["Menores a 4 m",      0.17, 0.12],
+    ["Entre 4 m y 5.5 m",  0.20, 0.15],
+    ["Entre 5 m y 6.5 m",  0.25, 0.20],
+    ["Entre 6 m y 7.5 m",  0.30, 0.25]
+  ];
+
+  function losaAligerada(P) {
+    var fs = (P.L && P.L.aligerada) || [];
+    vacio(fs.length, "losas aligeradas");
+    var h = F.hoja("PRE_LOSA_ALIGERADA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE LOSA ALIGERADA");
+
+    r = h.seccion(r, "1. LOSA ALIGERADA");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
+    r = h.tabla(r, L2, ["W s/c", "α"], filasTramos(C.ALFA_LOSA.aligerada.tramos));
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,3],[4,5],[6,7],[8,9],[10,10]],
+      ["Tipo de losa", "Peralte  h", "Ancho de vigueta  b",
+       "Separación entre viguetas  S", "Espesor de losa superior  hf"],
+      [["LOSA ALIGERADA", "h = Ln / α",
+        "b = h / " + C.PROPORCION.viguetaAligerada + " ≥ "
+          + C.MINIMOS.viguetaAligerada.toFixed(2) + " m",
+        "S ≤ " + C.PROPORCION.separacionAligerada.toFixed(2) + " m",
+        "hf ≤ (S − b) / 20 > " + C.MINIMOS.losita.toFixed(2) + " m"]],
+      null, null, { alinear: ["Left","Left","Left","Left","Left"] });
+
+    r = h.subtitulo(r, "1.3   Espesor de losa y de ladrillo según la luz");
+    r = h.tabla(r, L3, ["Luz", "Espesor de losa (m)", "Espesor de ladrillo (m)"],
+      ESPESOR_POR_LUZ, { 1: "0.00", 2: "0.00" });
+    r = h.nota(r, "Tabla de obra. NO forma parte de los 60 ejemplos del libro "
+      + "verificados contra el PDF, y sus tramos se solapan (4–5.5 y 5–6.5). "
+      + "Se reproduce como estaba: úsala como orientación, no como criterio. "
+      + "El peralte que manda es el de la columna h, que sale de h = Ln / α.");
+
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var L = lista(h, r, L7_ALIG,
+      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (m)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3],
+          "=IFERROR(E" + i + "/F" + i + ',"")',
+          "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))",
+          "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "/"
+            + C.PROPORCION.viguetaAligerada + ",0.05),"
+            + C.MINIMOS.viguetaAligerada + "))"];
+      }, { 2: "0.00", 4: "0.000" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
+      + "de 5 cm   |   b = h / " + C.PROPORCION.viguetaAligerada + ", TAMBIÉN al "
+      + "múltiplo de 5 cm superior, con mínimo "
+      + C.MINIMOS.viguetaAligerada.toFixed(2) + " m. La luz libre Ln ya lleva "
+      + "descontado el ancho de las vigas que la limitan: la calcula el modelador, "
+      + "no se mide en el plano.");
+    r = h.nota(r, fs.length + " losa(s) aligerada(s) en " + P.niveles + " nivel(es). "
+      + "El código se arma en el modelador (N1-LA-01) y el Eje ubica el paño en la planta.");
+    return h.cerrar(r);
+  }
+
+  function losaMaciza(P) {
+    var fs = (P.L && P.L.maciza) || [];
+    vacio(fs.length, "losas macizas");
+    var h = F.hoja("PRE_LOSA_MACIZA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE LOSA MACIZA");
+
+    r = h.seccion(r, "1. LOSA MACIZA");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
+    r = h.tabla(r, L2, ["Tipo de losa maciza", "α"],
+      [["Losa maciza armada en una dirección", C.ALFA_LOSA.maciza.alfa]]);
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,5],[6,10]], ["Tipo de losa", "Peralte  h"],
+      [["LOSA MACIZA", "h = Ln / α        (Oviedo:  h = Ln / "
+        + C.ALFA_LOSA.maciza.alfa + ")"]], null, null, { alinear: DFIN });
+
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var L = lista(h, r, L6_MAC,
+      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3],
+          "=IFERROR(E" + i + "/F" + i + ',"")',
+          "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))"];
+      }, { 2: "0.00", 4: "0.000" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
+      + "de 5 cm. La maciza no lleva vigueta ni separación: es una sola pieza.");
+    r = h.nota(r, fs.length + " losa(s) maciza(s) en " + P.niveles + " nivel(es).");
+    return h.cerrar(r);
+  }
+
+  function losaNervada(P) {
+    var fs = (P.L && P.L.nervada) || [];
+    vacio(fs.length, "losas nervadas");
+    var h = F.hoja("PRE_LOSA_NERVADA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE LOSA NERVADA");
+
+    r = h.seccion(r, "1. LOSA NERVADA");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
+    r = h.tabla(r, L2, ["Tipo de losa nervada", "α"],
+      [["Losa nervada armada en una dirección", C.ALFA_LOSA.nervada.alfa]]);
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,3],[4,5],[6,7],[8,9],[10,10]],
+      ["Tipo de losa", "Peralte  h", "Ancho de nervadura  b",
+       "Separación entre nervaduras  S", "Espesor de losa superior  hf"],
+      [["LOSA NERVADA", "h = Ln / α",
+        "b = h / " + C.PROPORCION.nervadura + " ≥ "
+          + C.MINIMOS.nervadura.toFixed(2) + " m",
+        "S ≤ " + C.PROPORCION.nervadura + " h",
+        "hf ≤ (S − b) / 20 > " + C.MINIMOS.losita.toFixed(2) + " m"]],
+      null, null, { alinear: ["Left","Left","Left","Left","Left"] });
+
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var L = lista(h, r, L8,
+      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (m)", "S (m)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3],
+          "=IFERROR(E" + i + "/F" + i + ',"")',
+          "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))",
+          "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "/" + C.PROPORCION.nervadura
+            + ",0.05)," + C.MINIMOS.nervadura + "))",
+          "=IF(N(G" + i + ')=0,"",ROUND(' + C.PROPORCION.nervadura + "*G" + i + ",2))"];
+      }, { 2: "0.00", 4: "0.000" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "A diferencia de la aligerada, la separación de la nervada NO es "
+      + "fija: S ≤ " + C.PROPORCION.nervadura + " h, así que depende del peralte. "
+      + "En la aligerada S es el ladrillo (" + C.PROPORCION.separacionAligerada.toFixed(2)
+      + " m) y no se calcula.");
+    r = h.nota(r, fs.length + " losa(s) nervada(s) en " + P.niveles + " nivel(es).");
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
+     2 · VIGAS
+     ===================================================================== */
+  function vigaPrincipal(P) {
+    var fs = P.V || [];
+    vacio(fs.length, "vigas principales");
+    var h = F.hoja("PRE_VIGA_PRINCIPAL"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE VIGA PRINCIPAL");
+
+    r = h.seccion(r, "1. VIGA PRINCIPAL");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
+    r = h.tabla(r, L2, ["W s/c", "α"], filasTramos(C.ALFA_VIGA.principal.tramos));
+    r = h.nota(r, "Esta tabla llega a " + C.ALFA_VIGA.principal.tope
+      + " kg/m²; la de losas se corta en " + C.ALFA_LOSA.aligerada.tope
+      + ". Son tablas distintas: usar la de losas para una viga da α = "
+      + C.ALFA_LOSA.aligerada.tramos[0][1] + " donde corresponde "
+      + C.ALFA_VIGA.principal.tramos[0][1] + ".");
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, L3, ["Tipo de viga", "Peralte  h", "Ancho  b"],
+      [["VIGA PRINCIPAL", "h = Ln / α",
+        "b = B / " + C.PROPORCION.baseVigaPrincipal + " ≥ "
+          + C.MINIMOS.baseViga.toFixed(2) + " m"]],
+      null, null, { alinear: ["Left","Left","Left"] });
+
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var bmin = Math.round(C.MINIMOS.baseViga * 100);
+    var L = lista(h, r, L8,
+      ["Código", "Eje", "Ln (m)", "B (m)", "α", "h (m)", "h (cm)", "b (cm)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3], +f[4],
+          "=IFERROR(E" + i + "/G" + i + ',"")',
+          "=IF(N(H" + i + ')=0,"",CEILING(H' + i + "*100,5))",
+          "=IF(N(F" + i + ')=0,"",MAX(CEILING(F' + i + "/"
+            + C.PROPORCION.baseVigaPrincipal + "*100,5)," + bmin + "))"];
+      }, { 2: "0.00", 3: "0.000", 5: "0.000" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "B es el ancho tributario: medio paño a cada lado que tenga losa. "
+      + "h = Ln / α, redondeado hacia arriba al múltiplo de 5 cm   |   b = B / "
+      + C.PROPORCION.baseVigaPrincipal + ", también al múltiplo de 5 cm superior, "
+      + "con mínimo " + bmin + " cm.");
+    r = h.nota(r, fs.length + " viga(s) principal(es) en " + P.niveles + " nivel(es). "
+      + "Las vigas chatas van en su propia hoja: no descuelgan y su peralte no se "
+      + "calcula, se toma de la losa.");
+    return h.cerrar(r);
+  }
+
+  function vigaChata(P) {
+    var fs = P.VCH || [];
+    vacio(fs.length, "vigas chatas");
+    var h = F.hoja("PRE_VIGA_CHATA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE VIGA CHATA");
+
+    r = h.seccion(r, "1. VIGA CHATA");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
+    r = h.tabla(r, [[3,6],[7,8],[9,10]], ["Función de la viga chata", "α", "Ln máx"],
+      [["Secundaria (no recibe otras vigas)", C.ALFA_VIGA.chata.alfa, "h × " + C.ALFA_VIGA.chata.alfa],
+       ["Trabajando como principal", C.ALFA_VIGA.chata.alfaPrincipal,
+        "h × " + C.ALFA_VIGA.chata.alfaPrincipal]],
+      null, null, { alinear: ["Left","Center","Center"] });
+    r = h.nota(r, "La chata NO usa la tabla α de las vigas principales: lleva factor "
+      + "fijo. El modelador no sabe si una chata recibe otras vigas, así que adopta "
+      + "α = " + C.ALFA_VIGA.chata.alfaPrincipal + ", que es el conservador: da la luz "
+      + "máxima más corta y por tanto rechaza antes. Si la chata es claramente "
+      + "secundaria puedes subirla a " + C.ALFA_VIGA.chata.alfa + " en la columna α y "
+      + "el resto de la fila se recalcula solo.");
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+      ["Peralte", "h = espesor de la losa   (la viga chata no descuelga)"],
+      ["Luz libre máxima", "Ln máx = h × α"],
+      ["Ancho", "b = h / " + C.PROPORCION.baseViga + " ≥ "
+        + C.MINIMOS.baseViga.toFixed(2) + " m"]
+    ], null, null, { alinear: DFIN });
+
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var bmin = Math.round(C.MINIMOS.baseViga * 100);
+    var L = lista(h, r, L8,
+      ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[4], +f[3],
+          "=IF(OR(N(F" + i + ")=0,N(G" + i + ')=0),"",F' + i + "/100*G" + i + ")",
+          "=IF(N(F" + i + ')=0,"",MAX(CEILING(F' + i + "/" + C.PROPORCION.baseViga
+            + ",5)," + bmin + "))",
+          "=IF(OR(N(E" + i + ")=0,N(H" + i + ')=0),"",IF(E' + i + "<=H" + i
+            + ',"CUMPLE","NO CUMPLE"))'];
+      }, { 2: "0.00", 5: "0.00" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "El peralte de una viga chata NO se calcula: es el espesor de la "
+      + "losa en la que se apoya, y el complemento lo trae ya resuelto de la hoja de "
+      + "losas. Aquí la pregunta es la contraria: Ln máx = h × α es la luz que ese "
+      + "espesor alcanza. Si Ln la supera, la chata no es viable y hay que peraltar.");
+    r = h.nota(r, fs.length + " viga(s) chata(s) en " + P.niveles + " nivel(es). "
+      + "b = h / " + C.PROPORCION.baseViga + " al múltiplo de 5 cm superior, con "
+      + "mínimo " + bmin + " cm.");
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
+     3 · COLUMNAS
+     ===================================================================== */
+  function columna(P) {
+    var fs = P.C || [];
+    vacio(fs.length, "columnas");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var fc = +P.fc || 210;
+    var h = F.hoja("PRE_COLUMNA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE COLUMNA");
+
+    r = h.seccion(r, "1. CRITERIOS");
+    r = h.subtitulo(r, "1.1   Categoría de la edificación");
+    r = h.tabla(r, [[3,4],[5,5],[6,6],[7,7],[8,10]],
+      ["Categoría", "Factor U", "% s/c", "Peso / m²", "Edificación"],
+      ["esencial","importante","comun"].map(function (k) {
+        var x = C.CATEGORIA[k];
+        return [cap(k), x.U, pct(x.pctSC), x.peso + " kg/m²", TEXTO_CAT[k]];
+      }), { 1: "0.00" }, null, { alinear: D5 });
+
+    r = h.subtitulo(r, "1.2   Coeficiente según la ubicación de la columna");
+    r = h.tabla(r, [[3,4],[5,7],[8,10]],
+      ["Ubicación de la columna", "Área de la sección  Ac", "Área tributaria"],
+      [["INTERIOR",  "Ac = P servicio / (" + C.COLUMNA.C.interior.toFixed(2)  + " f'c)", "mayor"],
+       ["EXTERIOR (perimetral)", "Ac = P servicio / (" + C.COLUMNA.C.exterior.toFixed(2) + " f'c)", "mediana"],
+       ["ESQUINERA", "Ac = P servicio / (" + C.COLUMNA.C.esquinera.toFixed(2) + " f'c)", "menor"]],
+      null, null, { alinear: ["Left","Left","Center"] });
+
+    r = h.subtitulo(r, "1.3   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+      ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
+      ["Área de la columna", "Ac = P servicio / (k · f'c)"],
+      ["Sección cuadrada", "b = √Ac"],
+      ["Sección circular", "Dc = √(4 Ac / π)"],
+      ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"]
+    ], null, null, { alinear: DFIN });
+
+    /* --- datos del edificio: los dos numeros que usan TODAS las filas --- */
+    r = h.seccion(r, "2. DATOS DEL EDIFICIO");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "La eliges en el modelador. Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
+    var fPeso = r;
+    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
+      "Valor de la categoría según Oviedo. Si generaste METRADO_CARGAS, ahí hay "
+      + "un peso metrado que puedes copiar aquí a mano."], { 1: "0" }, { alinear: D3 });
+    var ffc = r;
+    r = h.fila(r, L_DATO, ["f'c del concreto  (kg/cm²)", fc,
+      "E.060: mínimo 210 kg/cm² en elementos sismorresistentes."], { 1: "0" }, { alinear: D3 });
+    r++;
+
+    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
+    var cmin = Math.round(C.MINIMOS.anchoColumna * 100);
+    var K = "IF(D#=\"Interior\"," + C.COLUMNA.C.interior
+          + ",IF(D#=\"Exterior\"," + C.COLUMNA.C.exterior
+          + "," + C.COLUMNA.C.esquinera + "))";
+    var L = lista(h, r, L8,
+      ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
+       "Ac (cm²)", "b (cm)", "h (cm)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3],
+          "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
+          "=IFERROR(G" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
+          "=IF(N(H" + i + ')=0,"",MAX(CEILING(SQRT(H' + i + "),5)," + cmin + "))",
+          "=IF(N(I" + i + ')=0,"",MAX(CEILING(H' + i + "/I" + i + ",5)," + cmin + "))"];
+      }, { 3: "0.000", 4: "0.00", 5: "0" });
+    r = L.fin + 1;
+
+    r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
+      + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
+      + " exterior y " + C.COLUMNA.C.esquinera + " esquinera   |   b = √Ac al múltiplo "
+      + "de 5 cm superior, mínimo " + cmin + " cm   |   h = Ac / b. Si fijas b a mano, "
+      + "h se ajusta y la sección deja de ser cuadrada.");
+    r = h.nota(r, "La ubicación no se elige: sale de la planta. Una columna con cuatro "
+      + "paños alrededor es interior, con uno es esquinera, y el resto exterior. "
+      + "El N.º de pisos es el número de niveles que carga, contando desde este hacia "
+      + "arriba.");
+    r = h.nota(r, fs.length + " columna(s) en " + P.niveles + " nivel(es). El libro "
+      + "elige la proporción b × h; el complemento no la inventa: da Ac y la sección "
+      + "cuadrada equivalente, y el ajuste es tuyo.");
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
+     4 · PLACAS
+     Aqui la hoja generada NO reproduce la del libro de Excel: la verifica
+     mejor.  La vieja compara el AREA TOTAL contra Ap y da CUMPLE aunque
+     toda la placa este en un eje.  Esta reparte por direccion, que es el
+     criterio del capitulo VI (pags. 167 y 173-177).
+     ===================================================================== */
+  function placa(P) {
+    var fs = P.P || [];
+    vacio(fs.length, "placas");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var h = F.hoja("PRE_PLACA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE PLACA");
+
+    r = h.seccion(r, "1. CRITERIOS");
+    r = h.subtitulo(r, "1.1   Porcentaje de área en planta de muros");
+    r = h.tabla(r, [[3,4],[5,6],[7,10]],
+      ["Categoría", "% / área techada", "Edificación"],
+      ["esencial","importante","comun"].map(function (k) {
+        return [cap(k), pct(C.CATEGORIA[k].pctPlaca), TEXTO_CAT[k]];
+      }), null, null, { alinear: ["Left","Center","Left"] });
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+      ["Área en planta", "Ap = % × área techada"],
+      ["Espesor por longitud", "t ≥ lm / " + C.PLACA.divisorLongitud],
+      ["Espesor por altura", "t ≥ hm / " + C.PLACA.divisorAltura],
+      ["Espesor mínimo", "t ≥ " + C.MINIMOS.espesorPlaca.toFixed(2) + " m"],
+      ["Espesor de diseño", "t = el mayor de los tres anteriores"],
+      ["Reparto por eje", pct(C.PLACA.repartoPorEje) + " en X-X   ·   "
+        + pct(C.PLACA.repartoPorEje) + " en Y-Y"]
+    ], null, null, { alinear: DFIN });
+
+    r = h.seccion(r, "2. DATOS DEL EDIFICIO");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "Fija el porcentaje de la fila siguiente."], null, { alinear: D3 });
+    var fPct = r;
+    r = h.fila(r, L_DATO, ["Porcentaje de área en planta", cat.pctPlaca,
+      "Según la categoría (ver 1.1)."], { 1: "0.000%" }, { alinear: D3 });
+    var fArea = r;
+    r = h.fila(r, L_DATO, ["Área techada total  (m²)", +(P.areaTechada || 0).toFixed(2),
+      "Suma de las áreas de los " + P.niveles + " nivel(es). La mide el modelador."],
+      { 1: "0.00" }, { alinear: D3 });
+    var fAp = r;
+    r = h.fila(r, L_DATO, ["Área de placas requerida  Ap  (m²)",
+      "=IFERROR($F$" + fPct + "*$F$" + fArea + ',"")', "Ap = % × área techada."],
+      { 1: "0.000" }, { alinear: D3 });
+    var fEje = r;
+    r = h.fila(r, L_DATO, ["Requerida por eje  (m²)",
+      "=IFERROR($F$" + fAp + "*" + C.PLACA.repartoPorEje + ',"")',
+      "Cada dirección necesita su mitad. Este es el número que importa."],
+      { 1: "0.000" }, { alinear: D3 });
+    r++;
+
+    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
+    var tmin = Math.round(C.MINIMOS.espesorPlaca * 100);
+    var L = lista(h, r, L8,
+      ["Código", "Eje", "Dir", "lm (m)", "hm (m)", "t mín (m)", "t (cm)", "Área (m²)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], f[2], +f[3], +f[4],
+          "=IF(N(F" + i + ')=0,"",MAX(F' + i + "/" + C.PLACA.divisorLongitud
+            + ",G" + i + "/" + C.PLACA.divisorAltura + "," + C.MINIMOS.espesorPlaca + "))",
+          "=IF(N(H" + i + ')=0,"",MAX(CEILING(H' + i + "*100,5)," + tmin + "))",
+          "=IF(N(I" + i + ')=0,"",F' + i + "*I" + i + "/100)"];
+      }, { 3: "0.00", 4: "0.00", 5: "0.000", 7: "0.000" });
+    r = L.fin + 1;
+
+    /* --- verificacion POR DIRECCION --- */
+    var a = L.primera, b = L.ultima;
+    var sX = "SUMIF($E$" + a + ":$E$" + b + ',"X",$J$' + a + ":$J$" + b + ")";
+    var sY = "SUMIF($E$" + a + ":$E$" + b + ',"Y",$J$' + a + ":$J$" + b + ")";
+
+    r = h.seccion(r, "4. VERIFICACIÓN POR DIRECCIÓN");
+    r = h.encabezado(r, [[3,4],[5,6],[7,8],[9,10]],
+      ["Dirección", "Área colocada (m²)", "Cobertura", "Estado"], ALTO_LISTA);
+    ["X", "Y"].forEach(function (d) {
+      var s = (d === "X") ? sX : sY;
+      h.fila(r, [[3,4],[5,6],[7,8],[9,10]],
+        ["Eje " + d + "-" + d, "=" + s,
+         "=IFERROR(" + s + "/$F$" + fEje + ',"")',
+         "=IF($F$" + fEje + "<=0,\"\",IF(" + s + ">=$F$" + fEje + ',"CUMPLE",'
+           + "IF(" + s + ">=0.97*$F$" + fEje + ',"AJUSTADO","FALTA")))'],
+        { 1: "0.000", 2: "0.0%" }, { alinear: CENTRO });
+      r++;
+    });
+    h.fila(r, [[3,4],[5,6],[7,8],[9,10]],
+      ["Total", "=SUM($J$" + a + ":$J$" + b + ")",
+       "=IFERROR(SUM($J$" + a + ":$J$" + b + ")/$F$" + fAp + ',"")',
+       "=IF($F$" + fAp + "<=0,\"\",IF(SUM($J$" + a + ":$J$" + b + ")>=$F$" + fAp
+         + ',"CUMPLE","FALTA"))'],
+      { 1: "0.000", 2: "0.0%" }, { alinear: CENTRO });
+    r += 2;
+
+    r = h.nota(r, "EL TOTAL NO ES EL CRITERIO. Un edificio con toda su placa en un eje "
+      + "suma bien y no resiste en el otro. Por eso la verificación es por dirección, y "
+      + "la fila «Total» está abajo del todo: es informativa, no decide. La hoja "
+      + "anterior de Excel solo comparaba el total, y aprobaba ese caso.");
+    r = h.nota(r, "AJUSTADO es 97–100 % de lo requerido: el margen que el propio libro "
+      + "se permite al redondear la longitud del muro a medida constructiva. Los seis "
+      + "ejemplos del capítulo VI caen en CUMPLE o AJUSTADO, ninguno reprueba.");
+    r = h.nota(r, "Dir sale del modelo: una placa dibujada a lo largo de X resiste en X. "
+      + "t mín = el mayor de lm/" + C.PLACA.divisorLongitud + ", hm/" + C.PLACA.divisorAltura
+      + " y " + C.MINIMOS.espesorPlaca.toFixed(2) + " m   |   t (cm) al múltiplo de 5 "
+      + "superior, mínimo " + tmin + " cm   |   Área = lm × t. En cada extremo del muro "
+      + "van elementos de borde de 30 cm como mínimo.");
+    r = h.nota(r, fs.length + " placa(s) en " + P.niveles + " nivel(es).");
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
+     5 · METRADO DE CARGAS
+     ===================================================================== */
+  var E020_ANEXO1 = [
+    ["Concreto armado", 2400, "kg/m³   (concreto simple 2300 + 100)"],
+    ["Albañilería de unidades sólidas", 1800, "kg/m³"],
+    ["Albañilería de unidades huecas", 1350, "kg/m³"],
+    ["Mortero de cemento", 2000, "kg/m³"],
+    ["Yeso", 1000, "kg/m³"]
+  ];
+  var CONCRETO = 2400;
+
+  /* Espesor representativo de un tipo de losa: el mayor de la lista, en cm.
+     Se calcula AQUI y viaja como valor: METRADO_CARGAS no puede referirse a
+     PRE_LOSA_* porque esa hoja puede no haberse generado. */
+  function espesorMax(filas) {
+    var m = 0;
+    (filas || []).forEach(function (f) {
+      var alfa = +f[3];
+      if (alfa > 0) m = Math.max(m, a5(+f[2] / alfa));
+    });
+    return m;
+  }
+
+  function metradoCargas(P) {
+    var amb = P.A || [], niv = P.M || [];
+    vacio(amb.length, "paños con uso asignado");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var h = F.hoja("METRADO_CARGAS"), r = 6;
+    h.titulo("METRADO DE CARGAS");
+
+    r = h.seccion(r, "1. PESOS UNITARIOS Y PESO PROPIO");
+    r = h.subtitulo(r, "1.1   Pesos unitarios (E.020, Anexo 1)");
+    r = h.tabla(r, [[3,5],[6,7],[8,10]], ["Material", "Peso", "Unidad"],
+      E020_ANEXO1, { 1: "0" }, null, { alinear: ["Left","Center","Left"] });
+
+    r = h.subtitulo(r, "1.2   Peso propio de las losas");
+    var eA = espesorMax(P.L && P.L.aligerada), eM = espesorMax(P.L && P.L.maciza),
+        eN = espesorMax(P.L && P.L.nervada);
+    r = h.encabezado(r, L_PESO,
+      ["Tipo de losa", "Espesor (cm)", "Peso (kg/m²)", "Origen del valor"], ALTO_LISTA);
+    var fA = r;
+    r = h.fila(r, L_PESO, ["Aligerada", eA || 20,
+      "=IF($E$" + r + "<=17,280,IF($E$" + r + "<=20,300,IF($E$" + r + "<=25,350,420)))",
+      "E.020 Anexo 1, tabla de aligerados. El espesor es el mayor de las "
+      + ((P.L && P.L.aligerada) || []).length + " losa(s) aligerada(s) del modelo."],
+      { 1: "0", 2: "0" }, { alinear: D4 });
+    var fM = r;
+    r = h.fila(r, L_PESO, ["Maciza", eM || 20,
+      "=ROUND(" + CONCRETO + "*$E$" + r + "/100,0)",
+      "E.020: concreto armado " + CONCRETO + " kg/m³ × espesor."], { 1: "0", 2: "0" }, { alinear: D4 });
+    var fN = r;
+    r = h.fila(r, L_PESO, ["Nervada", eN || 30,
+      "=ROUND(" + CONCRETO + "*$E$" + r + "/100*0.6,0)",
+      "ESTIMADO: 60 % de una maciza del mismo espesor. La E.020 no lo tabula."],
+      { 1: "0", 2: "0" }, { alinear: D4 });
+    r++;
+
+    r = h.subtitulo(r, "1.3   Otras cargas permanentes");
+    r = h.encabezado(r, [[3,5],[6,7],[8,10]], ["Carga", "kg/m²", "Origen del valor"],
+      ALTO_LISTA);
+    var f1 = r;
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Piso terminado", 100,
+      "Mortero 2000 kg/m³ × 5 cm (E.020 Anexo 1)."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Tabiquería", 100,
+      "ESTIMADO. Con muros de albañilería conviene metrarlos."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Cielo raso", 20,
+      "Yeso 1000 kg/m³ × 2 cm (E.020 Anexo 1)."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Vigas, columnas y placas", 150,
+      "ESTIMADO. Es el peso de la estructura repartido sobre el área techada."],
+      { 1: "0" }, { alinear: D3 });
+    var fOtras = r;
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Total de otras cargas",
+      "=SUM($F$" + f1 + ":$F$" + (r - 1) + ")", "Se suma al peso propio de la losa."],
+      { 1: "0" }, { alinear: D3 });
+    r++;
+
+    r = h.subtitulo(r, "1.4   Categoría, factor U y sobrecarga");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "La eliges en el modelador."], null, { alinear: D3 });
+    var fPct = r;
+    r = h.fila(r, L_DATO, ["% de la sobrecarga", cat.pctSC,
+      "Común " + pct(C.CATEGORIA.comun.pctSC) + "  ·  Esencial e Importante "
+      + pct(C.CATEGORIA.esencial.pctSC) + "."], { 1: "0%" }, { alinear: D3 });
+    var fU = r;
+    r = h.fila(r, L_DATO, ["Factor U", cat.U,
+      "E.030. Multiplica todo el peso, no solo la sobrecarga."], { 1: "0.00" }, { alinear: D3 });
+    r++;
+
+    /* --- 2. carga viva por ambiente --- */
+    r = h.seccion(r, "2. CARGA VIVA POR AMBIENTE");
+    var LA = lista(h, r, L_AMB,
+      ["Nivel", "Ocupación", "Ambiente", "Área (m²)", "S/C (kg/m²)", "Aporte"],
+      amb,
+      function (f, i) {
+        return [f[0], f[1], f[2], +f[3], (f[4] === "" ? "" : +f[4]),
+          "=IF(N(H" + i + ")*N(I" + i + ")=0,0,H" + i + "*I" + i + ")"];
+      }, { 3: "0.00", 4: "0", 5: "0" });
+    r = LA.fin + 1;
+    var a1 = LA.primera, b1 = LA.ultima;
+
+    r = h.nota(r, "Aporte = Área × S/C. La sobrecarga de cada nivel NO se escribe: sale "
+      + "de dividir la suma de aportes entre la suma de áreas, así que se puede auditar "
+      + "fila por fila. Los paños sin uso asignado no entran: con S/C 0 bajarían el "
+      + "promedio sin que se note.");
+
+    /* --- 3. metrado por nivel --- */
+    r = h.seccion(r, "3. METRADO POR NIVEL");
+    var LN = lista(h, r, L8,
+      ["Código", "S/C (kg/m²)", "Área (m²)", "Aligerada (m²)", "Maciza (m²)",
+       "Nervada (m²)", "CM (kg/m²)", "P servicio (kg/m²)"],
+      niv,
+      function (f, i) {
+        return [f[0],
+          "=IFERROR(SUMIF($C$" + a1 + ":$C$" + b1 + ",C" + i + ",$J$" + a1 + ":$J$" + b1
+            + ")/SUMIF($C$" + a1 + ":$C$" + b1 + ",C" + i + ",$H$" + a1 + ":$H$" + b1 + "),0)",
+          +f[1], +f[2], +f[3], +f[4],
+          "=IF(N(E" + i + ")=0,0,(F" + i + "*$G$" + fA + "+G" + i + "*$G$" + fM
+            + "+H" + i + "*$G$" + fN + ")/E" + i + "+$F$" + fOtras + ")",
+          "=IF(N(I" + i + ")=0,0,$F$" + fU + "*(I" + i + "+$F$" + fPct + "*D" + i + "))"];
+      }, { 1: "0", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0", 7: "0" });
+    r = LN.fin + 1;
+    var a2 = LN.primera, b2 = LN.ultima;
+
+    /* --- 4. resultado --- */
+    r = h.seccion(r, "4. RESULTADO");
+    r = h.encabezado(r, L_DATO, ["Resultado", "Valor", "Observación"], ALTO_LISTA);
+    var fRes = r;
+    r = h.fila(r, L_DATO, ["Peso en servicio del edificio  (kg/m²)",
+      "=IFERROR(SUMPRODUCT($E$" + a2 + ":$E$" + b2 + ",$J$" + a2 + ":$J$" + b2
+        + ")/SUM($E$" + a2 + ":$E$" + b2 + '),"")',
+      "Promedio ponderado por área. PRE_COLUMNA lo puede usar en vez del valor de "
+      + "la categoría: cópialo a mano."], { 1: "0" }, { alinear: D3 });
+    var fFijo = r;
+    r = h.fila(r, L_DATO, ["Valor fijo de la categoría (Oviedo)", cat.peso,
+      "El atajo del libro: " + C.CATEGORIA.esencial.peso + " / "
+      + C.CATEGORIA.importante.peso + " / " + C.CATEGORIA.comun.peso + " kg/m²."],
+      { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["Diferencia",
+      "=IFERROR($F$" + fRes + "/$F$" + fFijo + '-1,"")',
+      "Positivo: el metrado pesa más que el atajo del libro."], { 1: "0.0%" }, { alinear: D3 });
+    r++;
+
+    r = h.nota(r, "CM = (peso propio de cada losa × su área) / área techada + otras "
+      + "cargas   |   P servicio = U × (CM + % × S/C). La sobrecarga va por nivel, así "
+      + "que un edificio con comercio abajo y vivienda arriba se resuelve solo.");
+    r = h.nota(r, "El peso de la estructura de 1.3 está ESTIMADO en 150 kg/m² a "
+      + "propósito. Calcularlo desde las secciones y enlazarlo sería circular: la "
+      + "sección de las columnas depende del peso y el peso de la sección. El metrado "
+      + "va en dos pasadas: predimensionas con el estimado, miras las secciones que "
+      + "salen y vuelves. La tercera pasada ya casi no mueve nada.");
+    r = h.nota(r, "Ninguna fórmula de esta hoja sale de ella. Los espesores de 1.2 los "
+      + "calculó el complemento desde el modelo, no los lee de PRE_LOSA_*: esas hojas "
+      + "pueden no existir, porque solo se generan si hay elementos de ese tipo.");
+    r = h.nota(r, amb.length + " ambiente(s) con uso asignado en " + niv.length
+      + " nivel(es).");
+    return h.cerrar(r);
+  }
+
+  return {
+    losaAligerada: losaAligerada, losaMaciza: losaMaciza, losaNervada: losaNervada,
+    vigaPrincipal: vigaPrincipal, vigaChata: vigaChata,
+    columna: columna, placa: placa, metradoCargas: metradoCargas
+  };
 });
 </script>
 <script>
@@ -1041,7 +1808,7 @@ function leerDimensiones(){
   });
 }
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v19 · 08-09-2026";
+var BUILD = "v22 · 08-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -1225,13 +1992,35 @@ function alRecibir(arg){
    El dialogo no habla con Excel, asi que pide la accion y recoge el
    resultado de localStorage, que comparten por ser el mismo origen. */
 /* Nombre de hoja -> constructor del plan.  Anadir una hoja es anadir una
-   linea aqui y otra en el CATALOGO del modelador; nada mas. */
+   linea aqui y otra en el CATALOGO del modelador; nada mas.
+
+   Las de referencia no reciben nada: salen solas.  Las ocho del proyecto
+   reciben el paquete del modelador y LANZAN si no hay elementos de su tipo,
+   que es como se cumple la generacion condicional: la ausencia de una hoja
+   no es un fallo, es informacion. */
 var REGISTRO = {
-  "CRITERIOS_OVIEDO": function(){ return HOJAS.criteriosOviedo(); },
-  "NORMA E020":       function(){ return HOJAS.normaE020(); }
+  "CRITERIOS_OVIEDO":   function(){ return HOJAS.criteriosOviedo(); },
+  "NORMA E020":         function(){ return HOJAS.normaE020(); },
+  "PRE_LOSA_ALIGERADA": function(p){ return HOJAS_PRE.losaAligerada(p); },
+  "PRE_LOSA_MACIZA":    function(p){ return HOJAS_PRE.losaMaciza(p); },
+  "PRE_LOSA_NERVADA":   function(p){ return HOJAS_PRE.losaNervada(p); },
+  "PRE_VIGA_PRINCIPAL": function(p){ return HOJAS_PRE.vigaPrincipal(p); },
+  "PRE_VIGA_CHATA":     function(p){ return HOJAS_PRE.vigaChata(p); },
+  "PRE_COLUMNA":        function(p){ return HOJAS_PRE.columna(p); },
+  "PRE_PLACA":          function(p){ return HOJAS_PRE.placa(p); },
+  "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); }
 };
 
+/* El proyecto lo deja el dialogo en localStorage antes de pedir la accion:
+   messageParent tiene limite de tamano y un edificio grande lo pasa.  Mismo
+   origen, asi que el taskpane lo lee sin mas. */
+function proyecto(){
+  try{ return JSON.parse(localStorage.getItem("reticula_proyecto")||"null"); }
+  catch(e){ return null; }
+}
+
 function generarHojas(cuales){
+  var P = proyecto();
   var caps = FORMATO.capacidades();
   var opts = { rangeAreas: !!caps.formas };   /* getRanges pide ExcelApi 1.9 */
   var hechas = [], t0 = Date.now();
@@ -1240,14 +2029,16 @@ function generarHojas(cuales){
     if(i >= cuales.length){
       var res = { t: Date.now(), total: Date.now() - t0, hojas: hechas, caps: caps };
       try{ localStorage.setItem("reticula_hojas", JSON.stringify(res)); }catch(e){}
-      estado("Generadas " + hechas.length + " hoja(s) en " + res.total + " ms.", "ok");
+      var bien = hechas.filter(function(x){ return !x.error; }).length;
+      estado("Generadas " + bien + " de " + cuales.length + " hoja(s) en "
+             + res.total + " ms.", bien ? "ok" : "err");
       return;
     }
     var nombre = cuales[i], plan;
     try{
       var constructor = REGISTRO[nombre];
       if(!constructor) throw new Error("hoja no implementada: " + nombre);
-      plan = constructor();
+      plan = constructor(P);
     }catch(e){
       hechas.push({ hoja: nombre, error: e.message });
       return siguiente(i + 1);

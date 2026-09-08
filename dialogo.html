@@ -231,6 +231,9 @@
   color:var(--ink);cursor:pointer}
 .hoja-card.no label{color:#9a9a9a;cursor:not-allowed}
 .hg-res{margin-top:20px}
+.hg-cab .mini{background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+  border-radius:2px;padding:4px 6px;font:500 12px "IBM Plex Mono",monospace}
+.hg-cab input.mini{width:74px;text-align:right}
 </style>
 
 <div class="app">
@@ -882,7 +885,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v19 · 08-09-2026";
+  var BUILD="v22 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -919,6 +922,9 @@ var TT={script:performance.now()};
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
        ladoCol:0.50,dimsFecha:0,dimsHuella:"",verDims:true,envioHuella:"",
+       /* f'c: lo unico del predimensionamiento de columnas que no sale de la
+          planta.  E.060 pide 210 como minimo en elementos sismorresistentes. */
+       fc:210,
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano",
        /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
        categoria:"comun"};
@@ -1183,7 +1189,15 @@ var TT={script:performance.now()};
     ps.forEach(function(q){if(q)mx=Math.max(mx,scPano(q))});
     return mx>0?mx:scDefecto();
   }
+  /* La chata NO usa la tabla de sobrecarga: su alfa es fijo (14 si es
+     secundaria, 12 si trabaja como principal).  El modelador no sabe si
+     recibe otras vigas, asi que adopta 12, que es el conservador: da la luz
+     maxima mas corta y por tanto rechaza antes.  Con la tabla de principales
+     una chata bajo 500 kg/m2 salia con alfa 10, que no esta en el libro. */
   function alfaViga(o,i,j,m){
+    var v=m?m.vigas[key(o,i,j)]:null;
+    if(v&&tipoViga(v)==="chata")
+      return CRITERIOS.alfaViga("chata", null, true).alfa;
     return CRITERIOS.alfaViga("principal", scViga(o,i,j,m)).alfa;
   }
   /* compatibilidad: alfa() sin paño usa la sobrecarga por defecto */
@@ -1792,6 +1806,25 @@ var TT={script:performance.now()};
     if(gb)gb.onclick=function(){snap();var o=N().losas[key(q.i,q.j)];o.dir=o.dir==="y"?"x":"y";render()};
   }
 
+  /* Espesor adoptado de un pano, en cm.  Lo necesita la viga chata: su
+     peralte NO se calcula, es el de la losa en la que se apoya.  Antes lo
+     escribia el usuario en Excel; ahora el complemento ya lo sabe. */
+  function espesorLosaCm(i,j,m){
+    var o=m.losas[key(i,j)];
+    if(!o)return null;
+    var a=alfaLosa(o); if(!(a>0))return null;
+    return Math.ceil(medLosa(i,j,m).Ln/a*100/5)*5;
+  }
+  /* La chata corre sobre una linea de reticula: mira los panos de sus dos
+     lados y se queda con el espesor mayor, que es el que manda. */
+  function espesorParaChata(o,i,j,m){
+    var a,b;
+    if(o==="h"){a=espesorLosaCm(i,j-1,m); b=espesorLosaCm(i,j,m);}
+    else       {a=espesorLosaCm(i-1,j,m); b=espesorLosaCm(i,j,m);}
+    var e=Math.max(a||0,b||0);
+    return e>0?e:20;                 /* sin losa al lado: el espesor tipico */
+  }
+
   /* ---------- exportacion ---------- */
   function filas(niv){
     var m=S.niveles[niv],nm=nombres(niv),nX=m.dx.length+1,nY=m.dy.length+1,
@@ -1804,14 +1837,18 @@ var TT={script:performance.now()};
       /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
          que lo pone Excel. Van 4 datos, no 5. */
       var av=alfaViga(o,i,j,m);
-      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),av]);
+      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),av,
+                                     espesorParaChata(o,i,j,m)]);
       else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),av]);
     }
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])pushViga("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])pushViga("v",i,j);
     function pushPlaca(o,i,j){
       var k=o+":"+i+":"+j,pm=medPlaca(o,i,j,m),b=nm.P[k];
-      PL.push([b.cod,b.eje,pm.lm.toFixed(2),pm.hm.toFixed(2)]);
+      /* h: corre a lo largo de X y resiste en X.  v: idem en Y.  Sin esto
+         la hoja solo puede sumar area total, que es justo lo que aprueba
+         mal un edificio con toda la placa en un eje. */
+      PL.push([b.cod,b.eje,(o==="h"?"X":"Y"),pm.lm.toFixed(2),pm.hm.toFixed(2)]);
     }
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])pushPlaca("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])pushPlaca("v",i,j);
@@ -1832,6 +1869,25 @@ var TT={script:performance.now()};
     });
     return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB};
   }
+  /* Todo el proyecto en un objeto, que es lo que necesitan las ocho hojas
+     de predimensionamiento.  Va por localStorage, no por messageParent: el
+     mensaje del dialogo tiene limite de tamano y un edificio grande lo pasa. */
+  function paquete(){
+    var C=[],V=[],VCH=[],PL=[],M=[],A=[],
+        L={aligerada:[],maciza:[],nervada:[]},area=0;
+    S.niveles.forEach(function(m,k){
+      var p=filas(k);
+      C=C.concat(p.C); V=V.concat(p.V); VCH=VCH.concat(p.VCH); PL=PL.concat(p.P);
+      M=M.concat(p.M); A=A.concat(p.A);
+      L.aligerada=L.aligerada.concat(p.L.aligerada);
+      L.maciza=L.maciza.concat(p.L.maciza);
+      L.nervada=L.nervada.concat(p.L.nervada);
+      area+=areaNivel(m);
+    });
+    return {categoria:S.categoria,fc:+S.fc||210,niveles:S.niveles.length,
+            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A};
+  }
+
   function tabla(){
     var todos=$("#todos").checked,th=$("#tabla thead"),tb=$("#tabla tbody"),H,CAL,R=[];
     var packs=todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)];
@@ -1839,9 +1895,9 @@ var TT={script:performance.now()};
       packs.forEach(function(p){R=R.concat(p.C)});}
     else if(S.tab==="viga"){H=["Código","Eje","Ln (m)","B (m)","α"];CAL=["h","h (cm)","b (cm)"];
       packs.forEach(function(p){R=R.concat(p.V)});}
-    else if(S.tab==="chata"){H=["Código","Eje","Ln (m)","α"];CAL=["h losa · lo pones tú","Ln máx","b (cm)","Estado"];
+    else if(S.tab==="chata"){H=["Código","Eje","Ln (m)","α","h losa (cm)"];CAL=["Ln máx","b (cm)","Estado"];
       packs.forEach(function(p){R=R.concat(p.VCH)});}
-    else if(S.tab==="placa"){H=["Código","Eje","lm (m)","hm (m)"];CAL=["t mín","t (cm)","Área (m²)","% del Ap"];
+    else if(S.tab==="placa"){H=["Código","Eje","Dir","lm (m)","hm (m)"];CAL=["t mín","t (cm)","Área (m²)"];
       packs.forEach(function(p){R=R.concat(p.P)});}
     else if(S.tab==="metrado"){H=["Nivel","S/C (kg/m²)","Área (m²)","Aligerada (m²)","Maciza (m²)","Nervada (m²)"];
       CAL=["CM (kg/m²)","P servicio (kg/m²)"];
@@ -2055,7 +2111,12 @@ var TT={script:performance.now()};
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
   ];
-  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true};
+  /* Las diez.  Se deja el mapa -en vez de darlas todas por buenas- porque
+     es donde se ve de un vistazo que hay y que falta. */
+  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,
+    PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
+    PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
+    PRE_PLACA:true,METRADO_CARGAS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -2126,14 +2187,38 @@ var TT={script:performance.now()};
         '<p class="nota">«Encolar» es preparar las órdenes; «Excel» es aplicarlas.</p></div>';
     }
 
+    /* Los dos datos del proyecto que NO salen de la planta y que sin embargo
+       entran en las hojas: la categoria manda el peso/m2 y el % de placas, y
+       f'c manda el area de las columnas.  Van aqui porque es donde se generan. */
+    var ctrl=
+      '<label class="lbl" for="catHojas">Categoría</label>'+
+      '<select id="catHojas" class="mini">'+
+      ['comun','importante','esencial'].map(function(c){
+        return '<option value="'+c+'"'+(S.categoria===c?' selected':'')+'>'+
+               c.charAt(0).toUpperCase()+c.slice(1)+' · '+
+               CRITERIOS.CATEGORIA[c].peso+' kg/m²</option>'}).join("")+
+      '</select>'+
+      '<label class="lbl" for="fcHojas">f&#39;c</label>'+
+      '<input id="fcHojas" class="mini" type="number" min="210" max="550" step="10" '+
+      'value="'+(+S.fc||210)+'"><span class="lbl">kg/cm²</span>';
+
     $("#panelHojas").innerHTML=
       '<div class="hg-cab">'+
       '<button id="btnHojas" class="pri"'+(seleccion.length?"":" disabled")+'>'+
       'Generar '+seleccion.length+' hoja'+(seleccion.length===1?"":"s")+'</button>'+
       '<span class="cuenta">'+seleccion.length+' de '+CATALOGO.length+' seleccionadas</span>'+
+      ctrl+
       '<span class="lbl">El complemento no necesita un libro preparado: lo produce. '+
       'Abre un Excel en blanco y genera.</span></div>'+
       '<div class="hg">'+tarjetas+'</div>'+res;
+
+    $("#catHojas").onchange=function(){ S.categoria=this.value; guardar(); render(); };
+    $("#fcHojas").onchange=function(){
+      var v=+this.value;
+      /* E.060: 210 a 550. Fuera de ahi no es que salga mal, es que no aplica. */
+      S.fc=(v>=210&&v<=550)?v:210;
+      guardar(); render();
+    };
 
     $("#panelHojas").querySelectorAll("[data-chk]").forEach(function(i){
       i.onchange=function(){ S.hojasSel[this.dataset.chk]=this.checked; guardar(); render(); };
@@ -2254,7 +2339,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio,render:render};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio,render:render,paquete:paquete};
 })();
 </script>
 
@@ -2297,6 +2382,14 @@ var TT={script:performance.now()};
     var St=(window.RET&&window.RET.estado)?window.RET.estado():null,cuales=[],k;
     if(St&&St.hojasSel)for(k in St.hojasSel)if(St.hojasSel[k])cuales.push(k);
     if(!cuales.length){alert("No hay ninguna hoja marcada.");return;}
+    /* El proyecto va por localStorage, no dentro del mensaje: messageParent
+       tiene limite de tamano y un edificio grande lo pasa.  Mismo origen. */
+    try{
+      if(window.RET&&window.RET.paquete)
+        localStorage.setItem("reticula_proyecto",JSON.stringify(window.RET.paquete()));
+    }catch(e){
+      alert("No se pudo preparar el proyecto: "+e.message); return;
+    }
     b.disabled=true; var txt=b.textContent; b.textContent="Generando...";
     avisar({accion:"generarHojas",cuales:cuales});
     var t0=Date.now();
