@@ -533,6 +533,103 @@
 });
 </script>
 <script>
+/* ===== e020.js (inlinado) ===== */
+/* =====================================================================
+   e020.js — TABLA 1 DE LA NORMA E.020, copia unica.
+
+   Carga viva minima repartida por ocupacion o uso.  GENERADO por
+   oviedo/gen_e020.py a partir de scripts/hojas/build_e020.py, y cotejado
+   contra la hoja NORMA E020 del libro real antes de escribirse.
+
+   NO EDITAR A MANO: se regenera.  Si la norma cambia, se cambia alli.
+
+   w = null significa que la norma NO tabula el valor -remite a otro
+   articulo o a otro uso-; esas filas las tiene que resolver el proyectista,
+   y por eso salen en gris en la hoja.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.E020 = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var TABLA = [
+    {"a": "", "g": "ALMACENAJE", "kpa": 5.0, "o": "Verificar conformidad (Art. 6.4)", "w": 500.0},
+    {"a": "Techo plano, inclinación hasta 3°", "g": "AZOTEA Y TECHOS", "kpa": 1.0, "o": "E.020 Art. 7.1 a)", "w": 100.0},
+    {"a": "Techo inclinado más de 3°", "g": "AZOTEA Y TECHOS", "kpa": null, "o": "E.020 Art. 7.1 b): 100 kgf/m² menos 5 kgf/m² por cada grado sobre 3°, con mínimo 50 kgf/m²", "w": null},
+    {"a": "Techo curvo", "g": "AZOTEA Y TECHOS", "kpa": 0.5, "o": "E.020 Art. 7.1 c)", "w": 50.0},
+    {"a": "Cobertura liviana (calamina, fibrocemento, plástico)", "g": "AZOTEA Y TECHOS", "kpa": 0.3, "o": "E.020 Art. 7.1 d), cualquiera sea su pendiente.  Con nieve, ver Art. 11", "w": 30.0},
+    {"a": "Malecones y terrazas", "g": "AZOTEA Y TECHOS", "kpa": null, "o": "E.020 Art. 7.1 e): se aplica la carga viva de su uso particular, según esta misma tabla", "w": null},
+    {"a": "", "g": "BAÑOS", "kpa": 3.0, "o": "Igual a la carga principal del resto del área, sin que sea necesario que exceda de 3,0 kPa (300)", "w": 300.0},
+    {"a": "Salas de lectura", "g": "BIBLIOTECAS", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Salas de almacenaje con estantes fijos (no apilables)", "g": "BIBLIOTECAS", "kpa": 7.5, "o": "Verificar conformidad (Art. 6.4)", "w": 750.0},
+    {"a": "Corredores y escaleras", "g": "BIBLIOTECAS", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Aulas", "g": "CENTROS DE EDUCACIÓN", "kpa": 2.5, "o": "", "w": 250.0},
+    {"a": "Talleres", "g": "CENTROS DE EDUCACIÓN", "kpa": 3.5, "o": "Verificar conformidad (Art. 6.4)", "w": 350.0},
+    {"a": "Auditorios, gimnasios, etc.", "g": "CENTROS DE EDUCACIÓN", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Laboratorios", "g": "CENTROS DE EDUCACIÓN", "kpa": 3.0, "o": "Verificar conformidad (Art. 6.4)", "w": 300.0},
+    {"a": "Corredores y escaleras", "g": "CENTROS DE EDUCACIÓN", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Parqueo exclusivo de vehículos de pasajeros, con altura de entrada menor que 2,40 m", "g": "GARAJES", "kpa": 2.5, "o": "", "w": 250.0},
+    {"a": "Para otros vehículos", "g": "GARAJES", "kpa": null, "o": "Ver cargas vivas móviles (Art. 9.3)", "w": null},
+    {"a": "Salas de operación, laboratorios y áreas de servicio", "g": "HOSPITALES", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Cuartos", "g": "HOSPITALES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Corredores y escaleras", "g": "HOSPITALES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Cuartos", "g": "HOTELES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Salas públicas", "g": "HOTELES", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Almacenaje y servicios", "g": "HOTELES", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "HOTELES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "", "g": "INDUSTRIA", "kpa": null, "o": "Verificar conformidad (Art. 6.4)", "w": null},
+    {"a": "Celdas y zona de habitación", "g": "INSTITUCIONES PENALES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Zonas públicas", "g": "INSTITUCIONES PENALES", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Corredores y escaleras", "g": "INSTITUCIONES PENALES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Con asientos fijos", "g": "LUGARES DE ASAMBLEA", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Con asientos movibles", "g": "LUGARES DE ASAMBLEA", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Salones de baile, restaurantes, museos, gimnasios y vestíbulos de teatros y cines", "g": "LUGARES DE ASAMBLEA", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Graderías y tribunas", "g": "LUGARES DE ASAMBLEA", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "LUGARES DE ASAMBLEA", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Exceptuando salas de archivo y computación", "g": "OFICINAS", "kpa": 2.5, "o": "No incluye la posible tabiquería móvil", "w": 250.0},
+    {"a": "Salas de archivo", "g": "OFICINAS", "kpa": 5.0, "o": "No incluye la posible tabiquería móvil", "w": 500.0},
+    {"a": "Salas de computación", "g": "OFICINAS", "kpa": 2.5, "o": "Verificar conformidad (Art. 6.4) - No incluye la posible tabiquería móvil", "w": 250.0},
+    {"a": "Corredores y escaleras", "g": "OFICINAS", "kpa": 4.0, "o": "No incluye la posible tabiquería móvil", "w": 400.0},
+    {"a": "Vestidores", "g": "TEATROS", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Cuarto de proyección", "g": "TEATROS", "kpa": 3.0, "o": "Verificar conformidad (Art. 6.4)", "w": 300.0},
+    {"a": "Escenario", "g": "TEATROS", "kpa": 7.5, "o": "", "w": 750.0},
+    {"a": "Zonas públicas", "g": "TEATROS", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "", "g": "TIENDAS", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "TIENDAS", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "", "g": "VIVIENDAS", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Corredores y escaleras", "g": "VIVIENDAS", "kpa": 2.0, "o": "", "w": 200.0}
+  ];
+
+  /* Ocupaciones, en el orden en que aparecen en la norma. */
+  function usos() {
+    var v = [], i;
+    for (i = 0; i < TABLA.length; i++)
+      if (v.indexOf(TABLA[i].g) < 0) v.push(TABLA[i].g);
+    return v;
+  }
+
+  function ambientes(uso) {
+    return TABLA.filter(function (f) { return f.g === uso; });
+  }
+
+  /* Carga de un ambiente concreto.  null = la norma no la tabula. */
+  function carga(uso, ambiente) {
+    var i;
+    for (i = 0; i < TABLA.length; i++)
+      if (TABLA[i].g === uso && TABLA[i].a === (ambiente || "")) return TABLA[i].w;
+    return null;
+  }
+
+  function sinTabular() { return TABLA.filter(function (f) { return f.w == null; }); }
+
+  return { TABLA: TABLA, usos: usos, ambientes: ambientes,
+           carga: carga, sinTabular: sinTabular,
+           ENCABEZADOS: ["Ocupación o Uso", "Ambiente", "Carga repartida\n(kPa)", "Carga repartida\n(kgf/m²)", "Observación"],
+           LAYOUT: [[3, 4], [5, 7], [8, 8], [9, 9], [10, 10]] };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -785,7 +882,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v18 · 08-09-2026";
+  var BUILD="v19 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -812,9 +909,9 @@ var TT={script:performance.now()};
     for(k in m.vigas) if(typeof m.vigas[k] !=="object")m.vigas[k]={t:"principal"};
     return m;
   }
-    /* La Tabla 1 de la E.020 la hornea gen_complemento.py desde la hoja NORMA E020.
-     w = null significa que la norma no tabula el valor: lo escribe el usuario. */
-  var E020=[{"u":"ALMACENAJE","a":"","w":500.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"AZOTEA Y TECHOS","a":"Techo plano, inclinación hasta 3°","w":100.0,"o":"E.020 Art. 7.1 a)"},{"u":"AZOTEA Y TECHOS","a":"Techo inclinado más de 3°","w":null,"o":"E.020 Art. 7.1 b): 100 kgf/m² menos 5 kgf/m² por cada grado sobre 3°, con mínimo 50 kgf/m²"},{"u":"AZOTEA Y TECHOS","a":"Techo curvo","w":50.0,"o":"E.020 Art. 7.1 c)"},{"u":"AZOTEA Y TECHOS","a":"Cobertura liviana (calamina, fibrocemento, plástico)","w":30.0,"o":"E.020 Art. 7.1 d), cualquiera sea su pendiente.  Con nieve, ver Art. 11"},{"u":"AZOTEA Y TECHOS","a":"Malecones y terrazas","w":null,"o":"E.020 Art. 7.1 e): se aplica la carga viva de su uso particular, según esta misma tabla"},{"u":"BAÑOS","a":"","w":300.0,"o":"Igual a la carga principal del resto del área, sin que sea necesario que exceda de 3,0 kPa (300)"},{"u":"BIBLIOTECAS","a":"Salas de lectura","w":300.0,"o":""},{"u":"BIBLIOTECAS","a":"Salas de almacenaje con estantes fijos (no apilables)","w":750.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"BIBLIOTECAS","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Aulas","w":250.0,"o":""},{"u":"CENTROS DE EDUCACIÓN","a":"Talleres","w":350.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Auditorios, gimnasios, etc.","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"CENTROS DE EDUCACIÓN","a":"Laboratorios","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"CENTROS DE EDUCACIÓN","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"GARAJES","a":"Parqueo exclusivo de vehículos de pasajeros, con altura de entrada menor que 2,40 m","w":250.0,"o":""},{"u":"GARAJES","a":"Para otros vehículos","w":null,"o":"Ver cargas vivas móviles (Art. 9.3)"},{"u":"HOSPITALES","a":"Salas de operación, laboratorios y áreas de servicio","w":300.0,"o":""},{"u":"HOSPITALES","a":"Cuartos","w":200.0,"o":""},{"u":"HOSPITALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"HOTELES","a":"Cuartos","w":200.0,"o":""},{"u":"HOTELES","a":"Salas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"HOTELES","a":"Almacenaje y servicios","w":500.0,"o":""},{"u":"HOTELES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"INDUSTRIA","a":"","w":null,"o":"Verificar conformidad (Art. 6.4)"},{"u":"INSTITUCIONES PENALES","a":"Celdas y zona de habitación","w":200.0,"o":""},{"u":"INSTITUCIONES PENALES","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"INSTITUCIONES PENALES","a":"Corredores y escaleras","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos fijos","w":300.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Con asientos movibles","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Salones de baile, restaurantes, museos, gimnasios y vestíbulos de teatros y cines","w":400.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Graderías y tribunas","w":500.0,"o":""},{"u":"LUGARES DE ASAMBLEA","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"OFICINAS","a":"Exceptuando salas de archivo y computación","w":250.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de archivo","w":500.0,"o":"No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Salas de computación","w":250.0,"o":"Verificar conformidad (Art. 6.4) - No incluye la posible tabiquería móvil"},{"u":"OFICINAS","a":"Corredores y escaleras","w":400.0,"o":"No incluye la posible tabiquería móvil"},{"u":"TEATROS","a":"Vestidores","w":200.0,"o":""},{"u":"TEATROS","a":"Cuarto de proyección","w":300.0,"o":"Verificar conformidad (Art. 6.4)"},{"u":"TEATROS","a":"Escenario","w":750.0,"o":""},{"u":"TEATROS","a":"Zonas públicas","w":null,"o":"De acuerdo a lugares de asamblea"},{"u":"TIENDAS","a":"","w":500.0,"o":""},{"u":"TIENDAS","a":"Corredores y escaleras","w":500.0,"o":""},{"u":"VIVIENDAS","a":"","w":200.0,"o":""},{"u":"VIVIENDAS","a":"Corredores y escaleras","w":200.0,"o":""}];
+    /* La Tabla 1 de la E.020 vive en oviedo/e020.js, copia unica, la misma que
+     genera la hoja NORMA E020.  Ya no se hornea desde el .xlsm: el complemento
+     no depende de que exista el libro. */
   var PAL=["#7FA0AE","#C08552","#8FA8A0","#9B8AA6","#C0A02B","#6E93B8",
            "#B07C7C","#5B8C7B","#A5885C","#8797A8"];
   var S={niveles:[plantaLlena([5,5,5],[7,7,7,7])],act:0,sel:null,tool:"sel",tab:"col",zoom:1,
@@ -921,11 +1018,12 @@ var TT={script:performance.now()};
      Maciza y nervada llevan valor fijo (pag. 26 y 27). */
   /* ---------- usos y cargas ---------- */
   function claveAmb(u,a){return u+"|"+a}
-  function ocupaciones(){var v=[],k;for(k=0;k<E020.length;k++)
-    if(v.indexOf(E020[k].u)<0)v.push(E020[k].u); return v}
-  function ambientesDe(u){return E020.filter(function(f){return f.u===u})}
-  function fichaAmb(u,a){for(var k=0;k<E020.length;k++)
-    if(E020[k].u===u&&E020[k].a===a)return E020[k]; return null}
+  function ocupaciones(){return E020.usos()}
+  function ambientesDe(u){return E020.ambientes(u)}
+  function fichaAmb(u,a){
+    var t=E020.TABLA,k;
+    for(k=0;k<t.length;k++) if(t[k].g===u&&t[k].a===a) return t[k];
+    return null}
   /* peso de un ambiente: el de la norma, o el que escribio el usuario si la
      norma no lo tabula. Devuelve null si falta: eso bloquea el envio. */
   function pesoAmb(u,a){
@@ -1957,7 +2055,7 @@ var TT={script:performance.now()};
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
   ];
-  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true};
+  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */

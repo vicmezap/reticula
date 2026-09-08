@@ -217,6 +217,103 @@
 });
 </script>
 <script>
+/* ===== e020.js (inlinado) ===== */
+/* =====================================================================
+   e020.js — TABLA 1 DE LA NORMA E.020, copia unica.
+
+   Carga viva minima repartida por ocupacion o uso.  GENERADO por
+   oviedo/gen_e020.py a partir de scripts/hojas/build_e020.py, y cotejado
+   contra la hoja NORMA E020 del libro real antes de escribirse.
+
+   NO EDITAR A MANO: se regenera.  Si la norma cambia, se cambia alli.
+
+   w = null significa que la norma NO tabula el valor -remite a otro
+   articulo o a otro uso-; esas filas las tiene que resolver el proyectista,
+   y por eso salen en gris en la hoja.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.E020 = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var TABLA = [
+    {"a": "", "g": "ALMACENAJE", "kpa": 5.0, "o": "Verificar conformidad (Art. 6.4)", "w": 500.0},
+    {"a": "Techo plano, inclinación hasta 3°", "g": "AZOTEA Y TECHOS", "kpa": 1.0, "o": "E.020 Art. 7.1 a)", "w": 100.0},
+    {"a": "Techo inclinado más de 3°", "g": "AZOTEA Y TECHOS", "kpa": null, "o": "E.020 Art. 7.1 b): 100 kgf/m² menos 5 kgf/m² por cada grado sobre 3°, con mínimo 50 kgf/m²", "w": null},
+    {"a": "Techo curvo", "g": "AZOTEA Y TECHOS", "kpa": 0.5, "o": "E.020 Art. 7.1 c)", "w": 50.0},
+    {"a": "Cobertura liviana (calamina, fibrocemento, plástico)", "g": "AZOTEA Y TECHOS", "kpa": 0.3, "o": "E.020 Art. 7.1 d), cualquiera sea su pendiente.  Con nieve, ver Art. 11", "w": 30.0},
+    {"a": "Malecones y terrazas", "g": "AZOTEA Y TECHOS", "kpa": null, "o": "E.020 Art. 7.1 e): se aplica la carga viva de su uso particular, según esta misma tabla", "w": null},
+    {"a": "", "g": "BAÑOS", "kpa": 3.0, "o": "Igual a la carga principal del resto del área, sin que sea necesario que exceda de 3,0 kPa (300)", "w": 300.0},
+    {"a": "Salas de lectura", "g": "BIBLIOTECAS", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Salas de almacenaje con estantes fijos (no apilables)", "g": "BIBLIOTECAS", "kpa": 7.5, "o": "Verificar conformidad (Art. 6.4)", "w": 750.0},
+    {"a": "Corredores y escaleras", "g": "BIBLIOTECAS", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Aulas", "g": "CENTROS DE EDUCACIÓN", "kpa": 2.5, "o": "", "w": 250.0},
+    {"a": "Talleres", "g": "CENTROS DE EDUCACIÓN", "kpa": 3.5, "o": "Verificar conformidad (Art. 6.4)", "w": 350.0},
+    {"a": "Auditorios, gimnasios, etc.", "g": "CENTROS DE EDUCACIÓN", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Laboratorios", "g": "CENTROS DE EDUCACIÓN", "kpa": 3.0, "o": "Verificar conformidad (Art. 6.4)", "w": 300.0},
+    {"a": "Corredores y escaleras", "g": "CENTROS DE EDUCACIÓN", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Parqueo exclusivo de vehículos de pasajeros, con altura de entrada menor que 2,40 m", "g": "GARAJES", "kpa": 2.5, "o": "", "w": 250.0},
+    {"a": "Para otros vehículos", "g": "GARAJES", "kpa": null, "o": "Ver cargas vivas móviles (Art. 9.3)", "w": null},
+    {"a": "Salas de operación, laboratorios y áreas de servicio", "g": "HOSPITALES", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Cuartos", "g": "HOSPITALES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Corredores y escaleras", "g": "HOSPITALES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Cuartos", "g": "HOTELES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Salas públicas", "g": "HOTELES", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Almacenaje y servicios", "g": "HOTELES", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "HOTELES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "", "g": "INDUSTRIA", "kpa": null, "o": "Verificar conformidad (Art. 6.4)", "w": null},
+    {"a": "Celdas y zona de habitación", "g": "INSTITUCIONES PENALES", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Zonas públicas", "g": "INSTITUCIONES PENALES", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "Corredores y escaleras", "g": "INSTITUCIONES PENALES", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Con asientos fijos", "g": "LUGARES DE ASAMBLEA", "kpa": 3.0, "o": "", "w": 300.0},
+    {"a": "Con asientos movibles", "g": "LUGARES DE ASAMBLEA", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Salones de baile, restaurantes, museos, gimnasios y vestíbulos de teatros y cines", "g": "LUGARES DE ASAMBLEA", "kpa": 4.0, "o": "", "w": 400.0},
+    {"a": "Graderías y tribunas", "g": "LUGARES DE ASAMBLEA", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "LUGARES DE ASAMBLEA", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Exceptuando salas de archivo y computación", "g": "OFICINAS", "kpa": 2.5, "o": "No incluye la posible tabiquería móvil", "w": 250.0},
+    {"a": "Salas de archivo", "g": "OFICINAS", "kpa": 5.0, "o": "No incluye la posible tabiquería móvil", "w": 500.0},
+    {"a": "Salas de computación", "g": "OFICINAS", "kpa": 2.5, "o": "Verificar conformidad (Art. 6.4) - No incluye la posible tabiquería móvil", "w": 250.0},
+    {"a": "Corredores y escaleras", "g": "OFICINAS", "kpa": 4.0, "o": "No incluye la posible tabiquería móvil", "w": 400.0},
+    {"a": "Vestidores", "g": "TEATROS", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Cuarto de proyección", "g": "TEATROS", "kpa": 3.0, "o": "Verificar conformidad (Art. 6.4)", "w": 300.0},
+    {"a": "Escenario", "g": "TEATROS", "kpa": 7.5, "o": "", "w": 750.0},
+    {"a": "Zonas públicas", "g": "TEATROS", "kpa": null, "o": "De acuerdo a lugares de asamblea", "w": null},
+    {"a": "", "g": "TIENDAS", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "Corredores y escaleras", "g": "TIENDAS", "kpa": 5.0, "o": "", "w": 500.0},
+    {"a": "", "g": "VIVIENDAS", "kpa": 2.0, "o": "", "w": 200.0},
+    {"a": "Corredores y escaleras", "g": "VIVIENDAS", "kpa": 2.0, "o": "", "w": 200.0}
+  ];
+
+  /* Ocupaciones, en el orden en que aparecen en la norma. */
+  function usos() {
+    var v = [], i;
+    for (i = 0; i < TABLA.length; i++)
+      if (v.indexOf(TABLA[i].g) < 0) v.push(TABLA[i].g);
+    return v;
+  }
+
+  function ambientes(uso) {
+    return TABLA.filter(function (f) { return f.g === uso; });
+  }
+
+  /* Carga de un ambiente concreto.  null = la norma no la tabula. */
+  function carga(uso, ambiente) {
+    var i;
+    for (i = 0; i < TABLA.length; i++)
+      if (TABLA[i].g === uso && TABLA[i].a === (ambiente || "")) return TABLA[i].w;
+    return null;
+  }
+
+  function sinTabular() { return TABLA.filter(function (f) { return f.w == null; }); }
+
+  return { TABLA: TABLA, usos: usos, ambientes: ambientes,
+           carga: carga, sinTabular: sinTabular,
+           ENCABEZADOS: ["Ocupación o Uso", "Ambiente", "Carga repartida\n(kPa)", "Carga repartida\n(kgf/m²)", "Observación"],
+           LAYOUT: [[3, 4], [5, 7], [8, 8], [9, 9], [10, 10]] };
+});
+</script>
+<script>
 /* ===== formato.js (inlinado) ===== */
 /* =====================================================================
    formato.js — EL FORMATO PIZARRA, EN UN SOLO SITIO
@@ -368,9 +465,17 @@
     };
 
     /* Primera columna = etiqueta (fondo gris, izquierda, negrita).
-       Las demas = cuerpo (blanco, centradas).  Igual que fila() en Python. */
-    api.fila = function (r, layout, valores, numfmt) {
+       Las demas = cuerpo (blanco, centradas).  Igual que fila() en Python.
+
+       opc, todo opcional:
+         alinear  ["Left","Center",...]  alineacion horizontal por columna
+         resalte  {2:"F2F2F2", 3:"F2F2F2"}  otro fondo en columnas sueltas
+         negrita  false  quita la negrita de la etiqueta (filas de continuacion)
+       El resalte se encola DESPUES del fondo del cuerpo, y el escritor respeta
+       el orden de aparicion: si se encolara antes, el blanco lo borraria. */
+    api.fila = function (r, layout, valores, numfmt, opc) {
       var a = layout[0][0], b = layout[layout.length - 1][1], altura = ALTO.fila;
+      var o = opc || {};
       layout.forEach(function (par, i) {
         merge(r, par[0], r, par[1]);
         var v = (i < valores.length) ? valores[i] : null;
@@ -383,21 +488,46 @@
           altura = Math.max(altura, 15.0 * Math.max(1, Math.ceil(v.length / ancho)));
         }
       });
+      function alin(i, porDefecto) {
+        return (o.alinear && o.alinear[i]) ? o.alinear[i] : porDefecto;
+      }
       fmt({ rango: ref(r, layout[0][0], r, layout[0][1]), relleno: COLOR.etiqueta,
-            fuente: { nombre: FUENTE, tam: 11, negrita: true, color: COLOR.tinta },
-            alinear: { h: "Left", v: "Center", ajustar: true } });
-      if (layout.length > 1)
-        fmt({ rango: ref(r, layout[1][0], r, b), relleno: COLOR.cuerpo,
-              fuente: { nombre: FUENTE, tam: 11, color: COLOR.tinta },
-              alinear: { h: "Center", v: "Center", ajustar: true } });
+            fuente: { nombre: FUENTE, tam: 11,
+                      negrita: (o.negrita === false ? false : true), color: COLOR.tinta },
+            alinear: { h: alin(0, "Left"), v: "Center", ajustar: true } });
+      if (layout.length > 1) {
+        /* Si hay alineaciones distintas, el cuerpo va por tramos; si no, entero. */
+        var iguales = true, i2;
+        for (i2 = 2; i2 < layout.length; i2++)
+          if (alin(i2, "Center") !== alin(1, "Center")) { iguales = false; break; }
+        if (iguales) {
+          fmt({ rango: ref(r, layout[1][0], r, b), relleno: COLOR.cuerpo,
+                fuente: { nombre: FUENTE, tam: 11, color: COLOR.tinta },
+                alinear: { h: alin(1, "Center"), v: "Center", ajustar: true } });
+        } else {
+          for (i2 = 1; i2 < layout.length; i2++)
+            fmt({ rango: ref(r, layout[i2][0], r, layout[i2][1]), relleno: COLOR.cuerpo,
+                  fuente: { nombre: FUENTE, tam: 11, color: COLOR.tinta },
+                  alinear: { h: alin(i2, "Center"), v: "Center", ajustar: true } });
+        }
+      }
+      if (o.resalte)
+        layout.forEach(function (par, i) {
+          if (o.resalte[i]) fmt({ rango: ref(r, par[0], r, par[1]), relleno: o.resalte[i] });
+        });
       fmt({ rango: ref(r, a, r, b), rejilla: { estilo: "Thin", color: COLOR.tinta } });
       alto(r, altura);
       return r + 1;
     };
 
-    api.tabla = function (r, layout, encabezados, filas, numfmt, altura) {
+    /* opc puede ser un objeto (igual para todas las filas) o una funcion
+       (fila, indice) -> opciones, para decidir fila a fila. */
+    api.tabla = function (r, layout, encabezados, filas, numfmt, altura, opc) {
       r = api.encabezado(r, layout, encabezados, altura);
-      filas.forEach(function (f) { r = api.fila(r, layout, f, numfmt); });
+      filas.forEach(function (f, i) {
+        r = api.fila(r, layout, f, numfmt,
+                     (typeof opc === "function") ? opc(f, i) : opc);
+      });
       return r + 1;
     };
 
@@ -636,9 +766,10 @@
    ===================================================================== */
 (function (raiz, definir) {
   if (typeof module === "object" && module.exports)
-    module.exports = definir(require("./formato.js"), require("./criterios.js"));
-  else raiz.HOJAS = definir(raiz.FORMATO, raiz.CRITERIOS);
-})(typeof self !== "undefined" ? self : this, function (F, C) {
+    module.exports = definir(require("./formato.js"), require("./criterios.js"),
+                             require("./e020.js"));
+  else raiz.HOJAS = definir(raiz.FORMATO, raiz.CRITERIOS, raiz.E020);
+})(typeof self !== "undefined" ? self : this, function (F, C, E) {
   "use strict";
 
   var L2 = [[3, 6], [7, 10]];                       /* dos columnas */
@@ -793,7 +924,53 @@
     return h.cerrar(r);
   }
 
-  return { criteriosOviedo: criteriosOviedo };
+  /* ---------------------------------------------------------------------
+     NORMA E020 — Tabla 1 de la E.020, entera desde e020.js.
+
+     Tres cosas que la hoja dice y que no son adorno:
+       · el grupo se pone en negrita solo cuando CAMBIA, para que las 45
+         filas se lean como 15 bloques y no como una lista plana
+       · las filas sin carga tabulada llevan las dos celdas de carga en
+         gris: la norma no da el numero, lo pone el proyectista
+       · ambiente y observacion van a la izquierda; centrar un parrafo de
+         dos lineas lo vuelve ilegible
+     --------------------------------------------------------------------- */
+  function normaE020() {
+    var h = F.hoja("NORMA E020"), r = 6;
+    h.titulo("NORMA E.020");
+
+    r = h.seccion(r, "1. OCUPACIÓN O USO — CARGA VIVA MÍNIMA REPARTIDA (TABLA 1)");
+
+    var GRIS = "F2F2F2";
+    var IZQ = ["Left", "Left", "Center", "Center", "Left"];
+    var previo = null;
+    var filas = E.TABLA.map(function (f) {
+      return [f.g, f.a || "-",
+              (f.kpa == null ? "-" : f.kpa),
+              (f.w == null ? "-" : f.w),
+              f.o || "-"];
+    });
+
+    r = h.tabla(r, E.LAYOUT, E.ENCABEZADOS, filas, { 2: "0.0" }, 32.0,
+      function (fila, i) {
+        var f = E.TABLA[i];
+        var nuevo = (f.g !== previo); previo = f.g;
+        var o = { alinear: IZQ, negrita: nuevo };
+        if (f.w == null) o.resalte = { 2: GRIS, 3: GRIS };
+        return o;
+      });
+
+    r = h.nota(r, "Las " + E.sinTabular().length + " filas con las celdas de carga "
+      + "en gris no tienen valor en la norma: remiten a otro artículo o al uso "
+      + "particular del ambiente, y las decide el proyectista. Las otras "
+      + (E.TABLA.length - E.sinTabular().length) + " se usan tal cual.");
+    r = h.nota(r, "1 kPa = 100 kgf/m² (aprox.). El predimensionamiento de Oviedo "
+      + "entra con la carga en kgf/m²: es la columna que leen las tablas de α.");
+
+    return h.cerrar(r);
+  }
+
+  return { criteriosOviedo: criteriosOviedo, normaE020: normaE020 };
 });
 </script>
 <script>
@@ -864,7 +1041,7 @@ function leerDimensiones(){
   });
 }
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v18 · 08-09-2026";
+var BUILD = "v19 · 08-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -1047,6 +1224,13 @@ function alRecibir(arg){
    El complemento LLEVA las hojas dentro: no las necesita, las produce.
    El dialogo no habla con Excel, asi que pide la accion y recoge el
    resultado de localStorage, que comparten por ser el mismo origen. */
+/* Nombre de hoja -> constructor del plan.  Anadir una hoja es anadir una
+   linea aqui y otra en el CATALOGO del modelador; nada mas. */
+var REGISTRO = {
+  "CRITERIOS_OVIEDO": function(){ return HOJAS.criteriosOviedo(); },
+  "NORMA E020":       function(){ return HOJAS.normaE020(); }
+};
+
 function generarHojas(cuales){
   var caps = FORMATO.capacidades();
   var opts = { rangeAreas: !!caps.formas };   /* getRanges pide ExcelApi 1.9 */
@@ -1061,8 +1245,9 @@ function generarHojas(cuales){
     }
     var nombre = cuales[i], plan;
     try{
-      if(nombre === "CRITERIOS_OVIEDO") plan = HOJAS.criteriosOviedo();
-      else throw new Error("hoja no implementada: " + nombre);
+      var constructor = REGISTRO[nombre];
+      if(!constructor) throw new Error("hoja no implementada: " + nombre);
+      plan = constructor();
     }catch(e){
       hechas.push({ hoja: nombre, error: e.message });
       return siguiente(i + 1);
