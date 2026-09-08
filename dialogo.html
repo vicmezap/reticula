@@ -70,9 +70,11 @@
 
   .work{display:grid;grid-template-columns:132px minmax(0,1fr) 292px;
         border:1px solid var(--line);border-top:none;background:var(--sheet)}
-  /* sin esto, el display:flex de .tools/.insp gana sobre el atributo hidden
-     y la retícula pasaría a tener cinco columnas */
-  .tools[hidden],.insp[hidden]{display:none}
+  /* El atributo hidden es solo display:none de la hoja del navegador, y
+     cualquier regla de clase le gana por especificidad.  .tools .insp .niv
+     .cintra y .zoom son display:flex, asi que sin esta linea el hidden del
+     JavaScript no ocultaba nada.  Vale para todo el documento. */
+  [hidden]{display:none!important}
   .modos{display:flex;gap:0;margin:0 0 10px}
   .modo{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:13px;letter-spacing:.06em;
         text-transform:uppercase;padding:7px 15px;border:1px solid var(--line);background:var(--panel);
@@ -99,6 +101,11 @@
   .leyi span.c{width:11px;height:11px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
   .leyi b{margin-left:auto;font:500 11px "IBM Plex Mono",monospace;color:var(--ink)}
   @media(max-width:980px){.work{grid-template-columns:1fr}}
+  /* Hojas Excel no es el lienzo: no lleva herramientas ni inspector.  Sin
+     esto la reticula conserva sus pistas de 132px y 292px, la galeria cae
+     en la primera columna y el resto queda en blanco. */
+  .work.solo{grid-template-columns:1fr;border-top:1px solid var(--line)}
+  .work.solo .stage{padding:0;background:var(--panel)}
   .tools{border-right:1px solid var(--line);background:var(--panel);padding:10px 8px;display:flex;
          flex-direction:column;gap:4px}
   .tool{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid transparent;
@@ -778,7 +785,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v17 · 08-09-2026";
+  var BUILD="v18 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -2127,6 +2134,7 @@ var TT={script:performance.now()};
     $("#inspector").hidden=usos||hojas;
     $("#panelUso").hidden=!usos;
     $("#panelHojas").hidden=!hojas;
+    document.querySelector(".work").classList.toggle("solo",hojas);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     $("#niveles").hidden=hojas;
