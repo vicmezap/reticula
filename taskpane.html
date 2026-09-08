@@ -42,7 +42,6 @@
     <div class="lbl" style="margin-bottom:6px">Libro actual</div>
     <div class="kv"><span>Modelo guardado</span><b id="qModelo">—</b></div>
     <div class="kv"><span>Niveles</span><b id="qNiv">—</b></div>
-    <div class="kv"><span>Listas de destino</span><b id="qListas">—</b></div>
   </div>
 
   <button class="pri" id="btnAbrir">Abrir modelador</button>
@@ -53,8 +52,8 @@
   <div class="caja" style="margin-top:12px">
     <div class="lbl" style="margin-bottom:4px">Cómo se usa</div>
     <ol>
-      <li>Abre el modelador y dibuja la planta.</li>
-      <li>Pulsa <b>Enviar a las hojas</b> dentro del modelador.</li>
+      <li>Abre el modelador y dibuja la planta. Se predimensiona solo.</li>
+      <li>En <b>Hojas Excel</b>, elige las hojas y púlsalo: se generan rellenas.</li>
       <li>Cierra con <b>Guardar y cerrar</b>: el modelo queda dentro del libro.</li>
     </ol>
   </div>
@@ -1745,178 +1744,17 @@
 var HOJA_MODELO = "RETICULA_MODELO";
 /* cols = columnas de Excel donde cae cada dato de la fila, en orden.
    C(3) = Codigo, D(4) = Eje (en columnas, D = Ubicacion). */
-var LISTAS = {
-  col:    {nombre:"LISTA_COLUMNA",   cols:[3,4,5,6]},
-  viga:   {nombre:"LISTA_VIGA",      cols:[3,4,5,6,7]},
-  /* la chata salta la columna F: su peralte es el espesor de la losa y lo pone el usuario */
-  chata:  {nombre:"LISTA_CHATA",     cols:[3,4,5,7]},
-  aligerada:{nombre:"LISTA_ALIGERADA", cols:[3,4,5,6]},
-  maciza: {nombre:"LISTA_MACIZA",    cols:[3,4,5,6]},
-  nervada:{nombre:"LISTA_NERVADA",   cols:[3,4,5,6]},
-  placa:  {nombre:"LISTA_PLACA",     cols:[3,4,5,6]},
-  metrado:{nombre:"LISTA_METRADO",   cols:[3,5,6,7,8]},
-  /* la S/C del nivel (columna D) ya no se escribe: Excel la pondera desde aqui */
-  ambientes:{nombre:"LISTA_AMBIENTES", cols:[3,4,6,8,9]}
-};
-var N_LISTAS = Object.keys(LISTAS).length;
-
-/* Lo que se puede LEER de vuelta. Los indices son la posicion de la columna
-   dentro del rango C:J (C=1 ... J=8), no la columna de la hoja. */
-var LEIBLES = {
-  col:      {nombre:"LISTA_COLUMNA",   campos:{b:7, h:8}},
-  viga:     {nombre:"LISTA_VIGA",      campos:{h:7, b:8}},
-  chata:    {nombre:"LISTA_CHATA",     campos:{b:7}},
-  aligerada:{nombre:"LISTA_ALIGERADA", campos:{e:6}},
-  maciza:   {nombre:"LISTA_MACIZA",    campos:{e:7}},
-  nervada:  {nombre:"LISTA_NERVADA",   campos:{e:6}},
-  placa:    {nombre:"LISTA_PLACA",     campos:{t:6}}
-};
-
-/* Devuelve {codigo: {b,h,e,t}} con lo que Excel ya calculo. */
-function leerDimensiones(){
-  return Excel.run(function(context){
-    var wb = context.workbook, nombres = {};
-    Object.keys(LEIBLES).forEach(function(k){
-      nombres[k] = wb.names.getItemOrNullObject(LEIBLES[k].nombre);
-      nombres[k].load("isNullObject");
-    });
-    return context.sync().then(function(){
-      var rangos = {};
-      Object.keys(LEIBLES).forEach(function(k){
-        if(nombres[k].isNullObject) return;
-        rangos[k] = nombres[k].getRange();
-        rangos[k].load("values");
-      });
-      return context.sync().then(function(){
-        var dims = {}, n = 0;
-        Object.keys(rangos).forEach(function(k){
-          var campos = LEIBLES[k].campos, filas = rangos[k].values, i, f, cod, o, v;
-          for(i = 0; i < filas.length; i++){
-            cod = filas[i][0];
-            if(typeof cod !== "string" || !cod) continue;
-            o = {};
-            for(f in campos){
-              v = filas[i][campos[f] - 1];
-              if(typeof v === "number" && v > 0) o[f] = v;
-            }
-            if(Object.keys(o).length){ dims[cod] = o; n++; }
-          }
-        });
-        return {dims: dims, n: n};
-      });
-    });
-  });
-}
-/* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v22 · 08-09-2026";
-var dialogo = null;
-
-/* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
-   build, es que se subio uno y no el otro: avisar en vez de fallar raro. */
-function revisarBuild(){
-  var e = document.getElementById("qBuild");
-  var otro = null;
-  try{ otro = localStorage.getItem("reticula_build_dialogo"); }catch(x){}
-  if(!otro || otro === BUILD){ e.textContent = BUILD; e.style.color = ""; return true; }
-  e.textContent = BUILD + " / modelador " + otro;
-  e.style.color = "#B03A2E";
-  estado("Este panel es " + BUILD + " pero el modelador es " + otro + ". "
-         + "Si ya subiste los dos archivos, el panel quedo viejo en cache: cierralo "
-         + "y vuelve a abrirlo desde Insertar > Mis complementos.", "err");
-  return false;
-}
-
-function estado(txt, clase){
-  var e = document.getElementById("estado");
-  e.textContent = txt;
-  e.className = clase || "";
-}
-
-Office.onReady(function(info){
-  if(info.host !== Office.HostType.Excel){
-    estado("Este complemento solo funciona en Excel.", "err");
-    return;
-  }
-  revisarBuild();
-  document.getElementById("btnAbrir").onclick = abrirModelador;
-  document.getElementById("btnGuardar").onclick = function(){
-    guardarModelo().then(function(){ estado("Modelo guardado en el libro.", "ok"); })
-                   .catch(function(e){ estado("No se pudo guardar: " + e.message, "err"); });
-  };
-  revisar();
-});
-
-/* ---------------- lectura y escritura del modelo en el libro ---------------- */
-function hojaModelo(context, crear){
-  var wb = context.workbook;
-  var ws = wb.worksheets.getItemOrNullObject(HOJA_MODELO);
-  ws.load("isNullObject");
-  return context.sync().then(function(){
-    if(ws.isNullObject){
-      if(!crear) return null;
-      var nueva = wb.worksheets.add(HOJA_MODELO);
-      nueva.visibility = Excel.SheetVisibility.veryHidden;
-      return context.sync().then(function(){ return nueva; });
-    }
-    return ws;
-  });
-}
-
-function leerModelo(){
-  return Excel.run(function(context){
-    return hojaModelo(context, false).then(function(ws){
-      if(!ws) return null;
-      var rg = ws.getRange("A1:A400");
-      rg.load("values");
-      return context.sync().then(function(){
-        var s = "";
-        for(var i=0;i<rg.values.length;i++){
-          var v = rg.values[i][0];
-          if(v === "" || v === null) break;
-          s += v;
-        }
-        return s.length ? s : null;
-      });
-    });
-  });
-}
-
-function guardarModelo(){
-  var s = "";
-  try{ s = localStorage.getItem("reticula") || ""; }catch(e){}
-  if(!s) return Promise.reject(new Error("no hay modelo en el modelador"));
-  return Excel.run(function(context){
-    return hojaModelo(context, true).then(function(ws){
-      ws.getRange("A1:A400").clear(Excel.ClearApplyTo.contents);
-      var trozos = [], i;
-      for(i=0;i<s.length;i+=20000) trozos.push([s.substr(i,20000)]);
-      ws.getRangeByIndexes(0,0,trozos.length,1).values = trozos;
-      return context.sync();
-    });
-  });
-}
+/* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
+   era la calculadora: el modelador le mandaba filas a rangos con nombre, Excel
+   calculaba, y habia que leer el resultado para poder dibujar a escala real.
+   Ahora el calculo esta en el complemento y las hojas se generan rellenas.  */
 
 /* ---------------- diagnostico ---------------- */
 function revisar(){
   Excel.run(function(context){
-    var wb = context.workbook;
-    var faltan = [], ok = [];
-    var items = {};
-    Object.keys(LISTAS).forEach(function(k){
-      items[k] = wb.names.getItemOrNullObject(LISTAS[k].nombre);
-      items[k].load("isNullObject");
-    });
-
-    return context.sync().then(function(){
-      Object.keys(LISTAS).forEach(function(k){
-        if(items[k].isNullObject) faltan.push(LISTAS[k].nombre); else ok.push(k);
-      });
-      document.getElementById("qListas").textContent = ok.length + " de " + N_LISTAS;
-      if(faltan.length){
-        estado("Faltan listas en este libro: " + faltan.join(", "), "err");
-      }
-      return leerModelo();
-    }).then(function(s){
+    /* Un libro en blanco ya sirve: el complemento no necesita nada preparado.
+       Lo unico que se mira es si este libro ya trae un modelo guardado. */
+    return leerModelo().then(function(s){
       var q = document.getElementById("qModelo"), n = document.getElementById("qNiv");
       if(!s){ q.textContent = "no"; n.textContent = "—"; return; }
       q.textContent = "sí";
@@ -1967,23 +1805,8 @@ function alRecibir(arg){
       if(dialogo){ dialogo.close(); dialogo = null; }
       revisar();
     });
-  }else if(msg.accion === "leer"){
-    leerDimensiones().then(function(r){
-      /* el dialogo comparte origen, asi que lo recoge de aqui */
-      try{ localStorage.setItem("reticula_dims",
-             JSON.stringify({t: Date.now(), d: r.dims})); }catch(e){}
-      estado("Leidas " + r.n + " dimensiones del libro.", "ok");
-    }).catch(function(e){
-      try{ localStorage.setItem("reticula_dims",
-             JSON.stringify({t: Date.now(), d: {}, err: e.message})); }catch(x){}
-      estado("No se pudo leer: " + e.message, "err");
-    });
   }else if(msg.accion === "generarHojas"){
     generarHojas(msg.cuales || ["CRITERIOS_OVIEDO"]);
-  }else if(msg.accion === "enviar"){
-    enviarFilas().then(function(r){
-      estado("Escrito: " + r.col + " columnas, " + r.viga + " vigas, " + r.losa + " losas.", "ok");
-    }).catch(function(e){ estado("No se pudo escribir: " + e.message, "err"); });
   }
 }
 
@@ -2054,99 +1877,6 @@ function generarHojas(cuales){
 }
 
 /* ---------------- escritura en las listas ---------------- */
-function escribirLote(context, wb, clave, filas){
-  var cfg = LISTAS[clave];
-  if(!filas || !filas.length) return context.sync();
-  var nm = wb.names.getItem(cfg.nombre);
-  var rg = nm.getRange();
-  rg.load(["rowIndex","rowCount","worksheet/name"]);
-  return context.sync().then(function(){
-    var ws = wb.worksheets.getItem(rg.worksheet.name);
-    var colC = ws.getRangeByIndexes(rg.rowIndex, 2, rg.rowCount, 1);
-    colC.load("values");
-    return context.sync().then(function(){
-      var libres = [], r;
-      for(r=0;r<rg.rowCount;r++){
-        var v = colC.values[r][0];
-        if(v === "" || v === null) libres.push(rg.rowIndex + r);
-      }
-      var faltan = filas.length - libres.length;
-      var ultima = rg.rowIndex + rg.rowCount - 1;
-      if(faltan > 0){
-        ws.getRangeByIndexes(ultima + 1, 0, faltan, 1).getEntireRow()
-          .insert(Excel.InsertShiftDirection.down);
-        return context.sync().then(function(){
-          var origen = ws.getRangeByIndexes(ultima, 0, 1, 12);
-          var destino = ws.getRangeByIndexes(ultima + 1, 0, faltan, 12);
-          /* "all" trae formato Y formulas Y VALORES. Las formulas de las
-             columnas calculadas hay que heredarlas, pero los valores de la
-             fila de origen no: si volcar() no alcanza a pisarlos todos,
-             quedan filas fantasma identicas a la ultima. Se limpian aparte. */
-          destino.copyFrom(origen, Excel.RangeCopyType.all);
-          cfg.cols.forEach(function(col){
-            ws.getRangeByIndexes(ultima + 1, col - 1, faltan, 1).clear(
-              Excel.ClearApplyTo.contents);
-          });
-          for(var q=0;q<faltan;q++) libres.push(ultima + 1 + q);
-          nm.formula = "='" + rg.worksheet.name + "'!$C$" + (rg.rowIndex + 1) +
-                       ":$J$" + (ultima + faltan + 1);
-          return context.sync();
-        }).then(function(){ return volcar(ws, cfg, filas, libres); });
-      }
-      return volcar(ws, cfg, filas, libres);
-    });
-  });
-}
-
-function volcar(ws, cfg, filas, libres){
-  /* nunca escribir mas filas de las que hay sitio: si no cuadra, es mejor
-     escribir menos y avisar que salirse del rango */
-  var n = Math.min(filas.length, libres.length);
-  for(var i=0;i<n;i++){
-    for(var c=0;c<cfg.cols.length;c++){
-      ws.getRangeByIndexes(libres[i], cfg.cols[c]-1, 1, 1).values = [[filas[i][c]]];
-    }
-  }
-  if(n < filas.length)
-    estado("Solo cupieron " + n + " de " + filas.length + " filas en " + cfg.nombre + ".", "err");
-}
-
-function enviarFilas(){
-  var packs;
-  try{ packs = JSON.parse(localStorage.getItem("reticula_filas") || "[]"); }
-  catch(e){ return Promise.reject(new Error("no hay filas que enviar")); }
-  if(!packs.length) return Promise.reject(new Error("no hay filas que enviar"));
-
-  var lote = {col:[], viga:[], chata:[], aligerada:[], maciza:[], nervada:[],
-              placa:[], metrado:[], ambientes:[]};
-  packs.forEach(function(p){
-    (p.C||[]).forEach(function(f){ lote.col.push(f); });
-    (p.V||[]).forEach(function(f){ lote.viga.push(f); });
-    (p.VCH||[]).forEach(function(f){ lote.chata.push(f); });
-    (p.P||[]).forEach(function(f){ lote.placa.push(f); });
-    (p.M||[]).forEach(function(f){ lote.metrado.push(f); });
-    (p.A||[]).forEach(function(f){ lote.ambientes.push(f); });
-    ["aligerada","maciza","nervada"].forEach(function(t){
-      ((p.L||{})[t]||[]).forEach(function(f){ lote[t].push(f); });
-    });
-  });
-
-  return Excel.run(function(context){
-    var wb = context.workbook;
-    /* una lista tras otra: cada escritura puede insertar filas, asi que no se paralelizan */
-    var cadena = Object.keys(LISTAS).reduce(function(prev, clave){
-      return prev
-        .then(function(){ return escribirLote(context, wb, clave, lote[clave]); })
-        .then(function(){ return context.sync(); });
-    }, context.sync());
-    return cadena.then(function(){
-      return {col:lote.col.length,
-              viga:lote.viga.length + lote.chata.length,
-              losa:lote.aligerada.length + lote.maciza.length + lote.nervada.length,
-              placa:lote.placa.length, metrado:lote.ambientes.length};
-    });
-  });
-}
 </script>
 </body>
 </html>

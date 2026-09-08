@@ -361,9 +361,7 @@
           <input type="checkbox" id="todos"> Todos los niveles</label>
         <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
           <input type="checkbox" id="verDims" checked> Ver dimensiones</label>
-        <button class="btn" id="btnLeer" title="Trae de Excel las secciones ya calculadas">Leer dimensiones</button>
-        <button class="btn" id="btnCheck">Revisar modelo</button>
-        <button class="btn pri" id="btnSend">Enviar a las hojas</button>
+        <button class="btn pri" id="btnCheck">Revisar modelo</button>
       </div>
     </div>
   </section>
@@ -885,7 +883,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v22 · 08-09-2026";
+  var BUILD="v24 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -997,9 +995,8 @@ var TT={script:performance.now()};
     m=m||N();
     var v=m.vigas[key(o,i,j)];
     if(!v)return CRITERIOS.MINIMOS.baseViga;
-    /* si ya hay una seccion leida de Excel se respeta; en cuanto el calculo
-       termine de mudarse aqui, esta rama desaparece */
-    if(v.sec&&v.sec.b>0&&dimsVigentes())return v.sec.b/100;
+    /* si tocaste el ancho a mano manda el tuyo */
+    if(v.sec&&v.sec.b>0)return v.sec.b/100;
     return CALCULO.anchoVigaPrincipal(anchoTrib(o,i,j,m));
   }
   /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
@@ -1009,7 +1006,7 @@ var TT={script:performance.now()};
     var L=(o==="h")?m.dx[i]:m.dy[j],c1,c2,real=false,d;
     if(o==="h"){c1=ladoCol(i,j,m); c2=ladoCol(i+1,j,m);}
     else       {c1=ladoCol(i,j,m); c2=ladoCol(i,j+1,m);}
-    if(c1!==null&&c2!==null&&dimsVigentes()){d=(c1+c2)/2;real=true;}
+    if(c1!==null&&c2!==null){d=(c1+c2)/2;real=true;}
     else d=S.ladoCol;
     return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d,real:real};
   }
@@ -1088,59 +1085,13 @@ var TT={script:performance.now()};
   /* Firma de la geometria: si cambia, lo leido queda obsoleto y hay que avisar.
      No hace falta para emparejar (las secciones viven en el elemento), solo
      para saber si lo que se ve sigue correspondiendo a lo que calculo Excel. */
-  function huella(){
-    return S.niveles.map(function(m){
-      return m.dx.join(",")+"|"+m.dy.join(",")+"|"+
-             Object.keys(m.cols).sort().join(" ")+"|"+
-             Object.keys(m.vigas).sort().join(" ")+"|"+
-             Object.keys(m.losas).sort().join(" ")+"|"+
-             Object.keys(m.placas).sort().join(" ");
-    }).join("#");
-  }
-  function dimsVigentes(){return !!S.dimsFecha && S.dimsHuella===huella()}
-  function hayCambiosSinEnviar(){return !!S.envioHuella && S.envioHuella!==huella()}
-  function marcarEnvio(){S.envioHuella=huella();guardar();render();}
-
-  /* Cuantos elementos de cada tipo ya traen su dimension de Excel.
-     Es la misma metrica contable que la barra de "usos y cargas". */
-  function estadoDims(){
-    var r={losa:{n:0,t:0},viga:{n:0,t:0},col:{n:0,t:0},placa:{n:0,t:0}},k;
-    S.niveles.forEach(function(m){
-      for(k in m.losas) {r.losa.t++;  if(m.losas[k].e>0)r.losa.n++;}
-      for(k in m.vigas) {r.viga.t++;  if(m.vigas[k].sec&&m.vigas[k].sec.b>0)r.viga.n++;}
-      for(k in m.cols)  {r.col.t++;   if(m.cols[k].sec&&m.cols[k].sec.b>0)r.col.n++;}
-      for(k in m.placas){r.placa.t++; if(m.placas[k].t>0)r.placa.n++;}
-    });
-    return r;
-  }
-
-  /* Recorre el modelo y cuelga en cada elemento lo que Excel calculo para su
-     codigo. Se hace UNA vez, al leer; despues nadie vuelve a emparejar. */
-  function aplicarDims(mapa){
-    var n=0;
-    S.niveles.forEach(function(m,k){
-      var nm=nombres(k),key2;
-      for(key2 in nm.C){var d=mapa[nm.C[key2].cod];
-        if(d&&m.cols[key2]&&d.b>0&&d.h>0){m.cols[key2].sec={b:d.b,h:d.h};n++;}}
-      for(key2 in nm.V){var v=mapa[nm.V[key2].cod];
-        if(v&&m.vigas[key2]&&v.b>0){m.vigas[key2].sec={b:v.b,h:v.h||0};n++;}}
-      for(key2 in nm.L){var l=mapa[nm.L[key2].cod];
-        if(l&&m.losas[key2]&&l.e>0){m.losas[key2].e=l.e;n++;}}
-      for(key2 in nm.P){var p2=mapa[nm.P[key2].cod];
-        if(p2&&m.placas[key2]&&p2.t>0){m.placas[key2].t=p2.t;n++;}}
-    });
-    S.dimsFecha=Date.now(); S.dimsHuella=huella();
-    guardar(); render();
-    return n;
-  }
-
-  /* Lado de la columna del nudo (i,j), en metros, si ya se leyo.
-     Se toma la MENOR de b y h: no sabemos como quedo orientada, y la menor
-     deja la luz libre mas larga, o sea del lado seguro para la viga. */
+  /* Aqui vivian huella, dimsVigentes, marcarEnvio, estadoDims y aplicarDims:
+     todo el andamiaje de "traer de Excel lo que Excel calculo".  Se fue entero
+     cuando el calculo se mudo aqui dentro. */
   function ladoCol(i,j,m){
-    var c=m.cols[key(i,j)];
-    if(!c||!c.sec||!(c.sec.b>0)||!(c.sec.h>0))return null;
-    return Math.min(c.sec.b,c.sec.h)/100;
+    var s=seccionCol(i,j,m,null);
+    if(!s)return null;
+    return Math.min(s.b,s.h)/100;
   }
 
   function medPlaca(o,i,j,m){m=m||N();
@@ -1404,9 +1355,9 @@ var TT={script:performance.now()};
         ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
         ln.setAttribute("color","var("+tp.c+")");
         ln.setAttribute("marker-end","url(#ar)");ln.setAttribute("marker-start","url(#ar)");g.appendChild(ln);
-        if(S.verDims&&o.e>0)
-          txt(g,cx,cy+r+13,"e = "+o.e+" cm",
-              dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
+        var pl2=predimLosa(i,j,m);
+        if(S.verDims&&pl2)
+          txt(g,cx,cy+r+13,"e = "+pl2.e+" cm","var(--acc-ink)",9.5);
       }
       var hit=el("rect",{x:X(i)+7,y:Y(j)+7,width:Math.max(2,X(i+1)-X(i)-14),
         height:Math.max(2,Y(j+1)-Y(j)-14),"class":"hit"});
@@ -1442,19 +1393,21 @@ var TT={script:performance.now()};
           stroke:sl?"var(--trib)":(ch?"var(--chata)":"var(--viga)"),
           "stroke-width":sl?6:(ch?2:4),opacity:sl?1:.85}));
       }
-      var vv2=m.vigas[k];
-      if(S.verDims&&vv2&&vv2.sec&&vv2.sec.b>0){
-        /* a lo largo del tramo, corrido para no caer sobre la linea */
+      /* La cota sale del calculo, no de lo que devolviera Excel: ya no hay
+         estado "obsoleta", porque se recalcula con cada cambio. */
+      var pv2=m.vigas[k]?predimViga(o,i,j,m):null;
+      if(S.verDims&&pv2){
         var vx=(x1+x2)/2,vy=(y1+y2)/2;
-        txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,vv2.sec.b+"×"+vv2.sec.h,
-            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9);
+        txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,
+            Math.round(pv2.b*100)+"×"+Math.round(pv2.h*100),
+            (pv2.tipo==="chata"&&!pv2.cumple)?"#c62828":"var(--acc-ink)",9);
       }
-      var pl=m.placas[k];
-      if(S.verDims&&pl&&pl.t>0){
+      var pp2=m.placas[k]?predimPlaca(o,i,j,m):null;
+      if(S.verDims&&pp2){
         /* desplazado perpendicular al tramo para no pisar la linea */
         var mx=(x1+x2)/2,my=(y1+y2)/2;
-        txt(g,o==="h"?mx:mx+22,o==="h"?my-9:my,"t = "+pl.t,
-            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
+        txt(g,o==="h"?mx:mx+22,o==="h"?my-9:my,"t = "+Math.round(pp2.t*100),
+            "var(--acc-ink)",9.5);
       }
       var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":13,"class":"hit"});
       hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
@@ -1468,10 +1421,10 @@ var TT={script:performance.now()};
         g.appendChild(el("rect",{x:X(i)-lado/2,y:Y(j)-lado/2,width:lado,height:lado,
           fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1}));
       }
-      var cc=m.cols[key(i,j)];
-      if(S.verDims&&cc&&cc.sec&&cc.sec.b>0)
-        txt(g,X(i),Y(j)-11,cc.sec.b+"×"+cc.sec.h,
-            dimsVigentes()?"var(--acc-ink)":"var(--ink-3)",9.5);
+      var pc2=m.cols[key(i,j)]?seccionCol(i,j,m,null):null;
+      if(S.verDims&&pc2)
+        txt(g,X(i),Y(j)-11,pc2.b+"×"+pc2.h,
+            (pc2.propia&&!pc2.cumple)?"#c62828":"var(--acc-ink)",9.5);
       var hc=el("circle",{cx:X(i),cy:Y(j),r:11,"class":"hit"});
       hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
     }
@@ -1740,16 +1693,28 @@ var TT={script:performance.now()};
     if(q.t==="col"){
       if(!m.cols[key(q.i,q.j)]){T.textContent="Cruce vacío";
         B.innerHTML='<p class="empty">Sin columna en '+LETRAS[q.i]+"-"+(q.j+1)+'.</p>';return}
-      var d=medCol(q.i,q.j);
+      var d=medCol(q.i,q.j),pc=seccionCol(q.i,q.j,m,S.act);
       T.textContent="Columna · eje "+LETRAS[q.i]+"-"+(q.j+1);
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños que carga",d.n+" de 4")+
         kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
         kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+
-        ((m.cols[key(q.i,q.j)].sec&&m.cols[key(q.i,q.j)].sec.b>0)
-          ? kv("Sección de Excel",m.cols[key(q.i,q.j)].sec.b+" × "+m.cols[key(q.i,q.j)].sec.h+" cm"+
-               (dimsVigentes()?"":"  (obsoleta)"),1) : "")+"</dl>"+
-        '<p class="calcnote">Excel calcula: P, Ac, b y h.</p>';
+        kv("Peso en servicio P",pc.P.toFixed(2)+" t",1)+
+        kv("Área requerida Ac",pc.Ac+" cm²",1)+
+        kv("Sección",'<b>'+pc.b+" × "+pc.h+" cm</b>"+
+           (pc.propia?"  (tuya)":"  (cuadrada)"),1)+
+        kv("Equivalente circular","D = "+pc.circular+" cm",1)+"</dl>"+
+        (pc.propia&&!pc.cumple
+          ? '<p class="aviso" style="margin-top:8px">Tu sección da '+
+            (pc.b*pc.h)+" cm² y hacen falta "+pc.Ac+" cm².</p>"
+          : "")+
+        (pc.propia&&!pc.anchoOk
+          ? '<p class="aviso" style="margin-top:8px">Ancho por debajo del mínimo de '+
+            Math.round(CRITERIOS.MINIMOS.anchoColumna*100)+" cm (E.060).</p>"
+          : "")+
+        '<p class="calcnote">Ac = P / ('+pc.C.toFixed(2)+" f&#39;c) con f&#39;c = "+
+        (+S.fc||210)+" kg/cm². La cuadrada es el valor por defecto: "+
+        "cualquier b × h que llegue a Ac vale, y esa la eliges tú.</p>";
     }else if(q.t==="viga"){
       var kk=key(q.o,q.i,q.j);
       if(!m.vigas[kk]&&!m.placas[kk]){T.textContent="Tramo vacío";
@@ -1757,33 +1722,54 @@ var TT={script:performance.now()};
       T.textContent="Tramo · dirección "+(q.o==="h"?"X":"Y");
       html="";
       if(m.vigas[kk]){
-        var v=medViga(q.o,q.i,q.j),ch=tipoViga(m.vigas[kk])==="chata";
+        var v=medViga(q.o,q.i,q.j),pv=predimViga(q.o,q.i,q.j,m),
+            ch=(pv.tipo==="chata");
         html+='<div class="name">'+nm.V[kk].cod+'</div><span class="tag" style="color:var('+
           (ch?"--chata":"--viga")+')">'+(ch?"Chata":"Principal")+"</span>"+
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
-          kv("Lado de columna",v.desc.toFixed(2)+" m"+(v.real?"":"  (supuesto)"),1)+
+          kv("Lado de columna",v.desc.toFixed(2)+" m"+
+             (v.real?"  (calculado)":"  (supuesto: falta columna)"),1)+
           kv("Luz libre Ln",v.L.toFixed(2)+" − "+v.desc.toFixed(2)+" = "+v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
           kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
           kv("α",alfaViga(q.o,q.i,q.j),1)+
-          ((m.vigas[kk].sec&&m.vigas[kk].sec.b>0)
-            ? kv("Sección de Excel",m.vigas[kk].sec.b+" × "+m.vigas[kk].sec.h+" cm"+
-                 (dimsVigentes()?"":"  (obsoleta)"),1) : "")+"</dl>"+
-          (ch?'<p class="calcnote">Excel calcula: Ln máx y b (cm). El peralte es el espesor de la losa: ponlo tú en la hoja.</p>'
-             :'<p class="calcnote">Excel calcula: h, h (cm) y b (cm).</p>');
+          (ch
+            ? kv("Peralte h (= losa)",pv.hLosaCm+" cm",1)+
+              kv("Luz libre máxima",pv.LnMax.toFixed(2)+" m",1)+
+              kv("Estado",'<b style="color:'+(pv.cumple?"#2e7d32":"#c62828")+'">'+
+                 (pv.cumple?"CUMPLE":"NO CUMPLE")+"</b>",1)
+            : kv("Peralte h",'<b>'+Math.round(pv.h*100)+" cm</b>  ("+
+                 pv.hTeorico.toFixed(3)+" m teórico)",1))+
+          kv("Ancho b",'<b>'+Math.round(pv.b*100)+" cm</b>",1)+"</dl>"+
+          (ch&&!pv.cumple
+            ? '<p class="aviso" style="margin-top:8px">La luz libre de '+
+              pv.Ln.toFixed(2)+" m pasa de los "+pv.LnMax.toFixed(2)+
+              " m que alcanza una chata de "+pv.hLosaCm+
+              " cm. Aquí hace falta una viga peraltada.</p>"
+            : "")+
+          (ch?'<p class="calcnote">La chata no descuelga: su peralte es el espesor de la losa, '+
+              'y α = '+pv.alfa+' es el fijo del libro, no el de la tabla de sobrecarga.</p>'
+             :'<p class="calcnote">h = Ln / α, al múltiplo de 5 cm superior   |   b = B / '+
+              CRITERIOS.PROPORCION.baseVigaPrincipal+', con mínimo '+
+              Math.round(CRITERIOS.MINIMOS.baseViga*100)+' cm.</p>');
       }
       if(m.placas[kk]){
-        var pm=medPlaca(q.o,q.i,q.j);
+        var pm=medPlaca(q.o,q.i,q.j),pp=predimPlaca(q.o,q.i,q.j,m);
         html+=(m.vigas[kk]?'<div class="rule" style="margin:10px 0"></div>':"")+
           '<div class="name">'+nm.P[kk].cod+'</div><span class="tag" style="color:var(--placa)">Placa</span>'+
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.P[kk].eje,1)+
-          kv("Longitud lm",pm.lm.toFixed(2)+" m",1)+kv("Altura hm",pm.hm.toFixed(2)+" m",1)+"</dl>"+
-          '<p class="calcnote">Excel calcula: t mín, t (cm) y el área.</p>';
+          kv("Dirección","resiste en "+pp.dir+"-"+pp.dir,1)+
+          kv("Longitud lm",pm.lm.toFixed(2)+" m",1)+kv("Altura hm",pm.hm.toFixed(2)+" m",1)+
+          kv("Espesor mínimo",pp.tMin.toFixed(3)+" m  (manda "+pp.gobierna+")",1)+
+          kv("Espesor t",'<b>'+Math.round(pp.t*100)+" cm</b>"+(pp.propia?"  (tuyo)":""),1)+
+          kv("Área en planta",pp.area.toFixed(3)+" m²",1)+"</dl>"+
+          '<p class="calcnote">El área total no es el criterio: cada eje necesita su '+
+          'mitad. La verificación por dirección está en la pestaña EDIFICIO.</p>';
       }
     }else{
       if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
         B.innerHTML='<p class="empty">Este paño no tiene losa: es un vacío del edificio.</p>';return}
-      var lo=medLosa(q.i,q.j);
+      var lo=medLosa(q.i,q.j),pl=predimLosa(q.i,q.j,m);
       T.textContent="Losa · paño "+LETRAS[q.i]+LETRAS[q.i+1]+"-"+(q.j+1)+(q.j+2);
       html='<div class="name">'+nm.L[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var('+
         TIPOS[lo.tipo].c+')">'+TIPOS[lo.tipo].n+" · armada en "+lo.dir.toUpperCase()+"</span>"+
@@ -1792,14 +1778,21 @@ var TT={script:performance.now()};
         kv("Luz libre Ln",lo.L.toFixed(2)+" − "+lo.desc.toFixed(2)+" = "+lo.Ln.toFixed(2)+" m",1)+
         kv("Uso",(m.losas[key(q.i,q.j)].amb||m.losas[key(q.i,q.j)].uso||"sin asignar"),1)+
         kv("S/C",scPano(m.losas[key(q.i,q.j)])+" kg/m²",1)+
-        kv("α",alfaLosa(m.losas[key(q.i,q.j)]),1)+"</dl>"+
+        kv("α",pl.alfa,1)+
+        kv("Peralte h",'<b>'+pl.e+" cm</b>  ("+pl.hTeorico.toFixed(3)+" m teórico)",1)+
+        (pl.b!=null?kv("Ancho de vigueta b",Math.round(pl.b*100)+" cm",1):"")+
+        (pl.sMax!=null?kv("Separación S",'≤ '+pl.sMax.toFixed(2)+" m",1):"")+
+        (pl.hfMin!=null?kv("Losa superior hf",'> '+pl.hfMin.toFixed(2)+" m",1):"")+
+        "</dl>"+
         (losaFueraTabla(m.losas[key(q.i,q.j)])
           ? '<p class="aviso" style="margin-top:8px">S/C de '+scPano(m.losas[key(q.i,q.j)])+
             " kg/m²: la tabla α de losas de Oviedo llega hasta 500. Se usa 19, pero el valor "+
             "queda fuera del libro y lo tienes que revisar tú.</p>"
           : "")+
         '<div class="row" style="margin-top:8px"><button class="btn" id="girar">Girar armado</button></div>'+
-        '<p class="calcnote">Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
+        '<p class="calcnote">h = Ln / α, al múltiplo de 5 cm superior. '+
+        (pl.sMax!=null?'S y hf son topes: el complemento adopta el límite y tú lo bajas si quieres. ':'')+
+        'Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
     }
     B.innerHTML=html;
     var gb=$("#girar");
@@ -1823,6 +1816,129 @@ var TT={script:performance.now()};
     else       {a=espesorLosaCm(i-1,j,m); b=espesorLosaCm(i,j,m);}
     var e=Math.max(a||0,b||0);
     return e>0?e:20;                 /* sin losa al lado: el espesor tipico */
+  }
+
+  /* =====================================================================
+     PREDIMENSIONAMIENTO AUTOMATICO
+
+     Dibujas y esta calculado.  No hay que pedirselo a nadie ni leerlo de
+     Excel: el motor -calculo.js, el que pasa los 60 ejemplos del libro-
+     vive aqui dentro.
+
+     EL ORDEN IMPORTA Y NO TIENE VUELTA ATRAS:
+
+         columnas  ->  lado real  ->  luz libre  ->  vigas y losas
+
+     La seccion de columna sale de area tributaria x pisos x peso/m2.  Eso
+     es geometria y categoria: NO depende de las vigas.  Por eso se puede
+     calcular primero, y de ahi sale el descuento REAL de la luz libre en
+     vez del lado supuesto de 0.50 m que se usaba mientras Excel era la
+     calculadora.  No hay bucle mientras el peso venga de la categoria; si
+     algun dia viniera del metrado, si, y son las dos pasadas que ya estan
+     documentadas.
+
+     QUE DECIDE EL MOTOR Y QUE DECIDES TU.  Casi todo tiene una sola
+     respuesta.  En tres sitios hay mas de una valida, y ahi el complemento
+     adopta la sensata y te deja cambiarla:
+
+       · la proporcion b x h de una columna  (adopta la cuadrada)
+       · s y hf de una nervada               (adopta el tope)
+       · el salto comercial de una placa     (adopta el calculado)
+
+     Nada se queda en blanco.  Cambiar uno de esos tres es tocar un valor
+     que ya esta puesto, no rellenar un hueco.
+     ===================================================================== */
+  var PD = { clave: null, cols: {}, sello: -1, claveCache: null };
+  var PASADA = 0;                  /* lo sube render() y lo baja paquete() */
+
+  /* La clave es todo lo que entra en el calculo.  Serializarla es barato,
+     pero no una vez por columna: ladoCol pide la seccion cuatro veces por
+     viga, asi que sin este sello un nivel de 50 columnas serializaba el
+     modelo doscientas veces por dibujo. */
+  function clavePredim(){
+    if(PD.sello === PASADA) return PD.claveCache;
+    PD.sello = PASADA;
+    PD.claveCache = JSON.stringify(S.niveles) + "|" + S.categoria + "|"
+                  + S.fc + "|" + scDefecto();
+    return PD.claveCache;
+  }
+  /* La cache se tira entera en cuanto cambia cualquier cosa que entre en el
+     calculo.  Mas barato que averiguar que elemento se movio. */
+  function invalidaPredim(){
+    var k = clavePredim();
+    if(PD.clave !== k){ PD.clave = k; PD.cols = {}; }
+  }
+  function nivelDe(m){ var k = S.niveles.indexOf(m); return k < 0 ? S.act : k }
+
+  /* Seccion de una columna.  Si la tocaste a mano manda la tuya; si no, la
+     cuadrada que deriva el motor.  Va con cache propia porque ladoCol la
+     pide una vez por cada extremo de cada viga. */
+  function seccionCol(i,j,m,niv){
+    var c = m.cols[key(i,j)];
+    if(!c) return null;
+    if(niv == null) niv = nivelDe(m);
+    invalidaPredim();
+    var ck = niv + ":" + i + ":" + j;
+    if(PD.cols[ck]) return PD.cols[ck];
+    var d = medCol(i,j,m);
+    var q = CALCULO.columna({ubicacion:d.tipo.toLowerCase(), niveles:pisosQueCarga(niv),
+                             area_trib:d.at, categoria:S.categoria, fc:(+S.fc||210)});
+    var lado = Math.max(q.cuadrada, CRITERIOS.MINIMOS.anchoColumna);
+    var propia = !!(c.sec && c.sec.b > 0 && c.sec.h > 0);
+    var b = propia ? c.sec.b : Math.round(lado*100);
+    var h = propia ? c.sec.h : Math.round(lado*100);
+    var r = {b:b, h:h, propia:propia, Ac:q.Ac, P:q.P_servicio,
+             ubicacion:d.tipo, at:d.at, C:q.C,
+             cuadrada:Math.round(lado*100), circular:Math.round(q.circular*100),
+             cumple:q.verifica(b/100, h/100).cumple,
+             anchoOk:q.verifica(b/100, h/100).anchoOk};
+    PD.cols[ck] = r;
+    return r;
+  }
+
+  /* Viga ya predimensionada.  La chata no calcula peralte: lo hereda de la
+     losa, y lo que se comprueba es al reves -si la luz cabe en ese espesor-. */
+  function predimViga(o,i,j,m){
+    m = m || N();
+    var v = m.vigas[key(o,i,j)];
+    if(!v) return null;
+    var mv = medViga(o,i,j,m);
+    if(tipoViga(v) === "chata"){
+      var e = espesorParaChata(o,i,j,m);
+      var qc = CALCULO.viga({subtipo:"chata", h_losa:e/100, principal:true});
+      return {tipo:"chata", Ln:mv.Ln, L:mv.L, desc:mv.desc, apoyoReal:mv.real,
+              alfa:qc.alfa, h:qc.h, b:qc.b, hLosaCm:e, LnMax:qc.Ln_max,
+              cumple:(mv.Ln <= qc.Ln_max + 1e-9)};
+    }
+    var q = CALCULO.viga({subtipo:"principal", Ln:mv.Ln, B:mv.B,
+                          sc:scViga(o,i,j,m)});
+    return {tipo:"principal", Ln:mv.Ln, L:mv.L, desc:mv.desc, apoyoReal:mv.real,
+            B:mv.B, alfa:q.alfa, h:q.h, hTeorico:q.h_teorico, b:q.b,
+            fueraDeTabla:q.fueraDeTabla};
+  }
+
+  function predimLosa(i,j,m){
+    m = m || N();
+    var o = m.losas[key(i,j)];
+    if(!o) return null;
+    var lo = medLosa(i,j,m);
+    var q = CALCULO.losa({subtipo:lo.tipo, Ln:lo.Ln, sc:scPano(o)});
+    return {tipo:lo.tipo, dir:lo.dir, L:lo.L, Ln:lo.Ln, desc:lo.desc,
+            alfa:q.alfa, h:q.h, e:Math.round(q.h*100), hTeorico:q.h_teorico,
+            b:q.b, sMax:q.s_max, hfMin:q.hf_min, fueraDeTabla:q.fueraDeTabla};
+  }
+
+  function predimPlaca(o,i,j,m){
+    m = m || N();
+    var p = m.placas[key(o,i,j)];
+    if(!p) return null;
+    var pm = medPlaca(o,i,j,m);
+    var q = CALCULO.placa({categoria:S.categoria, area_techada:areaNivel(m),
+                           hm:pm.hm, lm:pm.lm});
+    var propia = !!(p.t > 0);
+    var t = propia ? p.t/100 : q.t;
+    return {dir:(o === "h" ? "X" : "Y"), lm:pm.lm, hm:pm.hm, t:t, propia:propia,
+            tMin:q.t_minimo, gobierna:q.gobierna, area:pm.lm*t};
   }
 
   /* ---------- exportacion ---------- */
@@ -1873,6 +1989,7 @@ var TT={script:performance.now()};
      de predimensionamiento.  Va por localStorage, no por messageParent: el
      mensaje del dialogo tiene limite de tamano y un edificio grande lo pasa. */
   function paquete(){
+    PASADA++;                      /* se exporta con el modelo de AHORA */
     var C=[],V=[],VCH=[],PL=[],M=[],A=[],
         L={aligerada:[],maciza:[],nervada:[]},area=0;
     S.niveles.forEach(function(m,k){
@@ -1917,18 +2034,11 @@ var TT={script:performance.now()};
   $("#verDims").addEventListener("change",function(){S.verDims=this.checked;render()});
   $("#sc").addEventListener("change",function(){guardar();render()});
 
-  $("#btnSend").onclick=function(){
-    var todos=$("#todos").checked,c=0,v=0,ch=0,pl=0,l=0,me=0;
-    (todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)]).forEach(function(p){
-      c+=p.C.length;v+=p.V.length;ch+=p.VCH.length;pl+=p.P.length;me+=p.A.length;
-      l+=p.L.aligerada.length+p.L.maciza.length+p.L.nervada.length;});
-    toast("Prototipo: "+c+" columnas · "+v+" vigas · "+ch+" chatas · "+pl+" placas · "+l+" losas · "+me+" ambientes.");
-  };
-  $("#btnLeer").onclick=function(){
-    /* en el prototipo suelto no hay Excel: el puente del complemento
-       reemplaza esto por la lectura de verdad */
-    toast("La lectura de dimensiones necesita Excel: abre el modelador desde el panel.");
-  };
+  /* "Enviar a las hojas" y "Leer dimensiones" ya no existen.  Existian
+     porque Excel era la calculadora: habia que mandarle las filas y despues
+     leer de vuelta lo que habia salido.  Ahora el calculo esta aqui, se hace
+     solo al dibujar, y las hojas se generan ya rellenas desde la pestana
+     Hojas Excel. */
   $("#btnCheck").onclick=function(){
     var m=N(),pr=[],i,j;
     for(i=0;i<nx();i++)for(j=0;j<ny();j++)
@@ -2256,7 +2366,6 @@ var TT={script:performance.now()};
       bloquePlacas()+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
       '<h3>Dimensiones traídas de Excel</h3>'+
-      tarjetasDims()+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
       '<h3>Supuesto de apoyo</h3>'+
       '<div class="row" style="align-items:center;gap:8px">'+
@@ -2278,31 +2387,8 @@ var TT={script:performance.now()};
     if(ce)ce.onchange=function(){S.categoria=this.value;guardar();render();};
   }
 
-  /* Mismo lenguaje visual que las tarjetas de niveles de "usos y cargas". */
-  function tarjetasDims(){
-    var e=estadoDims(),vig=dimsVigentes(),html="",filas=[
-      ["Losas",e.losa,"con espesor"],["Vigas",e.viga,"con sección"],
-      ["Columnas",e.col,"con sección"],["Placas",e.placa,"con espesor"]];
-    html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">';
-    filas.forEach(function(f){
-      var d=f[1],pct=d.t?Math.round(d.n*100/d.t):0;
-      var est=!d.t?"sin elementos":(d.n===0?"falta leer":(d.n<d.t?"parcial":(vig?"al día":"obsoleta")));
-      html+='<div class="nivu" style="cursor:default"><b>'+f[0]+(d.n&&d.n===d.t&&vig?" ✓":"")+"</b>"+
-        '<div class="barra"><i style="width:'+pct+'%;background:'+
-        (vig?"var(--acc)":"var(--ink-3)")+'"></i></div>'+
-        "<small>"+d.n+" de "+d.t+" "+f[2]+" · "+est+"</small></div>";
-    });
-    html+="</div>";
-    if(hayCambiosSinEnviar())
-      html+='<p class="aviso" style="margin-top:10px">Tocaste la retícula después del último envío. '+
-             "Vuelve a enviar antes de leer, o lo que traigas no va a corresponder.</p>";
-    else if(S.dimsFecha&&!vig)
-      html+='<p class="aviso" style="margin-top:10px">Las dimensiones que ves son de una geometría '+
-             "anterior. Envía de nuevo y vuelve a leer.</p>";
-    return html;
-  }
-
   function render(){
+    PASADA++;                      /* cada dibujo es una pasada nueva */
     var m=N(),tot=0,ha=0;
     S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
     $("#hEnt").value=(m.h||2.8).toFixed(2);
@@ -2339,7 +2425,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio,render:render,paquete:paquete};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete};
 })();
 </script>
 
@@ -2355,23 +2441,8 @@ var TT={script:performance.now()};
     try{ if(listo&&Office.context&&Office.context.ui) Office.context.ui.messageParent(JSON.stringify(msg)); }
     catch(e){}
   }
-  // el prototipo ya guarda el modelo en localStorage["reticula"];
-  // el panel de Excel lee esa misma clave (mismo origen).
-  var send=document.getElementById("btnSend");
-  if(send){
-    send.addEventListener("click",function(){
-      if(!window.RET)return;
-      var pr=window.RET.faltan?window.RET.faltan():[];
-      if(pr.length){ alert("No se puede enviar todavia:" + String.fromCharCode(10,10) + pr.slice(0,6).join(String.fromCharCode(10))); return; }
-      var todos=document.getElementById("todos").checked;
-      var S=window.RET.estado(),packs=[],k;
-      if(todos){for(k=0;k<S.niveles.length;k++)packs.push(window.RET.filas(k));}
-      else{packs.push(window.RET.filas(S.act));}
-      try{localStorage.setItem("reticula_filas",JSON.stringify(packs));}catch(e){}
-      if(window.RET&&window.RET.marcarEnvio)window.RET.marcarEnvio();
-      avisar({accion:"enviar"});
-    });
-  }
+  /* Ya no hay "Enviar a las hojas": el modelador no manda filas a rangos
+     con nombre.  Calcula solo y la hoja se genera rellena. */
   /* Generar hojas. El boton lo pinta la pestana en caliente, asi que se
      escucha por delegacion en vez de agarrarlo una sola vez al cargar. */
   document.addEventListener("click",function(ev){
@@ -2406,44 +2477,7 @@ var TT={script:performance.now()};
     },250);
   });
 
-  /* El dialogo no habla con Excel: le pide al panel que lea y espera a que
-     aparezca el resultado en localStorage, que comparten por ser mismo origen.
-     Se sondea porque messageChild no esta en todas las versiones de Office. */
-  var leer=document.getElementById("btnLeer");
-  if(leer){
-    leer.onclick=function(){
-      if(!window.RET||!window.RET.aplicarDims)return;
-      var antes=0;
-      try{ antes=(JSON.parse(localStorage.getItem("reticula_dims")||"{}").t)||0; }catch(e){}
-      leer.disabled=true; leer.textContent="Leyendo...";
-      avisar({accion:"leer"});
-      var t0=Date.now();
-      var reloj=setInterval(function(){
-        var d=null;
-        try{ d=JSON.parse(localStorage.getItem("reticula_dims")||"null"); }catch(e){}
-        if(d&&d.t>antes){
-          clearInterval(reloj);
-          leer.disabled=false; leer.textContent="Leer dimensiones";
-          if(d.err){ alert("No se pudo leer del libro: "+d.err); return; }
-          var n=window.RET.aplicarDims(d.d||{});
-          alert(n?("Se aplicaron "+n+" dimensiones desde Excel."):
-                  "El libro todavia no tiene dimensiones calculadas para este modelo.");
-        }else if(Date.now()-t0>15000){
-          clearInterval(reloj);
-          leer.disabled=false; leer.textContent="Leer dimensiones";
-          alert("El panel no respondio. Cierra y vuelve a abrir el modelador.");
-        }
-      },250);
-    };
-  }
-  var barra=document.querySelector("header.bar");
-  if(barra){
-    var b=document.createElement("button");
-    b.className="btn pri";
-    b.style.marginLeft="auto";
-    b.textContent="Guardar y cerrar";
-    b.onclick=function(){avisar({accion:"cerrar"})};
-    barra.appendChild(b);
-  }
+  /* Tampoco hay "Leer dimensiones": las secciones ya no vienen de Excel,
+     se calculan al dibujar. */
 })();
 </script>
