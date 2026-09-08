@@ -202,6 +202,28 @@
          pointer-events:none;transition:opacity .18s,transform .18s;z-index:9;max-width:80vw}
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---- pestana Hojas Excel: galeria de hojas ---- */
+#panelHojas{overflow:auto;padding:18px 20px}
+.hg-cab{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.hg-cab .cuenta{font:600 13px 'IBM Plex Mono',monospace;color:var(--ink)}
+.hg{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:18px 16px}
+.hoja-card{display:flex;flex-direction:column;align-items:center;gap:7px}
+.hoja-card .hnom{font:600 10.5px 'IBM Plex Mono',monospace;letter-spacing:.04em;
+  text-align:center;color:var(--ink);min-height:26px;display:flex;align-items:flex-end;
+  justify-content:center;text-transform:uppercase}
+.hoja-card .hpag{width:100%;aspect-ratio:1/1.414;background:#fff;border:1px solid #c9c9c9;
+  box-shadow:0 1px 3px rgba(0,0,0,.13);position:relative;overflow:hidden;cursor:pointer;
+  transition:box-shadow .12s,border-color .12s}
+.hoja-card .hpag:hover{box-shadow:0 2px 7px rgba(0,0,0,.2)}
+.hoja-card.sel .hpag{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+.hoja-card.no .hpag{background:#f4f4f4;border-style:dashed;cursor:not-allowed;box-shadow:none}
+.hoja-card.no .hnom{color:#9a9a9a}
+.hoja-card .pie{font:500 10px 'IBM Plex Sans',sans-serif;color:#6b6b6b;text-align:center}
+.hoja-card label{display:flex;align-items:center;gap:5px;font:500 11px 'IBM Plex Sans',sans-serif;
+  color:var(--ink);cursor:pointer}
+.hoja-card.no label{color:#9a9a9a;cursor:not-allowed}
+.hg-res{margin-top:20px}
 </style>
 
 <div class="app">
@@ -756,7 +778,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v16 · 08-09-2026";
+  var BUILD="v17 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1914,60 +1936,109 @@ var TT={script:performance.now()};
     });
     return c;
   }
-  function hojasPrevistas(){
-    var c=inventario(),v=[];
-    v.push({n:"NORMA E020",motivo:"referencia",listo:true,cuantos:null});
-    v.push({n:"CRITERIOS_OVIEDO",motivo:"referencia",listo:true,cuantos:null});
-    v.push({n:"PRE_LOSA_ALIGERADA",listo:false,cuantos:c.losa.aligerada});
-    v.push({n:"PRE_LOSA_MACIZA",listo:false,cuantos:c.losa.maciza});
-    v.push({n:"PRE_LOSA_NERVADA",listo:false,cuantos:c.losa.nervada});
-    v.push({n:"PRE_VIGA_PRINCIPAL",listo:false,cuantos:c.viga.principal});
-    v.push({n:"PRE_VIGA_CHATA",listo:false,cuantos:c.viga.chata});
-    v.push({n:"PRE_COLUMNA",listo:false,cuantos:c.col});
-    v.push({n:"PRE_PLACA",listo:false,cuantos:c.placa});
-    v.push({n:"METRADO_CARGAS",listo:false,cuantos:c.usos});
-    return v;
-  }
-  function pintaHojas(){
-    var v=hojasPrevistas(),gen=[],om=[],pend=[];
-    v.forEach(function(x){
-      if(!x.listo){ (x.cuantos>0?pend:om).push(x); }
-      else gen.push(x);
-    });
-    function li(x,nota){
-      return "<tr><td>"+x.n+"</td><td>"+
-        (x.cuantos===null?"—":x.cuantos)+"</td><td>"+nota+"</td></tr>";
+  /* Catalogo de hojas. "ref" no necesita modelo; "ele" depende de que existan
+     elementos de ese tipo; "met" necesita usos asignados. */
+  var CATALOGO=[
+    {n:"NORMA E020",         tit:"Norma E.020",        t:"ref"},
+    {n:"CRITERIOS_OVIEDO",   tit:"Criterios Oviedo",   t:"ref"},
+    {n:"PRE_LOSA_ALIGERADA", tit:"Pre losa aligerada", t:"ele", q:function(c){return c.losa.aligerada}},
+    {n:"PRE_LOSA_MACIZA",    tit:"Pre losa maciza",    t:"ele", q:function(c){return c.losa.maciza}},
+    {n:"PRE_LOSA_NERVADA",   tit:"Pre losa nervada",   t:"ele", q:function(c){return c.losa.nervada}},
+    {n:"PRE_VIGA_PRINCIPAL", tit:"Pre viga principal", t:"ele", q:function(c){return c.viga.principal}},
+    {n:"PRE_VIGA_CHATA",     tit:"Pre viga chata",     t:"ele", q:function(c){return c.viga.chata}},
+    {n:"PRE_COLUMNA",        tit:"Pre columna",        t:"ele", q:function(c){return c.col}},
+    {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
+    {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
+  ];
+  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true};
+
+  /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
+     No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
+  function miniatura(tipo){
+    var s='<svg viewBox="0 0 100 141" width="100%" height="100%" preserveAspectRatio="none">';
+    s+='<rect x="4" y="4" width="92" height="12" fill="#156082"/>';
+    var y=24,k;
+    for(k=0;k<(tipo==="ref"?3:2);k++){
+      s+='<rect x="4" y="'+y+'" width="92" height="5" fill="#747474"/>';
+      y+=9;
+      for(var f=0;f<(tipo==="ref"?4:3);f++){
+        s+='<rect x="4" y="'+y+'" width="26" height="3.4" fill="#E8E8E8"/>';
+        s+='<rect x="32" y="'+y+'" width="64" height="3.4" fill="#fbfbfb" stroke="#e2e2e2" stroke-width=".3"/>';
+        y+=5;
+      }
+      y+=6;
     }
-    var r=JSON.parse(localStorage.getItem("reticula_hojas")||"null");
+    if(tipo!=="ref"){
+      s+='<rect x="4" y="'+y+'" width="92" height="5" fill="#AEAEAE"/>'; y+=8;
+      for(var g=0;g<6;g++){
+        s+='<rect x="4" y="'+y+'" width="92" height="3.4" fill="#fbfbfb" stroke="#e2e2e2" stroke-width=".3"/>';
+        y+=5;
+      }
+    }
+    return s+'</svg>';
+  }
+
+  function estadoHoja(h,c){
+    if(!IMPLEMENTADAS[h.n]) return {ok:false,pie:"pendiente"};
+    if(h.t==="ref") return {ok:true,pie:"referencia"};
+    var q=h.q(c);
+    if(!q) return {ok:false,pie:h.t==="met"?"sin usos asignados":"sin elementos"};
+    return {ok:true,pie:q+(h.t==="met"?" paño(s) con uso":" elemento(s)")};
+  }
+
+  function pintaHojas(){
+    var c=inventario();
+    if(!S.hojasSel)S.hojasSel={};
+    var seleccion=[];
+    var tarjetas=CATALOGO.map(function(h){
+      var e=estadoHoja(h,c);
+      if(e.ok&&S.hojasSel[h.n]===undefined)S.hojasSel[h.n]=true;
+      var marcada=e.ok&&!!S.hojasSel[h.n];
+      if(marcada)seleccion.push(h.n);
+      return '<div class="hoja-card'+(marcada?" sel":"")+(e.ok?"":" no")+'" data-h="'+h.n+'">'+
+        '<div class="hnom">'+h.tit+'</div>'+
+        '<div class="hpag">'+miniatura(h.t)+'</div>'+
+        '<label><input type="checkbox" data-chk="'+h.n+'"'+
+        (marcada?" checked":"")+(e.ok?"":" disabled")+'> Incluir</label>'+
+        '<div class="pie">'+e.pie+'</div></div>';
+    }).join("");
+
+    var r=null;
+    try{ r=JSON.parse(localStorage.getItem("reticula_hojas")||"null"); }catch(e){}
     var res="";
     if(r&&r.hojas&&r.hojas.length){
-      res='<div class="rule" style="margin:14px 0 10px"></div><h3>Última generación</h3>'+
-        '<table><thead><tr><th>Hoja</th><th>Total</th><th>Encolar</th><th>Excel</th>'+
-        '<th>Detalle</th></tr></thead><tbody>'+
-        r.hojas.map(function(h){
-          return h.error
-            ? "<tr><td>"+h.hoja+"</td><td colspan=4 style=\"color:#c62828\">"+h.error+"</td></tr>"
-            : "<tr><td>"+h.hoja+"</td><td><b>"+h.ms+" ms</b></td><td>"+h.msEncolar+
-              " ms</td><td>"+h.msSync+" ms</td><td>"+h.stats.valores+" valores · "+
-              h.stats.merges+" merges · "+h.stats.formatosAplicados+" fmt en "+
-              h.stats.grupos+" grupos</td></tr>";
-        }).join("")+"</tbody></table>"+
-        '<p class="nota">«Encolar» es lo que cuesta preparar las órdenes; «Excel» es '+
-        'lo que tarda el libro en aplicarlas. Si «Excel» domina, el cuello está en el '+
-        'formato; si domina «encolar», está en el plan.</p>';
+      res='<div class="hg-res"><div class="rule" style="margin:0 0 10px"></div>'+
+        '<h3>Última generación</h3><table><thead><tr><th>Hoja</th><th>Total</th>'+
+        '<th>Encolar</th><th>Excel</th><th>Detalle</th></tr></thead><tbody>'+
+        r.hojas.map(function(x){
+          return x.error
+            ? '<tr><td>'+x.hoja+'</td><td colspan="4" style="color:#c62828">'+x.error+'</td></tr>'
+            : "<tr><td>"+x.hoja+"</td><td><b>"+x.ms+" ms</b></td><td>"+x.msEncolar+
+              " ms</td><td>"+x.msSync+" ms</td><td>"+x.stats.valores+" valores · "+
+              x.stats.merges+" merges · "+x.stats.formatosAplicados+" fmt en "+
+              x.stats.grupos+" grupos</td></tr>";
+        }).join("")+'</tbody></table>'+
+        '<p class="nota">«Encolar» es preparar las órdenes; «Excel» es aplicarlas.</p></div>';
     }
+
     $("#panelHojas").innerHTML=
-      '<h3>Hojas Excel</h3>'+
-      '<p class="nota">El complemento no necesita un libro preparado: <b>lo produce</b>. '+
-      'Abre un Excel en blanco y genera. Solo se crean las hojas de los elementos que '+
-      'existen — la ausencia de una hoja te dice que no modelaste ese tipo.</p>'+
-      '<div class="row" style="gap:8px;margin:10px 0"><button id="btnHojas" class="pri">'+
-      'Generar CRITERIOS_OVIEDO</button></div>'+
-      '<table><thead><tr><th>Hoja</th><th>Elementos</th><th>Estado</th></tr></thead><tbody>'+
-      gen.map(function(x){return li(x,"se generará · referencia")}).join("")+
-      pend.map(function(x){return li(x,"pendiente de implementar")}).join("")+
-      om.map(function(x){return li(x,"se omite · no hay elementos")}).join("")+
-      "</tbody></table>"+res;
+      '<div class="hg-cab">'+
+      '<button id="btnHojas" class="pri"'+(seleccion.length?"":" disabled")+'>'+
+      'Generar '+seleccion.length+' hoja'+(seleccion.length===1?"":"s")+'</button>'+
+      '<span class="cuenta">'+seleccion.length+' de '+CATALOGO.length+' seleccionadas</span>'+
+      '<span class="lbl">El complemento no necesita un libro preparado: lo produce. '+
+      'Abre un Excel en blanco y genera.</span></div>'+
+      '<div class="hg">'+tarjetas+'</div>'+res;
+
+    $("#panelHojas").querySelectorAll("[data-chk]").forEach(function(i){
+      i.onchange=function(){ S.hojasSel[this.dataset.chk]=this.checked; guardar(); render(); };
+    });
+    $("#panelHojas").querySelectorAll(".hoja-card:not(.no) .hpag").forEach(function(pg){
+      pg.onclick=function(){
+        var n=this.parentNode.dataset.h;
+        S.hojasSel[n]=!S.hojasSel[n]; guardar(); render();
+      };
+    });
   }
 
   /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
@@ -2056,8 +2127,14 @@ var TT={script:performance.now()};
     $("#inspector").hidden=usos||hojas;
     $("#panelUso").hidden=!usos;
     $("#panelHojas").hidden=!hojas;
+    /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
+       inspector no pintan nada aqui */
+    $("#niveles").hidden=hojas;
+    document.querySelector(".cintra").hidden=hojas;
+    $("#hint").hidden=hojas;
     $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||hojas;
-    $("#hint").hidden=!esPlano||usos; document.querySelector(".zoom").hidden=!esPlano;
+    if(!hojas)$("#hint").hidden=!esPlano||usos;
+    document.querySelector(".zoom").hidden=!esPlano;
     pintaNiveles();
     if(hojas){pintaHojas();}
     else if(!esPlano){pintaEdificio();}
@@ -2111,8 +2188,11 @@ var TT={script:performance.now()};
     if(!b)return;
     var antes=0;
     try{ antes=(JSON.parse(localStorage.getItem("reticula_hojas")||"{}").t)||0; }catch(e){}
+    var St=(window.RET&&window.RET.estado)?window.RET.estado():null,cuales=[],k;
+    if(St&&St.hojasSel)for(k in St.hojasSel)if(St.hojasSel[k])cuales.push(k);
+    if(!cuales.length){alert("No hay ninguna hoja marcada.");return;}
     b.disabled=true; var txt=b.textContent; b.textContent="Generando...";
-    avisar({accion:"generarHojas",cuales:["CRITERIOS_OVIEDO"]});
+    avisar({accion:"generarHojas",cuales:cuales});
     var t0=Date.now();
     var reloj=setInterval(function(){
       var d=null;
