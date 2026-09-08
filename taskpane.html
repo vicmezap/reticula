@@ -59,6 +59,743 @@
     </ol>
   </div>
 
+<!-- criterios, formato, escritor y hojas: el generador los inlinea aqui -->
+<script>
+/* ===== criterios.js (inlinado) ===== */
+/* =====================================================================
+   criterios.js — LOS CRITERIOS DE OVIEDO, EN UN SOLO SITIO
+
+   Fuente: Oviedo Sarmiento, Ricardo. Predimensionamiento en Edificios de
+   Concreto Armado, 1ra ed. 2025.  Verificado pagina a pagina contra el PDF
+   (auditoria del 7-sep-2026).  Documentacion: vault "Concreto Armado".
+
+   REGLA: ningun numero de este archivo se copia a otro sitio.  Ni al Excel,
+   ni al modelador, ni a mano.  Si un criterio cambia, cambia aqui.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.CRITERIOS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  /* --- categoria de la edificacion (pags. 79, 80, 165) ------------- */
+  var CATEGORIA = {
+    esencial:   { peso: 1500, U: 1.50, pctSC: 0.50, pctPlaca: 0.0100 },
+    importante: { peso: 1300, U: 1.30, pctSC: 0.50, pctPlaca: 0.0080 },
+    comun:      { peso: 1000, U: 1.00, pctSC: 0.25, pctPlaca: 0.0050 }
+  };
+
+  /* --- factor alfa ------------------------------------------------- */
+  /* Tramos por sobrecarga.  Cada elemento tiene los SUYOS: la aligerada
+     corta en 200/300/400/500 (pag. 25) y la colaborante en 250/350/500
+     (pag. 29).  Mezclarlos da un alfa equivocado.                      */
+  var ALFA_LOSA = {
+    aligerada:    { tipo: "tramos", tope: 500, tramos: [[200,25],[300,23],[400,21],[500,19]] },
+    colaborante:  { tipo: "tramos", tope: 500, tramos: [[250,32],[350,30],[500,28]] },
+    maciza:       { tipo: "fijo", alfa: 35 },
+    nervada:      { tipo: "fijo", alfa: 18 },
+    encasetonada: { tipo: "fijo", alfa: 21 },
+    postensada:   { tipo: "estructuracion", opciones: {
+                      "maciza-1dir-con-vigas":   48,
+                      "maciza-2dir-sin-vigas":   45,
+                      "maciza-2dir-con-abacos":  50,
+                      "maciza-2dir-con-vigas":   55,
+                      "nervada-1dir-con-vigas":  40,
+                      "nervada-2dir-sin-vigas":  35 } },
+    cimentacion:  { tipo: "propio" }          /* area por sigma, peralte por ldg */
+  };
+
+  /* Vigas: la tabla llega hasta 750, la de losas se corta en 500 (pag. 51) */
+  var ALFA_VIGA = {
+    principal:   { tipo: "tramos", tope: 750, tramos: [[200,12],[350,11],[600,10],[750,9]] },
+    amarre:      { tipo: "fijo", alfa: 14 },
+    chata:       { tipo: "fijo", alfa: 14, alfaPrincipal: 12 },   /* pags. 61, 62 */
+    voladizo:    { tipo: "fijo", alfa: 5 },
+    seccionT:    { tipo: "fijo", alfa: 16 },
+    cimentacion: { tipo: "fijo", alfa: 8 },
+    postensada:  { tipo: "fijo", alfa: 20, luzMaxima: 35.0 }
+  };
+
+  /* --- minimos y proporciones ------------------------------------- */
+  var MINIMOS = {
+    viguetaAligerada: 0.10,   /* b >= 0.10 (pag. 26) */
+    nervadura:        0.10,   /* (pag. 27) */
+    losita:           0.05,   /* hf > 0.05 */
+    baseViga:         0.25,   /* b >= 0.25 en todas las vigas con recuadro */
+    almaT:            0.25,   /* bw >= 0.25 (pag. 54) */
+    anchoColumna:     0.25,   /* b >= 0.25 (pags. 82, 83) */
+    espesorPlaca:     0.15    /* t >= 0.15 (pag. 165) */
+  };
+
+  var PROPORCION = {
+    viguetaAligerada: 2.5,    /* b = h/2.5 */
+    nervadura:        2.5,
+    nervaduraCaseton: 3.5,    /* b = h/3.5 (pag. 27) */
+    baseViga:         2.5,    /* b = h/2.5 salvo principal y cimentacion */
+    baseVigaPrincipal: 20,    /* b = B/20 (pag. 52) */
+    baseVigaCimentacion: 2,   /* b >= h/2 (pag. 54) */
+    separacionAligerada: 0.40,/* S <= 0.40 */
+    separacionCaseton:   0.75 /* S <= 0.75 (pag. 27) */
+  };
+
+  /* --- columnas (pags. 82, 83) ------------------------------------ */
+  var COLUMNA = {
+    C: { interior: 0.30, exterior: 0.20, esquinera: 0.10 },
+    /* Ac = k(b*l) + b^2 con b >= 0.40*l  (pag. 102) */
+    poliedrica: { L: 2, T: 3, cruz: 4, relacionB: 0.40 }
+  };
+
+  /* --- zapatas (pags. 116-123) ------------------------------------ */
+  var ZAPATA = {
+    incrementoPesoPropio: 1.10,          /* +10 % (pag. 117) */
+    Fsismo: { centrada: 1.00, medianera: 1.50, esquinera: 1.50,
+              combinada: 1.00, corrida: 1.00 },
+    divisorPeralte: { centrada: 4, medianera: 4, combinada: 4, corrida: 4,
+                      esquinera: 2 },    /* ver nota */
+    redondeoLado: 0.10,                  /* al múltiplo de 10 cm superior */
+    redondeoPeralte: 0.10
+  };
+  /* NOTA esquinera: el formulario de la pag. 121 dice /4, pero los dos
+     ejemplos que existen (pags. 134 y 136) usan /2 de forma consistente.
+     Se adopta /2.  Ver "El peralte de la zapata esquinera" en el vault. */
+
+  /* --- placas (pags. 160, 165) ------------------------------------ */
+  var PLACA = {
+    divisorAltura: 20,      /* t >= hm/20 */
+    divisorLongitud: 25,    /* t >= lm/25  (el libro lo enuncia y no lo aplica) */
+    repartoPorEje: 0.50,    /* 50 % en X, 50 % en Y */
+    phiCorte: 0.85,         /* metodo por cortante basal */
+    coefCorte: 0.53
+  };
+
+  /* --- E.020, version reducida del libro (pag. 25) ---------------- */
+  var SOBRECARGA = {
+    "vivienda": 200, "aulas": 250, "oficinas": 250, "salas de lectura": 300,
+    "corredores y escaleras": 400, "graderias y tribunas": 500
+  };
+
+  /* ================= consultas ==================================== */
+
+  function porTramos(cfg, sc) {
+    var ultimo = cfg.tramos[cfg.tramos.length - 1][1];
+    if (sc == null) return { alfa: cfg.tramos[0][1], sinSobrecarga: true };
+    for (var i = 0; i < cfg.tramos.length; i++)
+      if (sc <= cfg.tramos[i][0]) return { alfa: cfg.tramos[i][1] };
+    /* Por encima del tope el libro no da alfa.  Se devuelve el ultimo tramo
+       para poder seguir dibujando, pero con la bandera puesta: extrapolar en
+       silencio seria inventar un valor que el libro no da. */
+    return { alfa: ultimo, fueraDeTabla: true, tope: cfg.tope };
+  }
+
+  function alfaLosa(subtipo, sc, estructuracion) {
+    var cfg = ALFA_LOSA[subtipo];
+    if (!cfg) throw new Error("losa desconocida: " + subtipo);
+    if (cfg.tipo === "fijo") return { alfa: cfg.alfa };
+    if (cfg.tipo === "tramos") return porTramos(cfg, sc);
+    if (cfg.tipo === "estructuracion") {
+      var a = cfg.opciones[estructuracion];
+      if (a == null) throw new Error("estructuracion desconocida: " + estructuracion);
+      return { alfa: a };
+    }
+    return { alfa: null, criterioPropio: true };
+  }
+
+  function alfaViga(subtipo, sc, esPrincipal) {
+    var cfg = ALFA_VIGA[subtipo];
+    if (!cfg) throw new Error("viga desconocida: " + subtipo);
+    if (cfg.tipo === "tramos") return porTramos(cfg, sc);
+    if (subtipo === "chata") return { alfa: esPrincipal ? cfg.alfaPrincipal : cfg.alfa };
+    return { alfa: cfg.alfa };
+  }
+
+  return {
+    CATEGORIA: CATEGORIA, ALFA_LOSA: ALFA_LOSA, ALFA_VIGA: ALFA_VIGA,
+    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA,
+    ZAPATA: ZAPATA, PLACA: PLACA, SOBRECARGA: SOBRECARGA,
+    alfaLosa: alfaLosa, alfaViga: alfaViga
+  };
+});
+</script>
+<script>
+/* ===== formato.js (inlinado) ===== */
+/* =====================================================================
+   formato.js — EL FORMATO PIZARRA, EN UN SOLO SITIO
+
+   Portado de scripts/hojas/*.py.  Los colores de tema del libro se
+   resolvieron a hexadecimal leyendo el theme1.xml de V1.xlsm:
+
+       theme=4 accent1  156082     titulo
+       theme=2 lt2      E8E8E8     etiquetas
+               tint -0.25 AEAEAE   encabezados
+               tint -0.50 747474   secciones
+       theme=0 lt1      FFFFFF     cuerpo
+
+   ESTE ARCHIVO NO LLAMA A OFFICE.JS.  Construye un PLAN declarativo
+   -valores, combinaciones, formatos por rango- que despues un escritor
+   aplica por lotes.  Asi se puede probar en Node, sin Excel, y el numero
+   de context.sync() lo decide quien escribe, no quien maqueta.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.FORMATO = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  /* ---------------- paleta y tipografia ---------------- */
+  var COLOR = {
+    titulo:   "156082",   /* accent1 */
+    seccion:  "747474",   /* lt2 tint -0.50 */
+    encab:    "AEAEAE",   /* lt2 tint -0.25 */
+    etiqueta: "E8E8E8",   /* lt2 */
+    cuerpo:   "FFFFFF",   /* lt1 */
+    fuera:    "D9D9D9",
+    azul:     "0070C0",
+    tinta:    "000000",
+    tituloTinta: "FFFFFF"
+  };
+
+  var FUENTE = "Aptos Narrow", FUENTE_TITULO = "Times New Roman";
+
+  /* ---------------- geometria de la pizarra ---------------- */
+  var COL_INI = 2, COL_FIN = 11;                 /* B..K */
+  /* Anchos LEIDOS DEL LIBRO REAL, no de los scripts de Python.
+     Los scripts tienen B=3.0 y F..I=8.43, pero el archivo que se mira
+     todos los dias tiene B=13 y F..I=13: los ensanchaste a mano y cada
+     reconstruccion los volvia a estrechar en silencio.  Manda el archivo. */
+  var ANCHOS_CAR = { A:3.0, B:13.0, C:26.0, D:14.0, E:8.44140625, F:13.0, G:13.0, H:13.0, I:13.0, J:17.5546875, K:3.0 };
+
+  /* Dos hojas se apartan del patron, y con motivo. */
+  var ANCHOS_HOJA = {
+    "NORMA E020": {"B": 3.0, "C": 40.0, "E": 13.0, "J": 13.0},
+    "CRITERIOS_OVIEDO": {"B": 3.0, "I": 16.21875}
+  };
+
+  /* Excel mide el ancho en CARACTERES; Office.js lo quiere en PUNTOS.
+     px = round(car * 7 + 5)  para la fuente por defecto;  pt = px * 0.75 */
+  function carAPuntos(car) { return Math.round(car * 7 + 5) * 0.75; }
+  var ANCHOS_PT = (function () {
+    var o = {}, k;
+    for (k in ANCHOS_CAR) o[k] = carAPuntos(ANCHOS_CAR[k]);
+    return o;
+  })();
+
+  var ALTO = { titulo1:15.0, titulo2:22.05, titulo3:15.0,
+               seccion:24.0, subtitulo:18.0, encabezado:34.0,
+               fila:18.0, nota:15.0 };
+
+  var LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  function col(n) {                              /* 1 -> A */
+    var s = "";
+    while (n > 0) { var m = (n - 1) % 26; s = LETRAS[m] + s; n = (n - 1 - m) / 26; }
+    return s;
+  }
+  function ref(r1, c1, r2, c2) {
+    return col(c1) + r1 + (r2 == null ? "" : ":" + col(c2) + r2);
+  }
+
+  /* ---------------- constructor de hoja ---------------- */
+  function anchosDe(nombre) {
+    var o = {}, k;
+    for (k in ANCHOS_CAR) o[k] = ANCHOS_CAR[k];
+    var ex = ANCHOS_HOJA[nombre];
+    if (ex) for (k in ex) o[k] = ex[k];
+    return o;
+  }
+
+  function hoja(nombre) {
+    var car = anchosDe(nombre), pt = {}, kk;
+    for (kk in car) pt[kk] = carAPuntos(car[kk]);
+    var P = { nombre: nombre, anchos: pt, anchosCar: car,
+              alturas: [], valores: [], merges: [], formatos: [],
+              numfmt: [], sinCuadricula: true, ultima: 1 };
+
+    function alto(r, h) { P.alturas.push({ fila: r, alto: h }); if (r > P.ultima) P.ultima = r; }
+    function val(r, c, v) { P.valores.push({ r: r, c: c, v: v }); if (r > P.ultima) P.ultima = r; }
+    function fmt(o) { P.formatos.push(o); }
+    function merge(r1, c1, r2, c2) { if (c2 > c1 || r2 > r1) P.merges.push(ref(r1, c1, r2, c2)); }
+
+    var api = {};
+
+    api.titulo = function (texto) {
+      merge(2, 2, 4, 11); val(2, 2, texto);
+      fmt({ rango: ref(2, 2, 4, 11), relleno: COLOR.titulo,
+            fuente: { nombre: FUENTE_TITULO, tam: 20, negrita: true, color: COLOR.tituloTinta },
+            alinear: { h: "Center", v: "Center" },
+            bordeCaja: { estilo: "Medium", color: COLOR.azul } });
+      alto(2, ALTO.titulo1); alto(3, ALTO.titulo2); alto(4, ALTO.titulo3);
+      return api;
+    };
+
+    api.seccion = function (r, texto) {
+      merge(r, 2, r, 11); val(r, 2, "   " + texto);
+      fmt({ rango: ref(r, 2, r, 11), relleno: COLOR.seccion,
+            fuente: { nombre: FUENTE, tam: 13, negrita: true, color: COLOR.tinta },
+            alinear: { h: "Left", v: "Center", ajustar: true } });
+      alto(r, ALTO.seccion);
+      return r + 2;
+    };
+
+    api.subtitulo = function (r, texto) {
+      merge(r, 3, r, 10); val(r, 3, texto);
+      fmt({ rango: ref(r, 3, r, 10),
+            fuente: { nombre: FUENTE, tam: 11, negrita: true, color: COLOR.tinta },
+            alinear: { h: "Left", v: "Center", ajustar: true } });
+      alto(r, ALTO.subtitulo);
+      return r + 1;
+    };
+
+    api.nota = function (r, texto) {
+      merge(r, 3, r, 10); val(r, 3, texto);
+      fmt({ rango: ref(r, 3, r, 10),
+            fuente: { nombre: FUENTE, tam: 10, color: COLOR.tinta },
+            alinear: { h: "Left", v: "Center", ajustar: true } });
+      alto(r, ALTO.nota * Math.max(1, Math.ceil(texto.length / 108)));
+      return r + 2;
+    };
+
+    api.encabezado = function (r, layout, textos, altura) {
+      layout.forEach(function (par, i) {
+        merge(r, par[0], r, par[1]);
+        val(r, par[0], textos[i]);
+      });
+      var a = layout[0][0], b = layout[layout.length - 1][1];
+      fmt({ rango: ref(r, a, r, b), relleno: COLOR.encab,
+            fuente: { nombre: FUENTE, tam: 11, negrita: true, color: COLOR.tinta },
+            alinear: { h: "Center", v: "Center", ajustar: true },
+            rejilla: { estilo: "Thin", color: COLOR.tinta } });
+      alto(r, altura || ALTO.encabezado);
+      return r + 1;
+    };
+
+    /* Primera columna = etiqueta (fondo gris, izquierda, negrita).
+       Las demas = cuerpo (blanco, centradas).  Igual que fila() en Python. */
+    api.fila = function (r, layout, valores, numfmt) {
+      var a = layout[0][0], b = layout[layout.length - 1][1], altura = ALTO.fila;
+      layout.forEach(function (par, i) {
+        merge(r, par[0], r, par[1]);
+        var v = (i < valores.length) ? valores[i] : null;
+        if (v !== null && v !== undefined) val(r, par[0], v);
+        if (numfmt && numfmt[i] != null)
+          P.numfmt.push({ rango: ref(r, par[0], r, par[1]), formato: numfmt[i] });
+        if (typeof v === "string" && v.charAt(0) !== "=") {
+          var ancho = 1, c;
+          for (c = par[0]; c <= par[1]; c++) ancho += car[col(c)] || 8.43;
+          altura = Math.max(altura, 15.0 * Math.max(1, Math.ceil(v.length / ancho)));
+        }
+      });
+      fmt({ rango: ref(r, layout[0][0], r, layout[0][1]), relleno: COLOR.etiqueta,
+            fuente: { nombre: FUENTE, tam: 11, negrita: true, color: COLOR.tinta },
+            alinear: { h: "Left", v: "Center", ajustar: true } });
+      if (layout.length > 1)
+        fmt({ rango: ref(r, layout[1][0], r, b), relleno: COLOR.cuerpo,
+              fuente: { nombre: FUENTE, tam: 11, color: COLOR.tinta },
+              alinear: { h: "Center", v: "Center", ajustar: true } });
+      fmt({ rango: ref(r, a, r, b), rejilla: { estilo: "Thin", color: COLOR.tinta } });
+      alto(r, altura);
+      return r + 1;
+    };
+
+    api.tabla = function (r, layout, encabezados, filas, numfmt, altura) {
+      r = api.encabezado(r, layout, encabezados, altura);
+      filas.forEach(function (f) { r = api.fila(r, layout, f, numfmt); });
+      return r + 1;
+    };
+
+    /* Marco exterior, relleno gris fuera del area util y sin cuadricula. */
+    api.cerrar = function (ultimaFila) {
+      var u = ultimaFila || P.ultima;
+      P.ultima = u;
+      P.fuera = { rango: ref(1, 1, u + 40, 45), relleno: COLOR.fuera };
+      P.interior = { rango: ref(2, COL_INI, u, COL_FIN), rellenoSiVacio: COLOR.cuerpo };
+      fmt({ rango: ref(2, COL_INI, u, COL_FIN),
+            bordeCaja: { estilo: "Thick", color: COLOR.azul } });
+      return P;
+    };
+
+    api.plan = function () { return P; };
+    return api;
+  }
+
+  /* ---------------- sonda de capacidades ----------------
+     El manifest no declara requirement set, asi que hay que preguntar en
+     caliente antes de intentar formatear.  Sin esto, en un Excel viejo el
+     generador fallaria a mitad y dejaria hojas a medio hacer. */
+  function capacidades() {
+    var r = { formato: false, merge: false, validacion: false,
+              formas: false, nombres: false, detalle: {} };
+    try {
+      var req = (typeof Office !== "undefined" && Office.context && Office.context.requirements);
+      if (!req) return r;
+      [["1.1", "nombres"], ["1.2", "formato"], ["1.4", "merge"],
+       ["1.8", "validacion"], ["1.9", "formas"]].forEach(function (p) {
+        var ok = req.isSetSupported("ExcelApi", p[0]);
+        r.detalle["ExcelApi " + p[0]] = ok;
+        r[p[1]] = ok;
+      });
+    } catch (e) { r.error = e.message; }
+    return r;
+  }
+
+  return { COLOR: COLOR, FUENTE: FUENTE, FUENTE_TITULO: FUENTE_TITULO,
+           COL_INI: COL_INI, COL_FIN: COL_FIN,
+           ANCHOS_CAR: ANCHOS_CAR, ANCHOS_HOJA: ANCHOS_HOJA,
+           ANCHOS_PT: ANCHOS_PT, anchosDe: anchosDe, ALTO: ALTO,
+           carAPuntos: carAPuntos, col: col, ref: ref,
+           hoja: hoja, capacidades: capacidades };
+});
+</script>
+<script>
+/* ===== escritor.js (inlinado) ===== */
+/* =====================================================================
+   escritor.js — aplica un PLAN de formato.js sobre una hoja de Excel.
+
+   Vive en el TASKPANE, que es quien habla con Excel.  El dialogo no.
+
+   Rendimiento: Office.js cobra en cada context.sync(), y cada proxy que
+   se crea tiene coste.  Por eso aqui:
+
+     · los valores van en UNA sola escritura 2D de todo el bloque
+     · los formatos identicos se agrupan y se aplican con getRanges()
+       (RangeAreas, ExcelApi 1.9) en una sola llamada
+     · el orden es valores -> merges -> formato.  Al reves, combinar
+       borraria lo escrito fuera de la celda superior izquierda.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.ESCRITOR = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var PESO = { Thin: "Thin", Medium: "Medium", Thick: "Thick" };
+  var BORDES_CAJA = ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight"];
+  var BORDES_TODOS = BORDES_CAJA.concat(["InsideHorizontal", "InsideVertical"]);
+
+  function col(n) {
+    var L = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", s = "";
+    while (n > 0) { var m = (n - 1) % 26; s = L[m] + s; n = (n - 1 - m) / 26; }
+    return s;
+  }
+
+  /* Firma de un formato, para poder juntar los que son iguales. */
+  function firma(f) {
+    return JSON.stringify([f.relleno || null, f.fuente || null,
+                           f.alinear || null, f.bordeCaja || null, f.rejilla || null]);
+  }
+
+  function aplicarFormato(rangoObj, f) {
+    if (f.relleno) rangoObj.format.fill.color = "#" + f.relleno;
+    if (f.fuente) {
+      var F = rangoObj.format.font;
+      if (f.fuente.nombre) F.name = f.fuente.nombre;
+      if (f.fuente.tam) F.size = f.fuente.tam;
+      if (f.fuente.negrita != null) F.bold = !!f.fuente.negrita;
+      if (f.fuente.color) F.color = "#" + f.fuente.color;
+    }
+    if (f.alinear) {
+      if (f.alinear.h) rangoObj.format.horizontalAlignment = f.alinear.h;
+      if (f.alinear.v) rangoObj.format.verticalAlignment = f.alinear.v;
+      if (f.alinear.ajustar != null) rangoObj.format.wrapText = !!f.alinear.ajustar;
+    }
+    var b, i;
+    if (f.bordeCaja) {
+      for (i = 0; i < BORDES_CAJA.length; i++) {
+        b = rangoObj.format.borders.getItem(BORDES_CAJA[i]);
+        b.style = "Continuous";
+        b.weight = PESO[f.bordeCaja.estilo] || "Thin";
+        if (f.bordeCaja.color) b.color = "#" + f.bordeCaja.color;
+      }
+    }
+    if (f.rejilla) {
+      for (i = 0; i < BORDES_TODOS.length; i++) {
+        b = rangoObj.format.borders.getItem(BORDES_TODOS[i]);
+        b.style = "Continuous";
+        b.weight = PESO[f.rejilla.estilo] || "Thin";
+        if (f.rejilla.color) b.color = "#" + f.rejilla.color;
+      }
+    }
+  }
+
+  /* Encola TODO el plan.  No hace sync: eso lo decide quien llama. */
+  function encolar(ws, plan, opciones) {
+    var o = opciones || {}, i, k;
+
+    /* 1 · anchos de columna, en puntos */
+    for (k in plan.anchos) ws.getRange(k + ":" + k).format.columnWidth = plan.anchos[k];
+
+    /* 2 · valores, en UNA escritura.  Se calcula el bloque que los contiene
+           y se rellena con null lo que no toca. */
+    if (plan.valores.length) {
+      var r1 = Infinity, c1 = Infinity, r2 = 0, c2 = 0;
+      plan.valores.forEach(function (v) {
+        if (v.r < r1) r1 = v.r; if (v.r > r2) r2 = v.r;
+        if (v.c < c1) c1 = v.c; if (v.c > c2) c2 = v.c;
+      });
+      var m = [], f, c;
+      for (f = 0; f <= r2 - r1; f++) {
+        m[f] = [];
+        for (c = 0; c <= c2 - c1; c++) m[f][c] = null;
+      }
+      plan.valores.forEach(function (v) { m[v.r - r1][v.c - c1] = v.v; });
+      ws.getRangeByIndexes(r1 - 1, c1 - 1, r2 - r1 + 1, c2 - c1 + 1).values = m;
+    }
+
+    /* 3 · combinar.  DESPUES de escribir: al combinar, Excel se queda con la
+           celda superior izquierda y descarta el resto. */
+    for (i = 0; i < plan.merges.length; i++) ws.getRange(plan.merges[i]).merge(false);
+
+    /* 4 · fondo gris de fuera y blanco del interior */
+    if (plan.fuera) ws.getRange(plan.fuera.rango).format.fill.color = "#" + plan.fuera.relleno;
+    if (plan.interior) ws.getRange(plan.interior.rango).format.fill.color =
+      "#" + plan.interior.rellenoSiVacio;
+
+    /* 5 · formatos, agrupados por firma */
+    var grupos = {}, orden = [];
+    plan.formatos.forEach(function (f) {
+      var s = firma(f);
+      if (!grupos[s]) { grupos[s] = { f: f, rangos: [] }; orden.push(s); }
+      grupos[s].rangos.push(f.rango);
+    });
+    var usadas = 0;
+    orden.forEach(function (s) {
+      var g = grupos[s];
+      if (o.rangeAreas && g.rangos.length > 1) {
+        /* getRanges admite hasta unos cuantos miles de caracteres; se trocea */
+        var lote = [], largo = 0, j;
+        for (j = 0; j < g.rangos.length; j++) {
+          if (largo + g.rangos[j].length > 240) {
+            aplicarFormato(ws.getRanges(lote.join(",")), g.f); usadas++;
+            lote = []; largo = 0;
+          }
+          lote.push(g.rangos[j]); largo += g.rangos[j].length + 1;
+        }
+        if (lote.length) { aplicarFormato(ws.getRanges(lote.join(",")), g.f); usadas++; }
+      } else {
+        g.rangos.forEach(function (rg) { aplicarFormato(ws.getRange(rg), g.f); usadas++; });
+      }
+    });
+
+    /* 6 · formatos de numero */
+    plan.numfmt.forEach(function (n) {
+      var rg = ws.getRange(n.rango);
+      rg.numberFormat = [[n.formato]];
+    });
+
+    /* 7 · alturas de fila, agrupadas por altura igual */
+    var porAlto = {};
+    plan.alturas.forEach(function (a) {
+      (porAlto[a.alto] = porAlto[a.alto] || []).push(a.fila);
+    });
+    for (k in porAlto) {
+      porAlto[k].forEach(function (fl) {
+        ws.getRange("A" + fl + ":A" + fl).format.rowHeight = +k;
+      });
+    }
+
+    if (plan.sinCuadricula) ws.showGridlines = false;
+
+    return { formatosAplicados: usadas, grupos: orden.length,
+             merges: plan.merges.length, valores: plan.valores.length };
+  }
+
+  /* Genera una hoja entera y devuelve cuanto tardo.  Si ya existe, se borra
+     y se rehace: sale mas barato que limpiar formato celda a celda. */
+  function generar(plan, opciones) {
+    var t0 = (typeof performance !== "undefined") ? performance.now() : Date.now();
+    var stats = null, tCola = 0;
+    return Excel.run(function (context) {
+      var libro = context.workbook;
+      var vieja = libro.worksheets.getItemOrNullObject(plan.nombre);
+      vieja.load("isNullObject");
+      return context.sync().then(function () {
+        if (!vieja.isNullObject) vieja.delete();
+        var ws = libro.worksheets.add(plan.nombre);
+        stats = encolar(ws, plan, opciones);
+        tCola = ((typeof performance !== "undefined") ? performance.now() : Date.now()) - t0;
+        ws.activate();
+        return context.sync();
+      }).then(function () {
+        var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
+        return { hoja: plan.nombre, ms: Math.round(t1 - t0),
+                 msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
+                 stats: stats };
+      });
+    });
+  }
+
+  return { generar: generar, encolar: encolar, col: col };
+});
+</script>
+<script>
+/* ===== hojas.js (inlinado) ===== */
+/* =====================================================================
+   hojas.js — definicion de las hojas que genera el complemento.
+
+   Cada funcion devuelve un PLAN de formato.js.  Nada se transcribe a mano:
+   todo sale de criterios.js, que es la unica copia de los criterios y la
+   que prueban los 60 ejemplos del libro.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./formato.js"), require("./criterios.js"));
+  else raiz.HOJAS = definir(raiz.FORMATO, raiz.CRITERIOS);
+})(typeof self !== "undefined" ? self : this, function (F, C) {
+  "use strict";
+
+  var L2 = [[3, 6], [7, 10]];                       /* dos columnas */
+  var L3 = [[3, 4], [5, 7], [8, 10]];               /* tres */
+  var L5 = [[3, 3], [4, 5], [6, 7], [8, 8], [9, 10]];
+
+  function pct(v) { return (v * 100).toFixed(2).replace(/\.00$/, "") + " %"; }
+
+  /* Tramos [[tope, alfa]] -> filas legibles "S/C <= 200 kg/m2" */
+  function filasTramos(tramos) {
+    var f = [], ant = 0;
+    tramos.forEach(function (t) {
+      f.push([(ant === 0 ? "S/C ≤ " + t[0] : ant + " < S/C ≤ " + t[0]) + " kg/m²", t[1]]);
+      ant = t[0];
+    });
+    return f;
+  }
+
+  function criteriosOviedo() {
+    var h = F.hoja("CRITERIOS_OVIEDO"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO - OVIEDO");
+
+    /* ---------------- 1. LOSAS ---------------- */
+    r = h.seccion(r, "1. LOSAS");
+    r = h.subtitulo(r, "1.1   Factor de predimensionamiento en losas aligeradas (α)");
+    r = h.tabla(r, L2, ["W s/c", "α"], filasTramos(C.ALFA_LOSA.aligerada.tramos));
+
+    r = h.subtitulo(r, "1.2   Factor de predimensionamiento en losas colaborantes (α)");
+    r = h.tabla(r, L2, ["W s/c", "α"], filasTramos(C.ALFA_LOSA.colaborante.tramos));
+    r = h.nota(r, "Los tramos de la colaborante son PROPIOS (250 · 350 · 500) y no "
+      + "coinciden con los de la aligerada (200 · 300 · 400 · 500). Una S/C de 300 "
+      + "kg/m² da α = 23 si es aligerada y α = 30 si es colaborante.");
+
+    r = h.subtitulo(r, "1.3   Losas de factor fijo");
+    r = h.tabla(r, L2, ["Tipo de losa", "α"], [
+      ["LOSA MACIZA", C.ALFA_LOSA.maciza.alfa],
+      ["LOSA NERVADA", C.ALFA_LOSA.nervada.alfa],
+      ["LOSA ENCASETONADA", C.ALFA_LOSA.encasetonada.alfa]
+    ]);
+
+    r = h.subtitulo(r, "1.4   Losa postensada, según estructuración");
+    r = h.tabla(r, L2, ["Estructuración", "α"],
+      Object.keys(C.ALFA_LOSA.postensada.opciones).map(function (k) {
+        return [k.replace(/-/g, " "), C.ALFA_LOSA.postensada.opciones[k]];
+      }));
+
+    r = h.subtitulo(r, "1.5   Predimensionamiento de losas");
+    r = h.tabla(r, L5,
+      ["Tipo de losa", "Peralte  h", "Ancho de vigueta  b",
+       "Separación entre viguetas  S", "Espesor de losa superior  hf"], [
+      ["LOSA ALIGERADA", "h = Ln / α", "b = h / 2.5 ≥ 0.10 m",
+       "S ≤ " + C.PROPORCION.separacionAligerada.toFixed(2) + " m", "hf ≤ (S - b) / 20 > 0.05 m"],
+      ["LOSA MACIZA", "h = Ln / " + C.ALFA_LOSA.maciza.alfa, "-", "-", "-"],
+      ["LOSA NERVADA", "h = Ln / " + C.ALFA_LOSA.nervada.alfa, "b = h / 2.5 ≥ 0.10 m",
+       "S ≤ 2.5 h", "hf ≤ (S - b) / 20 > 0.05 m"],
+      ["LOSA ENCASETONADA", "h = Ln / " + C.ALFA_LOSA.encasetonada.alfa,
+       "b = h / 3.5 ≥ 0.10 m", "S ≤ " + C.PROPORCION.separacionCaseton.toFixed(2) + " m",
+       "hf > S / 12 > 0.05 m"]
+    ]);
+    r = h.nota(r, "h: peralte   |   Ln: luz libre (m)   |   α: factor de "
+      + "predimensionamiento   |   W s/c: sobrecarga según la hoja NORMA E020   |   "
+      + "En losa aligerada, S es el tamaño del ladrillo (0.30 m).");
+
+    /* ---------------- 2. VIGAS ---------------- */
+    r = h.seccion(r, "2. VIGAS");
+    r = h.subtitulo(r, "2.1   Factor de predimensionamiento en vigas principales (α)");
+    r = h.tabla(r, L2, ["W s/c", "α"], filasTramos(C.ALFA_VIGA.principal.tramos));
+    r = h.nota(r, "La tabla de vigas llega a 750 kg/m²; la de losas se corta en 500. "
+      + "Son tablas distintas: usar la de losas para una viga da α = 25 donde "
+      + "corresponde 12.");
+
+    r = h.subtitulo(r, "2.2   Predimensionamiento de vigas");
+    r = h.tabla(r, L3, ["Tipo de viga", "Peralte  h", "Ancho  b"], [
+      ["VIGA PRINCIPAL", "h = Ln / α", "b = B / " + C.PROPORCION.baseVigaPrincipal
+        + " ≥ " + C.MINIMOS.baseViga.toFixed(2) + " m"],
+      ["VIGA DE AMARRE", "h = Ln / " + C.ALFA_VIGA.amarre.alfa, "b = h / 2.5 ≥ 0.25 m"],
+      ["VIGA CHATA", "h = h de la losa   ·   Ln = h × α", "b = h / 2.5 ≥ 0.25 m"],
+      ["VIGA EN VOLADIZO", "h = Ln / " + C.ALFA_VIGA.voladizo.alfa, "b = h / 2.5 ≥ 0.25 m"],
+      ["VIGA SECCIÓN T", "h = Ln / " + C.ALFA_VIGA.seccionT.alfa,
+       "bw ≤ 2 hf ≥ 0.25 m   ·   bf ≤ 4 bw"],
+      ["VIGA DE CIMENTACIÓN", "h = Ln / " + C.ALFA_VIGA.cimentacion.alfa, "b ≥ h / 2"],
+      ["VIGA POSTENSADA", "h = Ln / " + C.ALFA_VIGA.postensada.alfa,
+       "b = h / 2.5 ≥ 0.25 m   ·   hasta " + C.ALFA_VIGA.postensada.luzMaxima.toFixed(2) + " m"]
+    ]);
+    r = h.nota(r, "Chata secundaria α = " + C.ALFA_VIGA.chata.alfa
+      + "   |   chata principal α = " + C.ALFA_VIGA.chata.alfaPrincipal
+      + "   |   B: ancho tributario (m).");
+
+    /* ---------------- 3. COLUMNAS ---------------- */
+    r = h.seccion(r, "3. COLUMNAS");
+    r = h.subtitulo(r, "3.1   Categoría de la edificación, factor U y sobrecarga");
+    r = h.tabla(r, L3, ["Categoría", "Factor U", "% de sobrecarga"],
+      ["esencial", "importante", "comun"].map(function (k) {
+        var x = C.CATEGORIA[k];
+        return [k.charAt(0).toUpperCase() + k.slice(1), x.U, pct(x.pctSC)];
+      }), { 1: "0.00" });
+
+    r = h.subtitulo(r, "3.2   Peso en servicio del edificio por metro cuadrado");
+    r = h.tabla(r, L2, ["Categoría", "Peso / m²"],
+      ["esencial", "importante", "comun"].map(function (k) {
+        return [k.charAt(0).toUpperCase() + k.slice(1), C.CATEGORIA[k].peso + " kg/m²"];
+      }));
+
+    r = h.subtitulo(r, "3.3   Predimensionamiento de columnas");
+    r = h.tabla(r, L3, ["Ubicación de la columna", "Área de la sección  Ac", "Ancho mínimo  b"],
+      [["COLUMNA INTERIOR", "Ac = P servicio / (" + C.COLUMNA.C.interior.toFixed(2) + " f'c)",
+        "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"],
+       ["COLUMNA EXTERIOR", "Ac = P servicio / (" + C.COLUMNA.C.exterior.toFixed(2) + " f'c)",
+        "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"],
+       ["COLUMNA ESQUINERA", "Ac = P servicio / (" + C.COLUMNA.C.esquinera.toFixed(2) + " f'c)",
+        "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"]]);
+    r = h.nota(r, "Ac: área de la columna   |   P servicio = N.º de pisos × área "
+      + "tributaria × peso/m²   |   f'c: resistencia a compresión del concreto   |   "
+      + "Poliédricas: Ac = k(b·l) + b², con k = 2 en L, 3 en T y 4 en cruz, y b ≥ 0.40 l.");
+
+    /* ---------------- 4. PLACAS ---------------- */
+    r = h.seccion(r, "4. PLACAS (MUROS DE CORTE)");
+    r = h.subtitulo(r, "4.1   Área en planta según categoría");
+    r = h.tabla(r, L2, ["Categoría", "% del área techada"],
+      ["esencial", "importante", "comun"].map(function (k) {
+        return [k.charAt(0).toUpperCase() + k.slice(1), pct(C.CATEGORIA[k].pctPlaca)];
+      }));
+    r = h.subtitulo(r, "4.2   Espesor y reparto");
+    r = h.tabla(r, L2, ["Concepto", "Expresión"], [
+      ["Espesor por altura", "t ≥ hm / " + C.PLACA.divisorAltura],
+      ["Espesor por longitud", "t ≥ lm / " + C.PLACA.divisorLongitud],
+      ["Espesor mínimo", "t ≥ " + C.MINIMOS.espesorPlaca.toFixed(2) + " m"],
+      ["Longitud total", "Lp = Ap / t"],
+      ["Reparto por eje", pct(C.PLACA.repartoPorEje) + " en X-X   ·   "
+        + pct(C.PLACA.repartoPorEje) + " en Y-Y"]
+    ]);
+    r = h.nota(r, "El área total NO es el criterio: cada eje necesita Ap/2. Un "
+      + "edificio con toda su placa en un eje pasa la suma y deja el otro sin rigidez.");
+
+    /* ---------------- 5. ZAPATAS ---------------- */
+    r = h.seccion(r, "5. ZAPATAS");
+    r = h.subtitulo(r, "5.1   Área en planta y factor de amplificación");
+    r = h.tabla(r, L3, ["Tipo de zapata", "F sismo", "Divisor del peralte"],
+      ["centrada", "medianera", "esquinera", "combinada", "corrida"].map(function (k) {
+        return [k.charAt(0).toUpperCase() + k.slice(1),
+                C.ZAPATA.Fsismo[k].toFixed(2), C.ZAPATA.divisorPeralte[k]];
+      }));
+    r = h.nota(r, "Az = " + C.ZAPATA.incrementoPesoPropio.toFixed(2)
+      + " · P servicio · F sismo / σs   |   el " + C.ZAPATA.incrementoPesoPropio.toFixed(2)
+      + " cubre peso propio, suelo de relleno y columna enterrada   |   "
+      + "H = (lado − elemento) / divisor   |   redondeo de lados y peralte cada "
+      + (C.ZAPATA.redondeoLado * 100).toFixed(0) + " cm hacia arriba.");
+    r = h.nota(r, "La esquinera usa divisor 2 y no 4: el formulario de la pág. 121 "
+      + "dice /4, pero los dos ejemplos del libro (págs. 134 y 136) usan /2 de forma "
+      + "consistente. Se adopta lo que hacen los ejemplos.");
+
+    return h.cerrar(r);
+  }
+
+  return { criteriosOviedo: criteriosOviedo };
+});
+</script>
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
@@ -127,7 +864,7 @@ function leerDimensiones(){
   });
 }
 /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-var BUILD = "v15 · 08-09-2026";
+var BUILD = "v16 · 08-09-2026";
 var dialogo = null;
 
 /* Los dos archivos se publican juntos. Si el dialogo que se abrio trae otra
@@ -297,11 +1034,47 @@ function alRecibir(arg){
              JSON.stringify({t: Date.now(), d: {}, err: e.message})); }catch(x){}
       estado("No se pudo leer: " + e.message, "err");
     });
+  }else if(msg.accion === "generarHojas"){
+    generarHojas(msg.cuales || ["CRITERIOS_OVIEDO"]);
   }else if(msg.accion === "enviar"){
     enviarFilas().then(function(r){
       estado("Escrito: " + r.col + " columnas, " + r.viga + " vigas, " + r.losa + " losas.", "ok");
     }).catch(function(e){ estado("No se pudo escribir: " + e.message, "err"); });
   }
+}
+
+/* ---------------- generacion de hojas ----------------
+   El complemento LLEVA las hojas dentro: no las necesita, las produce.
+   El dialogo no habla con Excel, asi que pide la accion y recoge el
+   resultado de localStorage, que comparten por ser el mismo origen. */
+function generarHojas(cuales){
+  var caps = FORMATO.capacidades();
+  var opts = { rangeAreas: !!caps.formas };   /* getRanges pide ExcelApi 1.9 */
+  var hechas = [], t0 = Date.now();
+
+  function siguiente(i){
+    if(i >= cuales.length){
+      var res = { t: Date.now(), total: Date.now() - t0, hojas: hechas, caps: caps };
+      try{ localStorage.setItem("reticula_hojas", JSON.stringify(res)); }catch(e){}
+      estado("Generadas " + hechas.length + " hoja(s) en " + res.total + " ms.", "ok");
+      return;
+    }
+    var nombre = cuales[i], plan;
+    try{
+      if(nombre === "CRITERIOS_OVIEDO") plan = HOJAS.criteriosOviedo();
+      else throw new Error("hoja no implementada: " + nombre);
+    }catch(e){
+      hechas.push({ hoja: nombre, error: e.message });
+      return siguiente(i + 1);
+    }
+    estado("Generando " + nombre + "...", "");
+    ESCRITOR.generar(plan, opts).then(function(r){
+      hechas.push(r); siguiente(i + 1);
+    }).catch(function(e){
+      hechas.push({ hoja: nombre, error: e.message }); siguiente(i + 1);
+    });
+  }
+  siguiente(0);
 }
 
 /* ---------------- escritura en las listas ---------------- */

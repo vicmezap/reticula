@@ -215,6 +215,7 @@
   <div class="modos" role="group" aria-label="Modo de trabajo">
     <button class="modo" data-modo="modelo" aria-pressed="true">Modelo 2D</button>
     <button class="modo" data-modo="usos" aria-pressed="false">Usos y cargas</button>
+    <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button>
   </div>
 
   <div class="niv" id="niveles"></div>
@@ -275,6 +276,7 @@
         <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
       <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
       <div class="edif" id="edificio" hidden></div>
+      <div class="edif" id="panelHojas" hidden></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
     </div>
 
@@ -754,7 +756,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v15 · 08-09-2026";
+  var BUILD="v16 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1897,6 +1899,77 @@ var TT={script:performance.now()};
       'altas siempre, hay que traerlas dentro del archivo.</p>';
   }
 
+  /* ---------- pestana HOJAS EXCEL ----------
+     El complemento LLEVA las hojas dentro. No necesita un libro preparado:
+     lo produce. Aqui se ve QUE se va a generar antes de generarlo, y la
+     ausencia de una hoja es informacion: dice que no modelaste eso. */
+  function inventario(){
+    var c={losa:{aligerada:0,maciza:0,nervada:0},viga:{principal:0,chata:0},
+           col:0,placa:0,usos:0},k;
+    S.niveles.forEach(function(m){
+      for(k in m.losas){c.losa[m.losas[k].tipo||"aligerada"]++; if(m.losas[k].uso)c.usos++;}
+      for(k in m.vigas){c.viga[tipoViga(m.vigas[k])]++;}
+      for(k in m.cols)c.col++;
+      for(k in m.placas)c.placa++;
+    });
+    return c;
+  }
+  function hojasPrevistas(){
+    var c=inventario(),v=[];
+    v.push({n:"NORMA E020",motivo:"referencia",listo:true,cuantos:null});
+    v.push({n:"CRITERIOS_OVIEDO",motivo:"referencia",listo:true,cuantos:null});
+    v.push({n:"PRE_LOSA_ALIGERADA",listo:false,cuantos:c.losa.aligerada});
+    v.push({n:"PRE_LOSA_MACIZA",listo:false,cuantos:c.losa.maciza});
+    v.push({n:"PRE_LOSA_NERVADA",listo:false,cuantos:c.losa.nervada});
+    v.push({n:"PRE_VIGA_PRINCIPAL",listo:false,cuantos:c.viga.principal});
+    v.push({n:"PRE_VIGA_CHATA",listo:false,cuantos:c.viga.chata});
+    v.push({n:"PRE_COLUMNA",listo:false,cuantos:c.col});
+    v.push({n:"PRE_PLACA",listo:false,cuantos:c.placa});
+    v.push({n:"METRADO_CARGAS",listo:false,cuantos:c.usos});
+    return v;
+  }
+  function pintaHojas(){
+    var v=hojasPrevistas(),gen=[],om=[],pend=[];
+    v.forEach(function(x){
+      if(!x.listo){ (x.cuantos>0?pend:om).push(x); }
+      else gen.push(x);
+    });
+    function li(x,nota){
+      return "<tr><td>"+x.n+"</td><td>"+
+        (x.cuantos===null?"—":x.cuantos)+"</td><td>"+nota+"</td></tr>";
+    }
+    var r=JSON.parse(localStorage.getItem("reticula_hojas")||"null");
+    var res="";
+    if(r&&r.hojas&&r.hojas.length){
+      res='<div class="rule" style="margin:14px 0 10px"></div><h3>Última generación</h3>'+
+        '<table><thead><tr><th>Hoja</th><th>Total</th><th>Encolar</th><th>Excel</th>'+
+        '<th>Detalle</th></tr></thead><tbody>'+
+        r.hojas.map(function(h){
+          return h.error
+            ? "<tr><td>"+h.hoja+"</td><td colspan=4 style=\"color:#c62828\">"+h.error+"</td></tr>"
+            : "<tr><td>"+h.hoja+"</td><td><b>"+h.ms+" ms</b></td><td>"+h.msEncolar+
+              " ms</td><td>"+h.msSync+" ms</td><td>"+h.stats.valores+" valores · "+
+              h.stats.merges+" merges · "+h.stats.formatosAplicados+" fmt en "+
+              h.stats.grupos+" grupos</td></tr>";
+        }).join("")+"</tbody></table>"+
+        '<p class="nota">«Encolar» es lo que cuesta preparar las órdenes; «Excel» es '+
+        'lo que tarda el libro en aplicarlas. Si «Excel» domina, el cuello está en el '+
+        'formato; si domina «encolar», está en el plan.</p>';
+    }
+    $("#panelHojas").innerHTML=
+      '<h3>Hojas Excel</h3>'+
+      '<p class="nota">El complemento no necesita un libro preparado: <b>lo produce</b>. '+
+      'Abre un Excel en blanco y genera. Solo se crean las hojas de los elementos que '+
+      'existen — la ausencia de una hoja te dice que no modelaste ese tipo.</p>'+
+      '<div class="row" style="gap:8px;margin:10px 0"><button id="btnHojas" class="pri">'+
+      'Generar CRITERIOS_OVIEDO</button></div>'+
+      '<table><thead><tr><th>Hoja</th><th>Elementos</th><th>Estado</th></tr></thead><tbody>'+
+      gen.map(function(x){return li(x,"se generará · referencia")}).join("")+
+      pend.map(function(x){return li(x,"pendiente de implementar")}).join("")+
+      om.map(function(x){return li(x,"se omite · no hay elementos")}).join("")+
+      "</tbody></table>"+res;
+  }
+
   /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
   function pintaEdificio(){
     var d=$("#edificio"),filas=[],tA=0,tAl=0,tMa=0,tNe=0,tC=0,tVP=0,tVC=0,tPL=0;
@@ -1976,19 +2049,21 @@ var TT={script:performance.now()};
     $("#areaTot").textContent=tot.toFixed(2)+" m²";
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
-    var usos=(S.modo==="usos");
-    var esPlano=(S.vista==="plano");
-    document.querySelector(".tools:not(#toolsUso)").hidden=usos;
+    var usos=(S.modo==="usos"), hojas=(S.modo==="hojas");
+    var esPlano=(S.vista==="plano")&&!hojas;
+    document.querySelector(".tools:not(#toolsUso)").hidden=usos||hojas;
     $("#toolsUso").hidden=!usos;
-    $("#inspector").hidden=usos;
+    $("#inspector").hidden=usos||hojas;
     $("#panelUso").hidden=!usos;
-    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano;
+    $("#panelHojas").hidden=!hojas;
+    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||hojas;
     $("#hint").hidden=!esPlano||usos; document.querySelector(".zoom").hidden=!esPlano;
     pintaNiveles();
-    if(!esPlano){pintaEdificio();}
+    if(hojas){pintaHojas();}
+    else if(!esPlano){pintaEdificio();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else{draw();inspector();}
-    if(!usos)editorEjes();
+    if(!usos&&!hojas)editorEjes();
     tabla();guardar();
   }
   cargar();
@@ -1996,6 +2071,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio,render:render};
 })();
 </script>
 
@@ -2028,6 +2104,29 @@ var TT={script:performance.now()};
       avisar({accion:"enviar"});
     });
   }
+  /* Generar hojas. El boton lo pinta la pestana en caliente, asi que se
+     escucha por delegacion en vez de agarrarlo una sola vez al cargar. */
+  document.addEventListener("click",function(ev){
+    var b=ev.target&&ev.target.closest?ev.target.closest("#btnHojas"):null;
+    if(!b)return;
+    var antes=0;
+    try{ antes=(JSON.parse(localStorage.getItem("reticula_hojas")||"{}").t)||0; }catch(e){}
+    b.disabled=true; var txt=b.textContent; b.textContent="Generando...";
+    avisar({accion:"generarHojas",cuales:["CRITERIOS_OVIEDO"]});
+    var t0=Date.now();
+    var reloj=setInterval(function(){
+      var d=null;
+      try{ d=JSON.parse(localStorage.getItem("reticula_hojas")||"null"); }catch(e){}
+      if(d&&d.t>antes){
+        clearInterval(reloj); b.disabled=false; b.textContent=txt;
+        if(window.RET&&window.RET.render)window.RET.render();
+      }else if(Date.now()-t0>60000){
+        clearInterval(reloj); b.disabled=false; b.textContent=txt;
+        alert("El panel no respondio en 60 s.");
+      }
+    },250);
+  });
+
   /* El dialogo no habla con Excel: le pide al panel que lea y espera a que
      aparezca el resultado en localStorage, que comparten por ser mismo origen.
      Se sondea porque messageChild no esta en todas las versiones de Office. */
