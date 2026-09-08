@@ -351,6 +351,7 @@
       <button class="tab" role="tab" aria-selected="false" data-t="maciza">PRE_LOSA_MACIZA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="nervada">PRE_LOSA_NERVADA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="placa">PRE_PLACA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="zapata">PRE_ZAPATA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="metrado">METRADO_CARGAS</button>
     </div>
     <div class="tabwrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
@@ -883,7 +884,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v24 · 08-09-2026";
+  var BUILD="v25 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -919,10 +920,13 @@ var TT={script:performance.now()};
        modo:"modelo",uso:"",amb:"",manual:{},
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
-       ladoCol:0.50,dimsFecha:0,dimsHuella:"",verDims:true,envioHuella:"",
+       ladoCol:0.50,verDims:true,
        /* f'c: lo unico del predimensionamiento de columnas que no sale de la
           planta.  E.060 pide 210 como minimo en elementos sismorresistentes. */
        fc:210,
+       /* capacidad portante del suelo, en kg/cm2.  Es el otro dato que no
+          sale de la planta: lo da el estudio de suelos. */
+       sigma:3.0,
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano",
        /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
        categoria:"comun"};
@@ -947,12 +951,12 @@ var TT={script:performance.now()};
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",
     JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
-                    df:S.dimsFecha,dh:S.dimsHuella,vd:S.verDims,eh:S.envioHuella}))}catch(e){}}
+                    vd:S.verDims,fc:S.fc,sg:S.sigma,cat:S.categoria}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
-      if(d.df)S.dimsFecha=d.df; if(d.dh)S.dimsHuella=d.dh;
-      if(d.vd!==undefined)S.verDims=!!d.vd; if(d.eh)S.envioHuella=d.eh;}}catch(e){}}
+      if(d.vd!==undefined)S.verDims=!!d.vd;
+      if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;}}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -1928,6 +1932,28 @@ var TT={script:performance.now()};
             b:q.b, sMax:q.s_max, hfMin:q.hf_min, fueraDeTabla:q.fueraDeTabla};
   }
 
+  /* ZAPATA.  No se dibuja: sale de la columna que lleva encima.  La
+     ubicacion decide el tipo -interior/centrada, exterior/medianera,
+     esquinera/esquinera- y los pisos que carga son TODOS los del edificio,
+     porque la cimentacion esta debajo de todo. */
+  var TIPO_ZAPATA={Interior:"centrada",Exterior:"medianera",Esquinera:"esquinera"};
+
+  function predimZapata(i,j){
+    var m=S.niveles[0];
+    if(!m||!m.cols[key(i,j)])return null;
+    var sc=seccionCol(i,j,m,0);
+    var d=medCol(i,j,m);
+    var sub=TIPO_ZAPATA[d.tipo]||"centrada";
+    var q=CALCULO.zapata({subtipo:sub,niveles:S.niveles.length,area_trib:d.at,
+                          categoria:S.categoria,sigma_s:sigmaTm2(),
+                          col_b:sc.b/100,col_h:sc.h/100});
+    q.tipo=sub; q.col_b=sc.b; q.col_h=sc.h; q.at=d.at;
+    return q;
+  }
+  /* La capacidad portante se escribe en kg/cm2, que es como la da el EMS,
+     y el libro la usa en t/m2.  1 kg/cm2 = 10 t/m2. */
+  function sigmaTm2(){ return (+S.sigma||3.0)*10 }
+
   function predimPlaca(o,i,j,m){
     m = m || N();
     var p = m.placas[key(o,i,j)];
@@ -1940,6 +1966,8 @@ var TT={script:performance.now()};
     return {dir:(o === "h" ? "X" : "Y"), lm:pm.lm, hm:pm.hm, t:t, propia:propia,
             tMin:q.t_minimo, gobierna:q.gobierna, area:pm.lm*t};
   }
+
+  function cap1(s){return s.charAt(0).toUpperCase()+s.slice(1)}
 
   /* ---------- exportacion ---------- */
   function filas(niv){
@@ -1977,32 +2005,80 @@ var TT={script:performance.now()};
               ar.aligerada.toFixed(2),ar.maciza.toFixed(2),ar.nervada.toFixed(2)]];
     /* Una fila por ambiente presente en el nivel. Los paños sin uso no van:
        si los mandara con S/C 0, bajarian el promedio sin que se note. */
+    /* Zapatas: solo en el nivel de cimentacion, y una por columna de ese
+       nivel.  No dependen del nivel que se este mirando. */
+    var ZA=[],ZAC={};
+    if(niv===0){
+      for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){
+        var z=predimZapata(i,j),a2=nm.C[i+":"+j];
+        if(z)ZAC[a2.cod.replace("-C-","-Z-")]=[z.P_servicio.toFixed(2),z.Az.toFixed(3),
+                                               z.menor.toFixed(2),z.mayor.toFixed(2),
+                                               z.H.toFixed(2),
+                                               (z.mayor*z.menor>=z.Az-1e-9)?"CUMPLE":"REVISAR"];
+        if(z)ZA.push([a2.cod.replace("-C-","-Z-"),cap1(z.tipo),S.niveles.length,
+                      z.at.toFixed(3),z.F_sismo.toFixed(2),
+                      (z.col_b/100).toFixed(2),(z.col_h/100).toFixed(2)]);
+      }
+    }
+    /* Lo YA CALCULADO de cada fila, para que la tabla del pie muestre
+       numeros en vez de la palabra "formula".  Va aparte y por codigo: las
+       hojas siguen recibiendo solo los datos, y los resultados los ponen
+       como formulas, que es lo que se quiere ver en Excel. */
+    var CA={};
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){
+      var sc2=seccionCol(i,j,m,niv);
+      CA[nm.C[i+":"+j].cod]=[sc2.P.toFixed(2),sc2.Ac,sc2.b,sc2.h];
+    }
+    function calcViga(o,i,j){
+      var pv=predimViga(o,i,j,m),b=nm.V[o+":"+i+":"+j];
+      if(!pv)return;
+      CA[b.cod]=(pv.tipo==="chata")
+        ? [pv.LnMax.toFixed(2),Math.round(pv.b*100),pv.cumple?"CUMPLE":"NO CUMPLE"]
+        : [pv.h.toFixed(2),Math.round(pv.h*100),Math.round(pv.b*100)];
+    }
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])calcViga("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])calcViga("v",i,j);
+    function calcPlaca(o,i,j){
+      var pp=predimPlaca(o,i,j,m),b=nm.P[o+":"+i+":"+j];
+      if(pp)CA[b.cod]=[pp.tMin.toFixed(3),Math.round(pp.t*100),pp.area.toFixed(3)];
+    }
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])calcPlaca("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])calcPlaca("v",i,j);
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
+      var pl3=predimLosa(i,j,m),c3=nm.L[i+":"+j];
+      CA[c3.cod]=(pl3.tipo==="maciza")?[pl3.h.toFixed(2),pl3.e]
+        :(pl3.tipo==="nervada")?[pl3.h.toFixed(2),pl3.e,Math.round(pl3.b*100),pl3.sMax.toFixed(2)]
+        :[pl3.h.toFixed(2),pl3.e,Math.round(pl3.b*100)];
+    }
+
     var am=areasPorAmb(m),AMB=[];
     Object.keys(am).forEach(function(k){
       var d=am[k]; if(!d.uso)return;
       var w=pesoAmb(d.uso,d.amb);
       AMB.push([nm.nivel,d.uso,d.amb||"—",d.area.toFixed(2),w===null?"":w]);
     });
-    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB};
+    for(var kz in ZAC)CA[kz]=ZAC[kz];
+    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB,Z:ZA,CA:CA};
   }
   /* Todo el proyecto en un objeto, que es lo que necesitan las ocho hojas
      de predimensionamiento.  Va por localStorage, no por messageParent: el
      mensaje del dialogo tiene limite de tamano y un edificio grande lo pasa. */
   function paquete(){
     PASADA++;                      /* se exporta con el modelo de AHORA */
-    var C=[],V=[],VCH=[],PL=[],M=[],A=[],
+    var C=[],V=[],VCH=[],PL=[],M=[],A=[],Z=[],
         L={aligerada:[],maciza:[],nervada:[]},area=0;
     S.niveles.forEach(function(m,k){
       var p=filas(k);
       C=C.concat(p.C); V=V.concat(p.V); VCH=VCH.concat(p.VCH); PL=PL.concat(p.P);
-      M=M.concat(p.M); A=A.concat(p.A);
+      M=M.concat(p.M); A=A.concat(p.A); Z=Z.concat(p.Z||[]);
       L.aligerada=L.aligerada.concat(p.L.aligerada);
       L.maciza=L.maciza.concat(p.L.maciza);
       L.nervada=L.nervada.concat(p.L.nervada);
       area+=areaNivel(m);
     });
-    return {categoria:S.categoria,fc:+S.fc||210,niveles:S.niveles.length,
-            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A};
+    return {categoria:S.categoria,fc:+S.fc||210,sigma:+S.sigma||3.0,
+            niveles:S.niveles.length,
+            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z};
   }
 
   function tabla(){
@@ -2016,19 +2092,34 @@ var TT={script:performance.now()};
       packs.forEach(function(p){R=R.concat(p.VCH)});}
     else if(S.tab==="placa"){H=["Código","Eje","Dir","lm (m)","hm (m)"];CAL=["t mín","t (cm)","Área (m²)"];
       packs.forEach(function(p){R=R.concat(p.P)});}
+    else if(S.tab==="zapata"){H=["Código","Tipo","N° pisos","A trib (m²)","F sismo","col b (m)","col h (m)"];
+      CAL=["P (t)","Az (m²)","B (m)","L (m)","H (m)","Estado"];
+      packs.forEach(function(p){R=R.concat(p.Z||[])});}
     else if(S.tab==="metrado"){H=["Nivel","S/C (kg/m²)","Área (m²)","Aligerada (m²)","Maciza (m²)","Nervada (m²)"];
       CAL=["CM (kg/m²)","P servicio (kg/m²)"];
       packs.forEach(function(p){R=R.concat(p.M)});}
     else{H=["Código","Eje","Ln (m)","α"];
       CAL=S.tab==="aligerada"?["h","espesor (cm)","b"]:(S.tab==="maciza"?["h","espesor (cm)"]:["h","espesor","b","S"]);
       packs.forEach(function(p){R=R.concat(p.L[S.tab])});}
+    /* Las columnas calculadas ya no dicen "fórmula": el complemento tiene el
+       número. En la hoja de Excel esa misma columna sí va como fórmula, para
+       que se pueda auditar; aquí se ve el resultado. */
+    var CAT={};
+    packs.forEach(function(p){ for(var k in (p.CA||{})) CAT[k]=p.CA[k]; });
     th.innerHTML="<tr>"+H.map(function(x){return "<th>"+x+"</th>"}).join("")+
-      CAL.map(function(x){return '<th style="color:var(--ink-3)">'+x+" · Excel</th>"}).join("")+"</tr>";
+      CAL.map(function(x){return '<th style="color:var(--acc-ink)">'+x+"</th>"}).join("")+"</tr>";
     tb.innerHTML=R.length?R.map(function(r){
-      return "<tr>"+r.map(function(c){return "<td>"+c+"</td>"}).join("")+
-        CAL.map(function(){return '<td class="calc">fórmula</td>'}).join("")+"</tr>";}).join("")
-      :'<tr><td colspan="8" style="color:var(--ink-3);font-style:italic">Sin elementos de este tipo.</td></tr>';
-    $("#foottxt").textContent=R.length+" filas a escribir"+(todos?" · "+S.niveles.length+" niveles":" · nivel activo");
+      var c=CAT[r[0]]||[];
+      return "<tr>"+r.map(function(x){return "<td>"+x+"</td>"}).join("")+
+        CAL.map(function(_,k){
+          var v=(k<c.length)?c[k]:"—";
+          var rojo=(v==="NO CUMPLE"||v==="REVISAR");
+          return '<td class="calc"'+(rojo?' style="color:#c62828;font-weight:600"':"")+
+                 ">"+v+"</td>";
+        }).join("")+"</tr>";}).join("")
+      :'<tr><td colspan="12" style="color:var(--ink-3);font-style:italic">Sin elementos de este tipo.</td></tr>';
+    $("#foottxt").textContent=R.length+" elemento(s) predimensionado(s)"+
+      (todos?" · "+S.niveles.length+" niveles":" · nivel activo");
   }
   $("#todos").addEventListener("change",tabla);
   $("#verDims").addEventListener("change",function(){S.verDims=this.checked;render()});
@@ -2198,7 +2289,9 @@ var TT={script:performance.now()};
      ausencia de una hoja es informacion: dice que no modelaste eso. */
   function inventario(){
     var c={losa:{aligerada:0,maciza:0,nervada:0},viga:{principal:0,chata:0},
-           col:0,placa:0,usos:0},k;
+           col:0,placa:0,usos:0,zapata:0},k;
+    /* una zapata por columna del nivel de cimentacion, no de todos */
+    if(S.niveles[0])for(k in S.niveles[0].cols)c.zapata++;
     S.niveles.forEach(function(m){
       for(k in m.losas){c.losa[m.losas[k].tipo||"aligerada"]++; if(m.losas[k].uso)c.usos++;}
       for(k in m.vigas){c.viga[tipoViga(m.vigas[k])]++;}
@@ -2219,6 +2312,7 @@ var TT={script:performance.now()};
     {n:"PRE_VIGA_CHATA",     tit:"Pre viga chata",     t:"ele", q:function(c){return c.viga.chata}},
     {n:"PRE_COLUMNA",        tit:"Pre columna",        t:"ele", q:function(c){return c.col}},
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
+    {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
   ];
   /* Las diez.  Se deja el mapa -en vez de darlas todas por buenas- porque
@@ -2226,7 +2320,7 @@ var TT={script:performance.now()};
   var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
-    PRE_PLACA:true,METRADO_CARGAS:true};
+    PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -2310,7 +2404,10 @@ var TT={script:performance.now()};
       '</select>'+
       '<label class="lbl" for="fcHojas">f&#39;c</label>'+
       '<input id="fcHojas" class="mini" type="number" min="210" max="550" step="10" '+
-      'value="'+(+S.fc||210)+'"><span class="lbl">kg/cm²</span>';
+      'value="'+(+S.fc||210)+'"><span class="lbl">kg/cm²</span>'+
+      '<label class="lbl" for="sgHojas">σs suelo</label>'+
+      '<input id="sgHojas" class="mini" type="number" min="0.5" max="10" step="0.1" '+
+      'value="'+(+S.sigma||3.0)+'"><span class="lbl">kg/cm²</span>';
 
     $("#panelHojas").innerHTML=
       '<div class="hg-cab">'+
@@ -2327,6 +2424,13 @@ var TT={script:performance.now()};
       var v=+this.value;
       /* E.060: 210 a 550. Fuera de ahi no es que salga mal, es que no aplica. */
       S.fc=(v>=210&&v<=550)?v:210;
+      guardar(); render();
+    };
+    $("#sgHojas").onchange=function(){
+      var v=+this.value;
+      /* Capacidad portante del EMS. Fuera de 0.5-10 kg/cm2 no es suelo de
+         cimentacion superficial y el predimensionamiento no aplica. */
+      S.sigma=(v>=0.5&&v<=10)?v:3.0;
       guardar(); render();
     };
 

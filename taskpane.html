@@ -1514,10 +1514,135 @@
     return h.cerrar(r);
   }
 
+  /* =====================================================================
+     6 · ZAPATAS
+
+     No se dibujan: salen de las columnas.  La ubicacion de la columna decide
+     el tipo -interior/centrada, exterior/medianera, esquinera/esquinera- y
+     los pisos que carga la zapata son TODOS los del edificio, porque la
+     cimentacion esta debajo de todo.
+
+     Va en DOS tablas y no en una porque no caben ocho datos y ocho
+     resultados en diez columnas.  La segunda se refiere a la primera por
+     fila, dentro de la misma hoja: ninguna formula cruza de hoja.
+     ===================================================================== */
+  var L7_Z = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,10]];
+
+  function zapata(P) {
+    var fs = P.Z || [];
+    vacio(fs.length, "zapatas");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var sigmaKg = (+P.sigma || 3.0);
+    var sigmaT = sigmaKg * 10;
+    var Z = C.ZAPATA;
+    var h = F.hoja("PRE_ZAPATA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE ZAPATA");
+
+    r = h.seccion(r, "1. CRITERIOS");
+    r = h.subtitulo(r, "1.1   Factor de amplificación sísmica y divisor del peralte");
+    r = h.tabla(r, [[3,4],[5,6],[7,8],[9,10]],
+      ["Tipo de zapata", "F sismo", "Divisor del peralte", "De qué columna sale"],
+      [["Centrada",  Z.Fsismo.centrada.toFixed(2),  Z.divisorPeralte.centrada,  "interior"],
+       ["Medianera", Z.Fsismo.medianera.toFixed(2), Z.divisorPeralte.medianera, "exterior (perimetral)"],
+       ["Esquinera", Z.Fsismo.esquinera.toFixed(2), Z.divisorPeralte.esquinera, "esquinera"]],
+      null, null, { alinear: ["Left","Center","Center","Left"] });
+    r = h.nota(r, "La esquinera usa divisor " + Z.divisorPeralte.esquinera
+      + " y no " + Z.divisorPeralte.centrada + ": el formulario de la pág. 121 dice /"
+      + Z.divisorPeralte.centrada + ", pero los dos ejemplos del libro (págs. 134 y 136) "
+      + "usan /" + Z.divisorPeralte.esquinera + " de forma consistente. Se adopta lo que "
+      + "hacen los ejemplos, no lo que dice el formulario.");
+
+    r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+      ["Peso en servicio", "P = N.º de pisos × área tributaria × peso/m²"],
+      ["Área de la zapata", "Az = " + Z.incrementoPesoPropio.toFixed(2)
+        + " · P · F sismo / σs"],
+      ["Zapata aislada", "B = √Az − (h − b)/2   ·   L = √Az + (h − b)/2"],
+      ["Zapata medianera", "B = √(Az/2)   ·   L = 2 B"],
+      ["Peralte", "H = (L − h columna) / divisor"],
+      ["Redondeo", "lados y peralte, cada "
+        + (Z.redondeoLado * 100).toFixed(0) + " cm hacia arriba"]
+    ], null, null, { alinear: DFIN });
+    r = h.nota(r, "El " + Z.incrementoPesoPropio.toFixed(2) + " cubre el peso propio de "
+      + "la zapata, el suelo de relleno encima y el tramo de columna enterrado. No es "
+      + "un factor de seguridad: es peso que existe y que el metrado del edificio no "
+      + "contó, porque está por debajo del nivel del terreno.");
+
+    r = h.seccion(r, "2. DATOS DEL EDIFICIO Y DEL SUELO");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
+    var fPeso = r;
+    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
+      "Valor de la categoría según Oviedo."], { 1: "0" }, { alinear: D3 });
+    var fSig = r;
+    r = h.fila(r, L_DATO, ["Capacidad portante σs  (t/m²)", sigmaT,
+      "Del estudio de suelos. Equivale a " + sigmaKg.toFixed(2)
+      + " kg/cm². 1 kg/cm² = 10 t/m²."], { 1: "0.0" }, { alinear: D3 });
+    r++;
+
+    /* ---- tabla 1: carga y area requerida ---- */
+    r = h.seccion(r, "3. CARGA Y ÁREA REQUERIDA");
+    var T1 = lista(h, r, L7_Z,
+      ["Código", "Tipo", "N.º pisos", "A trib (m²)", "P (t)", "F sismo", "Az (m²)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[2], +f[3],
+          "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
+          +f[4],
+          "=IFERROR(" + Z.incrementoPesoPropio + "*G" + i + "*H" + i
+            + "/$F$" + fSig + ',"")'];
+      }, { 3: "0.000", 4: "0.00", 5: "0.00", 6: "0.000" });
+    r = T1.fin + 1;
+
+    /* ---- tabla 2: dimensiones, referidas fila a fila a la primera ---- */
+    r = h.seccion(r, "4. DIMENSIONES ADOPTADAS");
+    var base = T1.primera, r2 = r + 1;      /* primera fila de datos de la tabla 2 */
+    var T2 = lista(h, r, L8,
+      ["Código", "col b (m)", "col h (m)", "B menor (m)", "L mayor (m)",
+       "Área B×L (m²)", "H (m)", "Estado"],
+      fs,
+      function (f, i) {
+        var f1 = base + (i - r2);                 /* misma fila en la tabla 1 */
+        var az = "$I$" + f1, tipo = "$D$" + f1;
+        return [f[0], +f[5], +f[6],
+          "=IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2),"
+            + Z.redondeoLado + "),CEILING(SQRT(" + az + ")-(E" + i + "-D" + i + ")/2,"
+            + Z.redondeoLado + "))",
+          "=IF(" + tipo + '="Medianera",CEILING(2*SQRT(' + az + "/2),"
+            + Z.redondeoLado + "),CEILING(SQRT(" + az + ")+(E" + i + "-D" + i + ")/2,"
+            + Z.redondeoLado + "))",
+          "=F" + i + "*G" + i,
+          "=CEILING((G" + i + "-E" + i + ")/IF(" + tipo + '="Esquinera",'
+            + Z.divisorPeralte.esquinera + "," + Z.divisorPeralte.centrada + "),"
+            + Z.redondeoPeralte + ")",
+          "=IF(H" + i + ">=" + az + '-0.0001,"CUMPLE","REVISAR")'];
+      }, { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.000", 6: "0.00" });
+    r = T2.fin + 1;
+
+    r = h.nota(r, "POR QUÉ HAY UNA COLUMNA «Estado». Los lados se construyen como "
+      + "√Az ± d, con d = (h − b)/2. Esa pareja conserva la SUMA de los lados, no el "
+      + "producto: (√Az + d)(√Az − d) = Az − d². Siempre da de menos. Con columna "
+      + "cuadrada d = 0 y no pasa nada; con columna rectangular el déficit aparece, y "
+      + "en zapatas grandes el redondeo de "
+      + (Z.redondeoLado * 100).toFixed(0) + " cm ya no lo tapa. Si dice REVISAR, sube "
+      + "el lado mayor hasta que B × L llegue a Az.");
+    r = h.nota(r, "El tipo NO se elige: sale de dónde está la columna en la planta. "
+      + "Una columna interior lleva zapata centrada; una perimetral, medianera; una de "
+      + "esquina, esquinera. Y los pisos que carga son los " + P.niveles
+      + " del edificio, no los de un nivel: la cimentación está debajo de todo.");
+    r = h.nota(r, fs.length + " zapata(s), una por columna del nivel de cimentación. "
+      + "Combinadas, corridas, conectadas y plateas NO están aquí: necesitan datos que "
+      + "la planta no da por sí sola (qué columnas comparten zapata, qué muro va encima) "
+      + "y se resuelven a mano con los criterios de la sección 1.");
+    return h.cerrar(r);
+  }
+
   return {
     losaAligerada: losaAligerada, losaMaciza: losaMaciza, losaNervada: losaNervada,
     vigaPrincipal: vigaPrincipal, vigaChata: vigaChata,
-    columna: columna, placa: placa, metradoCargas: metradoCargas
+    columna: columna, placa: placa, zapata: zapata,
+    metradoCargas: metradoCargas
   };
 });
 </script>
@@ -1831,6 +1956,7 @@ var REGISTRO = {
   "PRE_VIGA_CHATA":     function(p){ return HOJAS_PRE.vigaChata(p); },
   "PRE_COLUMNA":        function(p){ return HOJAS_PRE.columna(p); },
   "PRE_PLACA":          function(p){ return HOJAS_PRE.placa(p); },
+  "PRE_ZAPATA":         function(p){ return HOJAS_PRE.zapata(p); },
   "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); }
 };
 
