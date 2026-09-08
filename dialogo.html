@@ -742,6 +742,9 @@
 });
 </script>
 <script>
+/* Relojes propios: el diagnostico de red mide hasta que llega el archivo,
+   pero lo que el usuario espera incluye ejecutar TODO esto y dibujar. */
+var TT={script:performance.now()};
 (function(){
   "use strict";
   var LETRAS="ABCDEFGHIJKLMN".split("");
@@ -751,7 +754,7 @@
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v14 · 07-09-2026";
+  var BUILD="v15 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1875,6 +1878,14 @@
     return '<h3>Diagnóstico de carga</h3>'+
       '<table><thead><tr><th>Qué</th><th>N.º</th><th>Listo a los</th><th>Detalle</th>'+
       '</tr></thead><tbody>'+f.join("")+
+      (typeof TT!=="undefined"&&TT.listo
+        ? '<tr><td>Ejecutar este script</td><td>—</td><td>'+ms(TT.antesRender-TT.script)+
+          '</td><td>parsear y definir todo</td></tr>'+
+          '<tr><td>Dibujar el plano</td><td>—</td><td>'+ms(TT.listo-TT.antesRender)+
+          '</td><td>primer render</td></tr>'+
+          '<tr class="tot"><td><b>Listo para usar</b></td><td>—</td><td><b>'+ms(TT.listo)+
+          '</b></td><td>desde que arrancó la ventana</td></tr>'
+        : '')+
       (d.nav?'<tr class="tot"><td>DOM listo</td><td>—</td><td>'+ms(d.nav.dom)+
              '</td><td>página usable</td></tr>'+
              '<tr class="tot"><td>Carga completa</td><td>—</td><td>'+ms(d.nav.load)+
@@ -1982,8 +1993,9 @@
   }
   cargar();
   S.sel={t:"col",i:1,j:2};
+  TT.antesRender=performance.now();
   render();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,aplicarDims:aplicarDims,marcarEnvio:marcarEnvio};
+  TT.listo=performance.now();
 })();
 </script>
 
