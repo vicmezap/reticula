@@ -213,7 +213,7 @@
 /* ---- pestana Proyecto: especificaciones ---- */
 #panelProy{overflow:auto;padding:18px 20px}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px;align-items:start}
-.pbox{border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+.pbox{border:1px solid var(--line);background:var(--sheet);padding:12px 14px}
 .pbox h3{font:600 12px "Barlow Condensed",sans-serif;letter-spacing:.08em;
   text-transform:uppercase;color:var(--acc-ink);margin:0 0 10px}
 .pf{display:grid;grid-template-columns:1fr 96px 62px;align-items:center;
@@ -364,7 +364,7 @@
     </aside>
   </div>
 
-  <section class="sum">
+  <section class="sum" id="resumen">
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-t="col">PRE_COLUMNA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="viga">PRE_VIGA_PRINCIPAL</button>
@@ -389,7 +389,7 @@
     </div>
   </section>
 
-  <div class="notes">
+  <div class="notes" id="notas">
     <div class="note"><h3>Tipo de losa por paño</h3><p>Cada paño puede ser aligerada, maciza o nervada. El tipo decide a cuál de las tres hojas va su fila, y se distingue por trama en el dibujo.</p></div>
     <div class="note"><h3>Arrastra para pintar</h3><p>Mantén el clic y recorre la planta: asigna o quita en bloque. Con <code>Ctrl+Z</code> deshaces y con <code>Ctrl+Y</code> rehaces.</p></div>
     <div class="note"><h3>Se guarda solo</h3><p>El modelo queda en el navegador al cerrar. En el complemento real vivirá dentro del propio archivo de Excel.</p></div>
@@ -906,7 +906,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v28 · 08-09-2026";
+  var BUILD="v30 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -2428,8 +2428,15 @@ var TT={script:performance.now()};
             'min="2000" max="2600" step="50"')+
       campo("pSig","σs capacidad portante",(+S.sigma||3.0),"kg/cm²","number",
             'min="0.5" max="10" step="0.1"')+
+      '<label class="pf"><span class="pfe">Sobrecarga por defecto</span>'+
+      '<select id="pSc" class="pfi">'+
+      [200,250,300,400,500].map(function(v){
+        return '<option value="'+v+'"'+(+$("#sc").value===v?" selected":"")+'>'+
+               v+'</option>'}).join("")+
+      '</select><span class="pfu">kg/m²</span></label>'+
       '<p class="nota">f&#39;c manda el área de las columnas · σs manda el área de las zapatas · '+
-      'la categoría manda el peso, el factor U y el porcentaje de placas.</p>'+
+      'la categoría manda el peso, el factor U y el porcentaje de placas · la sobrecarga '+
+      'por defecto solo se aplica a los paños que no tienen uso asignado.</p>'+
       '</section>';
 
     h+='<section class="pbox"><h3>3 · Cargas permanentes</h3>'+
@@ -2461,9 +2468,9 @@ var TT={script:performance.now()};
       fijo("Niveles",S.niveles.length,"","")+
       fijo("Área techada total",tot.toFixed(2),"m²","")+
       fijo("Altura total",hTot.toFixed(2),"m","")+
-      fijo("Sobrecarga por defecto",$("#sc").value,"kg/m²","barra superior")+
-      '<p class="nota">Solo lectura: sale de la planta. La altura de entrepiso se cambia '+
-      'nivel a nivel en la barra de arriba, porque no tiene por qué ser la misma en todos.</p>'+
+      '<p class="nota" style="margin:8px 0 0">Solo lectura: sale de la planta. La altura de '+
+      'entrepiso se cambia nivel a nivel en la barra de Modelo 2D, porque no tiene por qué '+
+      'ser la misma en todos.</p>'+
       '</section>';
 
     h+='</div>';
@@ -2494,6 +2501,9 @@ var TT={script:performance.now()};
       var v=+this.value; S.fc=(v>=210&&v<=550)?v:210; guardar(); render(); };
     $("#pSig").onchange=function(){
       var v=+this.value; S.sigma=(v>=0.5&&v<=10)?v:3.0; guardar(); render(); };
+    /* Escribe en el mismo select de la cintra: un solo sitio donde vive el dato,
+       dos sitios desde donde se toca. */
+    $("#pSc").onchange=function(){ $("#sc").value=this.value; guardar(); render(); };
     $("#pEst").onchange=function(){
       S.proy.estructuraAuto=(this.value==="1"); guardar(); render(); };
   }
@@ -2725,8 +2735,13 @@ var TT={script:performance.now()};
     $("#panelProy").hidden=!proy;
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
+    /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
+       cintra de medidas, la tabla de resumen y las notas de dibujo.  Cada
+       pestana se queda con lo suyo y nada mas. */
     $("#niveles").hidden=solo;
-    document.querySelector(".cintra").hidden=hojas;   /* Proyecto SI la necesita: S/C */
+    document.querySelector(".cintra").hidden=solo;
+    $("#resumen").hidden=solo;
+    $("#notas").hidden=solo;
     $("#hint").hidden=solo;
     $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||solo;
     if(!solo)$("#hint").hidden=!esPlano||usos;
@@ -2739,7 +2754,8 @@ var TT={script:performance.now()};
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else{draw();inspector();}
     if(!usos&&!solo)editorEjes();
-    tabla();guardar();
+    if(!solo)tabla();
+    guardar();
   }
   cargar();
   S.sel={t:"col",i:1,j:2};
