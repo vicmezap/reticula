@@ -210,6 +210,26 @@
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
+/* ---- pestana Proyecto: especificaciones ---- */
+#panelProy{overflow:auto;padding:18px 20px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px;align-items:start}
+.pbox{border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+.pbox h3{font:600 12px "Barlow Condensed",sans-serif;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--acc-ink);margin:0 0 10px}
+.pf{display:grid;grid-template-columns:1fr 96px 62px;align-items:center;
+  gap:8px;margin-bottom:6px;min-height:26px}
+.pfe{font:400 12px "IBM Plex Sans",sans-serif;color:var(--ink-2)}
+.pfi{background:var(--sheet);color:var(--ink);border:1px solid var(--line);
+  border-radius:2px;padding:4px 6px;font:500 12px "IBM Plex Mono",monospace;
+  text-align:right;width:100%}
+.pf select.pfi{text-align:left}
+.pfi:focus{outline:2px solid var(--acc);outline-offset:-1px}
+.pfv{font:600 12px "IBM Plex Mono",monospace;color:var(--acc-ink);text-align:right}
+.pfu{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+.pfn{grid-column:2/4;font:400 10px "IBM Plex Sans",sans-serif;color:var(--ink-3);
+  text-align:right;margin-top:-4px}
+.pbox .nota{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin:8px 0 0}
+
 /* ---- pestana Hojas Excel: galeria de hojas ---- */
 #panelHojas{overflow:auto;padding:18px 20px}
 .hg-cab{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
@@ -245,6 +265,7 @@
   </header>
 
   <div class="modos" role="group" aria-label="Modo de trabajo">
+    <button class="modo" data-modo="proyecto" aria-pressed="false">Proyecto</button>
     <button class="modo" data-modo="modelo" aria-pressed="true">Modelo 2D</button>
     <button class="modo" data-modo="usos" aria-pressed="false">Usos y cargas</button>
     <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button>
@@ -309,6 +330,7 @@
       <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
       <div class="edif" id="edificio" hidden></div>
       <div class="edif" id="panelHojas" hidden></div>
+      <div class="edif" id="panelProy" hidden></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
     </div>
 
@@ -884,7 +906,7 @@ var TT={script:performance.now()};
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v25 · 08-09-2026";
+  var BUILD="v26 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -927,6 +949,16 @@ var TT={script:performance.now()};
        /* capacidad portante del suelo, en kg/cm2.  Es el otro dato que no
           sale de la planta: lo da el estudio de suelos. */
        sigma:3.0,
+       /* ESPECIFICACIONES DEL PROYECTO.  Antes esto estaba repartido -la
+          categoria en dos sitios, f'c y sigma escondidos en una galeria- y
+          cuatro cargas permanentes vivian CABLEADAS en hojas_pre.js.  Aqui
+          se declaran una sola vez y de aqui las leen las hojas. */
+       proy:{nombre:"",ubicacion:"",proyectista:"",fecha:"",
+             concreto:2400,          /* kg/m3, E.020 Anexo 1 */
+             morteroPeso:2000, pisoEsp:5.0,   /* piso terminado = peso x espesor */
+             yesoPeso:1000,   cieloEsp:2.0,   /* cielo raso  = peso x espesor */
+             tabiqueria:100,         /* ESTIMADO: no se dibujan tabiques */
+             estructuraAuto:true},   /* el peso propio se calcula, no se estima */
        tipoViga:"principal",tipoLosa:"aligerada",vista:"plano",
        /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
        categoria:"comun"};
@@ -951,12 +983,15 @@ var TT={script:performance.now()};
   /* ---------- guardado ---------- */
   function guardar(){try{localStorage.setItem("reticula",
     JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
-                    vd:S.verDims,fc:S.fc,sg:S.sigma,cat:S.categoria}))}catch(e){}}
+                    vd:S.verDims,fc:S.fc,sg:S.sigma,cat:S.categoria,
+                    pr:S.proy}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
       if(d.vd!==undefined)S.verDims=!!d.vd;
-      if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;}}catch(e){}}
+      if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
+      if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
+      }}catch(e){}}
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -2076,9 +2111,13 @@ var TT={script:performance.now()};
       L.nervada=L.nervada.concat(p.L.nervada);
       area+=areaNivel(m);
     });
+    var cp=cargasPermanentes();
+    var pr={}; for(var kk in S.proy)pr[kk]=S.proy[kk];
+    pr.sc=scDefecto();
     return {categoria:S.categoria,fc:+S.fc||210,sigma:+S.sigma||3.0,
             niveles:S.niveles.length,
-            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z};
+            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z,
+            proy:pr,cargas:cp};
   }
 
   function tabla(){
@@ -2186,16 +2225,10 @@ var TT={script:performance.now()};
         "</td><td>"+pinta(v.total.estado)+"</td></tr>");
     });
     return '<h3>Placas · verificación por dirección</h3>'+
-      '<div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'+
-      '<label class="lbl" for="catEd">Categoría</label>'+
-      '<select id="catEd" style="background:var(--sheet);color:var(--ink);'+
-      'border:1px solid var(--line);border-radius:2px;padding:5px;'+
-      'font:500 12px \'IBM Plex Mono\',monospace">'+
-      ['comun','importante','esencial'].map(function(c){
-        return '<option value="'+c+'"'+(S.categoria===c?' selected':'')+'>'+
-               c.charAt(0).toUpperCase()+c.slice(1)+' · '+
-               (CRITERIOS.CATEGORIA[c].pctPlaca*100).toFixed(2)+' %</option>'}).join("")+
-      '</select></div>'+
+      '<p class="nota" style="margin:0 0 8px">Categoría <b>'+
+      S.categoria.charAt(0).toUpperCase()+S.categoria.slice(1)+'</b> · '+
+      (CRITERIOS.CATEGORIA[S.categoria].pctPlaca*100).toFixed(2)+
+      ' % del área techada. Se cambia en la pestaña Proyecto.</p>'+
       '<table><thead><tr><th>Nivel</th><th>Ap (m²)</th><th>t (m)</th>'+
       '<th>n X</th><th>Área X</th><th>Estado X</th>'+
       '<th>n Y</th><th>Área Y</th><th>Estado Y</th><th>Total</th></tr></thead><tbody>'+
@@ -2283,6 +2316,188 @@ var TT={script:performance.now()};
       'altas siempre, hay que traerlas dentro del archivo.</p>';
   }
 
+  /* =====================================================================
+     PESO PROPIO DE LA ESTRUCTURA, calculado.
+
+     En el Excel viejo esto era "150 kg/m2, ESTIMADO" con una nota que decia
+     que cuando las listas estuvieran llenas copiaras el valor a mano.  Ya no
+     hace falta: el complemento conoce la seccion de cada columna, el ancho y
+     el peralte de cada viga y el espesor de cada placa.  Suma el volumen y
+     lo divide entre el area techada.
+
+     Solo cuenta lo que la losa NO cuenta:
+       vigas    -> el DESCUELGUE, no el peralte entero (el resto es losa)
+       columnas -> la altura libre, entrepiso menos el espesor de la losa
+       placas   -> el volumen entero, lm x hm x t
+     ===================================================================== */
+  function pesoEstructura(){
+    var vol=0, area=0;
+    S.niveles.forEach(function(m,niv){
+      var nX=m.dx.length+1, nY=m.dy.length+1, i, j;
+      var hEnt=m.h||2.80;
+      /* espesor representativo del nivel: el mayor de sus panos */
+      var eMax=0;
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
+        var pl=predimLosa(i,j,m); if(pl)eMax=Math.max(eMax,pl.e);
+      }
+      area+=areaNivel(m);
+
+      function viga(o,i,j){
+        if(!m.vigas[o+":"+i+":"+j])return;
+        var pv=predimViga(o,i,j,m); if(!pv)return;
+        var e=espesorParaChata(o,i,j,m)/100;      /* losa junto a esa linea */
+        var descuelgue=Math.max(pv.h-e,0);        /* la chata da 0: no descuelga */
+        vol+=pv.L*pv.b*descuelgue;
+      }
+      for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)viga("h",i,j);
+      for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)viga("v",i,j);
+
+      for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){
+        var sc=seccionCol(i,j,m,niv);
+        vol+=(sc.b/100)*(sc.h/100)*Math.max(hEnt-eMax/100,0);
+      }
+      function placa(o,i,j){
+        var pp=predimPlaca(o,i,j,m);
+        if(pp)vol+=pp.lm*pp.t*pp.hm;
+      }
+      for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])placa("h",i,j);
+      for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])placa("v",i,j);
+    });
+    if(area<=0)return {vol:0,area:0,kgm2:0};
+    return {vol:vol, area:area,
+            kgm2:Math.round(vol*(+S.proy.concreto||2400)/area)};
+  }
+
+  /* Las cuatro cargas permanentes, con su origen.  Tres se CALCULAN; la
+     tabiqueria es la unica que sigue siendo un numero que pone el
+     proyectista, porque los tabiques no se dibujan. */
+  function cargasPermanentes(){
+    var P=S.proy, pe=pesoEstructura();
+    var piso=Math.round((+P.morteroPeso||2000)*(+P.pisoEsp||5)/100);
+    var cielo=Math.round((+P.yesoPeso||1000)*(+P.cieloEsp||2)/100);
+    var est=P.estructuraAuto?pe.kgm2:150;
+    return {piso:piso, cielo:cielo, tabiq:(+P.tabiqueria||0), estructura:est,
+            estructuraAuto:!!P.estructuraAuto, volumen:pe.vol,
+            total:piso+cielo+(+P.tabiqueria||0)+est};
+  }
+
+  /* ---------- pestana PROYECTO ---------- */
+  function campo(id,etq,val,unidad,tipo,extra){
+    return '<label class="pf"><span class="pfe">'+etq+'</span>'+
+      '<input id="'+id+'" class="pfi" type="'+(tipo||"text")+'" '+(extra||"")+
+      ' value="'+String(val).replace(/"/g,"&quot;")+'">'+
+      (unidad?'<span class="pfu">'+unidad+'</span>':'<span class="pfu"></span>')+
+      '</label>';
+  }
+  function fijo(etq,val,unidad,nota){
+    return '<div class="pf"><span class="pfe">'+etq+'</span>'+
+      '<span class="pfv">'+val+'</span>'+
+      '<span class="pfu">'+(unidad||"")+'</span>'+
+      (nota?'<span class="pfn">'+nota+'</span>':'')+'</div>';
+  }
+
+  function pintaProyecto(){
+    var P=S.proy, cp=cargasPermanentes(), C=CRITERIOS.CATEGORIA[S.categoria];
+    var tot=0,i; S.niveles.forEach(function(m){tot+=areaNivel(m)});
+    var hTot=0; S.niveles.forEach(function(m){hTot+=(m.h||2.8)});
+
+    var h='<div class="pgrid">';
+
+    h+='<section class="pbox"><h3>1 · Identificación</h3>'+
+      campo("pNom","Nombre del proyecto",P.nombre||"")+
+      campo("pUbi","Ubicación",P.ubicacion||"")+
+      campo("pIng","Proyectista",P.proyectista||"")+
+      campo("pFec","Fecha",P.fecha||"","","date")+
+      '<p class="nota">Sale en la cabecera de la hoja ESPECIFICACIONES. No entra en ningún cálculo.</p>'+
+      '</section>';
+
+    h+='<section class="pbox"><h3>2 · Edificación y materiales</h3>'+
+      '<label class="pf"><span class="pfe">Categoría</span>'+
+      '<select id="pCat" class="pfi">'+
+      ["comun","importante","esencial"].map(function(c){
+        return '<option value="'+c+'"'+(S.categoria===c?" selected":"")+'>'+
+               c.charAt(0).toUpperCase()+c.slice(1)+'</option>'}).join("")+
+      '</select><span class="pfu"></span></label>'+
+      fijo("Peso / m² de la categoría",C.peso,"kg/m²","Oviedo")+
+      fijo("Factor U",C.U.toFixed(2),"","E.030")+
+      fijo("% de sobrecarga",(C.pctSC*100).toFixed(0)+" %","","")+
+      fijo("% de placas",(C.pctPlaca*100).toFixed(2)+" %","","del área techada")+
+      campo("pFc","f'c del concreto",(+S.fc||210),"kg/cm²","number",
+            'min="210" max="550" step="10"')+
+      campo("pCon","Peso del concreto armado",(+P.concreto||2400),"kg/m³","number",
+            'min="2000" max="2600" step="50"')+
+      campo("pSig","σs capacidad portante",(+S.sigma||3.0),"kg/cm²","number",
+            'min="0.5" max="10" step="0.1"')+
+      '<p class="nota">f&#39;c manda el área de las columnas · σs manda el área de las zapatas · '+
+      'la categoría manda el peso, el factor U y el porcentaje de placas.</p>'+
+      '</section>';
+
+    h+='<section class="pbox"><h3>3 · Cargas permanentes</h3>'+
+      campo("pMor","Peso del mortero",(+P.morteroPeso||2000),"kg/m³","number",
+            'min="1500" max="2400" step="50"')+
+      campo("pPis","Espesor del piso terminado",(+P.pisoEsp||5),"cm","number",
+            'min="0" max="15" step="0.5"')+
+      fijo("→ Piso terminado",cp.piso,"kg/m²","calculado")+
+      campo("pYes","Peso del yeso",(+P.yesoPeso||1000),"kg/m³","number",
+            'min="800" max="1400" step="50"')+
+      campo("pCie","Espesor del cielo raso",(+P.cieloEsp||2),"cm","number",
+            'min="0" max="6" step="0.5"')+
+      fijo("→ Cielo raso",cp.cielo,"kg/m²","calculado")+
+      campo("pTab","Tabiquería",(+P.tabiqueria||0),"kg/m²","number",
+            'min="0" max="400" step="10"')+
+      '<p class="aviso" style="margin:6px 0">La tabiquería es el único de los cuatro que '+
+      'sigue siendo un <b>estimado</b>: los tabiques no se dibujan. Si los metras, pon aquí el valor real.</p>'+
+      '<label class="pf"><span class="pfe">Peso de la estructura</span>'+
+      '<select id="pEst" class="pfi">'+
+      '<option value="1"'+(P.estructuraAuto?" selected":"")+'>Calculado del modelo</option>'+
+      '<option value="0"'+(P.estructuraAuto?"":" selected")+'>Estimado 150 kg/m²</option>'+
+      '</select><span class="pfu"></span></label>'+
+      fijo("→ Estructura",cp.estructura,"kg/m²",
+           cp.estructuraAuto?(cp.volumen.toFixed(2)+" m³ de concreto"):"estimado")+
+      fijo("→ TOTAL otras cargas",cp.total,"kg/m²","va a METRADO_CARGAS")+
+      '</section>';
+
+    h+='<section class="pbox"><h3>4 · Lo que sabe el modelo</h3>'+
+      fijo("Niveles",S.niveles.length,"","")+
+      fijo("Área techada total",tot.toFixed(2),"m²","")+
+      fijo("Altura total",hTot.toFixed(2),"m","")+
+      fijo("Sobrecarga por defecto",$("#sc").value,"kg/m²","barra superior")+
+      '<p class="nota">Solo lectura: sale de la planta. La altura de entrepiso se cambia '+
+      'nivel a nivel en la barra de arriba, porque no tiene por qué ser la misma en todos.</p>'+
+      '</section>';
+
+    h+='</div>';
+    $("#panelProy").innerHTML=h;
+
+    function txtCampo(id,clave){
+      var e=$("#"+id); if(!e)return;
+      e.onchange=function(){ S.proy[clave]=this.value; guardar(); render(); };
+    }
+    function numCampo(id,clave,min,max,pordef){
+      var e=$("#"+id); if(!e)return;
+      e.onchange=function(){
+        var v=+this.value;
+        S.proy[clave]=(isFinite(v)&&v>=min&&v<=max)?v:pordef;
+        guardar(); render();
+      };
+    }
+    txtCampo("pNom","nombre"); txtCampo("pUbi","ubicacion");
+    txtCampo("pIng","proyectista"); txtCampo("pFec","fecha");
+    numCampo("pCon","concreto",2000,2600,2400);
+    numCampo("pMor","morteroPeso",1500,2400,2000);
+    numCampo("pPis","pisoEsp",0,15,5);
+    numCampo("pYes","yesoPeso",800,1400,1000);
+    numCampo("pCie","cieloEsp",0,6,2);
+    numCampo("pTab","tabiqueria",0,400,100);
+    $("#pCat").onchange=function(){ S.categoria=this.value; guardar(); render(); };
+    $("#pFc").onchange=function(){
+      var v=+this.value; S.fc=(v>=210&&v<=550)?v:210; guardar(); render(); };
+    $("#pSig").onchange=function(){
+      var v=+this.value; S.sigma=(v>=0.5&&v<=10)?v:3.0; guardar(); render(); };
+    $("#pEst").onchange=function(){
+      S.proy.estructuraAuto=(this.value==="1"); guardar(); render(); };
+  }
+
   /* ---------- pestana HOJAS EXCEL ----------
      El complemento LLEVA las hojas dentro. No necesita un libro preparado:
      lo produce. Aqui se ve QUE se va a generar antes de generarlo, y la
@@ -2303,6 +2518,7 @@ var TT={script:performance.now()};
   /* Catalogo de hojas. "ref" no necesita modelo; "ele" depende de que existan
      elementos de ese tipo; "met" necesita usos asignados. */
   var CATALOGO=[
+    {n:"ESPECIFICACIONES",   tit:"Especificaciones",   t:"ref"},
     {n:"NORMA E020",         tit:"Norma E.020",        t:"ref"},
     {n:"CRITERIOS_OVIEDO",   tit:"Criterios Oviedo",   t:"ref"},
     {n:"PRE_LOSA_ALIGERADA", tit:"Pre losa aligerada", t:"ele", q:function(c){return c.losa.aligerada}},
@@ -2317,7 +2533,7 @@ var TT={script:performance.now()};
   ];
   /* Las diez.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
-  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,
+  var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,ESPECIFICACIONES:true,
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true};
@@ -2487,8 +2703,6 @@ var TT={script:performance.now()};
     var lc=$("#lcol");
     if(lc)lc.onchange=function(){var v=parseFloat(this.value);
       if(v>0){snap();S.ladoCol=v;render();}};
-    var ce=$("#catEd");
-    if(ce)ce.onchange=function(){S.categoria=this.value;guardar();render();};
   }
 
   function render(){
@@ -2500,28 +2714,31 @@ var TT={script:performance.now()};
     $("#areaTot").textContent=tot.toFixed(2)+" m²";
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
-    var usos=(S.modo==="usos"), hojas=(S.modo==="hojas");
-    var esPlano=(S.vista==="plano")&&!hojas;
-    document.querySelector(".tools:not(#toolsUso)").hidden=usos||hojas;
+    var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto");
+    var solo=hojas||proy;                 /* pestanas a todo el ancho */
+    var esPlano=(S.vista==="plano")&&!solo;
+    document.querySelector(".tools:not(#toolsUso)").hidden=usos||solo;
     $("#toolsUso").hidden=!usos;
-    $("#inspector").hidden=usos||hojas;
+    $("#inspector").hidden=usos||solo;
     $("#panelUso").hidden=!usos;
     $("#panelHojas").hidden=!hojas;
-    document.querySelector(".work").classList.toggle("solo",hojas);
+    $("#panelProy").hidden=!proy;
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
-    $("#niveles").hidden=hojas;
-    document.querySelector(".cintra").hidden=hojas;
-    $("#hint").hidden=hojas;
-    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||hojas;
-    if(!hojas)$("#hint").hidden=!esPlano||usos;
+    $("#niveles").hidden=solo;
+    document.querySelector(".cintra").hidden=hojas;   /* Proyecto SI la necesita: S/C */
+    $("#hint").hidden=solo;
+    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||solo;
+    if(!solo)$("#hint").hidden=!esPlano||usos;
     document.querySelector(".zoom").hidden=!esPlano;
+    document.querySelector(".work").classList.toggle("solo",solo);
     pintaNiveles();
-    if(hojas){pintaHojas();}
+    if(proy){pintaProyecto();}
+    else if(hojas){pintaHojas();}
     else if(!esPlano){pintaEdificio();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else{draw();inspector();}
-    if(!usos&&!hojas)editorEjes();
+    if(!usos&&!solo)editorEjes();
     tabla();guardar();
   }
   cargar();

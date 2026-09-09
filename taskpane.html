@@ -911,6 +911,139 @@
   }
 
   /* =====================================================================
+     0 · ESPECIFICACIONES DEL PROYECTO
+
+     La portada del entregable.  Hasta ahora no habia ninguna hoja que
+     dijera de que proyecto eran esos calculos, con que concreto ni sobre
+     que suelo: los numeros estaban repartidos entre dos controles del
+     modelador y cuatro constantes CABLEADAS en este mismo archivo.
+
+     Aqui se declaran una vez y las demas hojas los leen.  Los tres bloques
+     no son decorativos:
+
+       1 · identifica         no entra en ningun calculo
+       2 · entra en el calculo  y se dice donde entra
+       3 · lo sabe el modelo    solo lectura, sale de la planta
+     ===================================================================== */
+  function especificaciones(P) {
+    var pr = P.proy || {}, cg = P.cargas || {};
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var h = F.hoja("ESPECIFICACIONES"), r = 6;
+    h.titulo("ESPECIFICACIONES DEL PROYECTO");
+
+    /* ---- 1 ---- */
+    r = h.seccion(r, "1. IDENTIFICACIÓN");
+    r = h.tabla(r, L_DATO, ["Dato", "Valor", "Observación"], [
+      ["Proyecto", pr.nombre || "—", "Nombre con el que se entrega."],
+      ["Ubicación", pr.ubicacion || "—", "Distrito, provincia, departamento."],
+      ["Proyectista", pr.proyectista || "—", "Responsable del predimensionamiento."],
+      ["Fecha", pr.fecha || "—", "Del predimensionamiento, no del proyecto."]
+    ], null, ALTO_LISTA, { alinear: D3 });
+    r = h.nota(r, "Nada de esta sección entra en ningún cálculo: identifica el "
+      + "documento. Las tres siguientes sí.");
+
+    /* ---- 2 ---- */
+    r = h.seccion(r, "2. EDIFICACIÓN Y MATERIALES");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Dónde entra"], ALTO_LISTA);
+    var fCat = r;
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "E.030. Fija las cuatro filas siguientes."], null, { alinear: D3 });
+    var fPeso = r;
+    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
+      "PRE_COLUMNA y PRE_ZAPATA: P = pisos × A trib × este peso."],
+      { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["Factor U", cat.U,
+      "METRADO_CARGAS: multiplica todo el peso, no solo la sobrecarga."],
+      { 1: "0.00" }, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["% de la sobrecarga", cat.pctSC,
+      "METRADO_CARGAS: la fracción de S/C que entra en el peso en servicio."],
+      { 1: "0%" }, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["% de placas del área techada", cat.pctPlaca,
+      "PRE_PLACA: Ap = este porcentaje × área techada."],
+      { 1: "0.000%" }, { alinear: D3 });
+    var ffc = r;
+    r = h.fila(r, L_DATO, ["f'c del concreto  (kg/cm²)", +P.fc || 210,
+      "PRE_COLUMNA: Ac = P / (k · f'c). E.060 pide 210 como mínimo."],
+      { 1: "0" }, { alinear: D3 });
+    var fCon = r;
+    r = h.fila(r, L_DATO, ["Peso del concreto armado  (kg/m³)", +pr.concreto || 2400,
+      "METRADO_CARGAS: peso propio de la losa maciza y de la nervada."],
+      { 1: "0" }, { alinear: D3 });
+    var fSig = r;
+    r = h.fila(r, L_DATO, ["σs capacidad portante  (kg/cm²)", +P.sigma || 3.0,
+      "PRE_ZAPATA: Az = 1.10 · P · F sismo / σs. Sale del estudio de suelos."],
+      { 1: "0.00" }, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["σs en t/m²", "=$F$" + fSig + "*10",
+      "1 kg/cm² = 10 t/m². Es la unidad con la que trabaja PRE_ZAPATA."],
+      { 1: "0.0" }, { alinear: D3 });
+    r++;
+
+    /* ---- 3 ---- */
+    r = h.seccion(r, "3. CARGAS PERMANENTES");
+    r = h.encabezado(r, [[3,4],[5,6],[7,7],[8,10]],
+      ["Carga", "Se calcula como", "kg/m²", "Origen"], ALTO_LISTA);
+    var L4 = [[3,4],[5,6],[7,7],[8,10]];
+    var fPiso = r;
+    r = h.fila(r, L4, ["Piso terminado",
+      (+pr.morteroPeso || 2000) + " kg/m³ × " + (+pr.pisoEsp || 5) + " cm",
+      "=" + (+pr.morteroPeso || 2000) + "*" + (+pr.pisoEsp || 5) + "/100",
+      "E.020 Anexo 1. CALCULADO: cambia el espesor y cambia el peso."],
+      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    var fCielo = r;
+    r = h.fila(r, L4, ["Cielo raso",
+      (+pr.yesoPeso || 1000) + " kg/m³ × " + (+pr.cieloEsp || 2) + " cm",
+      "=" + (+pr.yesoPeso || 1000) + "*" + (+pr.cieloEsp || 2) + "/100",
+      "E.020 Anexo 1. CALCULADO."],
+      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    var fTab = r;
+    r = h.fila(r, L4, ["Tabiquería", "lo pones tú", +pr.tabiqueria || 0,
+      "ESTIMADO. Es el único de los cuatro que sigue siéndolo: los tabiques "
+      + "no se dibujan en la planta. Si los metras, pon aquí el valor real."],
+      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    var fEst = r;
+    r = h.fila(r, L4, ["Vigas, columnas y placas",
+      cg.estructuraAuto ? ((cg.volumen || 0).toFixed(2) + " m³ × concreto / área")
+                        : "estimado",
+      +cg.estructura || 150,
+      cg.estructuraAuto
+        ? ("CALCULADO del modelo: el complemento conoce la sección de cada "
+           + "columna, el ancho y el peralte de cada viga y el espesor de cada "
+           + "placa. Suma el volumen y lo reparte sobre el área techada.")
+        : "ESTIMADO en 150 kg/m². Puedes pedirle al modelador que lo calcule."],
+      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    var fTot = r;
+    r = h.fila(r, L4, ["TOTAL", "suma de las cuatro",
+      "=SUM($G$" + fPiso + ":$G$" + fEst + ")",
+      "Este total es el que METRADO_CARGAS suma al peso propio de la losa."],
+      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    r++;
+    r = h.nota(r, "De las cuatro, TRES se calculan y una es estimada. Antes las "
+      + "cuatro estaban escritas a mano dentro del complemento y no se podían "
+      + "tocar sin editar el código. El peso de la estructura era el peor: 150 "
+      + "kg/m² fijos, con una nota que pedía copiarlo a mano cuando las listas "
+      + "estuvieran llenas. Ya no hace falta.");
+
+    /* ---- 4 ---- */
+    r = h.seccion(r, "4. LO QUE SALE DE LA PLANTA");
+    r = h.tabla(r, L_DATO, ["Dato", "Valor", "Observación"], [
+      ["Número de niveles", P.niveles, "Los que hayas modelado."],
+      ["Área techada total  (m²)", +(P.areaTechada || 0).toFixed(2),
+       "Suma de los paños con losa de todos los niveles."],
+      ["Sobrecarga por defecto  (kg/m²)", +pr.sc || 200,
+       "Se aplica solo a los paños que no tienen uso asignado."],
+      ["Columnas", (P.C || []).length, "Una fila en PRE_COLUMNA cada una."],
+      ["Vigas principales", (P.V || []).length, ""],
+      ["Vigas chatas", (P.VCH || []).length, ""],
+      ["Placas", (P.P || []).length, ""],
+      ["Zapatas", (P.Z || []).length, "Una por columna del nivel de cimentación."]
+    ], { 1: "0.00" }, ALTO_LISTA, { alinear: D3 });
+    r = h.nota(r, "Solo lectura: sale del modelo. La altura de entrepiso no está "
+      + "aquí porque va nivel a nivel, y no tiene por qué ser la misma en todos.");
+
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
      1 · LOSAS
      ===================================================================== */
 
@@ -1393,6 +1526,7 @@
     r = h.subtitulo(r, "1.2   Peso propio de las losas");
     var eA = espesorMax(P.L && P.L.aligerada), eM = espesorMax(P.L && P.L.maciza),
         eN = espesorMax(P.L && P.L.nervada);
+    var concreto = (P.proy && +P.proy.concreto) || CONCRETO;
     r = h.encabezado(r, L_PESO,
       ["Tipo de losa", "Espesor (cm)", "Peso (kg/m²)", "Origen del valor"], ALTO_LISTA);
     var fA = r;
@@ -1403,28 +1537,38 @@
       { 1: "0", 2: "0" }, { alinear: D4 });
     var fM = r;
     r = h.fila(r, L_PESO, ["Maciza", eM || 20,
-      "=ROUND(" + CONCRETO + "*$E$" + r + "/100,0)",
-      "E.020: concreto armado " + CONCRETO + " kg/m³ × espesor."], { 1: "0", 2: "0" }, { alinear: D4 });
+      "=ROUND(" + concreto + "*$E$" + r + "/100,0)",
+      "E.020: concreto armado " + concreto + " kg/m³ × espesor."], { 1: "0", 2: "0" }, { alinear: D4 });
     var fN = r;
     r = h.fila(r, L_PESO, ["Nervada", eN || 30,
-      "=ROUND(" + CONCRETO + "*$E$" + r + "/100*0.6,0)",
+      "=ROUND(" + concreto + "*$E$" + r + "/100*0.6,0)",
       "ESTIMADO: 60 % de una maciza del mismo espesor. La E.020 no lo tabula."],
       { 1: "0", 2: "0" }, { alinear: D4 });
     r++;
 
+    /* Las cuatro cargas ya NO estan cableadas aqui: vienen de la pestana
+       Proyecto y salen impresas en ESPECIFICACIONES.  Tres se calculan y la
+       tabiqueria es la unica que sigue siendo un estimado. */
+    var cg = P.cargas || {}, pr0 = P.proy || {};
     r = h.subtitulo(r, "1.3   Otras cargas permanentes");
     r = h.encabezado(r, [[3,5],[6,7],[8,10]], ["Carga", "kg/m²", "Origen del valor"],
       ALTO_LISTA);
     var f1 = r;
-    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Piso terminado", 100,
-      "Mortero 2000 kg/m³ × 5 cm (E.020 Anexo 1)."], { 1: "0" }, { alinear: D3 });
-    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Tabiquería", 100,
-      "ESTIMADO. Con muros de albañilería conviene metrarlos."], { 1: "0" }, { alinear: D3 });
-    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Cielo raso", 20,
-      "Yeso 1000 kg/m³ × 2 cm (E.020 Anexo 1)."], { 1: "0" }, { alinear: D3 });
-    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Vigas, columnas y placas", 150,
-      "ESTIMADO. Es el peso de la estructura repartido sobre el área techada."],
-      { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Piso terminado", +cg.piso || 100,
+      "Mortero " + (+pr0.morteroPeso || 2000) + " kg/m³ × " + (+pr0.pisoEsp || 5)
+      + " cm (E.020 Anexo 1). CALCULADO."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Tabiquería", +cg.tabiq || 0,
+      "ESTIMADO: los tabiques no se dibujan. Es el único de los cuatro que no "
+      + "se calcula."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Cielo raso", +cg.cielo || 20,
+      "Yeso " + (+pr0.yesoPeso || 1000) + " kg/m³ × " + (+pr0.cieloEsp || 2)
+      + " cm (E.020 Anexo 1). CALCULADO."], { 1: "0" }, { alinear: D3 });
+    r = h.fila(r, [[3,5],[6,7],[8,10]], ["Vigas, columnas y placas",
+      +cg.estructura || 150,
+      cg.estructuraAuto
+        ? ("CALCULADO del modelo: " + (cg.volumen || 0).toFixed(2)
+           + " m³ de concreto sobre el área techada.")
+        : "ESTIMADO en 150 kg/m²."], { 1: "0" }, { alinear: D3 });
     var fOtras = r;
     r = h.fila(r, [[3,5],[6,7],[8,10]], ["Total de otras cargas",
       "=SUM($F$" + f1 + ":$F$" + (r - 1) + ")", "Se suma al peso propio de la losa."],
@@ -1639,6 +1783,7 @@
   }
 
   return {
+    especificaciones: especificaciones,
     losaAligerada: losaAligerada, losaMaciza: losaMaciza, losaNervada: losaNervada,
     vigaPrincipal: vigaPrincipal, vigaChata: vigaChata,
     columna: columna, placa: placa, zapata: zapata,
@@ -1947,6 +2092,7 @@ function alRecibir(arg){
    que es como se cumple la generacion condicional: la ausencia de una hoja
    no es un fallo, es informacion. */
 var REGISTRO = {
+  "ESPECIFICACIONES":   function(p){ return HOJAS_PRE.especificaciones(p); },
   "CRITERIOS_OVIEDO":   function(){ return HOJAS.criteriosOviedo(); },
   "NORMA E020":         function(){ return HOJAS.normaE020(); },
   "PRE_LOSA_ALIGERADA": function(p){ return HOJAS_PRE.losaAligerada(p); },
