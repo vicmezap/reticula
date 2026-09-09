@@ -2012,12 +2012,101 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-/* cols = columnas de Excel donde cae cada dato de la fila, en orden.
-   C(3) = Codigo, D(4) = Eje (en columnas, D = Ubicacion). */
+var BUILD = "v27 · 08-09-2026";                 /* lo sella gen_complemento.py */
+var dialogo = null;
+
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
    era la calculadora: el modelador le mandaba filas a rangos con nombre, Excel
    calculaba, y habia que leer el resultado para poder dibujar a escala real.
    Ahora el calculo esta en el complemento y las hojas se generan rellenas.  */
+
+/* ---------------- interfaz ---------------- */
+function estado(txt, clase){
+  var e = document.getElementById("estado");
+  if(!e) return;
+  e.textContent = txt;
+  e.className = clase || "";
+}
+
+/* La version del panel.  El dialogo lleva la suya en su propia cabecera: si
+   no coinciden, es que uno de los dos quedo en cache. */
+function revisarBuild(){
+  var b = document.getElementById("qBuild");
+  if(b) b.textContent = BUILD;
+}
+
+/* ---------------- el modelo dentro del libro ----------------
+   Vive en una hoja muy oculta.  Se trocea porque una celda de Excel admite
+   32 767 caracteres y un edificio de varios niveles los pasa; leer un solo
+   trozo sigue funcionando, asi que los modelos guardados antes se abren. */
+var TROZO = 30000;
+
+function hojaModelo(context, crear){
+  var libro = context.workbook;
+  var ws = libro.worksheets.getItemOrNullObject(HOJA_MODELO);
+  ws.load("isNullObject");
+  return context.sync().then(function(){
+    if(!ws.isNullObject) return ws;
+    if(!crear) return null;
+    var nueva = libro.worksheets.add(HOJA_MODELO);
+    try{ nueva.visibility = Excel.SheetVisibility.veryHidden; }
+    catch(e){ try{ nueva.visibility = "Hidden"; }catch(x){} }
+    return nueva;
+  });
+}
+
+function leerModelo(){
+  return Excel.run(function(context){
+    return hojaModelo(context, false).then(function(ws){
+      if(!ws) return null;
+      var rg = ws.getRange("A1:A200");
+      rg.load("values");
+      return context.sync().then(function(){
+        var partes = [], i, v;
+        for(i = 0; i < rg.values.length; i++){
+          v = rg.values[i][0];
+          if(v === null || v === undefined || v === "") break;
+          partes.push(String(v));
+        }
+        return partes.length ? partes.join("") : null;
+      });
+    });
+  });
+}
+
+function guardarModelo(){
+  var s = null;
+  try{ s = localStorage.getItem("reticula"); }catch(e){}
+  if(!s) return Promise.reject(new Error("todavia no hay modelo: abre el modelador"));
+  var trozos = [], i;
+  for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
+  if(trozos.length > 200)
+    return Promise.reject(new Error("el modelo no cabe en la hoja oculta"));
+  return Excel.run(function(context){
+    return hojaModelo(context, true).then(function(ws){
+      /* se limpia antes: un modelo mas corto dejaria cola del anterior */
+      ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
+      ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
+      try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
+      return context.sync();
+    });
+  });
+}
+
+/* ---------------- arranque ---------------- */
+Office.onReady(function(){
+  var a = document.getElementById("btnAbrir");
+  if(a) a.onclick = abrirModelador;
+  var g = document.getElementById("btnGuardar");
+  if(g) g.onclick = function(){
+    guardarModelo().then(function(){
+      estado("Modelo guardado en el libro.", "ok");
+      return revisar();
+    }).catch(function(e){ estado("No se pudo guardar: " + e.message, "err"); });
+  };
+  revisarBuild();
+  revisar();
+});
 
 /* ---------------- diagnostico ---------------- */
 function revisar(){
@@ -2148,7 +2237,6 @@ function generarHojas(cuales){
   siguiente(0);
 }
 
-/* ---------------- escritura en las listas ---------------- */
 </script>
 </body>
 </html>
