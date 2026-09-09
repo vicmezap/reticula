@@ -993,13 +993,16 @@
     var fPiso = r;
     r = h.fila(r, L4, ["Piso terminado",
       (+pr.morteroPeso || 2000) + " kg/m³ × " + (+pr.pisoEsp || 5) + " cm",
-      "=" + (+pr.morteroPeso || 2000) + "*" + (+pr.pisoEsp || 5) + "/100",
+      /* ROUND para que de lo MISMO que el panel, que redondea a kg/m2 entero.
+         Sin el, 1900 x 5.5 / 100 da 104.5 aqui y 105 en el complemento, y la
+         misma carga sale con dos numeros en dos hojas del mismo libro. */
+      "=ROUND(" + (+pr.morteroPeso || 2000) + "*" + (+pr.pisoEsp || 5) + "/100,0)",
       "E.020 Anexo 1. CALCULADO: cambia el espesor y cambia el peso."],
       { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
     var fCielo = r;
     r = h.fila(r, L4, ["Cielo raso",
       (+pr.yesoPeso || 1000) + " kg/m³ × " + (+pr.cieloEsp || 2) + " cm",
-      "=" + (+pr.yesoPeso || 1000) + "*" + (+pr.cieloEsp || 2) + "/100",
+      "=ROUND(" + (+pr.yesoPeso || 1000) + "*" + (+pr.cieloEsp || 2) + "/100,0)",
       "E.020 Anexo 1. CALCULADO."],
       { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
     var fTab = r;
@@ -1097,16 +1100,18 @@
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L7_ALIG,
-      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (m)"],
+      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)"],
       fs,
       function (f, i) {
         return [f[0], f[1], +f[2], +f[3],
           "=IFERROR(E" + i + "/F" + i + ',"")',
           "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))",
+          /* en cm, como el resto de anchos del libro: una vigueta de 10 cm
+             junto a una viga de 25 cm, no 0.10 junto a 25 */
           "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "/"
             + C.PROPORCION.viguetaAligerada + ",0.05),"
-            + C.MINIMOS.viguetaAligerada + "))"];
-      }, { 2: "0.00", 4: "0.000" });
+            + C.MINIMOS.viguetaAligerada + ")*100)"];
+      }, { 2: "0.00", 4: "0.000", 6: "0" });
     r = L.fin + 1;
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
@@ -1177,16 +1182,16 @@
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
-      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (m)", "S (m)"],
+      ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)", "S (m)"],
       fs,
       function (f, i) {
         return [f[0], f[1], +f[2], +f[3],
           "=IFERROR(E" + i + "/F" + i + ',"")',
           "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))",
           "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "/" + C.PROPORCION.nervadura
-            + ",0.05)," + C.MINIMOS.nervadura + "))",
+            + ",0.05)," + C.MINIMOS.nervadura + ")*100)",
           "=IF(N(G" + i + ')=0,"",ROUND(' + C.PROPORCION.nervadura + "*G" + i + ",2))"];
-      }, { 2: "0.00", 4: "0.000" });
+      }, { 2: "0.00", 4: "0.000", 6: "0" });
     r = L.fin + 1;
 
     r = h.nota(r, "A diferencia de la aligerada, la separación de la nervada NO es "
@@ -2019,7 +2024,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v31 · 08-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v32 · 08-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

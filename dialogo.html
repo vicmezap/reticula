@@ -921,7 +921,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v31 · 08-09-2026";
+  var BUILD="v32 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -2140,11 +2140,11 @@ var TT={script:performance.now()};
     var packs=todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)];
     if(S.tab==="col"){H=["Código","Ubicación","N° pisos","A trib (m²)"];CAL=["P (t)","Ac (cm²)","b (cm)","h (cm)"];
       packs.forEach(function(p){R=R.concat(p.C)});}
-    else if(S.tab==="viga"){H=["Código","Eje","Ln (m)","B (m)","α"];CAL=["h","h (cm)","b (cm)"];
+    else if(S.tab==="viga"){H=["Código","Eje","Ln (m)","B (m)","α"];CAL=["h (m)","h (cm)","b (cm)"];
       packs.forEach(function(p){R=R.concat(p.V)});}
-    else if(S.tab==="chata"){H=["Código","Eje","Ln (m)","α","h losa (cm)"];CAL=["Ln máx","b (cm)","Estado"];
+    else if(S.tab==="chata"){H=["Código","Eje","Ln (m)","α","h losa (cm)"];CAL=["Ln máx (m)","b (cm)","Estado"];
       packs.forEach(function(p){R=R.concat(p.VCH)});}
-    else if(S.tab==="placa"){H=["Código","Eje","Dir","lm (m)","hm (m)"];CAL=["t mín","t (cm)","Área (m²)"];
+    else if(S.tab==="placa"){H=["Código","Eje","Dir","lm (m)","hm (m)"];CAL=["t mín (m)","t (cm)","Área (m²)"];
       packs.forEach(function(p){R=R.concat(p.P)});}
     else if(S.tab==="zapata"){H=["Código","Tipo","N° pisos","A trib (m²)","F sismo","col b (m)","col h (m)"];
       CAL=["P (t)","Az (m²)","B (m)","L (m)","H (m)","Estado"];
@@ -2153,7 +2153,11 @@ var TT={script:performance.now()};
       CAL=["CM (kg/m²)","P servicio (kg/m²)"];
       packs.forEach(function(p){R=R.concat(p.M)});}
     else{H=["Código","Eje","Ln (m)","α"];
-      CAL=S.tab==="aligerada"?["h","espesor (cm)","b"]:(S.tab==="maciza"?["h","espesor (cm)"]:["h","espesor","b","S"]);
+      /* la unidad SIEMPRE escrita: el ancho de vigueta iba en cm aqui y en
+         metros en la hoja, y ninguno de los dos lo decia */
+      CAL=S.tab==="aligerada"?["h (m)","espesor (cm)","b (cm)"]
+         :(S.tab==="maciza"?["h (m)","espesor (cm)"]
+         :["h (m)","espesor (cm)","b (cm)","S (m)"]);
       packs.forEach(function(p){R=R.concat(p.L[S.tab])});}
     /* Las columnas calculadas ya no dicen "fórmula": el complemento tiene el
        número. En la hoja de Excel esa misma columna sí va como fórmula, para
