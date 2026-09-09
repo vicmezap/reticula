@@ -905,8 +905,23 @@ var TT={script:performance.now()};
              maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
              nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
   var $=function(s){return document.querySelector(s)};
+
+  /* MOSTRAR U OCULTAR, sin fiarse de la propiedad .hidden.
+
+     `hidden` es un atributo IDL de HTMLElement.  Un <svg> es un SVGElement y
+     NO lo implementa: `svg.hidden = true` crea una propiedad JavaScript
+     suelta, no escribe el atributo, y la regla [hidden] del CSS no lo ve.  El
+     dibujo se quedaba en pantalla en las pestanas Proyecto y Hojas Excel.
+
+     Con setAttribute funciona en cualquier elemento, sea HTML o SVG. */
+  function ver(el,mostrar){
+    if(typeof el==="string")el=document.querySelector(el);
+    if(!el)return;
+    if(mostrar)el.removeAttribute("hidden");
+    else el.setAttribute("hidden","");
+  }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v30 · 08-09-2026";
+  var BUILD="v31 · 08-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1572,8 +1587,8 @@ var TT={script:performance.now()};
     document.querySelectorAll(".tool").forEach(function(o){
       o.setAttribute("aria-pressed",o.dataset.tool===t)});
     /* el submenu solo aparece bajo la herramienta activa */
-    $("#subViga").hidden=(t!=="viga");
-    $("#subLosa").hidden=(t!=="losa");
+    ver("#subViga",t==="viga");
+    ver("#subLosa",t==="losa");
     $("#hint").textContent=PISTAS[t]||"";
   }
   function elegirModo(md){
@@ -2727,25 +2742,25 @@ var TT={script:performance.now()};
     var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto");
     var solo=hojas||proy;                 /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
-    document.querySelector(".tools:not(#toolsUso)").hidden=usos||solo;
-    $("#toolsUso").hidden=!usos;
-    $("#inspector").hidden=usos||solo;
-    $("#panelUso").hidden=!usos;
-    $("#panelHojas").hidden=!hojas;
-    $("#panelProy").hidden=!proy;
+    ver(".tools:not(#toolsUso)",!(usos||solo));
+    ver("#toolsUso",usos);
+    ver("#inspector",!(usos||solo));
+    ver("#panelUso",usos);
+    ver("#panelHojas",hojas);
+    ver("#panelProy",proy);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
        cintra de medidas, la tabla de resumen y las notas de dibujo.  Cada
        pestana se queda con lo suyo y nada mas. */
-    $("#niveles").hidden=solo;
-    document.querySelector(".cintra").hidden=solo;
-    $("#resumen").hidden=solo;
-    $("#notas").hidden=solo;
-    $("#hint").hidden=solo;
-    $("#plano").hidden=!esPlano; $("#edificio").hidden=esPlano||solo;
-    if(!solo)$("#hint").hidden=!esPlano||usos;
-    document.querySelector(".zoom").hidden=!esPlano;
+    ver("#niveles",!solo);
+    ver(".cintra",!solo);
+    ver("#resumen",!solo);
+    ver("#notas",!solo);
+    ver("#plano",esPlano);          /* <- el que fallaba: es un SVG */
+    ver("#edificio",!(esPlano||solo));
+    ver("#hint",!solo&&esPlano&&!usos);
+    ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
     pintaNiveles();
     if(proy){pintaProyecto();}
