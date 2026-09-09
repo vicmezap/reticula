@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- El panel lo carga Excel desde la URL del manifiesto, sin sello de version:
+     no hay forma de romperle la cache desde fuera como se hace con el dialogo.
+     Estas tres lineas piden que no se guarde; no siempre se respetan, y por eso
+     ademas el panel se autocomprueba al arrancar (ver comprobarCache). -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Retícula Estructural</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -2012,7 +2019,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v27 · 08-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v28 · 08-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -2033,6 +2040,34 @@ function estado(txt, clase){
 function revisarBuild(){
   var b = document.getElementById("qBuild");
   if(b) b.textContent = BUILD;
+}
+
+/* EL PANEL SE COMPRUEBA A SI MISMO.
+
+   Excel carga taskpane.html desde la URL del manifiesto, siempre la misma y
+   sin sello de version.  WebView2 la cachea con ganas, asi que puedes subir
+   una version nueva y seguir viendo la vieja durante dias, sin ningun aviso:
+   el panel simplemente se porta como la version antigua.
+
+   Eso paso de verdad y costo una sesion entera.  Asi que ahora el panel pide
+   su propio archivo saltandose la cache y compara el sello.  Si no coinciden
+   lo dice en rojo, en vez de portarse raro en silencio. */
+function comprobarCache(){
+  if(typeof fetch !== "function") return;
+  var url = String(window.location.href).split("?")[0] + "?sello=" + Date.now();
+  fetch(url, { cache: "no-store" }).then(function(r){
+    return r.ok ? r.text() : null;
+  }).then(function(t){
+    if(!t) return;
+    var m = /var BUILD\s*=\s*"([^"]*)"/.exec(t);
+    if(!m || m[1] === BUILD) return;
+    var b = document.getElementById("qBuild");
+    if(b){ b.textContent = BUILD + "  ·  EN CACHÉ"; b.style.color = "#B00020"; }
+    estado("Estás viendo una versión guardada en caché (" + BUILD + "). "
+           + "La publicada es " + m[1] + ". Cierra Excel del todo y vuelve a "
+           + "abrirlo; si sigue igual, hay que vaciar la caché de complementos.",
+           "err");
+  }).catch(function(){});
 }
 
 /* ---------------- el modelo dentro del libro ----------------
@@ -2105,6 +2140,7 @@ Office.onReady(function(){
     }).catch(function(e){ estado("No se pudo guardar: " + e.message, "err"); });
   };
   revisarBuild();
+  comprobarCache();
   revisar();
 });
 
