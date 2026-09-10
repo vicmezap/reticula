@@ -327,6 +327,17 @@
         <button class="btn" id="undo" title="Ctrl+Z">↶</button>
         <button class="btn" id="redo" title="Ctrl+Y">↷</button>
       </div>
+      <span class="lbl" style="padding:8px 8px 4px">Plano de fondo</span>
+      <input type="file" id="calcoFile" accept=".pdf,image/*" hidden>
+      <button class="btn" id="calcoCargar" style="margin:0 2px">Traer plano…</button>
+      <div id="calcoCtl" hidden>
+        <button class="btn" id="calcoCal" style="margin:4px 2px 0">Calibrar escala</button>
+        <label class="pf" style="padding:4px 2px 0"><span class="pfe">Opacidad</span>
+          <input type="range" id="calcoOp" min="10" max="100" step="5" value="45"></label>
+        <button class="btn" id="calcoQuitar" style="margin:4px 2px 0">Quitar plano</button>
+        <p class="nota" id="calcoInfo" style="padding:0 2px"></p>
+      </div>
+      <div class="rule" style="margin:8px 2px"></div>
       <span class="lbl" style="padding:8px 8px 4px">Plantas tipo</span>
       <button class="btn" id="pR" style="margin:0 2px">Rectangular</button>
       <button class="btn" id="pL" style="margin:4px 2px 0">En L</button>
@@ -2991,7 +3002,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v46 · 10-09-2026";
+  var BUILD="v48 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3544,27 +3555,50 @@ var TT={script:performance.now()};
      con el color del ambiente. */
   function drawUsos(){
     var sv=$("#plano");while(sv.firstChild)sv.removeChild(sv.firstChild);
-    var m=N(),W=posX(nx()-1),H=posY(ny()-1),mg=56;
+    /* El lienzo tiene que caber la planta REAL: con el lote sesgado el
+       borde largo puede pasarse del de referencia y quedaria cortado. */
+    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
+        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=56;
     var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
     var w=W*esc+2*mg,h=H*esc+2*mg;
     sv.setAttribute("viewBox","0 0 "+w+" "+h);
     sv.style.maxWidth=(S.zoom>1?w+"px":"100%");
-    var X=function(i){return mg+posX(i)*esc},Y=function(j){return mg+posY(j)*esc};
+    /* La posicion depende de los DOS indices cuando la planta es
+       irregular.  Se conserva la firma corta -X(i), Y(j)- para no reescribir
+       cincuenta llamadas: sin segundo indice se usa el borde de referencia,
+       que es exactamente lo que se dibujaba antes.  Donde el elemento conoce
+       sus dos indices se le pasan los dos y queda en su sitio real. */
+    var X=function(i,j){return mg+nodo(i,j||0,m).x*esc},
+        Y=function(j,i){return mg+nodo(i||0,j,m).y*esc};
     var defs=el("defs",{});
     var pt=el("pattern",{id:"sinuso",width:"8",height:"8",patternUnits:"userSpaceOnUse",
                          patternTransform:"rotate(45)"});
     pt.appendChild(el("rect",{width:"8",height:"8",fill:"var(--panel)"}));
     pt.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"8",stroke:"var(--line)","stroke-width":"2"}));
     defs.appendChild(pt);sv.appendChild(defs);
+    /* El calco va PRIMERO: todo lo demas se dibuja encima. */
+    (function(){var c=calco();if(!c)return;
+      sv.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
+        width:c.w*c.esc*esc,height:c.h*c.esc*esc,
+        opacity:c.op,preserveAspectRatio:"none",
+        href:c.src,"pointer-events":"none"}));})();
     var g=el("g",{});sv.appendChild(g);
     var col=coloresAmb(),i,j;
 
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var o=m.losas[key(i,j)];
       if(!o)continue;
-      var x=X(i),y=Y(j),an=X(i+1)-x,al=Y(j+1)-y,cx=x+an/2,cy=y+al/2;
+      /* el paño es un cuadrilatero: el recuadro que se pinta es su caja,
+         y el centro, el de sus cuatro nudos.  En planta recta coinciden. */
+      var q4=[[X(i,j),Y(j,i)],[X(i+1,j),Y(j,i+1)],
+              [X(i+1,j+1),Y(j+1,i+1)],[X(i,j+1),Y(j+1,i)]];
+      var xs=q4.map(function(p){return p[0]}),ys=q4.map(function(p){return p[1]});
+      var x=Math.min.apply(null,xs),y=Math.min.apply(null,ys);
+      var an=Math.max.apply(null,xs)-x,al=Math.max.apply(null,ys)-y;
+      var cx=(xs[0]+xs[1]+xs[2]+xs[3])/4,cy=(ys[0]+ys[1]+ys[2]+ys[3])/4;
       var asignado=!!o.uso;
-      g.appendChild(el("rect",{x:x,y:y,width:an,height:al,
+      g.appendChild(el("polygon",{
+        points:q4.map(function(p){return p[0].toFixed(1)+","+p[1].toFixed(1)}).join(" "),
         fill:asignado?col[claveAmb(o.uso,o.amb||"")]:"url(#sinuso)",
         "fill-opacity":asignado?0.42:1,
         stroke:asignado?col[claveAmb(o.uso,o.amb||"")]:"var(--line)","stroke-width":1}));
@@ -3588,7 +3622,10 @@ var TT={script:performance.now()};
     /* estructura en gris: contexto, no protagonista */
     function tenue(o,i,j){
       var x1,y1,x2,y2;
-      if(o==="h"){x1=X(i);y1=Y(j);x2=X(i+1);y2=Y(j)}else{x1=X(i);y1=Y(j);x2=X(i);y2=Y(j+1)}
+      /* cada extremo con sus DOS indices: en planta irregular la viga
+         va inclinada y sus dos nudos no comparten fila ni columna */
+      if(o==="h"){x1=X(i,j);y1=Y(j,i);x2=X(i+1,j);y2=Y(j,i+1)}
+      else       {x1=X(i,j);y1=Y(j,i);x2=X(i,j+1);y2=Y(j+1,i)}
       if(m.vigas[key(o,i,j)]||m.placas[key(o,i,j)])
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--ink-3)",
           "stroke-width":m.placas[key(o,i,j)]?5:2,opacity:.45}));
@@ -3674,12 +3711,21 @@ var TT={script:performance.now()};
 
   function draw(){
     var s=$("#plano");while(s.firstChild)s.removeChild(s.firstChild);
-    var m=N(),W=posX(nx()-1),H=posY(ny()-1),mg=56;
+    /* El lienzo tiene que caber la planta REAL: con el lote sesgado el
+       borde largo puede pasarse del de referencia y quedaria cortado. */
+    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
+        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=56;
     var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
     var w=W*esc+2*mg,h=H*esc+2*mg;
     s.setAttribute("viewBox","0 0 "+w+" "+h);
     s.style.maxWidth=(S.zoom>1?w+"px":"100%");
-    var X=function(i){return mg+posX(i)*esc},Y=function(j){return mg+posY(j)*esc};
+    /* La posicion depende de los DOS indices cuando la planta es
+       irregular.  Se conserva la firma corta -X(i), Y(j)- para no reescribir
+       cincuenta llamadas: sin segundo indice se usa el borde de referencia,
+       que es exactamente lo que se dibujaba antes.  Donde el elemento conoce
+       sus dos indices se le pasan los dos y queda en su sitio real. */
+    var X=function(i,j){return mg+nodo(i,j||0,m).x*esc},
+        Y=function(j,i){return mg+nodo(i||0,j,m).y*esc};
     var defs=el("defs",{});
     var mk=el("marker",{id:"ar",viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"5",markerHeight:"5",orient:"auto"});
     mk.appendChild(el("path",{d:"M0,0 L8,4 L0,8 z",fill:"currentColor"}));defs.appendChild(mk);
@@ -3687,6 +3733,12 @@ var TT={script:performance.now()};
     pt.appendChild(el("rect",{width:"7",height:"7",fill:"var(--nerv-f)"}));
     pt.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"7",stroke:"var(--nerv)","stroke-width":"1.6"}));
     defs.appendChild(pt);s.appendChild(defs);
+    /* El calco va PRIMERO: todo lo demas se dibuja encima. */
+    (function(){var c=calco();if(!c)return;
+      s.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
+        width:c.w*c.esc*esc,height:c.h*c.esc*esc,
+        opacity:c.op,preserveAspectRatio:"none",
+        href:c.src,"pointer-events":"none"}));})();
     var g=el("g",{});s.appendChild(g);
     var i,j;
 
@@ -3694,9 +3746,18 @@ var TT={script:performance.now()};
       var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
       if(o){
         var tp=TIPOS[o.tipo||"aligerada"];
-        g.appendChild(el("rect",{x:X(i),y:Y(j),width:X(i+1)-X(i),height:Y(j+1)-Y(j),
+        /* El paño es un CUADRILATERO, no un rectangulo: con la planta
+           sesgada sus cuatro esquinas no forman angulos rectos.  Se dibuja
+           por sus cuatro nudos; en planta recta sale el rectangulo de
+           siempre y no se nota la diferencia. */
+        var q4=[[X(i,j),Y(j,i)],[X(i+1,j),Y(j,i+1)],
+                [X(i+1,j+1),Y(j+1,i+1)],[X(i,j+1),Y(j+1,i)]];
+        g.appendChild(el("polygon",{
+          points:q4.map(function(p){return p[0].toFixed(1)+","+p[1].toFixed(1)}).join(" "),
           fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
-        var cx=(X(i)+X(i+1))/2,cy=(Y(j)+Y(j+1))/2,r=Math.min(X(i+1)-X(i),Y(j+1)-Y(j))*0.26;
+        var cx=(q4[0][0]+q4[1][0]+q4[2][0]+q4[3][0])/4,
+            cy=(q4[0][1]+q4[1][1]+q4[2][1]+q4[3][1])/4,
+            r=Math.min(Math.abs(q4[1][0]-q4[0][0]),Math.abs(q4[3][1]-q4[0][1]))*0.26;
         var ln=o.dir==="y"?el("line",{x1:cx,y1:cy-r,x2:cx,y2:cy+r}):el("line",{x1:cx-r,y1:cy,x2:cx+r,y2:cy});
         ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
         ln.setAttribute("color","var("+tp.c+")");
@@ -3726,7 +3787,10 @@ var TT={script:performance.now()};
 
     function viga(o,i,j){
       var x1,y1,x2,y2,k=key(o,i,j);
-      if(o==="h"){x1=X(i);y1=Y(j);x2=X(i+1);y2=Y(j)}else{x1=X(i);y1=Y(j);x2=X(i);y2=Y(j+1)}
+      /* cada extremo con sus DOS indices: en planta irregular la viga
+         va inclinada y sus dos nudos no comparten fila ni columna */
+      if(o==="h"){x1=X(i,j);y1=Y(j,i);x2=X(i+1,j);y2=Y(j,i+1)}
+      else       {x1=X(i,j);y1=Y(j,i);x2=X(i,j+1);y2=Y(j+1,i)}
       var sl=S.sel&&S.sel.t==="viga"&&S.sel.o===o&&S.sel.i===i&&S.sel.j===j;
       if(m.placas[k]){          /* la placa va debajo y mas gruesa: es el muro */
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--placa)",
@@ -3786,19 +3850,19 @@ var TT={script:performance.now()};
         var sel=S.sel&&S.sel.t==="col"&&S.sel.i===i&&S.sel.j===j,lado=sel?15:12;
         var pin={fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1};
         if(formaDe(m.cols[key(i,j)])==="circular"){
-          pin.cx=X(i);pin.cy=Y(j);pin.r=lado/2;
+          pin.cx=X(i,j);pin.cy=Y(j,i);pin.r=lado/2;
           g.appendChild(el("circle",pin));
         }else{
-          pin.x=X(i)-lado/2;pin.y=Y(j)-lado/2;pin.width=lado;pin.height=lado;
+          pin.x=X(i,j)-lado/2;pin.y=Y(j,i)-lado/2;pin.width=lado;pin.height=lado;
           g.appendChild(el("rect",pin));
         }
       }
       var pc2=m.cols[key(i,j)]?seccionCol(i,j,m,null):null;
       if(S.verDims&&pc2)
-        txt(g,X(i),Y(j)-11,
+        txt(g,X(i,j),Y(j,i)-11,
             pc2.forma==="circular"?("Ø"+pc2.D):(pc2.b+"×"+pc2.h),
             (pc2.propia&&!pc2.cumple)?"#c62828":"var(--acc-ink)",9.5);
-      var hc=el("circle",{cx:X(i),cy:Y(j),r:11,"class":"hit"});
+      var hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:11,"class":"hit"});
       hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
     }
 
@@ -3900,8 +3964,167 @@ var TT={script:performance.now()};
     }else return;
     render();
   }
+  /* =====================================================================
+     CALCO · el plano de fondo
+
+     Traes tu plano -PDF o imagen-, se dibuja DETRAS de la retícula y
+     dibujas los ejes encima.  No lo interpreta nadie: lo interpretas tu.
+     Es la mitad del valor por una decima parte del trabajo, y si algun dia
+     se lee el PDF vectorialmente, esto sigue siendo util igual.
+
+     Vive FUERA del modelo, en su propia clave de localStorage.  Si fuera
+     dentro, cada render serializaria una imagen entera: el guardado
+     automatico que acabamos de poner haria el modelador inusable.
+
+     esc  = metros por pixel de la imagen
+     dx,dy= donde cae la esquina superior izquierda, en metros del modelo
+     ===================================================================== */
+  var CALCO={};                     /* nivel -> {src,esc,dx,dy,op,w,h} */
+  var PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  var calibrando=null;              /* [x1,y1] mientras esperas el 2.º clic */
+
+  function claveCalco(niv){return "reticula_calco_"+niv}
+  function calco(niv){
+    if(niv==null)niv=S.act;
+    if(CALCO[niv]!==undefined)return CALCO[niv];
+    try{ CALCO[niv]=JSON.parse(localStorage.getItem(claveCalco(niv))||"null"); }
+    catch(e){ CALCO[niv]=null; }
+    return CALCO[niv];
+  }
+  function guardarCalco(niv,c){
+    CALCO[niv]=c;
+    try{
+      if(c)localStorage.setItem(claveCalco(niv),JSON.stringify(c));
+      else localStorage.removeItem(claveCalco(niv));
+    }catch(e){
+      /* El plano puede no caber en localStorage.  Se dice, y se sigue
+         trabajando con el en memoria hasta cerrar. */
+      toast("El plano no cabe en el almacenamiento: se verá hasta que cierres.");
+    }
+  }
+
+  /* pdf.js solo se descarga si traes un PDF */
+  function cargarPdfJs(){
+    if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+    return new Promise(function(ok,mal){
+      var s=document.createElement("script");
+      s.src=PDFJS;
+      s.onload=function(){
+        if(!window.pdfjsLib)return mal(new Error("pdf.js no se registró"));
+        try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=
+             PDFJS.replace("pdf.min.js","pdf.worker.min.js"); }catch(x){}
+        ok(window.pdfjsLib);
+      };
+      s.onerror=function(){mal(new Error("no se pudo descargar pdf.js"))};
+      document.head.appendChild(s);
+    });
+  }
+
+  /* La imagen se reduce antes de guardarla: un plano a 300 dpi son varios
+     megas y no aportan nada sobre un lienzo de 900 px. */
+  var CALCO_MAX=1800;
+  function aDataUrl(canvas){
+    var w=canvas.width,h=canvas.height,k=Math.min(1,CALCO_MAX/Math.max(w,h));
+    if(k>=1)return {src:canvas.toDataURL("image/jpeg",0.82),w:w,h:h};
+    var c2=document.createElement("canvas");
+    c2.width=Math.round(w*k);c2.height=Math.round(h*k);
+    c2.getContext("2d").drawImage(canvas,0,0,c2.width,c2.height);
+    return {src:c2.toDataURL("image/jpeg",0.82),w:c2.width,h:c2.height};
+  }
+
+  function ponCalco(im){
+    /* de arranque se encaja a lo ancho de la planta: da igual que no sea
+       exacto, para eso esta el calibrado */
+    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1))||10;
+    var c={src:im.src,w:im.w,h:im.h,esc:W/im.w,dx:0,dy:0,op:0.45};
+    guardarCalco(S.act,c);
+    toast("Plano cargado. Calíbralo con dos puntos de medida conocida.");
+    render();
+  }
+
+  function traerCalco(f){
+    if(!f)return;
+    if(/\.pdf$/i.test(f.name)){
+      cargarPdfJs().then(function(lib){
+        return f.arrayBuffer().then(function(buf){
+          return lib.getDocument({data:buf}).promise;
+        });
+      }).then(function(doc){
+        return doc.getPage(1);
+      }).then(function(pag){
+        var vp=pag.getViewport({scale:2});
+        var cv=document.createElement("canvas");
+        cv.width=Math.round(vp.width);cv.height=Math.round(vp.height);
+        return pag.render({canvasContext:cv.getContext("2d"),viewport:vp})
+                  .promise.then(function(){return aDataUrl(cv)});
+      }).then(ponCalco).catch(function(e){
+        toast("No se pudo leer el PDF: "+e.message+
+              ". Prueba a exportarlo como PNG.");
+      });
+    }else{
+      var fr=new FileReader();
+      fr.onload=function(){
+        var img=new Image();
+        img.onload=function(){
+          var cv=document.createElement("canvas");
+          cv.width=img.naturalWidth;cv.height=img.naturalHeight;
+          cv.getContext("2d").drawImage(img,0,0);
+          ponCalco(aDataUrl(cv));
+        };
+        img.onerror=function(){toast("No se pudo abrir la imagen.")};
+        img.src=fr.result;
+      };
+      fr.readAsDataURL(f);
+    }
+  }
+
+  function pintaCalcoCtl(){
+    var c=calco(), ctl=$("#calcoCtl"), inf=$("#calcoInfo");
+    ver(ctl,!!c);
+    if(!c||!inf)return;
+    var op=$("#calcoOp"); if(op)op.value=Math.round(c.op*100);
+    inf.textContent=calibrando
+      ? "Haz clic en el segundo punto."
+      : "Escala: "+(1/c.esc).toFixed(1)+" px/m  ·  "+
+        (c.w*c.esc).toFixed(2)+" × "+(c.h*c.esc).toFixed(2)+" m";
+  }
+
   var svg=$("#plano");
+
+  /* El calibrado y el arrastre del calco se atienden ANTES que el pintado:
+     mientras calibras, un clic en el lienzo es un punto, no una columna. */
+  function xyModelo(e){
+    var r=svg.getBoundingClientRect();
+    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
+        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=56;
+    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
+    /* el SVG se escala al ancho del contenedor: hay que deshacerlo */
+    var k=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)
+          ? svg.viewBox.baseVal.width/r.width : 1;
+    return {x:((e.clientX-r.left)*k-mg)/esc, y:((e.clientY-r.top)*k-mg)/esc};
+  }
+
   svg.addEventListener("pointerdown",function(e){
+    if(calibrando!==null){
+      var p=xyModelo(e);
+      if(calibrando.length===0){ calibrando=[p]; pintaCalcoCtl(); return; }
+      var a=calibrando[0], d=Math.sqrt(Math.pow(p.x-a.x,2)+Math.pow(p.y-a.y,2));
+      calibrando=null;
+      var c=calco();
+      if(!c||d<=0){ pintaCalcoCtl(); render(); return; }
+      var real=leerNum(prompt("¿Cuánto mide de verdad esa distancia, en metros?",""));
+      if(real===null||!(real>0)){ pintaCalcoCtl(); render();
+        return toast("Calibrado cancelado."); }
+      var f=real/d;                       /* cuanto hay que estirar */
+      c.esc*=f;
+      /* se estira respecto al primer punto, que asi se queda donde estaba */
+      c.dx=a.x-(a.x-c.dx)*f; c.dy=a.y-(a.y-c.dy)*f;
+      guardarCalco(S.act,c);
+      toast("Escala fijada: "+real.toFixed(2)+" m.  Arrastra el plano para colocarlo.");
+      render();
+      return;
+    }
+    if(!e.target.dataset||!e.target.dataset.t)return;
     if(!e.target.dataset||!e.target.dataset.t)return;
     if(S.tool!=="sel")snap();
     pintando=true;modo=null;tocados={};aplicar(e.target,true);
@@ -3912,6 +4135,43 @@ var TT={script:performance.now()};
     var n=document.elementFromPoint(e.clientX,e.clientY);aplicar(n,false);
   });
   window.addEventListener("pointerup",function(){if(pintando){pintando=false;tocados={};guardar()}});
+
+  /* Arrastrar el calco para colocarlo.  Va con la tecla Alt para no pelearse
+     con el pintado: el lienzo ya usa el arrastre para dibujar. */
+  var moviendo=null;
+  svg.addEventListener("pointerdown",function(e){
+    if(!e.altKey||!calco()||calibrando!==null)return;
+    moviendo=xyModelo(e); e.preventDefault();
+  });
+  svg.addEventListener("pointermove",function(e){
+    if(!moviendo)return;
+    var p=xyModelo(e), c=calco();
+    c.dx+=p.x-moviendo.x; c.dy+=p.y-moviendo.y;
+    moviendo=p; CALCO[S.act]=c; render();
+  });
+  window.addEventListener("pointerup",function(){
+    if(moviendo){ moviendo=null; guardarCalco(S.act,calco()); }
+  });
+
+  $("#calcoCargar").onclick=function(){ $("#calcoFile").click() };
+  $("#calcoFile").addEventListener("change",function(){
+    traerCalco(this.files&&this.files[0]); this.value="";
+  });
+  $("#calcoQuitar").onclick=function(){
+    guardarCalco(S.act,null); calibrando=null; render();
+    toast("Plano de fondo quitado.");
+  };
+  $("#calcoCal").onclick=function(){
+    if(!calco())return;
+    calibrando=[];
+    toast("Haz clic en dos puntos de distancia conocida del plano.");
+    pintaCalcoCtl();
+  };
+  $("#calcoOp").addEventListener("input",function(){
+    var c=calco(); if(!c)return;
+    c.op=(+this.value||45)/100; CALCO[S.act]=c; render();
+  });
+  $("#calcoOp").addEventListener("change",function(){ guardarCalco(S.act,calco()) });
 
   document.querySelectorAll(".tool").forEach(function(b){
     b.addEventListener("click",function(){elegirTool(b.dataset.tool)});
@@ -5449,6 +5709,7 @@ var TT={script:performance.now()};
     PASADA++;                      /* cada dibujo es una pasada nueva */
     sincronizaCategoria();         /* la categoria SIEMPRE sigue al uso */
     avisaIrregular();              /* el dibujo recto no debe enganiar */
+    pintaCalcoCtl();               /* los mandos del plano de fondo */
     guardarPronto();               /* todo cambio visible queda guardado */
     var m=N(),tot=0,ha=0;
     S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
@@ -5495,7 +5756,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,guardar:guardarYa,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
