@@ -263,6 +263,9 @@
     <span class="chip">Prototipo · panel de Excel</span>
     <span class="chip" id="sello" title="Versión de este archivo. Debe coincidir con la del panel." style="border-color:var(--acc);color:var(--acc-ink)">dev</span>
     <p class="sub">Modela la planta de cada nivel y mide lo que Excel no puede saber solo. El cálculo se queda en las hojas.</p>
+    <span class="lbl" id="selloGuar" style="margin-left:auto;white-space:nowrap">Guardado</span>
+    <button class="btn" id="btnGuardar" style="margin-left:8px;white-space:nowrap"
+      title="Guarda ahora. El modelo se guarda solo con cada cambio; esto es por si quieres asegurarte.">Guardar proyecto</button>
   </header>
 
   <div class="modos" role="group" aria-label="Modo de trabajo">
@@ -931,6 +934,17 @@ var TT={script:performance.now()};
      Cuando actua, el numero deja de ser una luz, asi que Revisar lo denuncia
      en vez de dejarlo pasar. */
   var PISO_LUZ=0.10;
+  /* Lee un numero escrito a mano.  Acepta la coma decimal, que es como se
+     escribe aqui, y espacios sueltos.  Devuelve null cuando no hay numero
+     -no un 0- para que quien llame decida que hacer en vez de guardar una
+     cifra que el usuario nunca escribio. */
+  function leerNum(s){
+    if(typeof s==="number")return isFinite(s)?s:null;
+    s=String(s==null?"":s).replace(/\s+/g,"").replace(",",".");
+    if(!s||!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s))return null;
+    var v=parseFloat(s);
+    return isFinite(v)?v:null;
+  }
   var ORD=["1er","2do","3er","4to","5to","6to","7mo","8vo","9no","10mo","11vo","12vo","13vo","14vo","15vo"];
   var TIPOS={aligerada:{c:"--alig",f:"--alig-f",n:"Aligerada"},
              maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
@@ -952,7 +966,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v38 · 10-09-2026";
+  var BUILD="v40 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1096,11 +1110,52 @@ var TT={script:performance.now()};
     var k=e.key.toLowerCase();
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
 
-  /* ---------- guardado ---------- */
-  function guardar(){try{localStorage.setItem("reticula",
-    JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
-                    vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
-                    pr:S.proy}))}catch(e){}}
+  /* ---------- guardado ----------
+     Hasta la v39 guardar() se llamaba a mano desde unos pocos sitios: al
+     soltar el raton despues de pintar y en cuatro onchange.  Todo lo demas
+     -editar un vano, partir un eje, cambiar la altura de entrepiso, deshacer,
+     anadir un nivel- cambiaba el modelo y NO lo guardaba.  De ahi que se
+     perdiera trabajo sin motivo aparente.
+
+     Ahora el guardado cuelga de render(), que es por donde pasa todo cambio
+     visible, y no hay forma de mover algo sin que quede guardado. */
+  var GUARDADO={sello:null,ultimo:0,pend:0};
+  function guardar(){
+    try{
+      localStorage.setItem("reticula",
+        JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
+                        vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
+                        pr:S.proy}));
+      GUARDADO.ultimo=Date.now();
+      selloGuardado();
+      return true;
+    }catch(e){
+      /* el disco lleno o el modo privado dejan localStorage sin escribir:
+         eso hay que verlo, no tragarselo */
+      selloGuardado("Sin guardar: "+(e&&e.name?e.name:"error"));
+      return false;
+    }
+  }
+  /* render() dispara esto en cada dibujo.  Va aplazado para no serializar el
+     modelo mientras arrastras el raton, pero nunca mas de medio segundo. */
+  function guardarPronto(){
+    if(GUARDADO.pend)return;
+    GUARDADO.pend=setTimeout(function(){GUARDADO.pend=0;guardar()},500);
+  }
+  function selloGuardado(txt){
+    var e=$("#selloGuar"); if(!e)return;
+    if(txt){e.textContent=txt;e.style.color="var(--mal,#c62828)";return}
+    var d=new Date(GUARDADO.ultimo||Date.now());
+    e.textContent="Guardado "+String(d.getHours()).padStart(2,"0")+":"+
+                  String(d.getMinutes()).padStart(2,"0");
+    e.style.color="var(--ink-2)";
+  }
+  /* al cerrar el dialogo no da tiempo al aplazado: aqui se guarda ya */
+  function guardarYa(){if(GUARDADO.pend){clearTimeout(GUARDADO.pend);GUARDADO.pend=0}return guardar()}
+  window.addEventListener("beforeunload",guardarYa);
+  window.addEventListener("pagehide",guardarYa);
+  document.addEventListener("visibilitychange",function(){
+    if(document.visibilityState==="hidden")guardarYa()});
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
     if(d&&d.n&&d.n.length){
       /* Un modelo guardado antes de que la zapata se dibujara no tiene el
@@ -1923,20 +1978,36 @@ var TT={script:performance.now()};
       arr.forEach(function(d,t){
         var row=document.createElement("div");row.className="eje";
         var nom=nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1);
-        /* Sin min ni max: el vano lo pones tu.  Habia un tope de 1 a 20 m que
-           no sale de ningun criterio del libro, y dejaba fuera cosas reales
-           como un retranqueo de 0.55 m o una nave de 25 m. */
+        /* El vano lo pones tu: ni tope inferior ni superior.  Habia un rango
+           de 1 a 20 m que no sale de ningun criterio del libro y dejaba fuera
+           cosas reales, como un retranqueo de 0.55 m o una nave de 25 m.
+
+           Y va como TEXTO, no como number: con type="number" el navegador
+           valida por su cuenta -min, max, step- y ante un valor que no le
+           cuadra devuelve cadena vacia, asi que lo tecleado se pierde sin
+           que nadie diga nada.  Aqui el unico que juzga el valor es leerNum. */
         row.innerHTML='<span'+(esPrima(ejeX,t)?' style="color:var(--ink-2)"':'')+
-          '>'+nom+'</span><input type="number" min="0" step="any" value="'+
+          '>'+nom+'</span><input type="text" inputmode="decimal" value="'+
           d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos con un eje principal">÷</button>'+
           '<button class="mini" title="Insertar un eje prima: no parte las vigas ni las losas que cruza">′</button>'+
           '<button class="mini" title="Eliminar el eje '+nomEje(ejeX,t+1)+'">✕</button>';
-        row.querySelector("input").addEventListener("change",function(){
+        var cja=row.querySelector("input");
+        function aplicar(){
           /* lo unico que se sigue exigiendo es que sea positivo: un vano de
              cero o negativo no es un vano, es un modelo roto */
-          var v=parseFloat(this.value);
-          if(!(v>0)){this.value=arr[t].toFixed(2);return toast("El vano tiene que ser mayor que cero.")}
-          snap();arr[t]=+v.toFixed(3);render();});
+          var v=leerNum(cja.value);
+          if(v===null||!(v>0)){cja.value=arr[t].toFixed(2);
+            return toast("El vano tiene que ser un número mayor que cero.")}
+          if(Math.abs(v-arr[t])<1e-9)return;
+          snap();arr[t]=+v.toFixed(3);render();
+        }
+        /* change no llega a dispararse si sales de la casilla sin soltarla
+           -por ejemplo pulsando directamente otro boton-, asi que se escucha
+           tambien blur, y Enter aplica sin esperar a nada */
+        cja.addEventListener("change",aplicar);
+        cja.addEventListener("blur",aplicar);
+        cja.addEventListener("keydown",function(e){
+          if(e.key==="Enter"){e.preventDefault();aplicar()}});
         row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t,false)};
         row.querySelectorAll("button")[1].onclick=function(){partir(ejeX,t,true)};
         row.querySelectorAll("button")[2].onclick=function(){borrarEje(ejeX,t+1)};
@@ -1951,6 +2022,9 @@ var TT={script:performance.now()};
     $("#totY").textContent=posY(ny()-1).toFixed(2)+" m";
   }
 
+  $("#btnGuardar").onclick=function(){
+    if(guardarYa()!==false)toast("Proyecto guardado.");
+  };
   $("#pR").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5],[7,7,7,7],N().h);S.sel=null;render()};
   $("#pL").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5,5],[6,6,6,6],N().h);
     for(var i=2;i<4;i++)for(var j=0;j<2;j++)delete N().losas[key(i,j)];
@@ -3110,6 +3184,7 @@ var TT={script:performance.now()};
 
   function render(){
     PASADA++;                      /* cada dibujo es una pasada nueva */
+    guardarPronto();               /* todo cambio visible queda guardado */
     var m=N(),tot=0,ha=0;
     S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
     $("#hEnt").value=(m.h||2.8).toFixed(2);
@@ -3155,7 +3230,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,guardar:guardarYa,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
