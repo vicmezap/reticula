@@ -346,6 +346,7 @@
       <div class="edif" id="panelHojas" hidden></div>
       <div class="edif" id="panelProy" hidden></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
+      <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
     </div>
 
     <aside class="insp" id="panelUso" hidden>
@@ -373,8 +374,10 @@
       <div class="rule"></div>
       <h2>Ejes ↔ <span id="totX"></span></h2>
       <div class="ejes" id="ejesX"></div>
+      <div class="ejes" id="ladoX"></div>
       <h2>Ejes ↕ <span id="totY"></span></h2>
       <div class="ejes" id="ejesY"></div>
+      <div class="ejes" id="ladoY"></div>
     </aside>
   </div>
 
@@ -2988,7 +2991,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v43 · 10-09-2026";
+  var BUILD="v46 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3064,6 +3067,52 @@ var TT={script:performance.now()};
   function posY(j,m){var s=0,d=(m||N()).dy;for(var k=0;k<j;k++)s+=d[k];return s}
 
   /* =====================================================================
+     PLANTA IRREGULAR · dos medidas por direccion
+
+     Un lote no tiene por que ser un rectangulo.  El de Av. el Olivar mide
+     20.55 m por la calle y 21.09 m por el lindero: el frente esta sesgado.
+
+     Cada direccion lleva por eso DOS listas de vanos:
+        dx   borde de arriba      dx2  borde de abajo
+        dy   borde izquierdo      dy2  borde derecho
+     Sin dx2/dy2 se usan dx/dy y la planta es el rectangulo de siempre.
+
+     El nudo (i,j) se coloca interpolando entre los dos bordes de cada
+     direccion.  Es el reparto estandar de una retícula sobre un
+     cuadrilatero, y tiene la propiedad que interesa: con dx2 = dx y
+     dy2 = dy la interpolacion es la identidad y TODO da lo de siempre.
+     Por eso las 598 comprobaciones existentes siguen siendo la red.
+     ===================================================================== */
+  function acum(a,i){var s=0,k;for(k=0;k<i&&k<a.length;k++)s+=a[k];return s}
+  function ladoX2(m){return (m||N()).dx2||(m||N()).dx}
+  function ladoY2(m){return (m||N()).dy2||(m||N()).dy}
+
+  function nodo(i,j,m){
+    m=m||N();
+    var dx=m.dx, dx2=ladoX2(m), dy=m.dy, dy2=ladoY2(m);
+    var Lx=acum(dx,dx.length), Ly=acum(dy,dy.length);
+    var t=Lx?acum(dx,i)/Lx:0;      /* cuanto se ha avanzado en X, 0..1 */
+    var s=Ly?acum(dy,j)/Ly:0;      /* cuanto se ha bajado en Y, 0..1 */
+    return { x:(1-s)*acum(dx,i)+s*acum(dx2,i),
+             y:(1-t)*acum(dy,j)+t*acum(dy2,j) };
+  }
+  function dist(a,b){var dx=b.x-a.x,dy=b.y-a.y;return Math.sqrt(dx*dx+dy*dy)}
+
+  /* Area REAL del paño: es un cuadrilatero, no un rectangulo. */
+  function areaPano(i,j,m){
+    m=m||N();
+    var p=[nodo(i,j,m),nodo(i+1,j,m),nodo(i+1,j+1,m),nodo(i,j+1,m)],a=0,k;
+    for(k=0;k<4;k++){var q=p[k],r=p[(k+1)%4];a+=q.x*r.y-r.x*q.y;}
+    return Math.abs(a)/2;
+  }
+  /* ¿la planta se aparta del rectangulo? */
+  function irregular(m){
+    m=m||N();
+    return !!(m.dx2&&m.dx2.join()!==m.dx.join())||
+           !!(m.dy2&&m.dy2.join()!==m.dy.join());
+  }
+
+  /* =====================================================================
      EJES PRIMA
      Un eje normal es un APOYO: parte en dos todo lo que lo cruza.  Un eje
      prima es una REFERENCIA DE DIBUJO: solo parte donde tu pusiste columna.
@@ -3106,8 +3155,13 @@ var TT={script:performance.now()};
     var a=ejeX?i:j, b=a+1;
     while(a>0   && !corta(a) && hay(a-1)) a--;
     while(b<lim && !corta(b) && hay(b))   b++;
-    return {desde:a, hasta:b, dueno:(a===(ejeX?i:j)),
-            L:ejeX?(posX(b,m)-posX(a,m)):(posY(b,m)-posY(a,m))};
+    /* La luz es la DISTANCIA entre los dos nudos, no la resta de posiciones.
+       En una planta irregular la linea que los une va inclinada y su largo
+       no es la diferencia de coordenadas.  En una planta rectangular las dos
+       cuentas dan lo mismo. */
+    var A=ejeX?nodo(a,j,m):nodo(i,a,m);
+    var B=ejeX?nodo(b,j,m):nodo(i,b,m);
+    return {desde:a, hasta:b, dueno:(a===(ejeX?i:j)), L:dist(A,B)};
   }
   /* La viga se interrumpe donde hay COLUMNA */
   function tramoViga(o,i,j,m){
@@ -3238,7 +3292,7 @@ var TT={script:performance.now()};
     for(i=0;i<nx();i++)for(j=0;j<ny();j++)if(!panos(i,j).length)delete m.cols[key(i,j)];
   }
   function areaNivel(m){var a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1;
-    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j])a+=m.dx[i]*m.dy[j];return a}
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j])a+=areaPano(i,j,m);return a}
   /* La linea media va a la mitad del vano REAL: con un prima sin apoyo el
      vano abarca varios tramos y la mitad se corre con el.  Sin primas,
      tramoLosa da un vano y esto es literalmente lo de siempre. */
@@ -3246,7 +3300,9 @@ var TT={script:performance.now()};
     m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0,vx={},vy={};
     ps.forEach(function(q){
       var lx=tramoLosa("x",q[0],q[1],m).L/2, ly=tramoLosa("y",q[0],q[1],m).L/2;
-      at+=lx*ly; vx[q[0]]=lx; vy[q[1]]=ly;});
+      /* un cuarto del paño REAL, no lx*ly: en un cuadrilatero el producto de
+         los medios lados no es el area.  En un rectangulo si, y da igual. */
+      at+=areaPano(q[0],q[1],m)/4; vx[q[0]]=lx; vy[q[1]]=ly;});
     if(vx[i-1]!=null)bx+=vx[i-1];
     if(vx[i]  !=null)bx+=vx[i];
     if(vy[j-1]!=null)by+=vy[j-1];
@@ -3343,7 +3399,7 @@ var TT={script:performance.now()};
       if(!o)continue;
       k=o.uso?claveAmb(o.uso,o.amb||""):"";
       if(!r[k])r[k]={uso:o.uso||"",amb:o.amb||"",area:0};
-      r[k].area+=m.dx[i]*m.dy[j];}
+      r[k].area+=areaPano(i,j,m);}
     return r;
   }
 
@@ -3384,7 +3440,7 @@ var TT={script:performance.now()};
   function areasPorTipo(m){
     var a={aligerada:0,maciza:0,nervada:0},i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
-      if(o)a[o.tipo||"aligerada"]+=m.dx[i]*m.dy[j];}
+      if(o)a[o.tipo||"aligerada"]+=areaPano(i,j,m);}
     return a;
   }
   function conteo(m){
@@ -3881,6 +3937,26 @@ var TT={script:performance.now()};
     if(t==="zapata"&&S.act!==0){S.act=0;S.sel=null;}
     $("#hint").textContent=PISTAS[t]||"";
   }
+
+  /* El dibujo sigue siendo una retícula RECTA aunque la planta no lo sea:
+     pinta cada cosa en (X(i), Y(j)), un numero por eje, y con dos medidas
+     por direccion la posicion depende de los dos indices.  Las medidas de
+     las tablas SI son las del cuadrilatero.  Mientras el dibujo no se
+     rehaga, se dice en pantalla en vez de dejar que enganie. */
+  function avisaIrregular(){
+    var e=$("#avisoIrreg"); if(!e)return;
+    var m=N();
+    if(!irregular(m)){ver(e,false);return}
+    var sx=acum(ladoX2(m),ladoX2(m).length)-acum(m.dx,m.dx.length);
+    var sy=acum(ladoY2(m),ladoY2(m).length)-acum(m.dy,m.dy.length);
+    var p=[];
+    if(Math.abs(sx)>0.005)p.push("el borde de abajo mide "+(sx>0?"+":"")+sx.toFixed(2)+" m");
+    if(Math.abs(sy)>0.005)p.push("el de la derecha mide "+(sy>0?"+":"")+sy.toFixed(2)+" m");
+    e.innerHTML="<b>Planta irregular</b> ("+p.join(" y ")+"). El dibujo se "+
+      "muestra como retícula recta; las medidas de las tablas y de las hojas "+
+      "sí son las reales del cuadrilátero.";
+    ver(e,true);
+  }
   function elegirModo(md){
     S.modo=md;S.sel=null;
     if(md==="usos")S.vista="plano";
@@ -4000,6 +4076,10 @@ var TT={script:performance.now()};
     snap();
     var p=primas(ejeX,m);
     var d=+(arr[t]/2).toFixed(3);arr.splice(t,1,d,d);
+    /* el borde opuesto se parte igual: las dos listas tienen que tener
+       SIEMPRE el mismo numero de vanos o el nudo (i,j) queda sin sitio */
+    var op=ejeX?m.dx2:m.dy2;
+    if(op){var e=+(op[t]/2).toFixed(3);op.splice(t,1,e,e);}
     p.splice(t+1,0,!!comoPrima);          /* el eje nuevo nace en t+1 */
     remap(ejeX,function(k){return k>t?k+1:k},t);render();
     if(comoPrima)toast("Eje "+nomEje(ejeX,t+1,N())+" añadido. No parte las "+
@@ -4008,11 +4088,66 @@ var TT={script:performance.now()};
     if(n<=2)return toast("Debe quedar al menos un tramo.");
     snap();
     var pr=primas(ejeX,m);
-    if(p===0)arr.splice(0,1);else if(p===n-1)arr.splice(p-1,1);
-    else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(2);arr.splice(p,1)}
+    var op=ejeX?m.dx2:m.dy2;
+    if(p===0){arr.splice(0,1);if(op)op.splice(0,1);}
+    else if(p===n-1){arr.splice(p-1,1);if(op)op.splice(p-1,1);}
+    else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(2);arr.splice(p,1);
+         if(op){op[p-1]=+(op[p-1]+op[p]).toFixed(2);op.splice(p,1);}}
     pr.splice(p,1);
     remap(ejeX,function(k){return k===p?null:(k>p?k-1:k)},-1);limpiarSueltos();render();}
   function editorEjes(){
+    /* --- el lado opuesto, para plantas irregulares --------------------
+       Por defecto no existe: la planta es un rectangulo y los dos bordes
+       de cada direccion miden lo mismo.  Solo cuando el lote esta sesgado
+       -20.55 m por la calle y 21.09 por el lindero- se activa el segundo
+       lado y se escriben sus vanos. */
+    function lados(){
+      var m=N();
+      ["X","Y"].forEach(function(eje){
+        var ejeX=(eje==="X"), cont=$("#lado"+eje);
+        if(!cont)return;
+        var base=ejeX?m.dx:m.dy, otro=ejeX?m.dx2:m.dy2;
+        var nom=ejeX?["arriba","abajo"]:["izquierda","derecha"];
+        var h='<label class="pf" style="margin:6px 0 2px"><input type="checkbox" id="usa'+eje+
+              '"'+(otro?" checked":"")+'> <span>El borde de '+nom[1]+
+              ' mide distinto</span></label>';
+        if(otro){
+          h+='<div class="lbl" style="margin:4px 0 2px">Borde de '+nom[1]+'</div>';
+          otro.forEach(function(d,t){
+            h+='<div class="eje"><span>'+nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1)+
+               '</span><input type="text" inputmode="decimal" data-op="'+eje+
+               '" data-t="'+t+'" value="'+d.toFixed(2)+'"></div>';
+          });
+          var sa=acum(base,base.length), sb=acum(otro,otro.length);
+          h+='<p class="nota" style="margin:4px 0 0">'+nom[0]+' '+sa.toFixed(2)+
+             ' m · '+nom[1]+' '+sb.toFixed(2)+' m'+
+             (Math.abs(sa-sb)>0.005?('  ·  <b>'+(sb-sa>0?"+":"")+(sb-sa).toFixed(2)+
+             ' m de sesgo</b>'):'  ·  iguales')+'</p>';
+        }
+        cont.innerHTML=h;
+        var chk=$("#usa"+eje);
+        if(chk)chk.onchange=function(){
+          snap();
+          if(this.checked){ if(ejeX)m.dx2=m.dx.slice(); else m.dy2=m.dy.slice(); }
+          else { if(ejeX)delete m.dx2; else delete m.dy2; }
+          render();
+        };
+        cont.querySelectorAll("input[data-op]").forEach(function(inp){
+          function aplicar(){
+            var v=leerNum(inp.value), arr=ejeX?m.dx2:m.dy2, t=+inp.dataset.t;
+            if(v===null||!(v>0)){inp.value=arr[t].toFixed(2);
+              return toast("El vano tiene que ser un número mayor que cero.")}
+            if(Math.abs(v-arr[t])<1e-9)return;
+            snap();arr[t]=+v.toFixed(3);render();
+          }
+          inp.addEventListener("change",aplicar);
+          inp.addEventListener("blur",aplicar);
+          inp.addEventListener("keydown",function(e){
+            if(e.key==="Enter"){e.preventDefault();aplicar()}});
+        });
+      });
+    }
+
     function pinta(cont,arr,ejeX){
       cont.innerHTML="";
       arr.forEach(function(d,t){
@@ -4054,10 +4189,14 @@ var TT={script:performance.now()};
         cont.appendChild(row);});
       var add=document.createElement("button");add.className="btn";add.style.marginTop="4px";
       add.textContent="+ tramo al final";
-      add.onclick=function(){if(arr.length>=12)return toast("Máximo 13 ejes.");snap();arr.push(ejeX?5:6);render()};
+      add.onclick=function(){if(arr.length>=12)return toast("Máximo 13 ejes.");snap();
+        arr.push(ejeX?5:6);
+        var op=ejeX?N().dx2:N().dy2; if(op)op.push(ejeX?5:6);
+        render()};
       cont.appendChild(add);
     }
     pinta($("#ejesX"),N().dx,true);pinta($("#ejesY"),N().dy,false);
+    lados();
     $("#totX").textContent=posX(nx()-1).toFixed(2)+" m";
     $("#totY").textContent=posY(ny()-1).toFixed(2)+" m";
   }
@@ -4426,7 +4565,13 @@ var TT={script:performance.now()};
       var eje=orientaZapata(i,j,m);
       var ax=(eje==="X")?z.mayor:z.menor;   /* ancho en X */
       var ay=(eje==="X")?z.menor:z.mayor;   /* ancho en Y */
-      var cx=posX(i), cy=posY(j);
+      /* La posicion REAL del nudo, no la de la retícula recta.  Con la
+         planta sesgada la columna del borde puede estar medio metro mas
+         abajo, y sobre estas coordenadas se calculan los SOLAPES entre
+         zapatas: con posX/posY se avisaba de solapes que no existian, o
+         peor, se callaban los que si.  Sin dx2/dy2 nodo() da lo mismo
+         que posX/posY y esto no cambia nada. */
+      var nd=nodo(i,j,m), cx=nd.x, cy=nd.y;
       r.push({i:i,j:j,cod:nm.C[key(i,j)].cod.replace("-C-","-Z-"),
               tipo:z.tipo, B:z.menor, L:z.mayor, H:z.H, Az:z.Az,
               eje:eje, ax:ax, ay:ay,
@@ -5303,6 +5448,7 @@ var TT={script:performance.now()};
   function render(){
     PASADA++;                      /* cada dibujo es una pasada nueva */
     sincronizaCategoria();         /* la categoria SIEMPRE sigue al uso */
+    avisaIrregular();              /* el dibujo recto no debe enganiar */
     guardarPronto();               /* todo cambio visible queda guardado */
     var m=N(),tot=0,ha=0;
     S.niveles.forEach(function(n,k){tot+=areaNivel(n);if(k<=S.act)ha+=n.h||2.8});
