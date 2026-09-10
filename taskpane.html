@@ -1688,11 +1688,22 @@
     r = h.nota(r, "CM = (peso propio de cada losa × su área) / área techada + otras "
       + "cargas   |   P servicio = U × (CM + % × S/C). La sobrecarga va por nivel, así "
       + "que un edificio con comercio abajo y vivienda arriba se resuelve solo.");
-    r = h.nota(r, "El peso de la estructura de 1.3 está ESTIMADO en 150 kg/m² a "
-      + "propósito. Calcularlo desde las secciones y enlazarlo sería circular: la "
-      + "sección de las columnas depende del peso y el peso de la sección. El metrado "
-      + "va en dos pasadas: predimensionas con el estimado, miras las secciones que "
-      + "salen y vuelves. La tercera pasada ya casi no mueve nada.");
+    r = h.nota(r, cg.estructuraAuto
+      ? ("El peso de vigas, columnas y placas de 1.3 lo CALCULÓ el complemento "
+         + "midiendo el concreto de las secciones que él mismo predimensionó: "
+         + (cg.volumen || 0).toFixed(2) + " m³ sobre el área techada. Cuenta el "
+         + "descuelgue de las vigas, el fuste de las columnas y las placas, "
+         + "descontando en los tres el espesor de la losa, que ya está contado "
+         + "en 1.2. No entra la losa ni la cimentación.")
+      : ("El peso de vigas, columnas y placas de 1.3 está ESTIMADO en 150 kg/m². "
+         + "El complemento puede calcularlo del modelo: actívalo en la pestaña "
+         + "Proyecto, en «Peso de la estructura»."));
+    r = h.nota(r, "Ojo con el bucle: esas secciones salieron de un peso, y aquí ese "
+      + "peso sale de las secciones. No se cierra solo a propósito. PRE_COLUMNA usa "
+      + "el valor fijo de la categoría (" + cat.peso + " kg/m²), no el de esta hoja, "
+      + "así que el cálculo no se muerde la cola. Si quieres afinarlo, copia a mano "
+      + "el resultado de 4 en PRE_COLUMNA y mira cómo cambian las secciones: es un "
+      + "metrado en dos pasadas, y la tercera ya casi no mueve nada.");
     r = h.nota(r, "Ninguna fórmula de esta hoja sale de ella. Los espesores de 1.2 los "
       + "calculó el complemento desde el modelo, no los lee de PRE_LOSA_*: esas hojas "
       + "pueden no existir, porque solo se generan si hay elementos de ese tipo.");
@@ -2055,7 +2066,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v40 · 10-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v43 · 10-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
