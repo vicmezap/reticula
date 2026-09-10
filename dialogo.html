@@ -6,6 +6,7 @@
     --ink:#1A2029; --ink-2:#4A5763; --ink-3:#7B8894;
     --acc:#0F6E8C; --acc-soft:#DCEBF1; --acc-ink:#0A4E64;
     --col:#0F6E8C; --viga:#A85A2B; --chata:#D9A579; --placa:#3A4750;
+    --zapata:#6B7B5A;
     --alig:#7FA0AE; --alig-f:rgba(127,160,174,.20);
     --maci:#5B7686; --maci-f:rgba(91,118,134,.34);
     --nerv:#8FA8A0; --nerv-f:rgba(143,168,160,.22);
@@ -292,6 +293,10 @@
         <span>Selección<small>ver medidas</small></span></button>
       <button class="tool" data-tool="col" aria-pressed="false"><span class="swatch" style="background:var(--col)"></span>
         <span>Columna<small>clic o arrastra</small></span></button>
+      <div class="sub" id="subCol" hidden role="group" aria-label="Forma de columna">
+        <button class="sopt" data-col="rect" aria-pressed="true"><span class="sdot" style="background:var(--col)"></span>Rectangular</button>
+        <button class="sopt" data-col="circular" aria-pressed="false"><span class="sdot" style="background:var(--col);border-radius:50%"></span>Circular</button>
+      </div>
       <button class="tool" data-tool="viga" aria-pressed="false"><span class="swatch" id="swViga" style="background:var(--viga)"></span>
         <span>Viga<small>clic o arrastra</small></span></button>
       <div class="sub" id="subViga" hidden role="group" aria-label="Tipo de viga">
@@ -308,6 +313,12 @@
       </div>
       <button class="tool" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
         <span>Placa<small>clic o arrastra</small></span></button>
+      <button class="tool" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
+        <span>Zapata<small>solo bajo columna</small></span></button>
+      <div class="sub" id="subZapata" hidden role="group" aria-label="Zapatas">
+        <button class="sopt" id="zapTodas">En todas las columnas</button>
+        <button class="sopt" id="zapNinguna">Quitar todas</button>
+      </div>
       <div class="rule" style="margin:8px 2px"></div>
       <div class="row" style="padding:0 2px">
         <button class="btn" id="undo" title="Ctrl+Z">↶</button>
@@ -777,6 +788,18 @@
         return { area: r2(b * h * 10000), requerida: Math.round(Ac),
                  cumple: b * h * 10000 >= Ac - 0.5,
                  anchoOk: Math.min(b, h) >= C.MINIMOS.anchoColumna - 1e-9 };
+      },
+      /* La circular no es otra formula: es la misma Ac repartida en un circulo.
+         El libro (pag. 83) escribe PI = 3.14; aqui se usa Math.PI porque la
+         diferencia es de 0.03 cm en un diametro de 63 y el redondeo a 5 cm se
+         la come entera.  El minimo de 0.25 m el libro lo enuncia para el ancho
+         de las columnas interior, exterior y esquinera y no lo repite en la
+         circular: se aplica al diametro, que es la lectura conservadora. */
+      verificaCircular: function (D) {
+        var a = Math.PI * D * D / 4 * 10000;
+        return { area: r2(a), requerida: Math.round(Ac),
+                 cumple: a >= Ac - 0.5,
+                 anchoOk: D >= C.MINIMOS.anchoColumna - 1e-9 };
       }
     };
   }
@@ -924,7 +947,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v33 · 08-09-2026";
+  var BUILD="v35 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -945,6 +968,8 @@ var TT={script:performance.now()};
   function clon(o){return (o&&typeof o==="object")?JSON.parse(JSON.stringify(o)):o}
   function migrar(m){
     if(!m.placas)m.placas={};
+    /* la cimentacion se dibuja: un modelo sin este mapa es anterior */
+    if(!m.zapatas)m.zapatas={};
     var k;
     for(k in m.cols)  if(typeof m.cols[k]  !=="object")m.cols[k]={};
     for(k in m.placas)if(typeof m.placas[k]!=="object")m.placas[k]={};
@@ -977,7 +1002,7 @@ var TT={script:performance.now()};
              yesoPeso:1000,   cieloEsp:2.0,   /* cielo raso  = peso x espesor */
              tabiqueria:100,         /* ESTIMADO: no se dibujan tabiques */
              estructuraAuto:true},   /* el peso propio se calcula, no se estima */
-       tipoViga:"principal",tipoLosa:"aligerada",vista:"plano",
+       tipoViga:"principal",tipoLosa:"aligerada",formaCol:"rect",vista:"plano",
        /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
        categoria:"comun"};
   var UNDO=[],REDO=[];
@@ -1004,13 +1029,30 @@ var TT={script:performance.now()};
                     vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
                     pr:S.proy}))}catch(e){}}
   function cargar(){try{var d=JSON.parse(localStorage.getItem("reticula"));
-    if(d&&d.n&&d.n.length){S.niveles=d.n.map(migrar);if(d.sc)$("#sc").value=d.sc;
+    if(d&&d.n&&d.n.length){
+      /* Un modelo guardado antes de que la zapata se dibujara no tiene el
+         mapa.  Se le ponen todas, que es como se comportaba: asi nadie
+         pierde su cimentacion al actualizar. */
+      var viejo=!d.n[0].zapatas;
+      S.niveles=d.n.map(migrar);
+      if(viejo)zapatasEnTodas();if(d.sc)$("#sc").value=d.sc;
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
       if(d.vd!==undefined)S.verDims=!!d.vd;
       if(d.vc!==undefined)S.verCim=!!d.vc;
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
       if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
       }}catch(e){}}
+
+  /* Poner o quitar la cimentacion de golpe.  Colocar veinte zapatas a mano
+     no ensena nada; decidir cuales quitar, si. */
+  function zapatasEnTodas(){
+    var m=S.niveles[0]; if(!m)return;
+    m.zapatas=m.zapatas||{};
+    for(var k in m.cols)m.zapatas[k]={};
+  }
+  function zapatasNinguna(){
+    var m=S.niveles[0]; if(m)m.zapatas={};
+  }
 
   /* ---------- geometria ---------- */
   function panos(i,j,m){
@@ -1476,7 +1518,7 @@ var TT={script:performance.now()};
     /* La cimentacion va DEBAJO de todo lo demas: se dibuja antes.  Solo en
        el nivel 1, que es donde estan las zapatas, y a escala real, que es lo
        que permite ver si dos se pisan. */
-    if(S.verCim&&S.act===0){
+    if((S.verCim||S.tool==="zapata")&&S.act===0){
       var zs=zapatasDelNivel(), sol=solapesZapata(zs), pisadas={};
       sol.forEach(function(x){ pisadas[x.a.cod]=1; pisadas[x.b.cod]=1; });
       zs.forEach(function(z){
@@ -1496,12 +1538,19 @@ var TT={script:performance.now()};
     for(i=0;i<nx();i++)for(j=0;j<ny();j++){
       if(m.cols[key(i,j)]){
         var sel=S.sel&&S.sel.t==="col"&&S.sel.i===i&&S.sel.j===j,lado=sel?15:12;
-        g.appendChild(el("rect",{x:X(i)-lado/2,y:Y(j)-lado/2,width:lado,height:lado,
-          fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1}));
+        var pin={fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1};
+        if(formaDe(m.cols[key(i,j)])==="circular"){
+          pin.cx=X(i);pin.cy=Y(j);pin.r=lado/2;
+          g.appendChild(el("circle",pin));
+        }else{
+          pin.x=X(i)-lado/2;pin.y=Y(j)-lado/2;pin.width=lado;pin.height=lado;
+          g.appendChild(el("rect",pin));
+        }
       }
       var pc2=m.cols[key(i,j)]?seccionCol(i,j,m,null):null;
       if(S.verDims&&pc2)
-        txt(g,X(i),Y(j)-11,pc2.b+"×"+pc2.h,
+        txt(g,X(i),Y(j)-11,
+            pc2.forma==="circular"?("Ø"+pc2.D):(pc2.b+"×"+pc2.h),
             (pc2.propia&&!pc2.cumple)?"#c62828":"var(--acc-ink)",9.5);
       var hc=el("circle",{cx:X(i),cy:Y(j),r:11,"class":"hit"});
       hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
@@ -1565,13 +1614,34 @@ var TT={script:performance.now()};
     }
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
     if(S.tool==="col"&&d.t==="col"){
-      if(primero)modo=m.cols[key(i,j)]?"off":"on";
-      if(modo==="on"){if(!m.cols[key(i,j)])m.cols[key(i,j)]={};}else delete m.cols[key(i,j)];
+      var ec=m.cols[key(i,j)];
+      /* misma forma -> quita;  forma distinta -> convierte.  Igual que las
+         vigas: pintar circular sobre una rectangular la cambia, no la borra. */
+      if(primero)modo=(ec&&formaDe(ec)===S.formaCol)?"off":"on";
+      if(modo==="on"){
+        if(!m.cols[key(i,j)])m.cols[key(i,j)]={};
+        var cc=m.cols[key(i,j)];
+        /* rect es el defecto: no se guarda, asi los modelos viejos siguen
+           leyendose igual y el JSON no engorda con lo que ya se supone */
+        if(S.formaCol==="circular")cc.forma="circular";else delete cc.forma;
+      }
+      else{delete m.cols[key(i,j)];
+        /* sin columna no puede quedar zapata colgando */
+        if(S.act===0&&m.zapatas)delete m.zapatas[key(i,j)];}
     }else if(S.tool==="viga"&&d.t==="viga"){
       var k2=key(d.o,i,j),ev=m.vigas[k2];
       /* mismo tipo -> quita;  tipo distinto -> convierte */
       if(primero)modo=(ev&&tipoViga(ev)===S.tipoViga)?"off":"on";
       if(modo==="on")m.vigas[k2]={t:S.tipoViga};else delete m.vigas[k2];
+    }else if(S.tool==="zapata"&&d.t==="col"){
+      /* Dos reglas que impone el modelador y no el usuario: la zapata solo
+         existe bajo una columna, y solo en el nivel de cimentacion. */
+      if(S.act!==0)return;
+      var mz=S.niveles[0]; mz.zapatas=mz.zapatas||{};
+      var kz=key(i,j);
+      if(!mz.cols[kz])return;                 /* sin columna no hay zapata */
+      if(primero)modo=mz.zapatas[kz]?"off":"on";
+      if(modo==="on")mz.zapatas[kz]={};else delete mz.zapatas[kz];
     }else if(S.tool==="placa"&&d.t==="viga"){
       var k4=key(d.o,i,j);
       if(primero)modo=m.placas[k4]?"off":"on";
@@ -1604,15 +1674,21 @@ var TT={script:performance.now()};
     col:"Clic o arrastra sobre los cruces de ejes",
     viga:"Clic o arrastra sobre los tramos · el mismo tipo lo quita, otro tipo lo convierte",
     placa:"Clic o arrastra sobre los tramos entre ejes",
-    losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado"};
+    losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado",
+    zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna"};
   function elegirTool(t){
     S.tool=t;
     if(S.vista!=="plano"){S.vista="plano";render();}
     document.querySelectorAll(".tool").forEach(function(o){
       o.setAttribute("aria-pressed",o.dataset.tool===t)});
     /* el submenu solo aparece bajo la herramienta activa */
+    ver("#subCol",t==="col");
     ver("#subViga",t==="viga");
     ver("#subLosa",t==="losa");
+    ver("#subZapata",t==="zapata");
+    /* la cimentacion solo se dibuja en el 1er piso: se salta alli sola en
+       vez de dejarte pintando sobre un nivel donde no pasa nada */
+    if(t==="zapata"&&S.act!==0){S.act=0;S.sel=null;}
     $("#hint").textContent=PISTAS[t]||"";
   }
   function elegirModo(md){
@@ -1636,6 +1712,18 @@ var TT={script:performance.now()};
       if(o&&p2&&p2.uso){o.uso=p2.uso;o.amb=p2.amb;n++;}
     }
     render();toast(n?("Copiados "+n+" paños desde N"+S.act+"."):"El nivel anterior no tiene usos asignados.");
+  });
+  $("#zapTodas").onclick=function(){snap();S.act=0;zapatasEnTodas();render();
+    toast("Zapata en todas las columnas del 1er piso.")};
+  $("#zapNinguna").onclick=function(){snap();S.act=0;zapatasNinguna();render();
+    toast("Sin zapatas. Dibújalas donde apoyen en el terreno.")};
+
+  document.querySelectorAll("[data-col]").forEach(function(b){
+    b.addEventListener("click",function(){
+      S.formaCol=b.dataset.col;
+      document.querySelectorAll("[data-col]").forEach(function(o){
+        o.setAttribute("aria-pressed",o===b)});
+      elegirTool("col");});
   });
   document.querySelectorAll("[data-viga]").forEach(function(b){
     b.addEventListener("click",function(){
@@ -1779,12 +1867,17 @@ var TT={script:performance.now()};
         kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+
         kv("Peso en servicio P",pc.P.toFixed(2)+" t",1)+
         kv("Área requerida Ac",pc.Ac+" cm²",1)+
-        kv("Sección",'<b>'+pc.b+" × "+pc.h+" cm</b>"+
-           (pc.propia?"  (tuya)":"  (cuadrada)"),1)+
-        kv("Equivalente circular","D = "+pc.circular+" cm",1)+"</dl>"+
+        (pc.forma==="circular"
+          ? kv("Sección",'<b>Ø '+pc.D+" cm</b>"+(pc.propia?"  (tuya)":"  (circular)"),1)+
+            kv("Área colocada",Math.round(pc.area)+" cm²",1)+
+            kv("Equivalente cuadrada",pc.cuadrada+" × "+pc.cuadrada+" cm",1)
+          : kv("Sección",'<b>'+pc.b+" × "+pc.h+" cm</b>"+
+              (pc.propia?"  (tuya)":"  (cuadrada)"),1)+
+            kv("Área colocada",Math.round(pc.area)+" cm²",1)+
+            kv("Equivalente circular","Ø "+pc.circular+" cm",1))+"</dl>"+
         (pc.propia&&!pc.cumple
           ? '<p class="aviso" style="margin-top:8px">Tu sección da '+
-            (pc.b*pc.h)+" cm² y hacen falta "+pc.Ac+" cm².</p>"
+            Math.round(pc.area)+" cm² y hacen falta "+pc.Ac+" cm².</p>"
           : "")+
         (pc.propia&&!pc.anchoOk
           ? '<p class="aviso" style="margin-top:8px">Ancho por debajo del mínimo de '+
@@ -1792,7 +1885,10 @@ var TT={script:performance.now()};
           : "")+
         (S.act===0?(function(){
           var z=predimZapata(q.i,q.j);
-          if(!z)return "";
+          if(!z)return '<div class="rule" style="margin:10px 0"></div>'+
+            '<p class="nota" style="margin:0">Sin zapata. Dibújala con la '+
+            'herramienta <b>Zapata</b> si esta columna apoya en el terreno; '+
+            'déjala así si nace sobre una viga.</p>';
           var sol=solapesZapata(zapatasDelNivel());
           var cod=nm.C[key(q.i,q.j)].cod.replace("-C-","-Z-");
           var choca=sol.filter(function(x){return x.a.cod===cod||x.b.cod===cod});
@@ -1971,6 +2067,10 @@ var TT={script:performance.now()};
   }
   function nivelDe(m){ var k = S.niveles.indexOf(m); return k < 0 ? S.act : k }
 
+  /* La forma vive en la columna y "rect" es el defecto, que no se guarda.
+     Asi un modelo anterior a las circulares se lee sin migrarlo. */
+  function formaDe(c){ return c && c.forma === "circular" ? "circular" : "rect" }
+
   /* Seccion de una columna.  Si la tocaste a mano manda la tuya; si no, la
      cuadrada que deriva el motor.  Va con cache propia porque ladoCol la
      pide una vez por cada extremo de cada viga. */
@@ -1984,15 +2084,30 @@ var TT={script:performance.now()};
     var d = medCol(i,j,m);
     var q = CALCULO.columna({ubicacion:d.tipo.toLowerCase(), niveles:pisosQueCarga(niv),
                              area_trib:d.at, categoria:S.categoria, fc:(+S.fc||210)});
-    var lado = Math.max(q.cuadrada, CRITERIOS.MINIMOS.anchoColumna);
-    var propia = !!(c.sec && c.sec.b > 0 && c.sec.h > 0);
-    var b = propia ? c.sec.b : Math.round(lado*100);
-    var h = propia ? c.sec.h : Math.round(lado*100);
-    var r = {b:b, h:h, propia:propia, Ac:q.Ac, P:q.P_servicio,
-             ubicacion:d.tipo, at:d.at, C:q.C,
-             cuadrada:Math.round(lado*100), circular:Math.round(q.circular*100),
-             cumple:q.verifica(b/100, h/100).cumple,
-             anchoOk:q.verifica(b/100, h/100).anchoOk};
+    var min = CRITERIOS.MINIMOS.anchoColumna;
+    var lado = Math.round(Math.max(q.cuadrada, min)*100);
+    var diam = Math.round(Math.max(q.circular, min)*100);
+    var forma = formaDe(c), propia, b, h, D = 0, ver;
+
+    if(forma === "circular"){
+      propia = !!(c.sec && c.sec.D > 0);
+      D = propia ? c.sec.D : diam;
+      /* b = h = D a proposito.  Aguas abajo, la luz libre descuenta min(b,h)
+         y la zapata entra con col_b y col_h: con el diametro en los dos sitios
+         ninguno de los dos necesita enterarse de que la columna es redonda.
+         La zapata sale cuadrada, que es lo que corresponde. */
+      b = h = D;
+      ver = q.verificaCircular(D/100);
+    }else{
+      propia = !!(c.sec && c.sec.b > 0 && c.sec.h > 0);
+      b = propia ? c.sec.b : lado;
+      h = propia ? c.sec.h : lado;
+      ver = q.verifica(b/100, h/100);
+    }
+    var r = {forma:forma, b:b, h:h, D:D, propia:propia, Ac:q.Ac, P:q.P_servicio,
+             ubicacion:d.tipo, at:d.at, C:q.C, area:ver.area,
+             cuadrada:lado, circular:diam,
+             cumple:ver.cumple, anchoOk:ver.anchoOk};
     PD.cols[ck] = r;
     return r;
   }
@@ -2038,6 +2153,7 @@ var TT={script:performance.now()};
   function predimZapata(i,j){
     var m=S.niveles[0];
     if(!m||!m.cols[key(i,j)])return null;
+    if(!m.zapatas||!m.zapatas[key(i,j)])return null;   /* no la dibujaste */
     var sc=seccionCol(i,j,m,0);
     var d=medCol(i,j,m);
     var sub=TIPO_ZAPATA[d.tipo]||"centrada";
@@ -2076,11 +2192,11 @@ var TT={script:performance.now()};
   /* Todas las zapatas del nivel de cimentacion, en metros y en coordenadas
      del modelo, listas para dibujar y para cruzar unas con otras. */
   function zapatasDelNivel(){
-    var m=S.niveles[0]; if(!m)return [];
+    var m=S.niveles[0]; if(!m||!m.zapatas)return [];
     var nX=m.dx.length+1, nY=m.dy.length+1, r=[], i, j;
     var nm=nombres(0);
     for(i=0;i<nX;i++)for(j=0;j<nY;j++){
-      if(!m.cols[key(i,j)])continue;
+      if(!m.zapatas[key(i,j)]||!m.cols[key(i,j)])continue;
       var z=predimZapata(i,j); if(!z)continue;
       var eje=orientaZapata(i,j,m);
       var ax=(eje==="X")?z.mayor:z.menor;   /* ancho en X */
@@ -2129,7 +2245,10 @@ var TT={script:performance.now()};
         pisos=S.niveles.length-niv,C=[],V=[],VCH=[],PL=[],
         LS={aligerada:[],maciza:[],nervada:[]},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){var d=medCol(i,j,m),a=nm.C[i+":"+j];
-      C.push([a.cod,d.tipo,pisos,d.at.toFixed(3)]);}
+      /* la forma va como DATO: la hoja ramifica su formula sobre esta celda */
+      C.push([a.cod,d.tipo,
+              formaDe(m.cols[i+":"+j])==="circular"?"Circular":"Rectangular",
+              pisos,d.at.toFixed(3)]);}
     function pushViga(o,i,j){
       var k=o+":"+i+":"+j,vv=medViga(o,i,j,m),b=nm.V[k];
       /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
@@ -2163,7 +2282,7 @@ var TT={script:performance.now()};
        nivel.  No dependen del nivel que se este mirando. */
     var ZA=[],ZAC={};
     if(niv===0){
-      for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){
+      for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]&&m.zapatas&&m.zapatas[i+":"+j]){
         var z=predimZapata(i,j),a2=nm.C[i+":"+j];
         if(z)ZAC[a2.cod.replace("-C-","-Z-")]=[z.P_servicio.toFixed(2),z.Az.toFixed(3),
                                                z.menor.toFixed(2),z.mayor.toFixed(2),
@@ -2181,7 +2300,10 @@ var TT={script:performance.now()};
     var CA={};
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){
       var sc2=seccionCol(i,j,m,niv);
-      CA[nm.C[i+":"+j].cod]=[sc2.P.toFixed(2),sc2.Ac,sc2.b,sc2.h];
+      /* la circular no tiene h: el diametro define la seccion entera */
+      CA[nm.C[i+":"+j].cod]=(sc2.forma==="circular")
+        ? [sc2.P.toFixed(2),sc2.Ac,sc2.D,""]
+        : [sc2.P.toFixed(2),sc2.Ac,sc2.b,sc2.h];
     }
     function calcViga(o,i,j){
       var pv=predimViga(o,i,j,m),b=nm.V[o+":"+i+":"+j];
@@ -2242,7 +2364,8 @@ var TT={script:performance.now()};
   function tabla(){
     var todos=$("#todos").checked,th=$("#tabla thead"),tb=$("#tabla tbody"),H,CAL,R=[];
     var packs=todos?S.niveles.map(function(_,k){return filas(k)}):[filas(S.act)];
-    if(S.tab==="col"){H=["Código","Ubicación","N° pisos","A trib (m²)"];CAL=["P (t)","Ac (cm²)","b (cm)","h (cm)"];
+    if(S.tab==="col"){H=["Código","Ubicación","Forma","N° pisos","A trib (m²)"];
+      CAL=["P (t)","Ac (cm²)","b o Ø (cm)","h (cm)"];
       packs.forEach(function(p){R=R.concat(p.C)});}
     else if(S.tab==="viga"){H=["Código","Eje","Ln (m)","B (m)","α"];CAL=["h (m)","h (cm)","b (cm)"];
       packs.forEach(function(p){R=R.concat(p.V)});}
@@ -2305,6 +2428,16 @@ var TT={script:performance.now()};
         pr.push("borde "+LETRAS[i]+"-"+(j+1)+(j+2)+" sin viga en Y");
     /* dos zapatas que se pisan no son un error de dibujo: son la senal de
        que ahi hace falta una combinada */
+    /* una columna del nivel 1 sin zapata suele ser un olvido, pero no
+       siempre: una columna que nace sobre una viga no lleva.  Se avisa una
+       sola vez y sin dramatizar. */
+    (function(){
+      var m0=S.niveles[0]; if(!m0)return;
+      var sin=0,k0;
+      for(k0 in m0.cols)if(!m0.zapatas||!m0.zapatas[k0])sin++;
+      if(sin)pr.push(sin+" columna(s) del 1er piso sin zapata dibujada"+
+                     " (correcto si nacen sobre una viga)");
+    })();
     solapesZapata(zapatasDelNivel()).forEach(function(x){
       pr.push("zapatas "+x.a.cod+" y "+x.b.cod+" se solapan "+x.area.toFixed(2)+
               " m²: piden zapata combinada");
@@ -2645,8 +2778,8 @@ var TT={script:performance.now()};
   function inventario(){
     var c={losa:{aligerada:0,maciza:0,nervada:0},viga:{principal:0,chata:0},
            col:0,placa:0,usos:0,zapata:0},k;
-    /* una zapata por columna del nivel de cimentacion, no de todos */
-    if(S.niveles[0])for(k in S.niveles[0].cols)c.zapata++;
+    /* las que HAYAS dibujado en el nivel de cimentacion */
+    if(S.niveles[0]&&S.niveles[0].zapatas)for(k in S.niveles[0].zapatas)c.zapata++;
     S.niveles.forEach(function(m){
       for(k in m.losas){c.losa[m.losas[k].tipo||"aligerada"]++; if(m.losas[k].uso)c.usos++;}
       for(k in m.vigas){c.viga[tipoViga(m.vigas[k])]++;}
@@ -2892,7 +3025,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 

@@ -370,7 +370,11 @@
   /* Dos hojas se apartan del patron, y con motivo. */
   var ANCHOS_HOJA = {
     "NORMA E020": {"B": 3.0, "C": 40.0, "E": 13.0, "J": 13.0},
-    "CRITERIOS_OVIEDO": {"B": 3.0, "I": 16.21875}
+    "CRITERIOS_OVIEDO": {"B": 3.0, "I": 16.21875},
+    /* nueve columnas en vez de ocho: la forma de la columna no cabia en el
+       patron. Se estrecha el margen izquierdo y se abre K, igual que hacen
+       las dos hojas de arriba. */
+    "PRE_COLUMNA": {"B": 3.0, "C": 22.0, "K": 13.0}
   };
 
   /* Excel mide el ancho en CARACTERES; Office.js lo quiere en PUNTOS.
@@ -445,21 +449,27 @@
       return r + 2;
     };
 
-    api.subtitulo = function (r, texto) {
-      merge(r, 3, r, 10); val(r, 3, texto);
-      fmt({ rango: ref(r, 3, r, 10),
+    /* hasta: ultima columna, C..J por defecto.  PRE_COLUMNA necesita una
+       columna mas para la forma, y una nota mas estrecha que su propia tabla
+       se ve como un error de maquetacion. */
+    api.subtitulo = function (r, texto, hasta) {
+      hasta = hasta || 10;
+      merge(r, 3, r, hasta); val(r, 3, texto);
+      fmt({ rango: ref(r, 3, r, hasta),
             fuente: { nombre: FUENTE, tam: 11, negrita: true, color: COLOR.tinta },
             alinear: { h: "Left", v: "Center", ajustar: true } });
       alto(r, ALTO.subtitulo);
       return r + 1;
     };
 
-    api.nota = function (r, texto) {
-      merge(r, 3, r, 10); val(r, 3, texto);
-      fmt({ rango: ref(r, 3, r, 10),
+    api.nota = function (r, texto, hasta) {
+      hasta = hasta || 10;
+      merge(r, 3, r, hasta); val(r, 3, texto);
+      fmt({ rango: ref(r, 3, r, hasta),
             fuente: { nombre: FUENTE, tam: 10, color: COLOR.tinta },
             alinear: { h: "Left", v: "Center", ajustar: true } });
-      alto(r, ALTO.nota * Math.max(1, Math.ceil(texto.length / 108)));
+      /* el texto reparte en mas ancho: menos lineas por caracter */
+      alto(r, ALTO.nota * Math.max(1, Math.ceil(texto.length / (108 + (hasta - 10) * 13))));
       return r + 2;
     };
 
@@ -1315,43 +1325,51 @@
     var h = F.hoja("PRE_COLUMNA"), r = 6;
     h.titulo("PREDIMENSIONAMIENTO DE COLUMNA");
 
+    /* Esta hoja va a NUEVE columnas, C..K, no a las ocho del patron: la forma
+       de la columna es un dato mas.  Todo lo que se maqueta aqui llega hasta
+       K, si no las notas quedan mas estrechas que la tabla. */
+    var FIN = 11;
+    var L9  = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10],[11,11]];
+    var LD9 = [[3,5],[6,7],[8,11]];
+
     r = h.seccion(r, "1. CRITERIOS");
-    r = h.subtitulo(r, "1.1   Categoría de la edificación");
-    r = h.tabla(r, [[3,4],[5,5],[6,6],[7,7],[8,10]],
+    r = h.subtitulo(r, "1.1   Categoría de la edificación", FIN);
+    r = h.tabla(r, [[3,4],[5,5],[6,6],[7,7],[8,11]],
       ["Categoría", "Factor U", "% s/c", "Peso / m²", "Edificación"],
       ["esencial","importante","comun"].map(function (k) {
         var x = C.CATEGORIA[k];
         return [cap(k), x.U, pct(x.pctSC), x.peso + " kg/m²", TEXTO_CAT[k]];
       }), { 1: "0.00" }, null, { alinear: D5 });
 
-    r = h.subtitulo(r, "1.2   Coeficiente según la ubicación de la columna");
-    r = h.tabla(r, [[3,4],[5,7],[8,10]],
+    r = h.subtitulo(r, "1.2   Coeficiente según la ubicación de la columna", FIN);
+    r = h.tabla(r, [[3,4],[5,7],[8,11]],
       ["Ubicación de la columna", "Área de la sección  Ac", "Área tributaria"],
       [["INTERIOR",  "Ac = P servicio / (" + C.COLUMNA.C.interior.toFixed(2)  + " f'c)", "mayor"],
        ["EXTERIOR (perimetral)", "Ac = P servicio / (" + C.COLUMNA.C.exterior.toFixed(2) + " f'c)", "mediana"],
        ["ESQUINERA", "Ac = P servicio / (" + C.COLUMNA.C.esquinera.toFixed(2) + " f'c)", "menor"]],
       null, null, { alinear: ["Left","Left","Center"] });
 
-    r = h.subtitulo(r, "1.3   Criterios de predimensionamiento");
-    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+    r = h.subtitulo(r, "1.3   Criterios de predimensionamiento", FIN);
+    r = h.tabla(r, [[3,4],[5,11]], ["Concepto", "Expresión"], [
       ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
       ["Área de la columna", "Ac = P servicio / (k · f'c)"],
-      ["Sección cuadrada", "b = √Ac"],
-      ["Sección circular", "Dc = √(4 Ac / π)"],
-      ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"]
+      ["Sección cuadrada", "b = √Ac        (área colocada = b × h)"],
+      ["Sección circular", "Dc = √(4 Ac / π)        (área colocada = π Dc² / 4)"],
+      ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2)
+        + " m, y se aplica igual al diámetro"]
     ], null, null, { alinear: DFIN });
 
     /* --- datos del edificio: los dos numeros que usan TODAS las filas --- */
     r = h.seccion(r, "2. DATOS DEL EDIFICIO");
-    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
-    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+    r = h.encabezado(r, LD9, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, LD9, ["Categoría de la edificación", cap(P.categoria),
       "La eliges en el modelador. Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
     var fPeso = r;
-    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
+    r = h.fila(r, LD9, ["Peso en servicio  (kg/m²)", cat.peso,
       "Valor de la categoría según Oviedo. Si generaste METRADO_CARGAS, ahí hay "
       + "un peso metrado que puedes copiar aquí a mano."], { 1: "0" }, { alinear: D3 });
     var ffc = r;
-    r = h.fila(r, L_DATO, ["f'c del concreto  (kg/cm²)", fc,
+    r = h.fila(r, LD9, ["f'c del concreto  (kg/cm²)", fc,
       "E.060: mínimo 210 kg/cm² en elementos sismorresistentes."], { 1: "0" }, { alinear: D3 });
     r++;
 
@@ -1360,31 +1378,44 @@
     var K = "IF(D#=\"Interior\"," + C.COLUMNA.C.interior
           + ",IF(D#=\"Exterior\"," + C.COLUMNA.C.exterior
           + "," + C.COLUMNA.C.esquinera + "))";
-    var L = lista(h, r, L8,
-      ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
-       "Ac (cm²)", "b (cm)", "h (cm)"],
+    /* C Codigo | D Ubicacion | E Forma | F pisos | G A trib | H P | I Ac
+       J b o diametro | K h.   La forma solo decide COMO se reparte Ac; el
+       coeficiente k sigue saliendo de la ubicacion, que es la columna D. */
+    var L = lista(h, r, L9,
+      ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)",
+       "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
       fs,
       function (f, i) {
-        return [f[0], f[1], +f[2], +f[3],
-          "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
-          "=IFERROR(G" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
-          "=IF(N(H" + i + ')=0,"",MAX(CEILING(SQRT(H' + i + "),5)," + cmin + "))",
-          "=IF(N(I" + i + ')=0,"",MAX(CEILING(H' + i + "/I" + i + ",5)," + cmin + "))"];
-      }, { 3: "0.000", 4: "0.00", 5: "0" });
+        return [f[0], f[1], f[2], +f[3], +f[4],
+          "=IFERROR(F" + i + "*G" + i + "*$F$" + fPeso + '/1000,"")',
+          "=IFERROR(H" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
+          /* cuadrada b = raiz(Ac);  circular D = raiz(4 Ac / PI) */
+          "=IF(N(I" + i + ')=0,"",MAX(CEILING(SQRT(IF(E' + i + '="Circular",4*I'
+            + i + "/PI(),I" + i + ")),5)," + cmin + "))",
+          /* la circular no tiene h: el diametro la define entera */
+          "=IF(N(J" + i + ')=0,"",IF(E' + i + '="Circular","",MAX(CEILING(I'
+            + i + "/J" + i + ",5)," + cmin + ")))"];
+      }, { 4: "0.000", 5: "0.00", 6: "0" });
     r = L.fin + 1;
 
     r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
       + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
       + " exterior y " + C.COLUMNA.C.esquinera + " esquinera   |   b = √Ac al múltiplo "
       + "de 5 cm superior, mínimo " + cmin + " cm   |   h = Ac / b. Si fijas b a mano, "
-      + "h se ajusta y la sección deja de ser cuadrada.");
+      + "h se ajusta y la sección deja de ser cuadrada.", FIN);
     r = h.nota(r, "La ubicación no se elige: sale de la planta. Una columna con cuatro "
       + "paños alrededor es interior, con uno es esquinera, y el resto exterior. "
       + "El N.º de pisos es el número de niveles que carga, contando desde este hacia "
-      + "arriba.");
+      + "arriba.", FIN);
+    r = h.nota(r, "La forma sí se elige, y la eliges tú en el modelador. No cambia Ac "
+      + "ni el coeficiente k: solo cómo se reparte esa área. En una circular la "
+      + "columna «b o Ø» es el diámetro Ø = √(4 Ac / π) y no hay h, porque el "
+      + "diámetro define la sección entera. Para la misma Ac el diámetro sale un "
+      + "13 % mayor que el lado cuadrado, que es lo que cuesta redondear la esquina.",
+      FIN);
     r = h.nota(r, fs.length + " columna(s) en " + P.niveles + " nivel(es). El libro "
       + "elige la proporción b × h; el complemento no la inventa: da Ac y la sección "
-      + "cuadrada equivalente, y el ajuste es tuyo.");
+      + "cuadrada o circular equivalente, y el ajuste es tuyo.", FIN);
     return h.cerrar(r);
   }
 
@@ -2024,7 +2055,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v33 · 08-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v35 · 10-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
