@@ -947,7 +947,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v35 · 10-09-2026";
+  var BUILD="v37 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1009,8 +1009,76 @@ var TT={script:performance.now()};
   function N(){return S.niveles[S.act]}
   function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
   function key(){return Array.prototype.join.call(arguments,":")}
-  function posX(i){var s=0,d=N().dx;for(var k=0;k<i;k++)s+=d[k];return s}
-  function posY(j){var s=0,d=N().dy;for(var k=0;k<j;k++)s+=d[k];return s}
+  function posX(i,m){var s=0,d=(m||N()).dx;for(var k=0;k<i;k++)s+=d[k];return s}
+  function posY(j,m){var s=0,d=(m||N()).dy;for(var k=0;k<j;k++)s+=d[k];return s}
+
+  /* =====================================================================
+     EJES PRIMA
+     Un eje normal es un APOYO: parte en dos todo lo que lo cruza.  Un eje
+     prima es una REFERENCIA DE DIBUJO: solo parte donde tu pusiste columna.
+
+     El motivo es que hasta la v35 insertar un eje para colocar una columna
+     en una punta del edificio partia la planta entera, y con ella todas las
+     luces.  Una losa de 4.30 pasaba a medir 2.15 y su peralte caia de 0.20
+     a 0.10 m sin decir nada.  La luz va de APOYO a APOYO, no de eje a eje.
+
+     Sin ningun prima declarado, todo lo de aqui se reduce a lo de siempre:
+     ejeCorta() devuelve true y los tramos miden un vano.
+     ===================================================================== */
+  function primas(ejeX,m){
+    m=m||N();
+    var a=ejeX?m.primaX:m.primaY, n=(ejeX?m.dx:m.dy).length+1, i;
+    if(!Array.isArray(a)){a=[];if(ejeX)m.primaX=a;else m.primaY=a;}
+    for(i=a.length;i<n;i++)a[i]=false;
+    a.length=n;
+    a[0]=false;a[n-1]=false;      /* los bordes del edificio nunca son prima */
+    return a;
+  }
+  function esPrima(ejeX,a,m){return !!primas(ejeX,m)[a]}
+  /* A, A′, A″, B, C…  El prima hereda la letra del eje principal anterior */
+  function nomEje(ejeX,a,m){
+    var p=primas(ejeX,m),k=0,pr=0,i;
+    for(i=0;i<=a;i++){if(p[i])pr++;else{k++;pr=0;}}
+    return (ejeX?LETRAS[k-1]:String(k))+(pr?new Array(pr+1).join("′"):"");
+  }
+  /* Tramo continuo al que pertenece el vano (i,j).
+       hay(k)   : ¿el vano contiguo k tiene el mismo elemento?  Un tramo solo
+                  se estira sobre lo que existe, nunca sobre un hueco.
+       corta(a) : ¿el eje a interrumpe?  Un eje principal SIEMPRE corta, y por
+                  eso sin primas esto da exactamente lo de siempre.  Un prima
+                  corta solo donde hay apoyo de verdad, y el apoyo no es el
+                  mismo para todos: la viga se apoya en COLUMNAS y la losa se
+                  apoya en VIGAS. */
+  function tramo(ejeX,i,j,m,hay,corta){
+    m=m||N();
+    var lim=(ejeX?m.dx:m.dy).length;
+    var a=ejeX?i:j, b=a+1;
+    while(a>0   && !corta(a) && hay(a-1)) a--;
+    while(b<lim && !corta(b) && hay(b))   b++;
+    return {desde:a, hasta:b, dueno:(a===(ejeX?i:j)),
+            L:ejeX?(posX(b,m)-posX(a,m)):(posY(b,m)-posY(a,m))};
+  }
+  /* La viga se interrumpe donde hay COLUMNA */
+  function tramoViga(o,i,j,m){
+    m=m||N();var ejeX=(o==="h");
+    return tramo(ejeX,i,j,m,
+      function(k){return !!m.vigas[ejeX?("h:"+k+":"+j):("v:"+i+":"+k)]},
+      function(a){
+        if(!esPrima(ejeX,a,m))return true;
+        return !!m.cols[ejeX?(a+":"+j):(i+":"+a)];
+      });
+  }
+  /* La losa se estira en la direccion de su armado, que es la que da su luz,
+     y se interrumpe donde hay VIGA, que es lo que la sostiene */
+  function tramoLosa(dir,i,j,m){
+    m=m||N();var ejeX=(dir==="x");
+    return tramo(ejeX,i,j,m,
+      function(k){return !!m.losas[ejeX?(k+":"+j):(i+":"+k)]},
+      function(a){
+        if(!esPrima(ejeX,a,m))return true;
+        return !!m.vigas[ejeX?("v:"+a+":"+j):("h:"+i+":"+a)];
+      });
+  }
 
   /* ---------- historial ---------- */
   function snap(){UNDO.push(JSON.stringify(S.niveles));if(UNDO.length>60)UNDO.shift();REDO.length=0}
@@ -1071,21 +1139,31 @@ var TT={script:performance.now()};
   }
   function areaNivel(m){var a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1;
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j])a+=m.dx[i]*m.dy[j];return a}
+  /* La linea media va a la mitad del vano REAL: con un prima sin apoyo el
+     vano abarca varios tramos y la mitad se corre con el.  Sin primas,
+     tramoLosa da un vano y esto es literalmente lo de siempre. */
   function medCol(i,j,m){
-    m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0;
-    ps.forEach(function(q){at+=m.dx[q[0]]/2*m.dy[q[1]]/2});
-    if(ps.some(function(q){return q[0]===i-1}))bx+=m.dx[i-1]/2;
-    if(ps.some(function(q){return q[0]===i}))bx+=m.dx[i]/2;
-    if(ps.some(function(q){return q[1]===j-1}))by+=m.dy[j-1]/2;
-    if(ps.some(function(q){return q[1]===j}))by+=m.dy[j]/2;
+    m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0,vx={},vy={};
+    ps.forEach(function(q){
+      var lx=tramoLosa("x",q[0],q[1],m).L/2, ly=tramoLosa("y",q[0],q[1],m).L/2;
+      at+=lx*ly; vx[q[0]]=lx; vy[q[1]]=ly;});
+    if(vx[i-1]!=null)bx+=vx[i-1];
+    if(vx[i]  !=null)bx+=vx[i];
+    if(vy[j-1]!=null)by+=vy[j-1];
+    if(vy[j]  !=null)by+=vy[j];
     var n=ps.length;
     return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",at:at,bx:bx,by:by,n:n};
   }
   /* Ancho tributario de una viga: medio paño a cada lado que tenga losa. */
   function anchoTrib(o,i,j,m){
     m=m||N();var B=0;
-    if(o==="h"){if(m.losas[key(i,j-1)])B+=m.dy[j-1]/2; if(m.losas[key(i,j)])B+=m.dy[j]/2;}
-    else{if(m.losas[key(i-1,j)])B+=m.dx[i-1]/2; if(m.losas[key(i,j)])B+=m.dx[i]/2;}
+    if(o==="h"){
+      if(m.losas[key(i,j-1)])B+=tramoLosa("y",i,j-1,m).L/2;
+      if(m.losas[key(i,j)])  B+=tramoLosa("y",i,j,m).L/2;
+    }else{
+      if(m.losas[key(i-1,j)])B+=tramoLosa("x",i-1,j,m).L/2;
+      if(m.losas[key(i,j)])  B+=tramoLosa("x",i,j,m).L/2;
+    }
     return B;
   }
   /* Oviedo: b = B/20 >= 0.25 m. Depende solo del ancho tributario, que es
@@ -1101,21 +1179,26 @@ var TT={script:performance.now()};
   }
   /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
      Con apoyos iguales el descuento total es justo el ancho del apoyo. */
+  /* La luz va de APOYO a APOYO.  El descuento se toma en los dos extremos
+     del tramo real, no en los del vano. */
   function medViga(o,i,j,m){
     m=m||N();
-    var L=(o==="h")?m.dx[i]:m.dy[j],c1,c2,real=false,d;
-    if(o==="h"){c1=ladoCol(i,j,m); c2=ladoCol(i+1,j,m);}
-    else       {c1=ladoCol(i,j,m); c2=ladoCol(i,j+1,m);}
+    var t=tramoViga(o,i,j,m),L=t.L,c1,c2,real=false,d;
+    if(o==="h"){c1=ladoCol(t.desde,j,m); c2=ladoCol(t.hasta,j,m);}
+    else       {c1=ladoCol(i,t.desde,m); c2=ladoCol(i,t.hasta,m);}
     if(c1!==null&&c2!==null){d=(c1+c2)/2;real=true;}
     else d=S.ladoCol;
-    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d,real:real};
+    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d,real:real,tramo:t};
   }
   function medLosa(i,j,m){
-    m=m||N();var o=m.losas[key(i,j)],L,b1,b2;
-    if(o.dir==="y"){L=m.dy[j]; b1=bViga("h",i,j,m); b2=bViga("h",i,j+1,m);}
-    else            {L=m.dx[i]; b1=bViga("v",i,j,m); b2=bViga("v",i+1,j,m);}
+    m=m||N();var o=m.losas[key(i,j)],t,b1,b2;
+    if(o.dir==="y"){t=tramoLosa("y",i,j,m);
+                    b1=bViga("h",i,t.desde,m); b2=bViga("h",i,t.hasta,m);}
+    else           {t=tramoLosa("x",i,j,m);
+                    b1=bViga("v",t.desde,j,m); b2=bViga("v",t.hasta,j,m);}
     var d=(b1+b2)/2;
-    return{dir:o.dir,tipo:o.tipo||"aligerada",L:L,Ln:Math.max(L-d,0.5),desc:d};
+    return{dir:o.dir,tipo:o.tipo||"aligerada",L:t.L,Ln:Math.max(t.L-d,0.5),
+           desc:d,tramo:t};
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
      Maciza y nervada llevan valor fijo (pag. 26 y 27). */
@@ -1260,10 +1343,17 @@ var TT={script:performance.now()};
      El eje ubica el elemento en la planta y va en la columna D. */
   var TIPO_LOSA={aligerada:"LA",maciza:"LM",nervada:"LN"};
   function nn(n){return (n<10?"0":"")+n}
-  function ejeCol(i,j){return LETRAS[i]+"-"+(j+1)}
-  function ejeVigaH(i,j){return (j+1)+" / "+LETRAS[i]+"-"+LETRAS[i+1]}
-  function ejeVigaV(i,j){return LETRAS[i]+" / "+(j+1)+"-"+(j+2)}
-  function ejeLosa(i,j){return LETRAS[i]+"-"+LETRAS[i+1]+" / "+(j+1)+"-"+(j+2)}
+  /* Los nombres salen de nomEje, no de LETRAS[i], para que un prima se llame
+     A′ y no desplace las letras de todos los ejes que vienen detras. */
+  function eX(i,m){return nomEje(true,i,m)}
+  function eY(j,m){return nomEje(false,j,m)}
+  function ejeCol(i,j){return eX(i)+"-"+eY(j)}
+  /* la viga se nombra por su tramo REAL: de apoyo a apoyo */
+  function ejeVigaH(i,j,m){var t=tramoViga("h",i,j,m||N());
+    return eY(j)+" / "+eX(t.desde)+"-"+eX(t.hasta)}
+  function ejeVigaV(i,j,m){var t=tramoViga("v",i,j,m||N());
+    return eX(i)+" / "+eY(t.desde)+"-"+eY(t.hasta)}
+  function ejeLosa(i,j){return eX(i)+"-"+eX(i+1)+" / "+eY(j)+"-"+eY(j+1)}
   function nombres(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
         C={},V={},L={},P={},c=0,v={principal:0,chata:0},pl=0,
@@ -1355,12 +1445,12 @@ var TT={script:performance.now()};
     for(i=0;i<nx();i++){
       g.appendChild(el("circle",{cx:X(i),cy:mg-34,r:9.5,fill:"var(--sheet)",
         stroke:"var(--ink-2)","stroke-width":.9}));
-      txt(g,X(i),mg-30.5,LETRAS[i],"var(--ink)",10.5);
+      txt(g,X(i),mg-30.5,eX(i,m),"var(--ink)",10.5);
     }
     for(j=0;j<ny();j++){
       g.appendChild(el("circle",{cx:mg-34,cy:Y(j),r:9.5,fill:"var(--sheet)",
         stroke:"var(--ink-2)","stroke-width":.9}));
-      txt(g,mg-34,Y(j)+3.5,String(j+1),"var(--ink)",10.5);
+      txt(g,mg-34,Y(j)+3.5,eY(j,m),"var(--ink)",10.5);
     }
     for(i=0;i<nx()-1;i++)txt(g,(X(i)+X(i+1))/2,h-16,m.dx[i].toFixed(2));
     for(j=0;j<ny()-1;j++)txt(g,16,(Y(j)+Y(j+1))/2+3,m.dy[j].toFixed(2));
@@ -1467,13 +1557,13 @@ var TT={script:performance.now()};
       g.appendChild(el("line",{x1:X(i),y1:mg-26,x2:X(i),y2:Y(ny()-1)+16,stroke:"var(--grid)",
         "stroke-width":.8,"stroke-dasharray":"7 3 1 3"}));
       g.appendChild(el("circle",{cx:X(i),cy:mg-34,r:9.5,fill:"var(--sheet)",stroke:"var(--ink-2)","stroke-width":.9}));
-      txt(g,X(i),mg-30.5,LETRAS[i],"var(--ink)",10.5);
+      txt(g,X(i),mg-30.5,eX(i,m),"var(--ink)",10.5);
     }
     for(j=0;j<ny();j++){
       g.appendChild(el("line",{x1:mg-26,y1:Y(j),x2:X(nx()-1)+16,y2:Y(j),stroke:"var(--grid)",
         "stroke-width":.8,"stroke-dasharray":"7 3 1 3"}));
       g.appendChild(el("circle",{cx:mg-34,cy:Y(j),r:9.5,fill:"var(--sheet)",stroke:"var(--ink-2)","stroke-width":.9}));
-      txt(g,mg-34,Y(j)+3.5,String(j+1),"var(--ink)",10.5);
+      txt(g,mg-34,Y(j)+3.5,eY(j,m),"var(--ink)",10.5);
     }
     for(i=0;i<nx()-1;i++)txt(g,(X(i)+X(i+1))/2,h-16,m.dx[i].toFixed(2));
     for(j=0;j<ny()-1;j++)txt(g,16,(Y(j)+Y(j+1))/2+3,m.dy[j].toFixed(2));
@@ -1805,30 +1895,40 @@ var TT={script:performance.now()};
       else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]=clon(o)})}}
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
-  function partir(ejeX,t){var arr=ejeX?N().dx:N().dy;
+  function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
     if(arr.length>=12)return toast("Máximo 13 ejes por dirección.");
-    snap();var d=+(arr[t]/2).toFixed(3);arr.splice(t,1,d,d);
-    remap(ejeX,function(k){return k>t?k+1:k},t);render();}
-  function borrarEje(ejeX,p){var arr=ejeX?N().dx:N().dy,n=arr.length+1;
+    snap();
+    var p=primas(ejeX,m);
+    var d=+(arr[t]/2).toFixed(3);arr.splice(t,1,d,d);
+    p.splice(t+1,0,!!comoPrima);          /* el eje nuevo nace en t+1 */
+    remap(ejeX,function(k){return k>t?k+1:k},t);render();
+    if(comoPrima)toast("Eje "+nomEje(ejeX,t+1,N())+" añadido. No parte las "+
+      "vigas ni las losas que lo cruzan: solo donde le pongas columna.");}
+  function borrarEje(ejeX,p){var m=N(),arr=ejeX?m.dx:m.dy,n=arr.length+1;
     if(n<=2)return toast("Debe quedar al menos un tramo.");
     snap();
+    var pr=primas(ejeX,m);
     if(p===0)arr.splice(0,1);else if(p===n-1)arr.splice(p-1,1);
     else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(2);arr.splice(p,1)}
+    pr.splice(p,1);
     remap(ejeX,function(k){return k===p?null:(k>p?k-1:k)},-1);limpiarSueltos();render();}
   function editorEjes(){
     function pinta(cont,arr,ejeX){
       cont.innerHTML="";
       arr.forEach(function(d,t){
         var row=document.createElement("div");row.className="eje";
-        var nom=ejeX?(LETRAS[t]+"–"+LETRAS[t+1]):((t+1)+"–"+(t+2));
-        row.innerHTML='<span>'+nom+'</span><input type="number" min="1" max="20" step="0.05" value="'+
-          d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos">÷</button>'+
-          '<button class="mini" title="Eliminar el eje siguiente">✕</button>';
+        var nom=nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1);
+        row.innerHTML='<span'+(esPrima(ejeX,t)?' style="color:var(--ink-2)"':'')+
+          '>'+nom+'</span><input type="number" min="1" max="20" step="0.05" value="'+
+          d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos con un eje principal">÷</button>'+
+          '<button class="mini" title="Insertar un eje prima: no parte las vigas ni las losas que cruza">′</button>'+
+          '<button class="mini" title="Eliminar el eje '+nomEje(ejeX,t+1)+'">✕</button>';
         row.querySelector("input").addEventListener("change",function(){
           var v=parseFloat(this.value);if(!(v>0))return;snap();
           arr[t]=Math.min(20,Math.max(1,v));render();});
-        row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t)};
-        row.querySelectorAll("button")[1].onclick=function(){borrarEje(ejeX,t+1)};
+        row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t,false)};
+        row.querySelectorAll("button")[1].onclick=function(){partir(ejeX,t,true)};
+        row.querySelectorAll("button")[2].onclick=function(){borrarEje(ejeX,t+1)};
         cont.appendChild(row);});
       var add=document.createElement("button");add.className="btn";add.style.marginTop="4px";
       add.textContent="+ tramo al final";
@@ -1858,9 +1958,9 @@ var TT={script:performance.now()};
     var html="";
     if(q.t==="col"){
       if(!m.cols[key(q.i,q.j)]){T.textContent="Cruce vacío";
-        B.innerHTML='<p class="empty">Sin columna en '+LETRAS[q.i]+"-"+(q.j+1)+'.</p>';return}
+        B.innerHTML='<p class="empty">Sin columna en '+ejeCol(q.i,q.j)+'.</p>';return}
       var d=medCol(q.i,q.j),pc=seccionCol(q.i,q.j,m,S.act);
-      T.textContent="Columna · eje "+LETRAS[q.i]+"-"+(q.j+1);
+      T.textContent="Columna · eje "+ejeCol(q.i,q.j);
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños que carga",d.n+" de 4")+
         kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
@@ -1967,7 +2067,7 @@ var TT={script:performance.now()};
       if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
         B.innerHTML='<p class="empty">Este paño no tiene losa: es un vacío del edificio.</p>';return}
       var lo=medLosa(q.i,q.j),pl=predimLosa(q.i,q.j,m);
-      T.textContent="Losa · paño "+LETRAS[q.i]+LETRAS[q.i+1]+"-"+(q.j+1)+(q.j+2);
+      T.textContent="Losa · paño "+eX(q.i)+eX(q.i+1)+"-"+eY(q.j)+eY(q.j+1);
       html='<div class="name">'+nm.L[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var('+
         TIPOS[lo.tipo].c+')">'+TIPOS[lo.tipo].n+" · armada en "+lo.dir.toUpperCase()+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.L[key(q.i,q.j)].eje,1)+kv("Luz de cálculo",lo.L.toFixed(2)+" m")+
@@ -2258,8 +2358,13 @@ var TT={script:performance.now()};
                                      espesorParaChata(o,i,j,m)]);
       else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),av]);
     }
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])pushViga("h",i,j);
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])pushViga("v",i,j);
+    /* Una viga que cruza un prima sin columna es UNA viga, no dos: solo la
+       lista el primer tramo del recorrido.  Sin primas todo tramo es dueño
+       de si mismo y esto no filtra nada. */
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)
+      if(m.vigas["h:"+i+":"+j]&&tramoViga("h",i,j,m).dueno)pushViga("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)
+      if(m.vigas["v:"+i+":"+j]&&tramoViga("v",i,j,m).dueno)pushViga("v",i,j);
     function pushPlaca(o,i,j){
       var k=o+":"+i+":"+j,pm=medPlaca(o,i,j,m),b=nm.P[k];
       /* h: corre a lo largo de X y resiste en X.  v: idem en Y.  Sin esto
@@ -2269,7 +2374,10 @@ var TT={script:performance.now()};
     }
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])pushPlaca("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])pushPlaca("v",i,j);
-    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
+    /* igual con la losa: la que cruza un prima sin viga es un solo paño */
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
+      var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
+      if(!lo.tramo.dueno)continue;
       LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfaLosa(m.losas[i+":"+j])]);}
     /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
     var ar=areasPorTipo(m);
@@ -2419,13 +2527,13 @@ var TT={script:performance.now()};
   $("#btnCheck").onclick=function(){
     var m=N(),pr=[],i,j;
     for(i=0;i<nx();i++)for(j=0;j<ny();j++)
-      if(panos(i,j).length&&!m.cols[key(i,j)])pr.push("nudo "+LETRAS[i]+"-"+(j+1)+" con losa sin columna");
+      if(panos(i,j).length&&!m.cols[key(i,j)])pr.push("nudo "+ejeCol(i,j)+" con losa sin columna");
     for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
       if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
-        pr.push("borde "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+" sin viga en X");
+        pr.push("borde "+eX(i)+eX(i+1)+"-"+eY(j)+" sin viga en X");
     for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
       if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
-        pr.push("borde "+LETRAS[i]+"-"+(j+1)+(j+2)+" sin viga en Y");
+        pr.push("borde "+eX(i)+"-"+eY(j)+eY(j+1)+" sin viga en Y");
     /* dos zapatas que se pisan no son un error de dibujo: son la senal de
        que ahi hace falta una combinada */
     /* una columna del nivel 1 sin zapata suele ser un olvido, pero no
@@ -2445,7 +2553,7 @@ var TT={script:performance.now()};
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var lo2=m.losas[key(i,j)];
       if(lo2&&losaFueraTabla(lo2))
-        pr.push("paño "+LETRAS[i]+LETRAS[i+1]+"-"+(j+1)+(j+2)+" con S/C "+scPano(lo2)+
+        pr.push("paño "+eX(i)+eX(i+1)+"-"+eY(j)+eY(j+1)+" con S/C "+scPano(lo2)+
                 " kg/m²: fuera de la tabla α de losas (máx 500)");
     }
     toast(pr.length?pr.length+" aviso(s) · "+pr.slice(0,3).join(" · ")+(pr.length>3?" …":"")
