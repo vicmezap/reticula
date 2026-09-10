@@ -276,7 +276,7 @@
 
   <div class="cintra">
     <div class="celda"><span class="lbl">Altura de entrepiso</span>
-      <input id="hEnt" type="number" min="2" max="8" step="0.05" value="2.80"><span class="lbl">m</span></div>
+      <input id="hEnt" type="number" min="0" step="any" value="2.80"><span class="lbl">m</span></div>
     <div class="celda"><span class="lbl">Área techada del nivel</span><span class="v" id="areaNiv">—</span></div>
     <div class="celda"><span class="lbl">Área total del edificio</span><span class="v" id="areaTot">—</span></div>
     <div class="celda"><span class="lbl">Altura acumulada</span><span class="v" id="hAcum">—</span></div>
@@ -926,6 +926,11 @@ var TT={script:performance.now()};
 (function(){
   "use strict";
   var LETRAS="ABCDEFGHIJKLMN".split("");
+  /* Suelo de la luz libre.  No es un criterio: es lo unico que impide dividir
+     entre cero cuando el vano queda mas corto que los apoyos que lo cierran.
+     Cuando actua, el numero deja de ser una luz, asi que Revisar lo denuncia
+     en vez de dejarlo pasar. */
+  var PISO_LUZ=0.10;
   var ORD=["1er","2do","3er","4to","5to","6to","7mo","8vo","9no","10mo","11vo","12vo","13vo","14vo","15vo"];
   var TIPOS={aligerada:{c:"--alig",f:"--alig-f",n:"Aligerada"},
              maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
@@ -947,7 +952,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v37 · 10-09-2026";
+  var BUILD="v38 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -1188,7 +1193,7 @@ var TT={script:performance.now()};
     else       {c1=ladoCol(i,t.desde,m); c2=ladoCol(i,t.hasta,m);}
     if(c1!==null&&c2!==null){d=(c1+c2)/2;real=true;}
     else d=S.ladoCol;
-    return{L:L,Ln:Math.max(L-d,0.5),B:anchoTrib(o,i,j,m),desc:d,real:real,tramo:t};
+    return{L:L,Ln:Math.max(L-d,PISO_LUZ),B:anchoTrib(o,i,j,m),desc:d,real:real,tramo:t};
   }
   function medLosa(i,j,m){
     m=m||N();var o=m.losas[key(i,j)],t,b1,b2;
@@ -1197,7 +1202,7 @@ var TT={script:performance.now()};
     else           {t=tramoLosa("x",i,j,m);
                     b1=bViga("v",t.desde,j,m); b2=bViga("v",t.hasta,j,m);}
     var d=(b1+b2)/2;
-    return{dir:o.dir,tipo:o.tipo||"aligerada",L:t.L,Ln:Math.max(t.L-d,0.5),
+    return{dir:o.dir,tipo:o.tipo||"aligerada",L:t.L,Ln:Math.max(t.L-d,PISO_LUZ),
            desc:d,tramo:t};
   }
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga.
@@ -1918,14 +1923,20 @@ var TT={script:performance.now()};
       arr.forEach(function(d,t){
         var row=document.createElement("div");row.className="eje";
         var nom=nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1);
+        /* Sin min ni max: el vano lo pones tu.  Habia un tope de 1 a 20 m que
+           no sale de ningun criterio del libro, y dejaba fuera cosas reales
+           como un retranqueo de 0.55 m o una nave de 25 m. */
         row.innerHTML='<span'+(esPrima(ejeX,t)?' style="color:var(--ink-2)"':'')+
-          '>'+nom+'</span><input type="number" min="1" max="20" step="0.05" value="'+
+          '>'+nom+'</span><input type="number" min="0" step="any" value="'+
           d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos con un eje principal">÷</button>'+
           '<button class="mini" title="Insertar un eje prima: no parte las vigas ni las losas que cruza">′</button>'+
           '<button class="mini" title="Eliminar el eje '+nomEje(ejeX,t+1)+'">✕</button>';
         row.querySelector("input").addEventListener("change",function(){
-          var v=parseFloat(this.value);if(!(v>0))return;snap();
-          arr[t]=Math.min(20,Math.max(1,v));render();});
+          /* lo unico que se sigue exigiendo es que sea positivo: un vano de
+             cero o negativo no es un vano, es un modelo roto */
+          var v=parseFloat(this.value);
+          if(!(v>0)){this.value=arr[t].toFixed(2);return toast("El vano tiene que ser mayor que cero.")}
+          snap();arr[t]=+v.toFixed(3);render();});
         row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t,false)};
         row.querySelectorAll("button")[1].onclick=function(){partir(ejeX,t,true)};
         row.querySelectorAll("button")[2].onclick=function(){borrarEje(ejeX,t+1)};
@@ -2534,6 +2545,17 @@ var TT={script:performance.now()};
     for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
       if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
         pr.push("borde "+eX(i)+"-"+eY(j)+eY(j+1)+" sin viga en Y");
+    /* Ahora que el vano no tiene tope inferior, puede quedar mas corto que
+       los apoyos que lo cierran.  medViga pone un suelo para no dividir por
+       cero, pero ese numero no es una luz: hay que decirlo, no taparlo. */
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)if(m.vigas[key("h",i,j)]){
+      var vh=medViga("h",i,j,m);
+      if(vh.L-vh.desc<PISO_LUZ)pr.push("viga "+ejeVigaH(i,j,m)+": el vano ("+
+        vh.L.toFixed(2)+" m) no deja luz libre entre apoyos de "+vh.desc.toFixed(2)+" m");}
+    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)if(m.vigas[key("v",i,j)]){
+      var vv2=medViga("v",i,j,m);
+      if(vv2.L-vv2.desc<PISO_LUZ)pr.push("viga "+ejeVigaV(i,j,m)+": el vano ("+
+        vv2.L.toFixed(2)+" m) no deja luz libre entre apoyos de "+vv2.desc.toFixed(2)+" m");}
     /* dos zapatas que se pisan no son un error de dibujo: son la senal de
        que ahi hace falta una combinada */
     /* una columna del nivel 1 sin zapata suele ser un olvido, pero no
