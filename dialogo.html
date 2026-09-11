@@ -354,8 +354,17 @@
       <input type="file" id="calcoFile" accept=".pdf,image/*" hidden>
       <button class="btn" id="calcoCargar" style="margin:0 2px">Traer plano…</button>
       <div id="calcoCtl" hidden>
-        <button class="btn" id="calcoEjes" hidden style="margin:4px 2px 0">Leer los ejes del plano</button>
-        <button class="btn" id="calcoCal" style="margin:4px 2px 0">Calibrar escala</button>
+        <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
+        <button class="btn" id="marcarEjes" style="margin:4px 2px 0">2 · Marcar ejes sobre el plano</button>
+        <div id="marcaCtl" hidden style="margin:4px 2px 0;padding:6px;border:1px solid var(--acc);border-radius:6px;background:var(--acc-soft)">
+          <div class="lbl" id="marcaTit" style="padding:0 0 2px"></div>
+          <p class="nota" id="marcaPaso" style="margin:0 0 5px"></p>
+          <button class="btn" id="marcaSig" style="width:100%">Siguiente</button>
+          <button class="btn" id="marcaIgual" style="width:100%;margin-top:3px">Igual que el opuesto</button>
+          <button class="btn" id="marcaAtras" style="width:100%;margin-top:3px">Quitar el último punto</button>
+          <button class="btn" id="marcaCancela" style="width:100%;margin-top:3px">Cancelar</button>
+        </div>
+        <button class="btn" id="calcoEjes" hidden style="margin:4px 2px 0">Leer los ejes (automático)</button>
         <label class="pf" style="padding:4px 2px 0"><span class="pfe">Opacidad</span>
           <input type="range" id="calcoOp" min="10" max="100" step="5" value="45"></label>
         <button class="btn" id="calcoQuitar" style="margin:4px 2px 0">Quitar plano</button>
@@ -3524,7 +3533,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v51 · 10-09-2026";
+  var BUILD="v52 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4790,6 +4799,7 @@ var TT={script:performance.now()};
     var c=calco(), ctl=$("#calcoCtl"), inf=$("#calcoInfo");
     ver(ctl,!!c);
     ver("#calcoEjes",!!(c&&(VECT[S.act]||c.ejes)));
+    pintaMarcaCtl();
     ver("#panelEjes",!!PROP&&S.vista==="plano");
     if(!c||!inf)return;
     var op=$("#calcoOp"); if(op)op.value=Math.round(c.op*100);
@@ -4819,10 +4829,156 @@ var TT={script:performance.now()};
             y:p.y.filter(function(_,i){return p.onY[i]})};
   }
 
+  /* =====================================================================
+     MARCAR LOS EJES A MANO SOBRE EL PLANO
+
+     La lectura automatica adivina, y adivinar en un plano de arquitectura
+     sale mal mas veces de las que sale bien.  Esto no adivina: el plano
+     pone las medidas y TU pones donde estan los ejes.
+
+     Y resuelve de paso la planta irregular, que es lo que hacia falta.
+     Marcas los ejes en el borde de ARRIBA y otra vez en el de ABAJO: las
+     distancias de cada borde son dx y dx2, que es exactamente lo que el
+     modelo ya sabe interpolar.  Un lote de 6.79 m por la calle y 7.06 m
+     por el fondo deja de ser un problema y pasa a ser dos filas de clics.
+
+     Los puntos se guardan en METROS DEL MODELO, que es el espacio donde
+     tambien esta dibujado el plano: por eso hay que calibrar antes, y por
+     eso una vez calibrado lo que se mide aqui son metros de obra.
+     ===================================================================== */
+  var PASOS=[
+    {k:"arriba",ejeX:true, par:null,    t:"Ejes ↔ · borde de ARRIBA",
+     a:"Clic en cada eje, de izquierda a derecha. Al menos dos."},
+    {k:"abajo", ejeX:true, par:"arriba",t:"Ejes ↔ · borde de ABAJO",
+     a:"Los MISMOS ejes, en el borde de abajo. Si el lote no está sesgado en esta dirección, pulsa «Igual que el opuesto»."},
+    {k:"izq",   ejeX:false,par:null,    t:"Ejes ↕ · borde IZQUIERDO",
+     a:"Clic en cada eje, de arriba abajo. Al menos dos."},
+    {k:"der",   ejeX:false,par:"izq",   t:"Ejes ↕ · borde DERECHO",
+     a:"Los MISMOS ejes, en el borde derecho. Si no está sesgado, pulsa «Igual que el opuesto»."}
+  ];
+  var MARCA=null;
+
+  function arrancaMarca(){
+    var c=calco();
+    if(!c)return toast("Trae primero un plano de fondo.");
+    if(!c.cal)return toast("Calibra antes la escala con dos puntos de medida "+
+                           "conocida: sin eso lo que marques no mide metros.");
+    MARCA={i:0,pts:{arriba:[],abajo:[],izq:[],der:[]},igual:{}};
+    PROP=null; calibrando=null;
+    elegirTool("sel");
+    pintaMarcaCtl(); render();
+    toast("Marca los ejes sobre el plano. Enter pasa al siguiente borde.");
+  }
+  function paraMarca(txt){
+    MARCA=null; pintaMarcaCtl(); render();
+    if(txt)toast(txt);
+  }
+  function ptsPaso(){ return MARCA?MARCA.pts[PASOS[MARCA.i].k]:[] }
+
+  function pintaMarcaCtl(){
+    ver("#marcaCtl",!!MARCA);
+    ver("#marcarEjes",!MARCA);
+    if(!MARCA)return;
+    var p=PASOS[MARCA.i], pts=ptsPaso();
+    $("#marcaTit").textContent=p.t;
+    var med="";
+    if(pts.length>1){
+      var d=[],i;
+      for(i=1;i<pts.length;i++)d.push(dist(pts[i-1],pts[i]).toFixed(2));
+      med=" · "+d.join(" · ")+" m  (Σ "+
+          d.reduce(function(a,b){return a+ +b},0).toFixed(2)+" m)";
+    }
+    $("#marcaPaso").innerHTML=p.a+"<br><b>"+pts.length+" ejes</b>"+med;
+    ver("#marcaIgual",!!p.par);
+    var sig=$("#marcaSig");
+    sig.textContent=(MARCA.i===PASOS.length-1)?"Terminar y aplicar":"Siguiente";
+  }
+  function dist(a,b){
+    return Math.sqrt(Math.pow(b.x-a.x,2)+Math.pow(b.y-a.y,2));
+  }
+  function tramosDe(pts){
+    var r=[],i;
+    for(i=1;i<pts.length;i++)r.push(+dist(pts[i-1],pts[i]).toFixed(3));
+    return r;
+  }
+
+  function marcaSiguiente(){
+    if(!MARCA)return;
+    var p=PASOS[MARCA.i], pts=MARCA.pts[p.k];
+    if(p.par){
+      /* el borde opuesto tiene que traer LOS MISMOS ejes: si no, el nudo
+         (i,j) no tiene donde caer y la planta queda sin geometria */
+      var n=MARCA.pts[p.par].length;
+      if(!MARCA.igual[p.k]&&pts.length!==n)
+        return toast("El borde opuesto necesita los mismos "+n+" ejes. "+
+                     "Llevas "+pts.length+", o pulsa «Igual que el opuesto».");
+    }else if(pts.length<2){
+      return toast("Hacen falta al menos dos ejes en este borde.");
+    }
+    if(MARCA.i===PASOS.length-1)return aplicaMarca();
+    MARCA.i++; pintaMarcaCtl(); render();
+  }
+  function marcaIgual(){
+    if(!MARCA)return;
+    var p=PASOS[MARCA.i];
+    if(!p.par)return;
+    MARCA.pts[p.k]=[]; MARCA.igual[p.k]=true;
+    marcaSiguiente();
+  }
+  function marcaAtras(){
+    if(!MARCA)return;
+    var p=PASOS[MARCA.i], pts=MARCA.pts[p.k];
+    if(pts.length){ pts.pop(); MARCA.igual[p.k]=false; }
+    else if(MARCA.i>0){ MARCA.i--; }
+    pintaMarcaCtl(); render();
+  }
+
+  function aplicaMarca(){
+    if(!MARCA)return;
+    var dx=tramosDe(MARCA.pts.arriba),
+        dy=tramosDe(MARCA.pts.izq),
+        dx2=MARCA.igual.abajo?null:tramosDe(MARCA.pts.abajo),
+        dy2=MARCA.igual.der  ?null:tramosDe(MARCA.pts.der);
+    if(dx.length<1||dy.length<1)
+      return toast("Faltan ejes: hacen falta al menos dos por dirección.");
+    if(dx.length>12||dy.length>12)
+      return toast("Máximo 13 ejes por dirección.");
+    if(dx.concat(dy,dx2||[],dy2||[]).some(function(v){return !(v>0)}))
+      return toast("Hay dos ejes marcados en el mismo sitio: quita uno.");
+
+    var niv=S.act, p0=MARCA.pts.arriba[0], q0=MARCA.pts.izq[0];
+    snap();
+    S.niveles.forEach(function(m){
+      m.dx=dx.slice(); m.dy=dy.slice();
+      if(dx2)m.dx2=dx2.slice(); else delete m.dx2;
+      if(dy2)m.dy2=dy2.slice(); else delete m.dy2;
+      m.primaX=[]; m.primaY=[];
+      var nv=plantaLlena(dx,dy,m.h);
+      m.cols=nv.cols; m.vigas=nv.vigas; m.losas=nv.losas; m.placas={};
+      m.zapatas=m.zapatas||{};
+      podar(m);
+    });
+    zapatasEnTodas();
+    /* El plano se corre para que el cruce A-1 que marcaste caiga en el
+       origen del modelo.  Asi la reticula queda ENCIMA de lo que marcaste
+       y no al lado, que es lo unico que prueba que la lectura fue buena. */
+    var c=CALCO[niv]!==undefined?CALCO[niv]:calco(niv);
+    if(c&&p0&&q0){
+      c.dx-=(p0.x+q0.x)/2; c.dy-=(p0.y+q0.y)/2;
+      guardarCalco(niv,c);
+    }
+    var sesgo=(dx2?" · borde de abajo "+acum(dx2,dx2.length).toFixed(2)+" m":"")+
+              (dy2?" · borde derecho "+acum(dy2,dy2.length).toFixed(2)+" m":"");
+    MARCA=null; S.sel=null; pintaMarcaCtl(); render();
+    toast("Del plano al modelo: "+acum(dx,dx.length).toFixed(2)+" × "+
+          acum(dy,dy.length).toFixed(2)+" m"+sesgo+".");
+  }
+
   /* Dibuja sobre el plano lo que se ha entendido de el, ANTES de aplicarlo.
      Una lista de numeros no deja ver que tres de los ejes son las dos caras
      de un muro; verlos encima del plano, si. */
   function pintaCandidatos(cont,mg,esc,c){
+    if(MARCA)pintaMarca(cont,mg,esc);
     if(!PROP||!c)return;
     var g=el("g",{"pointer-events":"none"});
     var X0=mg+c.dx*esc, Y0=mg+c.dy*esc;
@@ -4839,6 +4995,36 @@ var TT={script:performance.now()};
     });
     PROP.y.forEach(function(py,j){
       var y=mg+(c.dy+py*c.esc)*esc; raya(X0,y,X1,y,PROP.onY[j]);
+    });
+    cont.appendChild(g);
+  }
+
+  /* Lo que llevas marcado, con la medida de cada tramo escrita encima.  Ver
+     el 3.69 aparecer en cuanto pones el segundo punto es lo que hace que
+     esto se pueda usar deprisa: no hay que aplicar para comprobar. */
+  function pintaMarca(cont,mg,esc){
+    if(!MARCA)return;
+    var LET="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    var g=el("g",{"pointer-events":"none"});
+    PASOS.forEach(function(p,ip){
+      var pts=MARCA.pts[p.k], act=(ip===MARCA.i);
+      if(!pts.length)return;
+      var col=p.ejeX?"var(--trib)":"var(--acc)";
+      var op=act?1:0.40;
+      var i,A,B,ax,ay,bx,by;
+      for(i=0;i<pts.length;i++){
+        ax=mg+pts[i].x*esc; ay=mg+pts[i].y*esc;
+        g.appendChild(el("circle",{cx:ax,cy:ay,r:act?5:3.5,fill:col,
+          stroke:"var(--sheet)","stroke-width":1.5,opacity:op}));
+        if(i){
+          A=pts[i-1]; B=pts[i];
+          bx=mg+A.x*esc; by=mg+A.y*esc;
+          g.appendChild(el("line",{x1:bx,y1:by,x2:ax,y2:ay,stroke:col,
+            "stroke-width":act?2:1.2,opacity:op}));
+          if(act)txt(g,(ax+bx)/2,(ay+by)/2-6,dist(A,B).toFixed(2),col,11);
+        }
+        if(act)txt(g,ax,ay-11,p.ejeX?(LET.charAt(i)||("X"+i)):String(i+1),col,11);
+      }
     });
     cont.appendChild(g);
   }
@@ -5147,6 +5333,17 @@ var TT={script:performance.now()};
   }
 
   svg.addEventListener("pointerdown",function(e){
+    /* Marcando, un clic en el lienzo es un eje: no una columna.  Va antes
+       que nada y no mira e.target, porque se marca sobre el PLANO, donde no
+       hay ningun elemento del modelo debajo. */
+    if(MARCA&&!e.altKey){
+      var q=xyModelo(e), p=PASOS[MARCA.i];
+      MARCA.pts[p.k].push({x:q.x,y:q.y});
+      MARCA.igual[p.k]=false;
+      pintaMarcaCtl(); render();
+      e.preventDefault();
+      return;
+    }
     if(calibrando!==null){
       var p=xyModelo(e);
       if(calibrando.length===0){ calibrando=[p]; pintaCalcoCtl(); return; }
@@ -5228,6 +5425,18 @@ var TT={script:performance.now()};
     S.sel=null; render();
     toast("Nivel en blanco. Los ejes siguen ahí · Ctrl+Z lo devuelve.");
   };
+
+  $("#marcarEjes").onclick=arrancaMarca;
+  $("#marcaSig").onclick=marcaSiguiente;
+  $("#marcaIgual").onclick=marcaIgual;
+  $("#marcaAtras").onclick=marcaAtras;
+  $("#marcaCancela").onclick=function(){paraMarca("No se cambió nada.")};
+  document.addEventListener("keydown",function(e){
+    if(!MARCA)return;
+    if(e.key==="Enter"){e.preventDefault();marcaSiguiente()}
+    else if(e.key==="Escape"){e.preventDefault();paraMarca("No se cambió nada.")}
+    else if(e.key==="Backspace"){e.preventDefault();marcaAtras()}
+  });
 
   $("#calcoEjes").onclick=leerEjes;
   $("#calcoQuitar").onclick=function(){
@@ -6830,7 +7039,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
