@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v89 · 11-09-2026";
+  var BUILD="v92 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4343,6 +4343,33 @@ var TT={script:performance.now()};
       /* el calco se quita: es el PDF del arquitecto, no el modelo */
       Array.prototype.slice.call(copia.querySelectorAll("image")).forEach(
         function(im){ if(im.parentNode) im.parentNode.removeChild(im); });
+
+      /* LOS ESTILOS HAY QUE METERLOS DENTRO, UNO A UNO.
+
+         El 2D se pinta con CSS: las reglas viven en el <style> de la pagina
+         y el SVG solo lleva clases.  Al serializarlo, esas reglas se quedan
+         fuera -el SVG viaja solo- y el navegador lo dibuja con los valores
+         POR DEFECTO de SVG: relleno negro y sin trazo.  Por eso la planta
+         salia como manchas negras.
+
+         Asi que se recorre el original y el clon a la vez y se copia el
+         estilo YA CALCULADO de cada elemento como atributo. */
+      var orig=svg.querySelectorAll("*"), clon=copia.querySelectorAll("*");
+      var PROPS=["fill","fill-opacity","stroke","stroke-width","stroke-opacity",
+                 "stroke-dasharray","stroke-linecap","stroke-linejoin","opacity",
+                 "font-family","font-size","font-weight","font-style",
+                 "text-anchor","dominant-baseline","paint-order","visibility",
+                 "display"];
+      for(var i=0;i<orig.length && i<clon.length;i++){
+        var cs=window.getComputedStyle(orig[i]), trozos=[];
+        for(var j=0;j<PROPS.length;j++){
+          var v=cs.getPropertyValue(PROPS[j]);
+          if(v) trozos.push(PROPS[j]+":"+v);
+        }
+        clon[i].setAttribute("style",trozos.join(";"));
+        clon[i].removeAttribute("class");
+      }
+      copia.setAttribute("style","background:#FFFFFF");
       copia.setAttribute("width", w);
       copia.setAttribute("height", h);
       copia.setAttribute("xmlns","http://www.w3.org/2000/svg");

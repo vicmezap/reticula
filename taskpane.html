@@ -3303,12 +3303,38 @@
     return Math.max(largo * 4.4 + 4, 12);
   }
 
+  /* LOS ENUM DE OFFICE.JS NO SIEMPRE ESTAN.
+
+     Este fue el fallo que costo cuatro entregas.  En el Excel de Victor,
+     de dieciocho formas de la columna circular fallaban CATORCE y pasaban
+     cuatro.  Las catorce eran las ocho elipses y las seis lineas; las
+     cuatro, los textos.  Lo unico que las separa es que addGeometricShape
+     y addLine reciben un ENUM -Excel.GeometricShapeType.ellipse,
+     Excel.ConnectorType.straight- y addTextBox no recibe ninguno.
+
+     Esos objetos son parte de la definicion de la API, pero el runtime no
+     siempre los expone: donde no estan, «Excel.GeometricShapeType.ellipse»
+     es undefined, Excel contesta «falta el argumento, este no es valido o
+     tiene un formato incorrecto», y se lleva por delante el lote entero.
+
+     Office.js acepta el valor como TEXTO.  Asi que se usa el texto, y el
+     enum solo si esta: lo primero funciona siempre, lo segundo es cortesia
+     con quien lea el codigo. */
+  function enumDe(familia, clave, literal) {
+    try {
+      var f = (typeof Excel !== "undefined") ? Excel[familia] : null;
+      if (f && f[clave]) return f[clave];
+    } catch (e) { }
+    return literal;
+  }
+
   function pintarFormas(ws, formas) {
     formas.forEach(function (f) {
       var sh;
       if (f.t === "rect" || f.t === "ovalo") {
-        var tipo = (f.t === "rect") ? Excel.GeometricShapeType.rectangle
-                                    : Excel.GeometricShapeType.ellipse;
+        var tipo = (f.t === "rect")
+          ? enumDe("GeometricShapeType", "rectangle", "Rectangle")
+          : enumDe("GeometricShapeType", "ellipse", "Ellipse");
         sh = ws.shapes.addGeometricShape(tipo);
         if (f.t === "rect") {
           sh.left = f.x; sh.top = f.y;
@@ -3323,13 +3349,16 @@
         sh.lineFormat.weight = f.peso || 0.5;
       } else if (f.t === "linea") {
         sh = ws.shapes.addLine(f.x1, f.y1, f.x2, f.y2,
-                               Excel.ConnectorType.straight);
+                               enumDe("ConnectorType", "straight", "Straight"));
         sh.lineFormat.color = "#" + f.color;
         sh.lineFormat.weight = f.peso;
         if (f.flecha) {
-          sh.lineFormat.endArrowheadStyle = Excel.ArrowheadStyle.triangle;
-          sh.lineFormat.endArrowheadLength = Excel.ArrowheadLength.short;
-          sh.lineFormat.endArrowheadWidth = Excel.ArrowheadWidth.narrow;
+          sh.lineFormat.endArrowheadStyle =
+            enumDe("ArrowheadStyle", "triangle", "Triangle");
+          sh.lineFormat.endArrowheadLength =
+            enumDe("ArrowheadLength", "short", "Short");
+          sh.lineFormat.endArrowheadWidth =
+            enumDe("ArrowheadWidth", "narrow", "Narrow");
         }
       } else {
         var w = anchoTexto(f.s);
@@ -4182,9 +4211,15 @@
     var h = F.hoja("ESPECIFICACIONES"), r = 6;
     h.titulo("ESPECIFICACIONES DEL PROYECTO");
 
+    /* Dato | Valor.  Se quito la columna «Observación». */
+    /* Igual que L_DATO pero sin la tercera columna.  El VALOR se queda en
+       la misma columna que tenia: quitar una columna no es motivo para
+       mover las otras de sitio. */
+    var L_DATO2 = [[3,5],[6,10]];
+
     /* ---- 1 ---- */
     r = h.seccion(r, "1. IDENTIFICACIÓN");
-    r = h.tabla(r, L_DATO, ["Dato", "Valor", "Observación"], [
+    r = h.tabla(r, L_DATO2, ["Dato", "Valor"], [
       ["Proyecto", pr.nombre || "—", "Nombre con el que se entrega."],
       ["Ubicación", pr.ubicacion || "—", "Distrito, provincia, departamento."],
       ["Proyectista", pr.proyectista || "—", "Responsable del predimensionamiento."],
@@ -4197,63 +4232,52 @@
     r = h.seccion(r, "2. EDIFICACIÓN Y MATERIALES");
     r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Dónde entra"], ALTO_LISTA);
     var fCat = r;
-    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
-      "E.030. Fija las cuatro filas siguientes."], null, { alinear: D3 });
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria)], null, { alinear: D3 });
     var fPeso = r;
-    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
-      "PRE_COLUMNA y PRE_ZAPATA: P = pisos × A trib × este peso."],
+    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso],
       { 1: "0" }, { alinear: D3 });
-    r = h.fila(r, L_DATO, ["Factor U", cat.U,
-      "METRADO_CARGAS: multiplica todo el peso, no solo la sobrecarga."],
+    r = h.fila(r, L_DATO, ["Factor U", cat.U],
       { 1: "0.00" }, { alinear: D3 });
-    r = h.fila(r, L_DATO, ["% de la sobrecarga", cat.pctSC,
-      "METRADO_CARGAS: la fracción de S/C que entra en el peso en servicio."],
+    r = h.fila(r, L_DATO, ["% de la sobrecarga", cat.pctSC],
       { 1: "0%" }, { alinear: D3 });
-    r = h.fila(r, L_DATO, ["% de placas del área techada", cat.pctPlaca,
-      "PRE_PLACA: Ap = este porcentaje × área techada."],
+    r = h.fila(r, L_DATO, ["% de placas del área techada", cat.pctPlaca],
       { 1: "0.000%" }, { alinear: D3 });
     var ffc = r;
-    r = h.fila(r, L_DATO, ["f'c del concreto  (kg/cm²)", +P.fc || 210,
-      "PRE_COLUMNA: Ac = P / (k · f'c). E.060 pide 210 como mínimo."],
+    r = h.fila(r, L_DATO, ["f'c del concreto  (kg/cm²)", +P.fc || 210],
       { 1: "0" }, { alinear: D3 });
     var fCon = r;
-    r = h.fila(r, L_DATO, ["Peso del concreto armado  (kg/m³)", +pr.concreto || 2400,
-      "METRADO_CARGAS: peso propio de la losa maciza y de la nervada."],
+    r = h.fila(r, L_DATO, ["Peso del concreto armado  (kg/m³)", +pr.concreto || 2400],
       { 1: "0" }, { alinear: D3 });
     var fSig = r;
-    r = h.fila(r, L_DATO, ["σs capacidad portante  (kg/cm²)", +P.sigma || 3.0,
-      "PRE_ZAPATA: Az = 1.10 · P · F sismo / σs. Sale del estudio de suelos."],
+    r = h.fila(r, L_DATO, ["σs capacidad portante  (kg/cm²)", +P.sigma || 3.0],
       { 1: "0.00" }, { alinear: D3 });
-    r = h.fila(r, L_DATO, ["σs en t/m²", "=$F$" + fSig + "*10",
-      "1 kg/cm² = 10 t/m². Es la unidad con la que trabaja PRE_ZAPATA."],
+    r = h.fila(r, L_DATO, ["σs en t/m²", "=$F$" + fSig + "*10"],
       { 1: "0.0" }, { alinear: D3 });
     r++;
 
     /* ---- 3 ---- */
     r = h.seccion(r, "3. CARGAS PERMANENTES");
-    r = h.encabezado(r, [[3,4],[5,6],[7,7],[8,10]],
-      ["Carga", "Se calcula como", "kg/m²", "Origen"], ALTO_LISTA);
-    var L4 = [[3,4],[5,6],[7,7],[8,10]];
+    r = h.encabezado(r, [[3,4],[5,6],[7,10]],
+      ["Carga", "Se calcula como", "kg/m²"], ALTO_LISTA);
+    /* Carga | Se calcula como | kg/m².  Sin la columna «Origen»:
+       la hoja es para trabajar, no para explicarse. */
+    var L4 = [[3,4],[5,6],[7,10]];
     var fPiso = r;
     r = h.fila(r, L4, ["Piso terminado",
       (+pr.morteroPeso || 2000) + " kg/m³ × " + (+pr.pisoEsp || 5) + " cm",
       /* ROUND para que de lo MISMO que el panel, que redondea a kg/m2 entero.
          Sin el, 1900 x 5.5 / 100 da 104.5 aqui y 105 en el complemento, y la
          misma carga sale con dos numeros en dos hojas del mismo libro. */
-      "=ROUND(" + (+pr.morteroPeso || 2000) + "*" + (+pr.pisoEsp || 5) + "/100,0)",
-      "E.020 Anexo 1. CALCULADO: cambia el espesor y cambia el peso."],
-      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+      "=ROUND(" + (+pr.morteroPeso || 2000) + "*" + (+pr.pisoEsp || 5) + "/100,0)"],
+      { 2: "0" }, { alinear: ["Left","Center","Center"] });
     var fCielo = r;
     r = h.fila(r, L4, ["Cielo raso",
       (+pr.yesoPeso || 1000) + " kg/m³ × " + (+pr.cieloEsp || 2) + " cm",
-      "=ROUND(" + (+pr.yesoPeso || 1000) + "*" + (+pr.cieloEsp || 2) + "/100,0)",
-      "E.020 Anexo 1. CALCULADO."],
-      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+      "=ROUND(" + (+pr.yesoPeso || 1000) + "*" + (+pr.cieloEsp || 2) + "/100,0)"],
+      { 2: "0" }, { alinear: ["Left","Center","Center"] });
     var fTab = r;
-    r = h.fila(r, L4, ["Tabiquería", "lo pones tú", +pr.tabiqueria || 0,
-      "ESTIMADO. Es el único de los cuatro que sigue siéndolo: los tabiques "
-      + "no se dibujan en la planta. Si los metras, pon aquí el valor real."],
-      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+    r = h.fila(r, L4, ["Tabiquería", "lo pones tú", +pr.tabiqueria || 0],
+      { 2: "0" }, { alinear: ["Left","Center","Center"] });
     var fEst = r;
     r = h.fila(r, L4, ["Vigas, columnas y placas",
       cg.estructuraAuto ? ((cg.volumen || 0).toFixed(2) + " m³ × concreto / área")
@@ -4264,12 +4288,11 @@
            + "columna, el ancho y el peralte de cada viga y el espesor de cada "
            + "placa. Suma el volumen y lo reparte sobre el área techada.")
         : "ESTIMADO en 150 kg/m². Puedes pedirle al modelador que lo calcule."],
-      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+      { 2: "0" }, { alinear: ["Left","Center","Center"] });
     var fTot = r;
     r = h.fila(r, L4, ["TOTAL", "suma de las cuatro",
-      "=SUM($G$" + fPiso + ":$G$" + fEst + ")",
-      "Este total es el que METRADO_CARGAS suma al peso propio de la losa."],
-      { 2: "0" }, { alinear: ["Left","Center","Center","Left"] });
+      "=SUM($G$" + fPiso + ":$G$" + fEst + ")"],
+      { 2: "0" }, { alinear: ["Left","Center","Center"] });
     r++;
     r = h.nota(r, "De las cuatro, TRES se calculan y una es estimada. Antes las "
       + "cuatro estaban escritas a mano dentro del complemento y no se podían "
@@ -4279,12 +4302,10 @@
 
     /* ---- 4 ---- */
     r = h.seccion(r, "4. LO QUE SALE DE LA PLANTA");
-    r = h.tabla(r, L_DATO, ["Dato", "Valor", "Observación"], [
+    r = h.tabla(r, L_DATO2, ["Dato", "Valor"], [
       ["Número de niveles", P.niveles, "Los que hayas modelado."],
-      ["Área techada total  (m²)", +(P.areaTechada || 0).toFixed(2),
-       "Suma de los paños con losa de todos los niveles."],
-      ["Sobrecarga por defecto  (kg/m²)", +pr.sc || 200,
-       "Se aplica solo a los paños que no tienen uso asignado."],
+      ["Área techada total  (m²)", +(P.areaTechada || 0).toFixed(2)],
+      ["Sobrecarga por defecto  (kg/m²)", +pr.sc || 200],
       ["Columnas", (P.C || []).length, "Una fila en PRE_COLUMNA cada una."],
       ["Vigas principales", (P.V || []).length, ""],
       ["Vigas chatas", (P.VCH || []).length, ""],
@@ -5559,23 +5580,26 @@
     h.titulo("CUADROS DE LA NORMA E.030");
 
     r = h.seccion(r, "1. LO QUE USA ESTE PROYECTO");
-    r = h.encabezado(r, L3, ["Parámetro", "Valor", "De dónde sale"], 22.0);
-    [["Uso de la estructura", pr.uso || "-", "lo eliges en el modelador"],
-     ["Categoría", e.catE030 || "-", "Tabla N.º 5, según el uso"],
-     ["Factor U", e.U == null ? "-" : e.U, "Art. 19, según la categoría"],
-     ["Distrito", pr.distrito || "-", "Anexo N.º 1"],
-     ["Zona sísmica", e.zona || "-", "Anexo N.º 1, según el distrito"],
-     ["Factor Z", e.Z == null ? "-" : e.Z, "Tabla N.º 1, según la zona"],
-     ["Perfil de suelo", pr.suelo || "-", "lo eliges en el modelador (EMS)"],
-     ["Factor S", e.S == null ? "no tabulado" : e.S, "Tabla N.º 3, zona × perfil"],
-     ["TP (s)", e.Tp == null ? "-" : e.Tp, "Tabla N.º 4, según el perfil"],
-     ["TL (s)", e.Tl == null ? "-" : e.Tl, "Tabla N.º 4, según el perfil"],
-     ["Sistema en X", pr.sistemaX || "-", "lo eliges en el modelador"],
-     ["R₀ en X", e.R0x == null ? "-" : e.R0x, "Tabla N.º 7"],
-     ["Sistema en Y", pr.sistemaY || "-", "lo eliges en el modelador"],
-     ["R₀ en Y", e.R0y == null ? "-" : e.R0y, "Tabla N.º 7"]
+    /* Parametro | Valor.  Sin la columna «De donde sale»: la hoja es
+       para trabajar.  De donde sale cada cosa esta en la propia E.030, que
+       es lo que esta hoja reproduce. */
+    r = h.encabezado(r, [[3,4],[5,10]], ["Parámetro", "Valor"], 22.0);
+    [["Uso de la estructura", pr.uso || "-"],
+     ["Categoría", e.catE030 || "-"],
+     ["Factor U", e.U == null ? "-" : e.U],
+     ["Distrito", pr.distrito || "-"],
+     ["Zona sísmica", e.zona || "-"],
+     ["Factor Z", e.Z == null ? "-" : e.Z],
+     ["Perfil de suelo", pr.suelo || "-"],
+     ["Factor S", e.S == null ? "no tabulado" : e.S],
+     ["TP (s)", e.Tp == null ? "-" : e.Tp],
+     ["TL (s)", e.Tl == null ? "-" : e.Tl],
+     ["Sistema en X", pr.sistemaX || "-"],
+     ["R₀ en X", e.R0x == null ? "-" : e.R0x],
+     ["Sistema en Y", pr.sistemaY || "-"],
+     ["R₀ en Y", e.R0y == null ? "-" : e.R0y]
     ].forEach(function (f) {
-      r = h.fila(r, L3, f, null, { alinear: ["Left", "Center", "Left"] });
+      r = h.fila(r, L3, f, null, { alinear: ["Left", "Center"] });
     });
     r++;
     if (e.S == null) {
@@ -5598,14 +5622,14 @@
           return f[p] == null ? "no tabulado" : f[p];
         })).concat([""]);
       }), null, null, { alinear: ["Center", "Center", "Center", "Center",
-                                  "Center", "Center", "Left"] });
+                                  "Center", "Center"] });
 
     r = h.seccion(r, "4. TABLA N.º 4 — PERÍODOS TP Y TL");
     r = h.tabla(r, LS, ["Perfil"].concat(E30.PERFILES).concat([""]),
       [["TP (s)"].concat(E30.PERFILES.map(function (p) { return E30.TP[p]; })).concat([""]),
        ["TL (s)"].concat(E30.PERFILES.map(function (p) { return E30.TL[p]; })).concat([""])],
       null, null, { alinear: ["Center", "Center", "Center", "Center",
-                              "Center", "Center", "Left"] });
+                              "Center", "Center"] });
 
     r = h.seccion(r, "5. TABLA N.º 7 — COEFICIENTE BÁSICO R₀");
     r = h.tabla(r, L2, ["Sistema estructural", "R₀"],
@@ -5613,7 +5637,9 @@
       { 1: "0.0" }, null, { alinear: ["Left", "Center"] });
 
     r = h.seccion(r, "6. TABLA N.º 5 — USO, CATEGORÍA Y FACTOR U");
-    r = h.tabla(r, L3, ["Uso de la edificación", "Categoría", "U"],
+    /* Tres columnas, y las tres hacen falta: «Factor U» es un dato de la
+       tabla N.º 5, no una explicacion de donde sale. */
+    r = h.tabla(r, L3, ["Uso de la edificación", "Categoría", "Factor U"],
       E30.USOS.map(function (u) { return [u.u, u.c, u.U]; }),
       { 2: "0.00" }, null, { alinear: ["Left", "Center", "Center"] });
 
@@ -5662,15 +5688,22 @@
     var h = F.hoja("DATOS"), r = 6;
     h.titulo("DETALLES DEL PROYECTO");
 
-    /* Dato | Valor | Unidad | De dónde sale */
-    var L4D = [[3,4],[5,6],[7,7],[8,10]];
-    var ALIN = { alinear: ["Left", "Center", "Left", "Left"] };
-    var TUYO = "lo eliges tú";
+    /* Dato | Valor | Unidad.  Y NADA MAS.
+
+       Aqui hubo una cuarta columna, «De donde sale», que decia de que
+       articulo de que norma venia cada valor.  Fuera: la hoja es para
+       trabajar, no para explicarse.  Lo que hay que saber de un dato es
+       cuanto vale y en que unidad; de donde sale esta en CRITERIOS_OVIEDO y
+       en las normas, que para eso estan. */
+    var L4D = [[3,4],[5,7],[8,10]];
+    var ALIN = { alinear: ["Left", "Center", "Left"] };
 
     function bloque(titulo, filas) {
       r = h.seccion(r, titulo);
-      r = h.encabezado(r, L4D, ["Dato", "Valor", "Unidad", "De dónde sale"], 22.0);
-      filas.forEach(function (f) { r = h.fila(r, L4D, f, null, ALIN); });
+      r = h.encabezado(r, L4D, ["Dato", "Valor", "Unidad"], 22.0);
+      filas.forEach(function (f) {
+        r = h.fila(r, L4D, [f[0], f[1], f[2]], null, ALIN);
+      });
     }
 
     r = h.seccion(r, "0. IDENTIFICACIÓN");
@@ -5683,60 +5716,49 @@
     r++;
 
     bloque("1. USO Y SISTEMA", [
-      ["Uso de la estructura", pr.uso || "-", "", TUYO],
-      ["Categoría de la edificación", e.catE030 || "-", "",
-       "E.030 Tabla N.º 5, del uso"],
-      ["Factor de uso U", e.U == null ? "-" : e.U, "", "E.030 Art. 19"],
-      ["Peso en servicio", cat.peso, "kg/m²", "Oviedo pág. 80, de la categoría"],
-      ["% CV para peso sísmico", (cat.pctSC * 100).toFixed(0) + " %", "",
-       "E.030 Art. 31"],
-      ["Sistema estructural en X", pr.sistemaX || "-", "", TUYO],
-      ["Sistema estructural en Y", pr.sistemaY || "-", "", TUYO],
-      ["R₀ en X", e.R0x == null ? "-" : e.R0x, "", "E.030 Tabla N.º 7"],
-      ["R₀ en Y", e.R0y == null ? "-" : e.R0y, "", "E.030 Tabla N.º 7"]
+      ["Uso de la estructura", pr.uso || "-", ""],
+      ["Categoría de la edificación", e.catE030 || "-", ""],
+      ["Factor de uso U", e.U == null ? "-" : e.U, ""],
+      ["Peso en servicio", cat.peso, "kg/m²"],
+      ["% CV para peso sísmico", (cat.pctSC * 100).toFixed(0) + " %", ""],
+      ["Sistema estructural en X", pr.sistemaX || "-", ""],
+      ["Sistema estructural en Y", pr.sistemaY || "-", ""],
+      ["R₀ en X", e.R0x == null ? "-" : e.R0x, ""],
+      ["R₀ en Y", e.R0y == null ? "-" : e.R0y, ""]
     ]);
 
     bloque("2. UBICACIÓN (ZONA Y SUELO)", [
-      ["Lugar", pr.distrito || "-", "", TUYO],
-      ["Zona sísmica", e.zona || "-", "", "E.030 Anexo N.º 1, del distrito"],
-      ["Factor Z", e.Z == null ? "-" : e.Z, "", "E.030 Tabla N.º 1"],
-      ["Tipo de suelo", pr.suelo || "-", "", "del estudio de suelos"],
-      ["Factor de suelo S", e.S == null ? "no tabulado" : e.S, "",
-       "E.030 Tabla N.º 3"],
-      ["TP", e.Tp == null ? "-" : e.Tp, "s", "E.030 Tabla N.º 4"],
-      ["TL", e.Tl == null ? "-" : e.Tl, "s", "E.030 Tabla N.º 4"],
+      ["Lugar", pr.distrito || "-", ""],
+      ["Zona sísmica", e.zona || "-", ""],
+      ["Factor Z", e.Z == null ? "-" : e.Z, ""],
+      ["Tipo de suelo", pr.suelo || "-", ""],
+      ["Factor de suelo S", e.S == null ? "no tabulado" : e.S, ""],
+      ["TP", e.Tp == null ? "-" : e.Tp, "s"],
+      ["TL", e.Tl == null ? "-" : e.Tl, "s"],
       /* σs va AQUÍ y no en materiales: el concreto no la fija, la fija el
          terreno.  La usan las zapatas. */
-      ["σs capacidad portante", +(P && P.sigma) || 3.0, "kg/cm²",
-       "del estudio de suelos · la usa PRE_ZAPATA"]
+      ["σs capacidad portante", +(P && P.sigma) || 3.0, "kg/cm²"]
     ]);
 
     bloque("3. MATERIALES (E.060)", [
-      ["f'c del concreto", fc, "kg/cm²", TUYO],
+      ["f'c del concreto", fc, "kg/cm²"],
       /* fy no se usa en predimensionamiento -el acero entra en el diseño-,
          pero va aquí porque es donde se busca */
-      ["fy del acero", +pr.fy || 4200, "kg/cm²",
-       TUYO + " · no se usa todavía: es del diseño"],
-      ["Ec = 15000·√f'c", Math.round(15000 * Math.sqrt(fc)), "kg/cm²",
-       "E.060 Art. 8.5"],
-      ["Peso específico del concreto", +pr.concreto || 2400, "kg/m³",
-       "E.020 Anexo 1"]
+      ["fy del acero", +pr.fy || 4200, "kg/cm²"],
+      ["Ec = 15000·√f'c", Math.round(15000 * Math.sqrt(fc)), "kg/cm²"],
+      ["Peso específico del concreto", +pr.concreto || 2400, "kg/m³"]
     ]);
 
     bloque("4. CARGAS PERMANENTES Y NO PERMANENTES", [
-      ["Material del acabado", pr.acabado || "Mortero de cemento", "", TUYO],
-      ["Espesor del acabado", +pr.pisoEsp || 5, "cm", TUYO],
-      ["Peso del acabado", cg.piso == null ? "-" : cg.piso, "kg/m²",
-       "mortero × espesor (E.020 Anexo 1)"],
-      ["Material del cielo raso", pr.cielo || "Yeso", "", TUYO],
-      ["Espesor del cielo raso", +pr.cieloEsp || 2, "cm", TUYO],
-      ["Peso del cielo raso", cg.cielo == null ? "-" : cg.cielo, "kg/m²",
-       "yeso × espesor (E.020 Anexo 1)"],
-      ["Peso de tabiquería", +pr.tabiqueria || 0, "kg/m²",
-       "ESTIMADO · los tabiques no se dibujan"],
+      ["Material del acabado", pr.acabado || "Mortero de cemento", ""],
+      ["Espesor del acabado", +pr.pisoEsp || 5, "cm"],
+      ["Peso del acabado", cg.piso == null ? "-" : cg.piso, "kg/m²"],
+      ["Material del cielo raso", pr.cielo || "Yeso", ""],
+      ["Espesor del cielo raso", +pr.cieloEsp || 2, "cm"],
+      ["Peso del cielo raso", cg.cielo == null ? "-" : cg.cielo, "kg/m²"],
+      ["Peso de tabiquería", +pr.tabiqueria || 0, "kg/m²"],
       ["Peso de vigas, columnas y placas",
-       cg.estructura == null ? "-" : cg.estructura, "kg/m²",
-       cg.estructuraAuto ? "calculado del modelo" : "ESTIMADO en 150 kg/m²"]
+       cg.estructura == null ? "-" : cg.estructura, "kg/m²"]
     ]);
     r = h.nota(r, "LA TABIQUERÍA ES EL ÚNICO ESTIMADO QUE QUEDA. Los tabiques "
       + "no se dibujan en el modelador, y la E.020 Art. 5 (1.1) manda usar los "
@@ -5765,17 +5787,14 @@
       + "el modelador. No se escribe en los dos lados, se escribe una vez.");
 
     bloque("5. GEOMETRÍA GENERAL", [
-      ["N.º de pisos", G.length || (P && P.niveles) || 0, "", "del modelador"],
+      ["N.º de pisos", G.length || (P && P.niveles) || 0, ""],
       ["Altura total hn", +(G.reduce(function (s, g) {
         return s + (+g.h || 0);
-      }, 0)).toFixed(2), "m", "suma de las alturas de entrepiso · ver MODELO"],
-      ["N.º de vanos en X", G.length ? (G[0].dx || []).length : 0, "",
-       "del modelador · ver MODELO"],
-      ["N.º de vanos en Y", G.length ? (G[0].dy || []).length : 0, "",
-       "del modelador · ver MODELO"],
-      ["Área techada", +(P && P.areaTechada) || 0, "m²", "del modelador"],
-      ["% de placas del área techada", pct(cat.pctPlaca), "",
-       "Oviedo, de la categoría · lo verifica PRE_PLACA"]
+      }, 0)).toFixed(2), "m"],
+      ["N.º de vanos en X", G.length ? (G[0].dx || []).length : 0, ""],
+      ["N.º de vanos en Y", G.length ? (G[0].dy || []).length : 0, ""],
+      ["Área techada", +(P && P.areaTechada) || 0, "m²"],
+      ["% de placas del área techada", pct(cat.pctPlaca), ""]
     ]);
     r = h.nota(r, "LAS LUCES NO ESTÁN AQUÍ, ESTÁN EN MODELO. Aquí van los "
       + "totales; eje por eje se ven allí, con su fila prima cuando la planta "
@@ -5967,7 +5986,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v89 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v92 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
