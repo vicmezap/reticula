@@ -2376,35 +2376,53 @@
     fuera:    "D9D9D9",
     azul:     "0070C0",
     tinta:    "000000",
-    tituloTinta: "FFFFFF"
+    /* NEGRO, no blanco.  V1 lo tiene en automatico sobre el azul y asi es
+       como llevas mirando estas hojas; el complemento lo ponia en blanco y
+       la hoja generada no era la misma hoja. */
+    tituloTinta: "000000"
   };
 
   var FUENTE = "Aptos Narrow", FUENTE_TITULO = "Times New Roman";
 
   /* ---------------- geometria de la pizarra ---------------- */
   var COL_INI = 2, COL_FIN = 11;                 /* B..K */
-  /* Anchos LEIDOS DEL LIBRO REAL, no de los scripts de Python.
-     Los scripts tienen B=3.0 y F..I=8.43, pero el archivo que se mira
-     todos los dias tiene B=13 y F..I=13: los ensanchaste a mano y cada
-     reconstruccion los volvia a estrechar en silencio.  Manda el archivo. */
-  var ANCHOS_CAR = { A:3.0, B:13.0, C:26.0, D:14.0, E:8.44140625, F:13.0, G:13.0, H:13.0, I:13.0, J:17.5546875, K:3.0 };
+  /* ANCHOS MEDIDOS EN V1, EN PUNTOS, QUE ES LO QUE PIDE OFFICE.JS.
 
-  /* Dos hojas se apartan del patron, y con motivo. */
+     Antes se guardaban en CARACTERES y se convertian con
+     px = round(car*7+5).  Ese 7 es el ancho del digito «0» en Calibri 11;
+     el libro va en Aptos Narrow y mide 7.25.  Con las columnas estrechas la
+     diferencia no se nota, pero las anchas salian hasta 4 pt cortas y las
+     que yo tenia apuntadas a 13 caracteres -B y F..I- no eran las de V1:
+     V1 las tiene a 45.60 pt, no a 72.  La hoja de zapatas salio con ese
+     error y se veia a simple vista al lado de sus hermanas.
+
+     Ahora se guarda lo que Excel devuelve, sin conversion ninguna.  Estan
+     leidos de V1.xlsm con Columns(x).Width; para volver a leerlos:
+         python scripts/leer_anchos_v1.py                                  */
+  var ANCHOS_PT = { A: 16.20, B: 16.20, C: 140.40, D: 75.60, E: 45.60,
+                    F: 45.60, G: 45.60, H: 45.60, I: 45.60, J: 94.80, K: 0 };
+
+  /* Las que se apartan del patron, tambien medidas en V1. */
   var ANCHOS_HOJA = {
-    "NORMA E020": {"B": 3.0, "C": 40.0, "E": 13.0, "J": 13.0},
-    "CRITERIOS_OVIEDO": {"B": 3.0, "I": 16.21875},
-    /* nueve columnas en vez de ocho: la forma de la columna no cabia en el
-       patron. Se estrecha el margen izquierdo y se abre K, igual que hacen
-       las dos hojas de arriba. */
-    "PRE_COLUMNA": {"B": 3.0, "C": 22.0, "K": 13.0}
+    "NORMA E020":       { C: 216.00, E: 75.60, F: 75.60, G: 75.60,
+                          H: 75.60, I: 75.60, J: 75.60, K: 16.20 },
+    "CRITERIOS_OVIEDO": { I: 87.60, K: 16.20 },
+    "DATOS":            { I: 87.60, K: 42.60 },
+    "METRADO_CARGAS":   { K: 16.20 }
+    /* PRE_COLUMNA tenia su propia excepcion -C mas estrecha y K abierta-
+       porque llevaba nueve columnas para meter la forma.  Ya no: la circular
+       tiene su hoja, la rectangular vuelve a ocho columnas, y las dos usan
+       el patron.  La K se queda en 0 porque ahi va la clave del cuadro del
+       elemento que manda, que es un mecanismo y no se enseña. */
   };
 
-  /* Excel mide el ancho en CARACTERES; Office.js lo quiere en PUNTOS.
-     px = round(car * 7 + 5)  para la fuente por defecto;  pt = px * 0.75 */
-  function carAPuntos(car) { return Math.round(car * 7 + 5) * 0.75; }
-  var ANCHOS_PT = (function () {
+  /* Y al reves, para estimar cuantas lineas ocupa un texto: 7.25 px por
+     caracter, que es lo que mide el digito «0» en Aptos Narrow 11. */
+  function puntosACar(pt) { return Math.max(0, (pt / 0.75 - 5) / 7.25); }
+  function carAPuntos(car) { return Math.round(car * 7.25 + 5) * 0.75; }
+  var ANCHOS_CAR = (function () {
     var o = {}, k;
-    for (k in ANCHOS_CAR) o[k] = carAPuntos(ANCHOS_CAR[k]);
+    for (k in ANCHOS_PT) o[k] = puntosACar(ANCHOS_PT[k]);
     return o;
   })();
 
@@ -2422,18 +2440,22 @@
     return col(c1) + r1 + (r2 == null ? "" : ":" + col(c2) + r2);
   }
 
-  /* ---------------- constructor de hoja ---------------- */
+  /* ---------------- constructor de hoja ----------------
+     Devuelve PUNTOS, que es la unidad en la que estan medidos y la que pide
+     Office.js.  Antes devolvia caracteres y las excepciones por hoja se
+     mezclaban con la tabla base: una en caracteres y otra en puntos, sin
+     que nada avisara. */
   function anchosDe(nombre) {
     var o = {}, k;
-    for (k in ANCHOS_CAR) o[k] = ANCHOS_CAR[k];
+    for (k in ANCHOS_PT) o[k] = ANCHOS_PT[k];
     var ex = ANCHOS_HOJA[nombre];
     if (ex) for (k in ex) o[k] = ex[k];
     return o;
   }
 
   function hoja(nombre) {
-    var car = anchosDe(nombre), pt = {}, kk;
-    for (kk in car) pt[kk] = carAPuntos(car[kk]);
+    var pt = anchosDe(nombre), car = {}, kk;
+    for (kk in pt) car[kk] = puntosACar(pt[kk]);
     var P = { nombre: nombre, anchos: pt, anchosCar: car,
               alturas: [], valores: [], merges: [], formatos: [],
               numfmt: [], sinCuadricula: true, ultima: 1, tieneFormulas: false };
@@ -2519,8 +2541,14 @@
        El resalte se encola DESPUES del fondo del cuerpo, y el escritor respeta
        el orden de aparicion: si se encolara antes, el blanco lo borraria. */
     api.fila = function (r, layout, valores, numfmt, opc) {
-      var a = layout[0][0], b = layout[layout.length - 1][1], altura = ALTO.fila;
+      var a = layout[0][0], b = layout[layout.length - 1][1];
       var o = opc || {};
+      /* o.alto: alto minimo de la fila.  Hace falta cuando lo que se escribe
+         son FORMULAS: el calculo de mas abajo estima cuantas lineas ocupa un
+         texto, pero una formula no dice de antemano lo que va a devolver, y
+         la fila se quedaba en 18 pt.  Por eso el cuadro del elemento que
+         manda ensenaba «Rectangul» con el «ar» cortado por debajo. */
+      var altura = o.alto || ALTO.fila;
       layout.forEach(function (par, i) {
         merge(r, par[0], r, par[1]);
         var v = (i < valores.length) ? valores[i] : null;
@@ -2863,7 +2891,10 @@
     return seccionRect(bCm, hCm, caja, {
       bDef: 25, hDef: 50, bMin: 15, hMin: 20, margen: 230, xIni: 62, rotX: 95,
       centros: false,
-      rotulos: [["Acero superior", "sup"], ["Estribo", "estribo"],
+      /* el estribo se senala al 72 % del peralte y no a media altura: a
+         media altura la flecha roja cruzaba por encima del texto «h = 65 cm»
+         de la cota.  Es donde ya lo tenia la columna. */
+      rotulos: [["Acero superior", "sup"], ["Estribo", "estribo072"],
                 ["Acero inferior", "inf"]],
       rec: 4, recX: 56, recDX: 8
     });
@@ -2879,6 +2910,44 @@
       rotulos: [["Acero longitudinal", "sup"], ["Estribo", "estribo072"]],
       rec: 4, recX: 60, recDX: 10
     });
+  }
+
+  /* 4b · COLUMNA CIRCULAR
+
+     La forma la eliges tu en el modelador, y si la que manda es circular
+     dibujar un cuadrado seria mentir: para la misma Ac el diametro sale un
+     13 % mayor que el lado, que es justo lo que cuesta redondear la
+     esquina.  Misma Ac, otra figura. */
+  function columnaCircular(dCm, caja) {
+    var rec = 4;
+    var d = dCm > 0 ? dCm : 30;
+    if (d < 25) d = 25;
+    var s = Math.min((caja.alto - 60) / d, (caja.ancho - 240) / d);
+    var D = d * s;
+    var cx = caja.x + 66 + (caja.ancho - (D + 240)) / 2 + D / 2;
+    var y0 = caja.y + 22, cy = y0 + D / 2;
+    var f = [];
+    f.push(ovalo(cx, cy, D, GRIS, GRIS_LIN));                    /* el concreto */
+    f.push(ovalo(cx, cy, D - 2 * rec * s, GRIS, NEGRO));         /* el estribo */
+    f[f.length - 1].sinRelleno = true;
+    /* seis barras repartidas sobre la linea del estribo */
+    var rBarra = (D - 2 * rec * s) / 2, i, a;
+    for (i = 0; i < 6; i++) {
+      a = -Math.PI / 2 + i * Math.PI / 3;
+      f.push(ovalo(cx + rBarra * Math.cos(a), cy + rBarra * Math.sin(a), 2 * s));
+    }
+    /* el diametro, cotado por debajo como el lado b de la rectangular */
+    cotaH(f, cx - D / 2, cx + D / 2, cy + D / 2, cy + D / 2 + 14,
+          "Ø = " + nm(d) + " cm");
+    var xL = cx + D / 2 + 108;
+    [["Acero longitudinal", cy - rBarra], ["Estribo", cy + rBarra * 0.72]]
+      .forEach(function (r) {
+        f.push(texto(xL, r[1] - 5, r[0]));
+        f.push(linea(xL - 4, r[1], cx + rBarra * 0.7, r[1], ROJO, 1.25, true));
+      });
+    f.push(texto(cx - D / 2 - 60, cy - 5, "r = " + nm(rec) + " cm"));
+    f.push(linea(cx - D / 2 - 10, cy, cx - D / 2 + rec * s, cy, ROJO, 1.25, true));
+    return f;
   }
 
   /* viga y columna son la misma seccion con otros numeros y otros rotulos:
@@ -2958,6 +3027,87 @@
     return f;
   }
 
+
+  /* ------------------------------------------------------------------
+     8 · ZAPATA — PLANTA Y CORTE
+
+     Las otras seis figuras enseñan una sección y basta.  La zapata no: lo
+     que se calcula son TRES medidas -B menor, L mayor y el peralte H- y
+     ninguna vista sola las enseña las tres.  En planta se ven B y L; el
+     peralte solo se ve de canto.  Por eso van las dos vistas, a la MISMA
+     escala, para que se puedan comparar de un vistazo.
+
+     La columna se dibuja encima porque es de donde sale todo: el peralte es
+     H = (L − h columna) / divisor, y sin la columna ese número no se
+     entiende.
+     ------------------------------------------------------------------ */
+  function zapata(bColCm, hColCm, BCm, LCm, HCm, caja) {
+    var bc = bColCm > 0 ? bColCm : 30, hc = hColCm > 0 ? hColCm : 30;
+    var B = BCm > 0 ? BCm : 150, L = LCm > 0 ? LCm : 150, H = HCm > 0 ? HCm : 50;
+    if (B < 60) B = 60;
+    if (L < B) L = B;                       /* L es el lado MAYOR, por definicion */
+    if (H < 20) H = 20;
+    var muñon = Math.max(H * 0.7, 35);      /* el tramo de columna que se ve */
+
+    /* UNA SOLA ESCALA PARA LAS DOS VISTAS: si cada una llevara la suya, la
+       zapata del corte podria salir mas grande que la de la planta y el
+       dibujo mentiria sin decir una sola cifra falsa.
+
+       El ancho no es solo el de las dos zapatas.  Entre ellas va la cota de
+       B, y a la derecha del todo la de H; las dos llevan su texto.  Si no se
+       descuentan, el dibujo se sale del hueco por la derecha -se salia 14 pt-
+       y la cota de H acaba encima de la columna K. */
+    var HUECO = 78;                         /* entre las dos vistas: cabe la cota de B */
+    var COLA = 74;                          /* a la derecha: la cota de H y su texto */
+    var TECHO = 34, PIE = 62;               /* rotulo de arriba y cotas y pie de abajo */
+    var s = Math.min((caja.ancho - HUECO - COLA) / (2 * L),
+                     (caja.alto - TECHO - PIE) / Math.max(B, H + muñon));
+    var anchoTotal = 2 * L * s + HUECO + COLA;
+    var x0 = caja.x + Math.max(0, (caja.ancho - anchoTotal) / 2);
+    var f = [];
+
+    /* ---------------- PLANTA ---------------- */
+    var yP = caja.y + TECHO;
+    f.push(rect(x0, yP, L * s, B * s, GRIS_MURO, GRIS_LIN));
+    /* la columna, centrada: h va en el sentido de L y b en el de B */
+    f.push(rect(x0 + (L - hc) * s / 2, yP + (B - bc) * s / 2,
+                hc * s, bc * s, GRIS_BORDE, NEGRO, 1.25));
+    cotaH(f, x0, x0 + L * s, yP + B * s, yP + B * s + 16,
+          "L = " + (L / 100).toFixed(2) + " m");
+    var xc = x0 + L * s + 12;
+    f.push(linea(x0 + L * s, yP, xc + 6, yP));
+    f.push(linea(x0 + L * s, yP + B * s, xc + 6, yP + B * s));
+    f.push(linea(xc, yP, xc, yP + B * s));
+    f.push(texto(xc + 8, yP + B * s / 2 - 6, "B = " + (B / 100).toFixed(2) + " m"));
+    f.push(texto(0, yP - 16, "PLANTA", x0 + L * s / 2));
+
+    /* ---------------- CORTE ---------------- */
+    var x1 = x0 + L * s + HUECO;
+    var yZ = yP + muñon * s;                 /* la zapata empieza bajo el muñon */
+    f.push(rect(x1, yZ, L * s, H * s, GRIS_MURO, GRIS_LIN));
+    f.push(rect(x1 + (L - hc) * s / 2, yP, hc * s, muñon * s, GRIS_BORDE, NEGRO, 1.25));
+    /* el terreno, a la altura en que arranca la zapata */
+    f.push(linea(x1 - 14, yZ, x1 + L * s + 14, yZ, GRIS_LIN, 1.25));
+    cotaH(f, x1, x1 + L * s, yZ + H * s, yZ + H * s + 16,
+          "L = " + (L / 100).toFixed(2) + " m");
+    var xc2 = x1 + L * s + 12;
+    f.push(linea(x1 + L * s, yZ, xc2 + 6, yZ));
+    f.push(linea(x1 + L * s, yZ + H * s, xc2 + 6, yZ + H * s));
+    f.push(linea(xc2, yZ, xc2, yZ + H * s));
+    f.push(texto(xc2 + 8, yZ + H * s / 2 - 6, "H = " + (H / 100).toFixed(2) + " m"));
+    f.push(texto(0, yP - 16, "CORTE", x1 + L * s / 2));
+
+    /* ---------------- el pie ----------------
+       La columna se nombraba con un rotulo y una flecha roja encima del
+       corte, y la flecha bajaba justo por encima de la palabra «CORTE».
+       Aqui arriba no cabe: hay 34 pt para el titulo de la vista y nada mas.
+       El dato no se pierde, se dice en el pie. */
+    f.push(texto(x0, yP + Math.max(B * s, muñon * s + H * s) + 34,
+                 "Columna " + nm(bc) + " × " + nm(hc) + " cm.   Área en planta "
+                 + "B × L = " + (B * L / 10000).toFixed(3)
+                 + " m². El terreno se apoya en la cara inferior."));
+    return f;
+  }
   /* ------------------------------------------------------------------
      7 · VIGA CHATA — no descuelga: su peralte ES el espesor de la losa
      ------------------------------------------------------------------ */
@@ -3021,7 +3171,8 @@
 
   return { losaAligerada: losaAligerada, losaMaciza: losaMaciza,
            losaNervada: losaNervada, vigaPrincipal: vigaPrincipal,
-           columna: columna, placa: placa, vigaChata: vigaChata,
+           columna: columna, columnaCircular: columnaCircular,
+           placa: placa, vigaChata: vigaChata, zapata: zapata,
            envolvente: envolvente };
 });
 </script>
@@ -3247,8 +3398,6 @@
       grupos[s].rangos.push(f.rango);
     });
     var usadas = 0;
-    /* la figura va al final: encima de los rellenos y los bordes */
-    try { dibujarSeccion(ws, plan, o); } catch (e) { /* sin formas no se rompe */ }
     orden.forEach(function (s) {
       var g = grupos[s];
       if (o.rangeAreas && g.rangos.length > 1) {
@@ -3343,6 +3492,20 @@
 
   /* Genera una hoja entera y devuelve cuanto tardo.  Si ya existe, se borra
      y se rehace: sale mas barato que limpiar formato celda a celda. */
+  /* Intenta dibujar la seccion tipica.  Nunca rechaza: un libro sin soporte
+     de formas -o una version de Excel que no admita alguna- tiene que dar una
+     hoja completa sin dibujo, no media hoja. */
+  function dibujar(plan, opciones) {
+    var o = opciones || {};
+    if (!plan.figura || !DIB || o.formas === false) return Promise.resolve(0);
+    if (typeof Excel === "undefined" || !Excel.run) return Promise.resolve(0);
+    return Excel.run(function (context) {
+      var ws = context.workbook.worksheets.getItem(plan.nombre);
+      var n = dibujarSeccion(ws, plan, o);
+      return context.sync().then(function () { return n; });
+    }).catch(function () { return 0; });
+  }
+
   function generar(plan, opciones) {
     var t0 = (typeof performance !== "undefined") ? performance.now() : Date.now();
     var stats = null, tCola = 0;
@@ -3358,10 +3521,21 @@
         ws.activate();
         return context.sync();
       }).then(function () {
-        var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
-        return { hoja: plan.nombre, ms: Math.round(t1 - t0),
-                 msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
-                 stats: stats };
+        /* LA FIGURA VA EN SU PROPIO LOTE, Y DESPUES.
+
+           Estaba encolada junto a los rellenos y los bordes, y ahi hizo un
+           destrozo: si una sola orden de forma no le gusta a Excel, el sync
+           entero se cae y la hoja sale SIN FORMATO -sin colores, sin bordes,
+           sin anchos-, con los valores puestos y nada mas.  Asi salio la
+           primera vez que se probo.
+
+           Separada, lo peor que puede pasar es quedarse sin dibujo. */
+        return dibujar(plan, opciones).then(function (formas) {
+          var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
+          return { hoja: plan.nombre, ms: Math.round(t1 - t0),
+                   msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
+                   formas: formas, stats: stats };
+        });
       });
     });
   }
@@ -3397,45 +3571,86 @@
       cols: [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]] },  /* + B y alfa */
     PRE_VIGA_CHATA:     { nombre: "LISTA_CHATA",
       cols: [[0, 0], [1, 1], [2, 2], [3, 4], [4, 3]] },  /* h losa antes que alfa */
+    /* codigo, ubicacion, pisos, A trib.  La forma NO se escribe: cada hoja
+       recibe solo las columnas de su forma, asi que dentro de la hoja ya no
+       hace falta distinguirlas. */
     PRE_COLUMNA:        { nombre: "LISTA_COLUMNA",
-      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] },          /* la forma no existe en V1 */
+      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] },
+    PRE_COLUMNA_CIRCULAR: { nombre: "LISTA_COLUMNA_CIRCULAR",
+      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] },
     PRE_PLACA:          { nombre: "LISTA_PLACA",
-      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] }           /* la direccion tampoco */
+      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] },          /* la direccion tampoco */
+    /* La unica con DOS tablas: arriba la carga, abajo las dimensiones.  El
+       codigo se escribe solo en la de arriba -la de abajo lo trae por
+       formula- y el F sismo tampoco se escribe: lo fija el tipo. */
+    PRE_ZAPATA:         { partes: [
+      { nombre: "LISTA_ZAPATA",
+        cols: [[0, 0], [1, 1], [2, 2], [3, 3]] },        /* codigo, tipo, pisos, A trib */
+      { nombre: "LISTA_ZAPATA_COL",
+        cols: [[0, 5], [1, 6]] }                         /* col b, col h */
+    ] }
   };
 
   function configLlenado(nombreHoja) { return LLENAR[nombreHoja] || null; }
+
+  /* Un tramo: un rango con nombre y las columnas de entrada que van en el.
+     La mayoria de las hojas tiene uno solo; la de zapatas tiene DOS tablas
+     sobre los mismos elementos -carga arriba, dimensiones abajo- y hay que
+     escribir en las dos. */
+  function tramos(cfg) {
+    return cfg.partes || [{ nombre: cfg.nombre, cols: cfg.cols }];
+  }
+
+  function llenarTramo(context, parte, filas) {
+    var nm = context.workbook.names.getItemOrNullObject(parte.nombre);
+    nm.load("isNullObject");
+    return context.sync().then(function () {
+      if (nm.isNullObject) return null;          /* este libro no es V1 */
+      var rg = nm.getRange();
+      rg.load("rowCount,columnCount");
+      return context.sync().then(function () {
+        var capacidad = rg.rowCount, ancho = 0, i;
+        parte.cols.forEach(function (p) { if (p[0] + 1 > ancho) ancho = p[0] + 1; });
+        var caben = Math.min(filas.length, capacidad);
+        var m = [];
+        for (i = 0; i < capacidad; i++) {
+          var f = [], j;
+          for (j = 0; j < ancho; j++) f.push("");
+          m.push(f);
+        }
+        /* las filas que sobran de la vez anterior se vacian: una lista mas
+           corta no puede dejar fantasmas calculando por su cuenta */
+        for (i = 0; i < caben; i++)
+          parte.cols.forEach(function (p) { m[i][p[0]] = filas[i][p[1]]; });
+        rg.getCell(0, 0).getResizedRange(capacidad - 1, ancho - 1).values = m;
+        return context.sync().then(function () {
+          return { capacidad: capacidad, escritas: caben };
+        });
+      });
+    });
+  }
 
   function llenar(nombreHoja, filas) {
     var cfg = LLENAR[nombreHoja];
     if (!cfg) return Promise.resolve(null);
     return Excel.run(function (context) {
-      var nm = context.workbook.names.getItemOrNullObject(cfg.nombre);
-      nm.load("isNullObject");
-      return context.sync().then(function () {
-        if (nm.isNullObject) return null;        /* este libro no es V1 */
-        var rg = nm.getRange();
-        rg.load("rowCount,columnCount");
-        return context.sync().then(function () {
-          var capacidad = rg.rowCount, ancho = 0, i;
-          cfg.cols.forEach(function (p) { if (p[0] + 1 > ancho) ancho = p[0] + 1; });
-          var caben = Math.min(filas.length, capacidad);
-          var m = [];
-          for (i = 0; i < capacidad; i++) {
-            var f = [], j;
-            for (j = 0; j < ancho; j++) f.push("");
-            m.push(f);
-          }
-          /* las filas que sobran de la vez anterior se vacian: una lista mas
-             corta no puede dejar fantasmas calculando por su cuenta */
-          for (i = 0; i < caben; i++)
-            cfg.cols.forEach(function (p) { m[i][p[0]] = filas[i][p[1]]; });
-          rg.getCell(0, 0).getResizedRange(capacidad - 1, ancho - 1).values = m;
-          return context.sync().then(function () {
-            return { hoja: nombreHoja, modo: "llenada", escritas: caben,
-                     capacidad: capacidad, sobran: filas.length - caben };
-          });
+      var partes = tramos(cfg), hecho = [];
+      function siguiente(i) {
+        if (i >= partes.length) {
+          if (!hecho.length || hecho[0] === null) return null;
+          var cap = hecho[0].capacidad, esc = hecho[0].escritas;
+          return { hoja: nombreHoja, modo: "llenada", escritas: esc,
+                   capacidad: cap, sobran: filas.length - esc };
+        }
+        return llenarTramo(context, partes[i], filas).then(function (r) {
+          /* si el primer tramo no esta, este libro no es V1 y no se sigue:
+             escribir la mitad de una hoja es peor que no escribir nada */
+          if (r === null && i === 0) { hecho.push(null); return siguiente(partes.length); }
+          hecho.push(r);
+          return siguiente(i + 1);
         });
-      });
+      }
+      return siguiente(0);
     });
   }
 
@@ -3504,7 +3719,13 @@
 
   function col(n) { return F.col(n); }
   function pct(v) { return (v * 100).toFixed(2).replace(/\.00$/, "") + " %"; }
-  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  /* Las categorias viajan sin tilde -«comun»- porque son claves, no texto.
+     Al enseñarlas hay que devolverles la tilde: V1 pone «Común» y una hoja
+     que ponga «Comun» al lado de otra que pone «Común» se nota. */
+  var ACENTO = { comun: "Común", importante: "Importante", esencial: "Esencial" };
+  function cap(s) {
+    return ACENTO[s] || (String(s).charAt(0).toUpperCase() + String(s).slice(1));
+  }
 
   /* Tramos [[tope, alfa]] -> filas legibles */
   function filasTramos(tramos) {
@@ -3580,7 +3801,10 @@
          ensenaba Ac = 1547.619048 y h = 0.226666667 donde la lista de
          arriba pone 1548 y 0.23: los mismos numeros con otra cara, que es
          de las cosas que mas desconfianza dan en una hoja. */
-    }), numfmt || null, ALTO_LISTA, { alinear: CENTRO });
+    }), numfmt || null, { alinear: CENTRO, alto: ALTO_LISTA });
+    /* Iba un argumento de mas -numfmt, ALTO_LISTA, {alinear}- y h.fila solo
+       admite cinco: el alto caia en el hueco de las opciones y el centrado
+       se perdia por el camino.  Sin ruido, como siempre. */
     return r + 2;
   }
 
@@ -3605,10 +3829,38 @@
      va por debajo de la cadena de cotas.  Se midio, no se tanteo. */
   var ALTO_FIG = 17;
 
-  function seccion(h, r, titulo, tipo, args) {
+  /* Y TODAS LAS FILAS CON SU ALTO DECLARADO.
+
+     El escritor situa el dibujo sumando anchos de columna y altos de fila,
+     porque Office.js no sabe decir donde cae una celda.  Para las filas que
+     nadie declaro tenia que SUPONER 15 pt, y el alto por defecto de Excel
+     depende de la fuente del libro: son 14.4 con la de un libro en blanco.
+     Sobre las veintitantas filas sin declarar que hay encima de una seccion
+     ese medio punto por fila se acumulaba, y la figura se salia del cuadro
+     por abajo -11 pt en la aligerada, 8 en la columna-.  Declarandolas
+     todas, la cuenta del escritor deja de ser una suposicion. */
+  var ALTO_LLANO = 15;
+
+  function fijaAltos(P, hasta) {
+    var tiene = {}, r;
+    P.alturas.forEach(function (a) { tiene[a.fila] = true; });
+    for (r = 1; r <= hasta; r++) {
+      if (!tiene[r]) P.alturas.push({ fila: r, alto: ALTO_LLANO });
+    }
+    if (hasta > P.ultima) P.ultima = hasta;
+  }
+
+  /* «de» es el CODIGO del elemento que se esta dibujando.  No lo usa el
+     dibujo -le bastan las medidas-, lo usa la comprobacion: con el se puede
+     abrir la hoja ya calculada y mirar si el cuadro «el que manda» nombra a
+     ese mismo.  Antes no habia forma de saberlo desde fuera, y por eso paso
+     lo de la columna: la seccion de una y el nombre de otra. */
+  function seccion(h, r, titulo, tipo, args, de) {
     r = h.subtitulo(r, titulo, 10);
     var P = h.plan();
-    P.figura = { tipo: tipo, args: args, r0: r, r1: r + ALTO_FIG - 1, c0: 3, c1: 10 };
+    P.figura = { tipo: tipo, args: args, de: de || null,
+                 r0: r, r1: r + ALTO_FIG - 1, c0: 3, c1: 10 };
+    fijaAltos(P, P.figura.r1);
     return r + ALTO_FIG + 1;
   }
 
@@ -3807,9 +4059,11 @@
       + "Se reproduce como estaba: úsala como orientación, no como criterio. "
       + "El peralte que manda es el de la columna h, que sale de h = Ln / α.");
 
-    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0, q?Math.max(Math.ceil(hh/C.PROPORCION.viguetaAligerada/0.05)*0.05,C.MINIMOS.viguetaAligerada)*100:0];
-    r = seccion(h, r, "1.3   Sección típica del techo aligerado", "losaAligerada", arg);
+    /* 1.4, no 1.3: encima hay ya un 1.3 -la tabla de espesores por luz-,
+       que las demas losas no tienen */
+    r = seccion(h, r, "1.4   Sección típica del techo aligerado", "losaAligerada", arg, q && q[0]);
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L7_ALIG,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)"],
       fs,
@@ -3856,9 +4110,9 @@
       [["LOSA MACIZA", "h = Ln / α        (Oviedo:  h = Ln / "
         + C.ALFA_LOSA.maciza.alfa + ")"]], null, null, { alinear: DFIN });
 
-    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0];
-    r = seccion(h, r, "1.3   Sección típica de la losa maciza", "losaMaciza", arg);
+    r = seccion(h, r, "1.3   Sección típica de la losa maciza", "losaMaciza", arg, q && q[0]);
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L6_MAC,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)"],
       fs,
@@ -3901,9 +4155,9 @@
         "hf ≤ (S − b) / 20 > " + C.MINIMOS.losita.toFixed(2) + " m"]],
       null, null, { alinear: ["Left","Left","Left","Left","Left"] });
 
-    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var bn=q?Math.max(Math.ceil(hh/C.PROPORCION.nervadura/0.05)*0.05,C.MINIMOS.nervadura)*100:0;var arg=[q?a5(hh):0, bn, q?Math.round(C.PROPORCION.nervadura*hh*100):0];
-    r = seccion(h, r, "1.3   Sección típica de la losa nervada", "losaNervada", arg);
+    r = seccion(h, r, "1.3   Sección típica de la losa nervada", "losaNervada", arg, q && q[0]);
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)", "S (m)"],
       fs,
@@ -3954,10 +4208,22 @@
           + C.MINIMOS.baseViga.toFixed(2) + " m"]],
       null, null, { alinear: ["Left","Left","Left"] });
 
-    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var bmin = Math.round(C.MINIMOS.baseViga * 100);
-    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[4]):0;var arg=[q?Math.max(Math.ceil((+q[3])/C.PROPORCION.baseVigaPrincipal*100/5)*5,bmin):0, q?a5(hh):0];
-    r = seccion(h, r, "1.3   Sección típica de la viga principal", "vigaPrincipal", arg);
+    /* LA MISMA CLAVE QUE EL CUADRO DE ABAJO.  El bloque «el que manda» elige
+       por formula sobre la lista; el dibujo elegia por su cuenta, y no
+       siempre coincidian: se dibujaba una seccion y justo debajo la hoja
+       nombraba otra. Aqui la clave es la de la columna I mas los
+       desempates: h (cm), luego b (cm), luego Ln. */
+    function bVigaCm(f) {
+      return Math.max(Math.ceil((+f[3]) / C.PROPORCION.baseVigaPrincipal * 100 / 5) * 5, bmin);
+    }
+    function hVigaCm(f) { return a5((+f[2]) / (+f[4])); }
+    var q = elQueManda(fs, function (f) {
+      return hVigaCm(f) + bVigaCm(f) / 1000 + (+f[2]) / 1000000;
+    });
+    var arg = [q ? bVigaCm(q) : 0, q ? hVigaCm(q) : 0];
+    r = seccion(h, r, "1.3   Sección típica de la viga principal", "vigaPrincipal", arg, q && q[0]);
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "B (m)", "α", "h (m)", "h (cm)", "b (cm)"],
       fs,
@@ -4012,10 +4278,20 @@
         + C.MINIMOS.baseViga.toFixed(2) + " m"]
     ], null, null, { alinear: DFIN });
 
-    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var bmin = Math.round(C.MINIMOS.baseViga * 100);
-    var q=elQueManda(fs,function(f){return +f[2]});var arg=[q?Math.max(Math.ceil((+q[4])/C.PROPORCION.baseViga/5)*5,bmin):0, q?+q[4]:0];
-    r = seccion(h, r, "1.3   Sección típica de la viga chata", "vigaChata", arg);
+    /* LA MISMA CLAVE QUE EL CUADRO DE ABAJO.  El bloque «el que manda» elige
+       por formula sobre la lista; el dibujo elegia por su cuenta, y no
+       siempre coincidian: se dibujaba una seccion y justo debajo la hoja
+       nombraba otra. La chata antepone las que NO CUMPLEN
+       -Ln mayor que h·α-, que son las que hay que mirar. */
+    var q = elQueManda(fs, function (f) {
+      var lnMax = (+f[4]) / 100 * (+f[3]);          /* h losa (cm) · α */
+      return ((+f[2]) > lnMax ? 10000 : 0) + (+f[2]);
+    });
+    var arg = [q ? Math.max(Math.ceil((+q[4]) / C.PROPORCION.baseViga / 5) * 5, bmin) : 0,
+               q ? +q[4] : 0];
+    r = seccion(h, r, "1.3   Sección típica de la viga chata", "vigaChata", arg, q && q[0]);
+    r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
       fs,
@@ -4045,25 +4321,28 @@
 
   /* =====================================================================
      3 · COLUMNAS
+
+     DOS HOJAS, NO UNA.  Antes habia una sola con una columna «Forma» donde
+     se elegia Rectangular o Circular, y eso obligaba a la hoja a llevar
+     nueve columnas en vez de las ocho del patron -la de V1 tiene ocho- y a
+     que cada formula preguntase por la forma antes de calcular nada.  Peor
+     aun: el peralte h no existe en una circular, asi que la columna «h»
+     quedaba vacia en unas filas y llena en otras, y el encabezado tenia que
+     decir «b o Ø», que no es ni una cosa ni la otra.
+
+     Separadas, cada hoja dice una sola cosa: PRE_COLUMNA da b y h, y
+     PRE_COLUMNA_CIRCULAR da el diametro.  Las dos calculan el MISMO Ac con
+     el MISMO coeficiente k -eso no cambia con la forma-; lo unico que
+     cambia es como se reparte esa area.
      ===================================================================== */
-  function columna(P) {
-    var fs = P.C || [];
-    vacio(fs.length, "columnas");
-    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
-    var fc = +P.fc || 210;
-    var h = F.hoja("PRE_COLUMNA"), r = 6;
-    h.titulo("PREDIMENSIONAMIENTO DE COLUMNA");
 
-    /* Esta hoja va a NUEVE columnas, C..K, no a las ocho del patron: la forma
-       de la columna es un dato mas.  Todo lo que se maqueta aqui llega hasta
-       K, si no las notas quedan mas estrechas que la tabla. */
-    var FIN = 11;
-    var L9  = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10],[11,11]];
-    var LD9 = [[3,5],[6,7],[8,11]];
-
+  /* comun a las dos hojas: el bloque de criterios y el de datos */
+  function cabeceraColumna(h, P, cat, fc, FIN, LD, titulo, filaCriterios) {
+    var r = 6;
+    h.titulo(titulo);
     r = h.seccion(r, "1. CRITERIOS");
     r = h.subtitulo(r, "1.1   Categoría de la edificación", FIN);
-    r = h.tabla(r, [[3,4],[5,5],[6,6],[7,7],[8,11]],
+    r = h.tabla(r, [[3,4],[5,5],[6,6],[7,7],[8,FIN]],
       ["Categoría", "Factor U", "% s/c", "Peso / m²", "Edificación"],
       ["esencial","importante","comun"].map(function (k) {
         var x = C.CATEGORIA[k];
@@ -4071,7 +4350,7 @@
       }), { 1: "0.00" }, null, { alinear: D5 });
 
     r = h.subtitulo(r, "1.2   Coeficiente según la ubicación de la columna", FIN);
-    r = h.tabla(r, [[3,4],[5,7],[8,11]],
+    r = h.tabla(r, [[3,4],[5,7],[8,FIN]],
       ["Ubicación de la columna", "Área de la sección  Ac", "Área tributaria"],
       [["INTERIOR",  "Ac = P servicio / (" + C.COLUMNA.C.interior.toFixed(2)  + " f'c)", "mayor"],
        ["EXTERIOR (perimetral)", "Ac = P servicio / (" + C.COLUMNA.C.exterior.toFixed(2) + " f'c)", "mediana"],
@@ -4079,59 +4358,99 @@
       null, null, { alinear: ["Left","Left","Center"] });
 
     r = h.subtitulo(r, "1.3   Criterios de predimensionamiento", FIN);
-    r = h.tabla(r, [[3,4],[5,11]], ["Concepto", "Expresión"], [
-      ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
-      ["Área de la columna", "Ac = P servicio / (k · f'c)"],
-      ["Sección cuadrada", "b = √Ac        (área colocada = b × h)"],
-      ["Sección circular", "Dc = √(4 Ac / π)        (área colocada = π Dc² / 4)"],
-      ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2)
-        + " m, y se aplica igual al diámetro"]
-    ], null, null, { alinear: DFIN });
+    r = h.tabla(r, [[3,4],[5,FIN]], ["Concepto", "Expresión"],
+      filaCriterios, null, null, { alinear: DFIN });
 
-    /* --- datos del edificio: los dos numeros que usan TODAS las filas --- */
     r = h.seccion(r, "2. DATOS DEL EDIFICIO");
-    r = h.encabezado(r, LD9, ["Dato", "Valor", "Observación"], ALTO_LISTA);
-    r = h.fila(r, LD9, ["Categoría de la edificación", cap(P.categoria),
-      "La eliges en el modelador. Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
+    r = h.encabezado(r, LD, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, LD, ["Categoría de la edificación", cap(P.categoria),
+      "La eliges en el modelador. Fija el peso/m² de la fila siguiente."],
+      null, { alinear: D3 });
     var fPeso = r;
-    r = h.fila(r, LD9, ["Peso en servicio  (kg/m²)", cat.peso,
+    r = h.fila(r, LD, ["Peso en servicio  (kg/m²)", cat.peso,
       "Valor de la categoría según Oviedo. Si generaste METRADO_CARGAS, ahí hay "
       + "un peso metrado que puedes copiar aquí a mano."], { 1: "0" }, { alinear: D3 });
     var ffc = r;
-    r = h.fila(r, LD9, ["f'c del concreto  (kg/cm²)", fc,
-      "E.060: mínimo 210 kg/cm² en elementos sismorresistentes."], { 1: "0" }, { alinear: D3 });
-    r++;
+    r = h.fila(r, LD, ["f'c del concreto  (kg/cm²)", fc,
+      "E.060: mínimo 210 kg/cm² en elementos sismorresistentes."],
+      { 1: "0" }, { alinear: D3 });
+    return { r: r + 1, fPeso: fPeso, ffc: ffc };
+  }
 
-    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
+  /* El peso en servicio y el area que pide, en JavaScript.  Son el gemelo de
+     las formulas G y H de la lista, y se usan para elegir a quien se dibuja.
+     Si dejan de coincidir, probar_hojas.js lo dice. */
+  function cuentasColumna(P) {
+    var pesoCat = (C.CATEGORIA[P.categoria] ? C.CATEGORIA[P.categoria].peso : 1000);
+    function pServicio(f) { return (+f[3]) * (+f[4]) * pesoCat / 1000; }   /* t */
+    function acDe(f) {
+      var k = (f[1] === "Interior") ? C.COLUMNA.C.interior
+            : (f[1] === "Exterior") ? C.COLUMNA.C.exterior
+            : C.COLUMNA.C.esquinera;
+      return pServicio(f) * 1000 / (k * (+P.fc || 210));                   /* cm2 */
+    }
+    return { P: pServicio, Ac: acDe,
+             clave: function (f) { return acDe(f) + pServicio(f) / 1000; } };
+  }
+
+  function esCircular(f) { return f[2] === "Circular"; }
+
+  /* ---------------------------------------------------------------------
+     3a · COLUMNAS RECTANGULARES
+     Ocho columnas, C..J, exactamente las de V1: codigo, ubicacion, pisos,
+     A trib, P, Ac, b, h.
+     --------------------------------------------------------------------- */
+  function columna(P) {
+    var fs = (P.C || []).filter(function (f) { return !esCircular(f); });
+    vacio(fs.length, "columnas rectangulares");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var fc = +P.fc || 210;
     var cmin = Math.round(C.MINIMOS.anchoColumna * 100);
+    var h = F.hoja("PRE_COLUMNA"), FIN = 10;
+
+    var cab = cabeceraColumna(h, P, cat, fc, FIN, L_DATO,
+      "PREDIMENSIONAMIENTO DE COLUMNA", [
+      ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
+      ["Área de la columna", "Ac = P servicio / (k · f'c)"],
+      ["Sección cuadrada", "b = √Ac        (área colocada = b × h)"],
+      ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"],
+      /* La circular NO se calcula aqui, y decirlo cuesta una fila.  Antes
+         esta tabla anunciaba Dc = raiz(4 Ac / pi) y la lista de abajo daba
+         siempre el lado de un cuadrado: la hoja prometia una cosa y hacia
+         otra. */
+      ["Sección circular", "tiene su propia hoja: PRE_COLUMNA_CIRCULAR"]
+    ]);
+    var r = cab.r, fPeso = cab.fPeso, ffc = cab.ffc;
+
     var K = "IF(D#=\"Interior\"," + C.COLUMNA.C.interior
           + ",IF(D#=\"Exterior\"," + C.COLUMNA.C.exterior
           + "," + C.COLUMNA.C.esquinera + "))";
-    /* C Codigo | D Ubicacion | E Forma | F pisos | G A trib | H P | I Ac
-       J b o diametro | K h.   La forma solo decide COMO se reparte Ac; el
-       coeficiente k sigue saliendo de la ubicacion, que es la columna D. */
-    var q=elQueManda(fs,function(f){return (+f[3])*(+f[4])}), ac=0;if(q){var k=(q[1]==="Interior"?C.COLUMNA.C.interior:q[1]==="Exterior"?C.COLUMNA.C.exterior:C.COLUMNA.C.esquinera);ac=(+q[3])*(+q[4])*(C.CATEGORIA[P.categoria]?C.CATEGORIA[P.categoria].peso:1000)/1000*1000/(k*P.fc);}var lado=ac>0?Math.max(Math.ceil(Math.sqrt(ac)/5)*5,cmin):0;var arg=[lado,lado];
-    r = seccion(h, r, "1.4   Sección típica de la columna", "columna", arg);
-    var L = lista(h, r, L9,
-      ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)",
-       "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
+
+    var cu = cuentasColumna(P);
+    var q = elQueManda(fs, cu.clave);
+    var ac = q ? cu.Ac(q) : 0;
+    var lado = ac > 0 ? Math.max(Math.ceil(Math.sqrt(ac) / 5) * 5, cmin) : 0;
+    r = seccion(h, r, "Sección típica de la columna", "columna",
+                [lado, lado], q && q[0]);
+
+    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
+    var L = lista(h, r, L8,
+      ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
+       "Ac (cm²)", "b (cm)", "h (cm)"],
       fs,
       function (f, i) {
-        return [f[0], f[1], f[2], +f[3], +f[4],
-          "=IFERROR(F" + i + "*G" + i + "*$F$" + fPeso + '/1000,"")',
-          "=IFERROR(H" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
-          /* cuadrada b = raiz(Ac);  circular D = raiz(4 Ac / PI) */
-          "=IF(N(I" + i + ')=0,"",MAX(CEILING(SQRT(IF(E' + i + '="Circular",4*I'
-            + i + "/PI(),I" + i + ")),5)," + cmin + "))",
-          /* la circular no tiene h: el diametro la define entera */
-          "=IF(N(J" + i + ')=0,"",IF(E' + i + '="Circular","",MAX(CEILING(I'
-            + i + "/J" + i + ",5)," + cmin + ")))"];
-      }, { 4: "0.000", 5: "0.00", 6: "0" });
+        return [f[0], f[1], +f[3], +f[4],
+          "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
+          "=IFERROR(G" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
+          "=IF(N(H" + i + ')=0,"",MAX(CEILING(SQRT(H' + i + "),5)," + cmin + "))",
+          "=IF(N(I" + i + ')=0,"",MAX(CEILING(H' + i + "/I" + i + ",5)," + cmin + "))"];
+      }, { 2: "0", 3: "0.000", 4: "0.00", 5: "0" });
     r = L.fin + 1;
-    r = manda(h, r, L9,
-        ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)", "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
-        L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(H" + i + "*1,0)/1000"; },
-        "La columna que manda", { 4: "0.000", 5: "0.00", 6: "0" });
+    r = manda(h, r, L8,
+        ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
+         "Ac (cm²)", "b (cm)", "h (cm)"],
+        L, function (i) { return "=IFERROR(H" + i + "*1,0)+IFERROR(G" + i + "*1,0)/1000"; },
+        "La columna que manda", { 2: "0", 3: "0.000", 4: "0.00", 5: "0" });
 
     r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
       + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
@@ -4142,15 +4461,89 @@
       + "paños alrededor es interior, con uno es esquinera, y el resto exterior. "
       + "El N.º de pisos es el número de niveles que carga, contando desde este hacia "
       + "arriba.", FIN);
-    r = h.nota(r, "La forma sí se elige, y la eliges tú en el modelador. No cambia Ac "
-      + "ni el coeficiente k: solo cómo se reparte esa área. En una circular la "
-      + "columna «b o Ø» es el diámetro Ø = √(4 Ac / π) y no hay h, porque el "
-      + "diámetro define la sección entera. Para la misma Ac el diámetro sale un "
-      + "13 % mayor que el lado cuadrado, que es lo que cuesta redondear la esquina.",
+    r = h.nota(r, fs.length + " columna(s) rectangular(es) en " + P.niveles
+      + " nivel(es). Las que marcaste como circulares NO están aquí: van en "
+      + "PRE_COLUMNA_CIRCULAR, porque una sección redonda no tiene b ni h.", FIN);
+    return h.cerrar(r);
+  }
+
+  /* ---------------------------------------------------------------------
+     3b · COLUMNAS CIRCULARES
+
+     Mismo Ac, otra figura.  Para la misma area el diametro sale un 13 %
+     mayor que el lado del cuadrado: es lo que cuesta redondear la esquina,
+     y por eso conviene verlo en su propia tabla y no mezclado.
+     --------------------------------------------------------------------- */
+  function columnaCircular(P) {
+    var fs = (P.C || []).filter(esCircular);
+    vacio(fs.length, "columnas circulares");
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var fc = +P.fc || 210;
+    var cmin = Math.round(C.MINIMOS.anchoColumna * 100);
+    var h = F.hoja("PRE_COLUMNA_CIRCULAR"), FIN = 10;
+
+    var cab = cabeceraColumna(h, P, cat, fc, FIN, L_DATO,
+      "PREDIMENSIONAMIENTO DE COLUMNA CIRCULAR", [
+      ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
+      ["Área de la columna", "Ac = P servicio / (k · f'c)"],
+      ["Diámetro", "Ø = √(4 Ac / π)"],
+      ["Área colocada", "A = π Ø² / 4        (nunca menor que Ac)"],
+      ["Diámetro mínimo", "Ø ≥ " + C.MINIMOS.anchoColumna.toFixed(2)
+        + " m, el mismo mínimo que el ancho de una rectangular"]
+    ]);
+    var r = cab.r, fPeso = cab.fPeso, ffc = cab.ffc;
+
+    var K = "IF(D#=\"Interior\"," + C.COLUMNA.C.interior
+          + ",IF(D#=\"Exterior\"," + C.COLUMNA.C.exterior
+          + "," + C.COLUMNA.C.esquinera + "))";
+
+    var cu = cuentasColumna(P);
+    var q = elQueManda(fs, cu.clave);
+    var ac = q ? cu.Ac(q) : 0;
+    var diam = ac > 0
+      ? Math.max(Math.ceil(Math.sqrt(4 * ac / Math.PI) / 5) * 5, cmin) : 0;
+    r = seccion(h, r, "Sección típica de la columna circular", "columnaCircular",
+                [diam], q && q[0]);
+
+    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
+    var L = lista(h, r, L8,
+      ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
+       "Ac (cm²)", "Ø (cm)", "A colocada (cm²)"],
+      fs,
+      function (f, i) {
+        return [f[0], f[1], +f[3], +f[4],
+          "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
+          "=IFERROR(G" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
+          "=IF(N(H" + i + ')=0,"",MAX(CEILING(SQRT(4*H' + i
+            + "/PI()),5)," + cmin + "))",
+          /* I*I y no I^2: mas claro de leer en la celda, y el interprete
+             de probar_hojas.js no entiende el acento circunflejo -daba
+             PI()*I y se comia el cuadrado sin quejarse-. */
+          "=IF(N(I" + i + ')=0,"",PI()*I' + i + "*I" + i + "/4)"];
+      }, { 2: "0", 3: "0.000", 4: "0.00", 5: "0", 6: "0", 7: "0" });
+    r = L.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "Ubicación", "N.º pisos", "A trib (m²)", "P (t)",
+         "Ac (cm²)", "Ø (cm)", "A colocada (cm²)"],
+        L, function (i) { return "=IFERROR(H" + i + "*1,0)+IFERROR(G" + i + "*1,0)/1000"; },
+        "La columna circular que manda",
+        { 2: "0", 3: "0.000", 4: "0.00", 5: "0", 6: "0", 7: "0" });
+
+    r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
+      + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
+      + " exterior y " + C.COLUMNA.C.esquinera + " esquinera   |   Ø = √(4 Ac / π) "
+      + "al múltiplo de 5 cm superior, mínimo " + cmin + " cm.", FIN);
+    r = h.nota(r, "EL ÁREA COLOCADA NO ES Ac. Al redondear el diámetro a 5 cm hacia "
+      + "arriba, el área que se coloca queda por encima de la que se pide; esa columna "
+      + "está para que se vea cuánto. Si sale muy por encima, la sección es holgada y "
+      + "puedes bajar el diámetro a mano comprobando que A colocada siga llegando a Ac.",
       FIN);
-    r = h.nota(r, fs.length + " columna(s) en " + P.niveles + " nivel(es). El libro "
-      + "elige la proporción b × h; el complemento no la inventa: da Ac y la sección "
-      + "cuadrada o circular equivalente, y el ajuste es tuyo.", FIN);
+    r = h.nota(r, "EL MISMO Ac QUE UNA RECTANGULAR. La forma no cambia el área que la "
+      + "columna necesita ni el coeficiente k: solo cómo se reparte. Para la misma Ac "
+      + "el diámetro sale un 13 % mayor que el lado del cuadrado, que es lo que cuesta "
+      + "redondear la esquina.", FIN);
+    r = h.nota(r, fs.length + " columna(s) circular(es) en " + P.niveles
+      + " nivel(es). Las rectangulares van en PRE_COLUMNA.", FIN);
     return h.cerrar(r);
   }
 
@@ -4209,10 +4602,24 @@
       { 1: "0.000" }, { alinear: D3 });
     r++;
 
-    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
     var tmin = Math.round(C.MINIMOS.espesorPlaca * 100);
-    var q=elQueManda(fs,function(f){return +f[3]});var arg=[q?(+q[3])*100:0, q?Math.max(Math.ceil(Math.max((+q[3])/C.PLACA.divisorLongitud,(+q[4])/C.PLACA.divisorAltura,C.MINIMOS.espesorPlaca)*100/5)*5,tmin):0];
-    r = seccion(h, r, "1.4   Sección en planta de la placa", "placa", arg);
+    /* LA MISMA CLAVE QUE EL CUADRO DE ABAJO.  El bloque «el que manda» elige
+       por formula sobre la lista; el dibujo elegia por su cuenta, y no
+       siempre coincidian: se dibujaba una seccion y justo debajo la hoja
+       nombraba otra. Aqui elegia por longitud, y el espesor lo
+       puede fijar la ALTURA: t = max(lm/divisor, hm/divisor, minimo).
+       Manda el espesor, y desempata el area. */
+    function tPlacaCm(f) {
+      return Math.max(Math.ceil(Math.max((+f[3]) / C.PLACA.divisorLongitud,
+                                         (+f[4]) / C.PLACA.divisorAltura,
+                                         C.MINIMOS.espesorPlaca) * 100 / 5) * 5, tmin);
+    }
+    var q = elQueManda(fs, function (f) {
+      return tPlacaCm(f) + (+f[3]) * tPlacaCm(f) / 100 / 1000;
+    });
+    var arg = [q ? (+q[3]) * 100 : 0, q ? tPlacaCm(q) : 0];
+    r = seccion(h, r, "Sección en planta de la placa", "placa", arg, q && q[0]);
+    r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
       ["Código", "Eje", "Dir", "lm (m)", "hm (m)", "t mín (m)", "t (cm)", "Área (m²)"],
       fs,
@@ -4507,6 +4914,43 @@
       + "un factor de seguridad: es peso que existe y que el metrado del edificio no "
       + "contó, porque está por debajo del nivel del terreno.");
 
+    /* LA ZAPATA QUE MANDA, con la MISMA clave que el cuadro de mas abajo:
+       area en planta B x L, y el peralte para desempatar.  Se rehacen aqui
+       las cuentas de la lista porque el dibujo necesita numeros, no
+       formulas; si alguna vez dejan de coincidir, probar_hojas.js lo dice. */
+    function pServZ(f) { return (+f[2]) * (+f[3]) * cat.peso / 1000; }      /* t */
+    function fSismoDe(f) {
+      return (f[1] === "Centrada") ? Z.Fsismo.centrada
+           : (f[1] === "Medianera") ? Z.Fsismo.medianera : Z.Fsismo.esquinera;
+    }
+    function azDe(f) {
+      return Z.incrementoPesoPropio * pServZ(f) * fSismoDe(f) / sigmaT;     /* m2 */
+    }
+    function ladosDe(f) {
+      var az = azDe(f), red = Z.redondeoLado, B, L;
+      if (f[1] === "Medianera") {
+        B = Math.ceil(Math.sqrt(az / 2) / red) * red;
+        L = Math.ceil(2 * Math.sqrt(az / 2) / red) * red;
+      } else {
+        var d = ((+f[6]) - (+f[5])) / 2;                /* (col h - col b) / 2 */
+        B = Math.ceil((Math.sqrt(az) - d) / red) * red;
+        L = Math.ceil((Math.sqrt(az) + d) / red) * red;
+      }
+      var div = (f[1] === "Esquinera") ? Z.divisorPeralte.esquinera
+                                       : Z.divisorPeralte.centrada;
+      var H = Math.ceil((L - (+f[6])) / div / Z.redondeoPeralte) * Z.redondeoPeralte;
+      return { B: B, L: L, H: H, area: B * L };
+    }
+    var qZ = elQueManda(fs, function (f) {
+      var d = ladosDe(f);
+      return d.area + d.H / 1000;
+    });
+    var dZ = qZ ? ladosDe(qZ) : null;
+    r = seccion(h, r, "1.3   Planta y corte de la zapata", "zapata",
+                [qZ ? (+qZ[5]) * 100 : 0, qZ ? (+qZ[6]) * 100 : 0,
+                 dZ ? dZ.B * 100 : 0, dZ ? dZ.L * 100 : 0, dZ ? dZ.H * 100 : 0],
+                qZ && qZ[0]);
+
     r = h.seccion(r, "2. DATOS DEL EDIFICIO Y DEL SUELO");
     r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
     r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
@@ -4526,9 +4970,14 @@
       ["Código", "Tipo", "N.º pisos", "A trib (m²)", "P (t)", "F sismo", "Az (m²)"],
       fs,
       function (f, i) {
+        /* EL F SISMO NO SE ESCRIBE: lo fija el tipo, y el tipo esta en la
+           tabla 1.1 de mas arriba.  Tenerlo como dato dejaba escribir una
+           medianera con F = 1.00 y la hoja lo daba por bueno. */
         return [f[0], f[1], +f[2], +f[3],
           "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
-          +f[4],
+          "=IF(D" + i + '="","",IF(D' + i + '="Centrada",' + Z.Fsismo.centrada
+            + ",IF(D" + i + '="Medianera",' + Z.Fsismo.medianera
+            + "," + Z.Fsismo.esquinera + ")))",
           "=IFERROR(" + Z.incrementoPesoPropio + "*G" + i + "*H" + i
             + "/$F$" + fSig + ',"")'];
       }, { 3: "0.000", 4: "0.00", 5: "0.00", 6: "0.000" });
@@ -4544,7 +4993,12 @@
       function (f, i) {
         var f1 = base + (i - r2);                 /* misma fila en la tabla 1 */
         var az = "$I$" + f1, tipo = "$D$" + f1;
-        return [f[0], +f[5], +f[6],
+        /* El codigo NO se vuelve a escribir: lo trae de la tabla 3.  Es la
+           unica hoja con dos tablas sobre la misma lista de elementos, y
+           tenerlo escrito dos veces significa que se pueden contradecir.
+           Ademas asi la plantilla de V1 funciona vacia: escribes el codigo
+           una vez arriba y aparece abajo. */
+        return ['=IF(C' + f1 + '="","",C' + f1 + ')', +f[5], +f[6],
           "=IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2),"
             + Z.redondeoLado + "),CEILING(SQRT(" + az + ")-(E" + i + "-D" + i + ")/2,"
             + Z.redondeoLado + "))",
@@ -4585,7 +5039,8 @@
     especificaciones: especificaciones,
     losaAligerada: losaAligerada, losaMaciza: losaMaciza, losaNervada: losaNervada,
     vigaPrincipal: vigaPrincipal, vigaChata: vigaChata,
-    columna: columna, placa: placa, zapata: zapata,
+    columna: columna, columnaCircular: columnaCircular,
+    placa: placa, zapata: zapata,
     metradoCargas: metradoCargas
   };
 });
@@ -4970,7 +5425,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v68 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v76 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -5258,6 +5713,7 @@ var REGISTRO = {
   "PRE_VIGA_PRINCIPAL": function(p){ return HOJAS_PRE.vigaPrincipal(p); },
   "PRE_VIGA_CHATA":     function(p){ return HOJAS_PRE.vigaChata(p); },
   "PRE_COLUMNA":        function(p){ return HOJAS_PRE.columna(p); },
+  "PRE_COLUMNA_CIRCULAR": function(p){ return HOJAS_PRE.columnaCircular(p); },
   "PRE_PLACA":          function(p){ return HOJAS_PRE.placa(p); },
   "PRE_ZAPATA":         function(p){ return HOJAS_PRE.zapata(p); },
   "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); }
@@ -5275,8 +5731,17 @@ var ELEMENTOS = {
   "PRE_LOSA_NERVADA":   function (P) { return P && P.L && P.L.nervada; },
   "PRE_VIGA_PRINCIPAL": function (P) { return P && P.V; },
   "PRE_VIGA_CHATA":     function (P) { return P && P.VCH; },
-  "PRE_COLUMNA":        function (P) { return P && P.C; },
-  "PRE_PLACA":          function (P) { return P && P.P; }
+  /* Las dos hojas salen de la MISMA lista de columnas del modelador; lo
+     que las separa es la forma.  Si se repartiera en el modelador serian
+     dos listas que se pueden contradecir. */
+  "PRE_COLUMNA":        function (P) {
+    return (P && P.C || []).filter(function (f) { return f[2] !== "Circular"; });
+  },
+  "PRE_COLUMNA_CIRCULAR": function (P) {
+    return (P && P.C || []).filter(function (f) { return f[2] === "Circular"; });
+  },
+  "PRE_PLACA":          function (P) { return P && P.P; },
+  "PRE_ZAPATA":         function (P) { return P && P.Z; }
 };
 
 function generarHojas(cuales, P){
@@ -5295,6 +5760,17 @@ function generarHojas(cuales, P){
       var bien = hechas.filter(function(x){ return !x.error; }).length;
       res.aviso = "Generadas " + bien + " de " + cuales.length + " hoja(s) en "
                   + res.total + " ms.";
+      /* Y SI ALGUNA NO SALIO, QUE SE DIGA CUAL Y POR QUE.  Antes ponia
+         «Generadas 5 de 7» y ahi se acababa: habia que adivinar si faltaban
+         placas en el modelo, si la lista se habia quedado corta o si Excel
+         habia rechazado algo.  Un numero que no explica nada es peor que un
+         error, porque parece que todo fue bien. */
+      var fallaron = hechas.filter(function(x){ return x.error; });
+      if (fallaron.length) {
+        res.aviso += "  No salieron: " + fallaron.map(function (x) {
+          return (x.hoja || "?") + " (" + x.error + ")";
+        }).join("; ") + ".";
+      }
       estado(res.aviso, bien ? "ok" : "err");
       responde({ a: "hojas", res: res });    /* la ventana espera esto */
       return;

@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v68 · 11-09-2026";
+  var BUILD="v76 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -6963,16 +6963,18 @@ var TT={script:performance.now()};
     {n:"PRE_VIGA_PRINCIPAL", tit:"Pre viga principal", t:"ele", q:function(c){return c.viga.principal}},
     {n:"PRE_VIGA_CHATA",     tit:"Pre viga chata",     t:"ele", q:function(c){return c.viga.chata}},
     {n:"PRE_COLUMNA",        tit:"Pre columna",        t:"ele", q:function(c){return c.col}},
+    {n:"PRE_COLUMNA_CIRCULAR",tit:"Pre columna circular",t:"ele", q:function(c){return c.col}},
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
     {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
   ];
-  /* Las diez.  Se deja el mapa -en vez de darlas todas por buenas- porque
+  /* Las quince.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
   var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,ESPECIFICACIONES:true,
     "CUADROS E030":true,DATOS:true,
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
+    PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
