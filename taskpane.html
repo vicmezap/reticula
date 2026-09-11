@@ -3595,15 +3595,67 @@
     });
   }
 
+  /* ¿ES NUESTRA ESTA HOJA, O ES DE V1?
+
+     generar() BORRA la hoja y la vuelve a crear.  Sobre un libro en blanco
+     eso es lo correcto.  Sobre V1 es un destrozo, y ademas silencioso:
+
+       · Excel busca las hojas SIN distinguir mayusculas, asi que pedir
+         «CUADROS E030» encuentra la «Cuadros E030» de V1;
+       · esa hoja tiene 232 rangos con nombre colgando -los distritos,
+         LISTA_AMB, los ambientes de la E.020-, y al borrarla se van todos;
+       · con ellos se cae el desplegable de ambientes de DATOS y la busqueda
+         de la sobrecarga, que es de donde sale el metrado.
+
+     La regla es simple: si la hoja que ya existe tiene ALGO que el
+     complemento no pone -rangos con nombre apuntando a ella, formas,
+     botones-, no es nuestra y no se toca.  Se dice y se sigue.
+
+     No es una lista de hojas prohibidas a proposito: una lista hay que
+     acordarse de mantenerla, y esto vale tambien para las hojas que
+     todavia no existen. */
+  function ajena(nombre, formas, nombres) {
+    var n = String(nombre).toLowerCase(), cuenta = 0, i, f;
+    if (nombres && nombres.items) {
+      for (i = 0; i < nombres.items.length; i++) {
+        f = String(nombres.items[i].formula || "").toLowerCase();
+        /* «='Cuadros E030'!$AC$21» o «=DATOS!$G$66» */
+        if (f.indexOf("'" + n + "'!") >= 0 || f.indexOf("=" + n + "!") >= 0 ||
+            f.indexOf("!" + n + "!") >= 0) cuenta++;
+      }
+    }
+    var nFormas = (formas && formas.items) ? formas.items.length : 0;
+    if (!cuenta && !nFormas) return null;
+    var que = [];
+    if (cuenta) que.push(cuenta + " rango(s) con nombre");
+    if (nFormas) que.push(nFormas + " forma(s) o boton(es)");
+    return "la hoja «" + nombre + "» ya existe en este libro y tiene "
+         + que.join(" y ") + " que el complemento no puso: NO se toca. "
+         + "Si de verdad quieres rehacerla, bórrala tú y vuelve a generar.";
+  }
+
   function generar(plan, opciones) {
     var t0 = (typeof performance !== "undefined") ? performance.now() : Date.now();
-    var stats = null, tCola = 0;
+    var stats = null, tCola = 0, saltada = null;
     return Excel.run(function (context) {
       var libro = context.workbook;
       var vieja = libro.worksheets.getItemOrNullObject(plan.nombre);
       vieja.load("isNullObject");
       return context.sync().then(function () {
-        if (!vieja.isNullObject) vieja.delete();
+        if (vieja.isNullObject) return null;
+        /* existe: hay que mirar si es nuestra antes de borrarla */
+        var formas = vieja.shapes, nombres = libro.names;
+        formas.load("items/name");
+        nombres.load("items/name,items/formula");
+        return context.sync().then(function () {
+          return { formas: formas, nombres: nombres };
+        });
+      }).then(function (info) {
+        if (info) {
+          saltada = ajena(plan.nombre, info.formas, info.nombres);
+          if (saltada) return null;
+          vieja.delete();
+        }
         var ws = libro.worksheets.add(plan.nombre);
         stats = encolar(ws, plan, opciones);
         tCola = ((typeof performance !== "undefined") ? performance.now() : Date.now()) - t0;
@@ -3611,6 +3663,7 @@
         return context.sync();
       });
     }).then(function () {
+      if (saltada) return { n: 0, error: null };
       /* LA FIGURA VA EN SU PROPIO LOTE, Y DESPUES.  Y FUERA.
 
          Dos cosas distintas, las dos aprendidas a golpes.
@@ -3631,6 +3684,8 @@
       return dibujar(plan, opciones);
     }).then(function (dib) {
       var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
+      if (saltada) return { hoja: plan.nombre, ms: Math.round(t1 - t0),
+                            formas: 0, saltada: true, error: saltada };
       var r = { hoja: plan.nombre, ms: Math.round(t1 - t0),
                 msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
                 formas: dib.n, stats: stats };
@@ -3663,6 +3718,26 @@
      tiene, que es exactamente como esta pensada la hoja.
      ===================================================================== */
   var LLENAR = {
+    /* DATOS en V1 no se rehace: tiene la geometria general, los contadores de
+       los que cuelga MODELO, y la tabla de ambientes por piso.  Lo unico que
+       se llena es esa tabla, porque es el mismo dato que el metrado y hasta
+       ahora se escribia dos veces.
+
+       Se escribe la CADENA del ambiente -«VIVIENDAS · -»-, que es lo que V1
+       busca en LISTA_AMB para sacar la sobrecarga.  Las 45 cadenas que genera
+       el complemento son exactamente las 45 de V1: se comprobo una a una,
+       porque si una sola no coincidiera la busqueda devolveria vacio y la
+       hoja se quedaria sin s/c sin decir nada. */
+    DATOS: { partes: [
+      { nombre: "DATOS_AMBIENTES", de: function (A) {
+          return (A || []).map(function (f) {
+            var uso = String(f[1] || "").trim();
+            var amb = String(f[2] || "").trim();
+            if (!uso) return [""];
+            return [uso + " · " + (amb && amb !== "—" ? amb : "-")];
+          });
+        } }
+    ] },
     /* MODELO NO ES UNA LISTA.  Son las luces de los cuatro ejes, las alturas
        de entrepiso, y tres contadores que viven en DATOS -numero de pisos y
        de vanos en X e Y- de los que cuelgan las formulas de V1.  Todo eso lo
@@ -5535,8 +5610,17 @@
      ["Sistema estructural en X", pr.sistemaX || "-", ""],
      ["Sistema estructural en Y", pr.sistemaY || "-", ""],
      ["f'c del concreto", fc, "kg/cm²"],
+     /* fy NO se usa en predimensionamiento -el acero entra en el diseño, que
+        es la fase siguiente-, pero va aquí porque es donde se busca, y
+        porque Ec sí sale de f'c y conviene verlos juntos.  V1 lo tenía y el
+        complemento no: la hoja generada no era la misma hoja. */
+     ["fy del acero", +pr.fy || 4200, "kg/cm²"],
      ["Peso del concreto armado", +pr.concreto || 2400, "kg/m³"],
      ["σs capacidad portante", +(P && P.sigma) || 3.0, "kg/cm²"],
+     /* El MATERIAL del acabado, no solo su espesor.  El peso por m² sale de
+        multiplicar uno por otro, y con solo el espesor no hay forma de saber
+        de dónde salió el peso ni de cambiarlo con criterio. */
+     ["Material del piso terminado", pr.acabado || "Mortero de cemento", ""],
      ["Espesor del piso terminado", +pr.pisoEsp || 5, "cm"],
      ["Espesor del cielo raso", +pr.cieloEsp || 2, "cm"],
      ["Tabiquería", +pr.tabiqueria || 0, "kg/m²"]
@@ -5732,7 +5816,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v86 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v88 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -6044,6 +6128,9 @@ var ELEMENTOS = {
      y no se rehace -si se rehiciera, se irian los botones de «Traer plano»
      y las macros que los mueven-. */
   "MODELO":             function (P) { return P && P.geo; },
+  /* de DATOS solo se llena la tabla de ambientes por piso: es el mismo dato
+     que el metrado, y hasta ahora se escribia en los dos sitios */
+  "DATOS":              function (P) { return P && P.A; },
   "PRE_LOSA_ALIGERADA": function (P) { return P && P.L && P.L.aligerada; },
   "PRE_LOSA_MACIZA":    function (P) { return P && P.L && P.L.maciza; },
   "PRE_LOSA_NERVADA":   function (P) { return P && P.L && P.L.nervada; },
