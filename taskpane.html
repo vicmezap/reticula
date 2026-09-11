@@ -2856,7 +2856,81 @@
     });
   }
 
-  return { generar: generar, encolar: encolar, col: col };
+
+  /* =====================================================================
+     LLENAR EN VEZ DE REHACER
+
+     Cuando la hoja ya existe y trae su lista con nombre -las de V1-, el
+     complemento NO la borra: escribe las columnas de ENTRADA y deja que las
+     formulas de la propia hoja calculen el resto.
+
+     Asi se conserva entero lo que el complemento no sabe hacer: los dibujos
+     de seccion, las macros, el boton, las validaciones y la maquetacion.
+     Antes se borraba la hoja y se rehacia, y con ella se iba todo eso.
+
+     EL NOMBRE DEFINIDO ES LA SENAL.  Si LISTA_CHATA existe, hay donde
+     escribir; si no, el libro no es V1 y la hoja se genera entera como
+     siempre.  No hay que configurar nada ni elegir modo.
+
+     De cada elemento solo viajan las entradas.  El resto -el peralte, el
+     ancho, el area, el estado- lo calcula Excel con las formulas que ya
+     tiene, que es exactamente como esta pensada la hoja.
+     ===================================================================== */
+  var LLENAR = {
+    PRE_LOSA_ALIGERADA: { nombre: "LISTA_ALIGERADA",
+      cols: [[0, 0], [1, 1], [2, 2], [3, 3]] },          /* codigo, eje, Ln, alfa */
+    PRE_LOSA_MACIZA:    { nombre: "LISTA_MACIZA",
+      cols: [[0, 0], [1, 1], [2, 2], [3, 3]] },
+    PRE_LOSA_NERVADA:   { nombre: "LISTA_NERVADA",
+      cols: [[0, 0], [1, 1], [2, 2], [3, 3]] },
+    PRE_VIGA_PRINCIPAL: { nombre: "LISTA_VIGA",
+      cols: [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]] },  /* + B y alfa */
+    PRE_VIGA_CHATA:     { nombre: "LISTA_CHATA",
+      cols: [[0, 0], [1, 1], [2, 2], [3, 4], [4, 3]] },  /* h losa antes que alfa */
+    PRE_COLUMNA:        { nombre: "LISTA_COLUMNA",
+      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] },          /* la forma no existe en V1 */
+    PRE_PLACA:          { nombre: "LISTA_PLACA",
+      cols: [[0, 0], [1, 1], [2, 3], [3, 4]] }           /* la direccion tampoco */
+  };
+
+  function configLlenado(nombreHoja) { return LLENAR[nombreHoja] || null; }
+
+  function llenar(nombreHoja, filas) {
+    var cfg = LLENAR[nombreHoja];
+    if (!cfg) return Promise.resolve(null);
+    return Excel.run(function (context) {
+      var nm = context.workbook.names.getItemOrNullObject(cfg.nombre);
+      nm.load("isNullObject");
+      return context.sync().then(function () {
+        if (nm.isNullObject) return null;        /* este libro no es V1 */
+        var rg = nm.getRange();
+        rg.load("rowCount,columnCount");
+        return context.sync().then(function () {
+          var capacidad = rg.rowCount, ancho = 0, i;
+          cfg.cols.forEach(function (p) { if (p[0] + 1 > ancho) ancho = p[0] + 1; });
+          var caben = Math.min(filas.length, capacidad);
+          var m = [];
+          for (i = 0; i < capacidad; i++) {
+            var f = [], j;
+            for (j = 0; j < ancho; j++) f.push("");
+            m.push(f);
+          }
+          /* las filas que sobran de la vez anterior se vacian: una lista mas
+             corta no puede dejar fantasmas calculando por su cuenta */
+          for (i = 0; i < caben; i++)
+            cfg.cols.forEach(function (p) { m[i][p[0]] = filas[i][p[1]]; });
+          rg.getCell(0, 0).getResizedRange(capacidad - 1, ancho - 1).values = m;
+          return context.sync().then(function () {
+            return { hoja: nombreHoja, modo: "llenada", escritas: caben,
+                     capacidad: capacidad, sobran: filas.length - caben };
+          });
+        });
+      });
+    });
+  }
+
+  return { generar: generar, encolar: encolar, col: col,
+           llenar: llenar, configLlenado: configLlenado, LLENAR: LLENAR };
 });
 </script>
 <script>
@@ -2978,7 +3052,7 @@
     if (r > P.ultima) P.ultima = r;
   }
 
-  function manda(h, r, layout, encab, L, clave, titulo) {
+  function manda(h, r, layout, encab, L, clave, titulo, numfmt) {
     var ultima = layout[layout.length - 1][1];
     var aux = ultima + 1, A = F.col(aux), i;
     h.plan().anchos[A] = 0;                  /* el mecanismo no se ve */
@@ -2990,7 +3064,11 @@
       var c = F.col(par[0]);
       return '=IF(MAX(' + rg + ')=0,"",INDEX($' + c + "$" + L.primera + ":$"
         + c + "$" + L.ultima + ",MATCH(MAX(" + rg + ")," + rg + ",0)))";
-    }), null, ALTO_LISTA, { alinear: CENTRO });
+      /* EL MISMO FORMATO DE NUMERO QUE LA LISTA.  Sin esto el cuadro
+         ensenaba Ac = 1547.619048 y h = 0.226666667 donde la lista de
+         arriba pone 1548 y 0.23: los mismos numeros con otra cara, que es
+         de las cosas que mas desconfianza dan en una hoja. */
+    }), numfmt || null, ALTO_LISTA, { alinear: CENTRO });
     return r + 2;
   }
 
@@ -3197,7 +3275,7 @@
     r = manda(h, r, L7_ALIG,
         ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)"],
         L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
-        "La losa que manda");
+        "La losa que manda", { 2: "0.00", 4: "0.000", 6: "0" });
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
       + "de 5 cm   |   b = h / " + C.PROPORCION.viguetaAligerada + ", TAMBIÉN al "
@@ -3239,7 +3317,7 @@
     r = manda(h, r, L6_MAC,
         ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)"],
         L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
-        "La losa que manda");
+        "La losa que manda", { 2: "0.00", 4: "0.000" });
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
       + "de 5 cm. La maciza no lleva vigueta ni separación: es una sola pieza.");
@@ -3285,7 +3363,7 @@
     r = manda(h, r, L8,
         ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)", "S (m)"],
         L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
-        "La losa que manda");
+        "La losa que manda", { 2: "0.00", 4: "0.000", 6: "0" });
 
     r = h.nota(r, "A diferencia de la aligerada, la separación de la nervada NO es "
       + "fija: S ≤ " + C.PROPORCION.nervadura + " h, así que depende del peralte. "
@@ -3336,7 +3414,7 @@
     r = manda(h, r, L8,
         ["Código", "Eje", "Ln (m)", "B (m)", "α", "h (m)", "h (cm)", "b (cm)"],
         L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(J" + i + "*1,0)/1000+IFERROR(E" + i + "*1,0)/1000000"; },
-        "La viga que manda");
+        "La viga que manda", { 2: "0.00", 3: "0.000", 5: "0.000" });
 
     r = h.nota(r, "B es el ancho tributario: medio paño a cada lado que tenga losa. "
       + "h = Ln / α, redondeado hacia arriba al múltiplo de 5 cm   |   b = B / "
@@ -3393,7 +3471,7 @@
     r = manda(h, r, L8,
         ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
         L, function (i) { return "=(J" + i + "=\"NO CUMPLE\")*10000+IFERROR(E" + i + "*1,0)"; },
-        "La viga chata que manda");
+        "La viga chata que manda", { 2: "0.00", 5: "0.00" });
 
     r = h.nota(r, "El peralte de una viga chata NO se calcula: es el espesor de la "
       + "losa en la que se apoya, y el complemento lo trae ya resuelto de la hoja de "
@@ -3491,7 +3569,7 @@
     r = manda(h, r, L9,
         ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)", "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
         L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(H" + i + "*1,0)/1000"; },
-        "La columna que manda");
+        "La columna que manda", { 4: "0.000", 5: "0.00", 6: "0" });
 
     r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
       + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
@@ -3585,7 +3663,7 @@
     r = manda(h, r, L8,
         ["Código", "Eje", "Dir", "lm (m)", "hm (m)", "t mín (m)", "t (cm)", "Área (m²)"],
         L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(J" + i + "*1,0)/1000"; },
-        "La placa que manda");
+        "La placa que manda", { 3: "0.00", 4: "0.00", 5: "0.000", 7: "0.000" });
 
     /* --- verificacion POR DIRECCION --- */
     var a = L.primera, b = L.ultima;
@@ -3919,7 +3997,7 @@
     r = manda(h, r, L8,
         ["Código", "col b (m)", "col h (m)", "B menor (m)", "L mayor (m)", "Área B×L (m²)", "H (m)", "Estado"],
         T2, function (i) { return "=IFERROR(H" + i + "*1,0)+IFERROR(I" + i + "*1,0)/1000"; },
-        "La zapata que manda");
+        "La zapata que manda", { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.000", 6: "0.00" });
 
     r = h.nota(r, "POR QUÉ HAY UNA COLUMNA «Estado». Los lados se construyen como "
       + "√Az ± d, con d = (h − b)/2. Esa pareja conserva la SUMA de los lados, no el "
@@ -4328,7 +4406,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v65 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v67 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -4624,6 +4702,19 @@ var REGISTRO = {
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
    localStorage "que comparten por ser el mismo origen": no lo comparten, la
    ventana tiene su propia particion, y aqui llegaba null o algo viejo. */
+/* De donde saca el complemento los elementos de cada hoja cuando solo hay
+   que llenar la lista de V1.  Lo que viaja son las ENTRADAS; el resto lo
+   calcula Excel con las formulas que la hoja ya tiene. */
+var ELEMENTOS = {
+  "PRE_LOSA_ALIGERADA": function (P) { return P && P.L && P.L.aligerada; },
+  "PRE_LOSA_MACIZA":    function (P) { return P && P.L && P.L.maciza; },
+  "PRE_LOSA_NERVADA":   function (P) { return P && P.L && P.L.nervada; },
+  "PRE_VIGA_PRINCIPAL": function (P) { return P && P.V; },
+  "PRE_VIGA_CHATA":     function (P) { return P && P.VCH; },
+  "PRE_COLUMNA":        function (P) { return P && P.C; },
+  "PRE_PLACA":          function (P) { return P && P.P; }
+};
+
 function generarHojas(cuales, P){
   if(!P){
     try{ P = JSON.parse(localStorage.getItem("reticula_proyecto")||"null"); }
@@ -4644,7 +4735,38 @@ function generarHojas(cuales, P){
       responde({ a: "hojas", res: res });    /* la ventana espera esto */
       return;
     }
-    var nombre = cuales[i], plan;
+    var nombre = cuales[i];
+
+    /* PRIMERO SE INTENTA LLENAR.  Si el libro ya trae esta hoja con su lista
+       -es V1-, el complemento escribe las entradas y no toca nada mas: los
+       dibujos de seccion, las macros, el boton y la maquetacion se quedan.
+       Solo si no hay donde escribir se genera la hoja entera. */
+    var fuente = ELEMENTOS[nombre];
+    if (fuente && ESCRITOR.configLlenado(nombre)) {
+      var filas = fuente(P) || [];
+      if (filas.length) {
+        estado("Llenando " + nombre + "...", "");
+        return ESCRITOR.llenar(nombre, filas).then(function (rr) {
+          if (rr) {
+            if (rr.sobran > 0)
+              rr.error = "la lista de la hoja tiene " + rr.capacidad + " filas y hay "
+                       + (rr.escritas + rr.sobran) + " elementos: " + rr.sobran
+                       + " se quedaron fuera";
+            hechas.push(rr);
+            return siguiente(i + 1);
+          }
+          generarEntera(i, nombre);          /* no es V1: se genera entera */
+        }).catch(function (e) {
+          hechas.push({ hoja: nombre, error: e.message });
+          siguiente(i + 1);
+        });
+      }
+    }
+    return generarEntera(i, nombre);
+  }
+
+  function generarEntera(i, nombre) {
+    var plan;
     try{
       var constructor = REGISTRO[nombre];
       if(!constructor) throw new Error("hoja no implementada: " + nombre);
