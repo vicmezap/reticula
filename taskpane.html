@@ -2838,7 +2838,14 @@
       hNer = Math.max(espesorCm - hf, 5); rotNer = nm(hNer) + " cm";
     } else { hNer = 25; rotNer = "h - 5 cm"; }
     var b = bCm > 0 ? bCm : 12;
-    var S = (sCm <= b + 10) ? b + 30 : sCm;
+    /* La guarda va al reves de como parece natural, y a proposito.
+       «sCm <= b+10 ? b+30 : sCm» deja pasar NaN: NaN no es menor ni igual a
+       nada, asi que se va por la rama del dato bueno y NaN llega hasta el
+       ancho de una forma.  Excel contesta «falta el argumento, este no es
+       valido» y tira el lote entero: la hoja se queda sin seccion.
+       Preguntando por lo BUENO -sCm > b+10- el NaN cae solo al valor por
+       defecto, como los ceros y los negativos. */
+    var S = (sCm > b + 10) ? sCm : b + 30;
     var anchoTot = 2 * S + b;
     var s = Math.min((caja.alto - 96) / (hf + hNer), (caja.ancho - 95) / anchoTot);
     var x0 = caja.x + 12 + (caja.ancho - 95 - anchoTot * s) / 2, y0 = caja.y + 62;
@@ -3500,20 +3507,91 @@
   /* Intenta dibujar la seccion tipica.  Nunca rechaza: un libro sin soporte
      de formas -o una version de Excel que no admita alguna- tiene que dar una
      hoja completa sin dibujo, no media hoja. */
+  /* Como describir una forma cuando Excel la rechaza.  Sin esto el mensaje
+     dice «falta el argumento» y hay que adivinar cual de sesenta y dos. */
+  function describe(i, f) {
+    var q = "forma " + (i + 1) + " (";
+    if (f.t === "rect") {
+      q += "rectangulo " + f.w.toFixed(1) + "x" + f.h.toFixed(1)
+         + " en " + f.x.toFixed(0) + "," + f.y.toFixed(0);
+    } else if (f.t === "ovalo") {
+      q += "circulo Ø" + f.d.toFixed(1)
+         + " en " + f.cx.toFixed(0) + "," + f.cy.toFixed(0);
+    } else if (f.t === "linea") {
+      q += "linea " + f.x1.toFixed(0) + "," + f.y1.toFixed(0)
+         + " -> " + f.x2.toFixed(0) + "," + f.y2.toFixed(0);
+    } else {
+      q += "texto «" + String(f.s).replace(/\n/g, " ") + "»";
+    }
+    return q + ")";
+  }
+
+  /* Borra lo que el lote fallido haya dejado a medias. */
+  function limpiarFormas(nombreHoja) {
+    return Excel.run(function (context) {
+      var ws = context.workbook.worksheets.getItem(nombreHoja);
+      var sh = ws.shapes;
+      sh.load("items/name");
+      return context.sync().then(function () {
+        var i;
+        for (i = sh.items.length - 1; i >= 0; i--) sh.items[i].delete();
+        return context.sync();
+      });
+    }).catch(function () { });
+  }
+
+  /* UNA A UNA.
+
+     Office.js manda todas las formas en un lote: si una sola orden no le
+     gusta, aborta ahi y se queda lo que ya habia aplicado.  El resultado es
+     media figura -o una sola forma- y ni una pista de cual fue la culpable.
+
+     Asi que cuando el lote se cae se empieza de nuevo forma a forma, cada
+     una en su propio envio.  Cuesta mas, pero solo pasa cuando ya ha fallado
+     algo, y entonces:
+       · se dibuja TODO lo que Excel si acepta, en vez de perderlo
+       · se dice exactamente cual rechazo y con que medidas
+
+     Es la diferencia entre «no se pudo dibujar» y «rechazo el circulo de
+     Ø 0.0 que va en 412,318». */
+  function unaAUna(plan, opciones) {
+    var g = plan.figura;
+    var formas = DIB[g.tipo].apply(null, (g.args || []).concat([hueco(plan)]));
+    var puestas = 0, rechazadas = [];
+    function paso(i) {
+      if (i >= formas.length) {
+        return { n: puestas, error: rechazadas.length
+          ? ("Excel rechazó " + rechazadas.length + " de " + formas.length
+             + " formas: " + rechazadas.slice(0, 3).join("; ")
+             + (rechazadas.length > 3 ? " …" : ""))
+          : null };
+      }
+      return Excel.run(function (context) {
+        var ws = context.workbook.worksheets.getItem(plan.nombre);
+        pintarFormas(ws, [formas[i]]);
+        return context.sync();
+      }).then(function () { puestas++; }, function (e) {
+        rechazadas.push(describe(i, formas[i]) + ": "
+                        + ((e && e.message) ? e.message : String(e)));
+      }).then(function () { return paso(i + 1); });
+    }
+    return limpiarFormas(plan.nombre).then(function () { return paso(0); });
+  }
+
   function dibujar(plan, opciones) {
     var o = opciones || {};
-    if (!plan.figura || !DIB || o.formas === false) return Promise.resolve(0);
-    if (typeof Excel === "undefined" || !Excel.run) return Promise.resolve(0);
+    if (!plan.figura || !DIB || o.formas === false) return Promise.resolve({ n: 0, error: null });
+    if (typeof Excel === "undefined" || !Excel.run) return Promise.resolve({ n: 0, error: null });
     return Excel.run(function (context) {
       var ws = context.workbook.worksheets.getItem(plan.nombre);
       var n = dibujarSeccion(ws, plan, o);
       return context.sync().then(function () { return { n: n, error: null }; });
-    }).catch(function (e) {
-      /* SE DICE QUE FALLO.  Antes este catch devolvia 0 y nadie se enteraba:
-         la hoja salia con media figura -o con una sola forma- y el panel
-         escribia «Generadas 1 de 1» tan tranquilo.  Un dibujo a medias que
-         se presenta como terminado es peor que no dibujar nada. */
-      return { n: 0, error: (e && e.message) ? e.message : String(e) };
+    }).catch(function () {
+      /* El lote entero se cayo.  No se da por perdido: se reintenta forma a
+         forma, que dibuja todo lo que se pueda y dice que fallo y por que. */
+      return unaAUna(plan, o).catch(function (e) {
+        return { n: 0, error: (e && e.message) ? e.message : String(e) };
+      });
     });
   }
 
@@ -3672,7 +3750,7 @@
 
   return { generar: generar, encolar: encolar, col: col,
            hueco: hueco, punto: punto, anchoTexto: anchoTexto,
-           dibujarSeccion: dibujarSeccion,
+           dibujarSeccion: dibujarSeccion, dibujar: dibujar,
            llenar: llenar, configLlenado: configLlenado, LLENAR: LLENAR };
 });
 </script>
@@ -5441,7 +5519,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v77 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v78 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
