@@ -3663,6 +3663,36 @@
      tiene, que es exactamente como esta pensada la hoja.
      ===================================================================== */
   var LLENAR = {
+    /* MODELO NO ES UNA LISTA.  Son las luces de los cuatro ejes, las alturas
+       de entrepiso, y tres contadores que viven en DATOS -numero de pisos y
+       de vanos en X e Y- de los que cuelgan las formulas de V1.  Todo eso lo
+       sabe el modelador; hasta ahora se escribia a mano.
+
+       Se escribe en CINCO sitios porque en V1 estan en cinco sitios.  Lo que
+       NO se toca son las sumas ni los acumulados: son formulas de la hoja y
+       siguen calculandose solas. */
+    MODELO: { partes: [
+      { nombre: "MODELO_X", de: function (g) {
+          var n = g[0] || {};
+          var a = (n.dx || []).slice();
+          var b = (n.primaX && (n.dx2 || []).length) ? n.dx2.slice() : a.slice();
+          return [a, b];
+        } },
+      { nombre: "MODELO_Y", de: function (g) {
+          var n = g[0] || {};
+          var a = (n.dy || []).slice();
+          var b = (n.primaY && (n.dy2 || []).length) ? n.dy2.slice() : a.slice();
+          return [a, b];
+        } },
+      { nombre: "MODELO_ALTURAS", de: function (g) {
+          return g.map(function (n) { return [+n.h || 0]; });
+        } },
+      { nombre: "GEO_PISOS", de: function (g) { return [[g.length]]; } },
+      { nombre: "GEO_VANOS", de: function (g) {
+          var n = g[0] || {};
+          return [[(n.dx || []).length], [(n.dy || []).length]];
+        } }
+    ] },
     PRE_LOSA_ALIGERADA: { nombre: "LISTA_ALIGERADA",
       cols: [[0, 0], [1, 1], [2, 2], [3, 3]] },          /* codigo, eje, Ln, alfa */
     PRE_LOSA_MACIZA:    { nombre: "LISTA_MACIZA",
@@ -3711,12 +3741,41 @@
       var rg = nm.getRange();
       rg.load("rowCount,columnCount");
       return context.sync().then(function () {
-        var capacidad = rg.rowCount, ancho = 0, i;
+        var capacidad = rg.rowCount, ancho = 0, i, j;
+
+        /* DOS FORMAS DE LLENAR UN TRAMO.
+
+           La de siempre -cols- es para una LISTA: una fila por elemento y
+           unas columnas de entrada sueltas dentro de ella.
+
+           La otra -de()- es para un BLOQUE: la hoja MODELO de V1 no es una
+           lista de elementos, son cuatro filas de luces y una columna de
+           alturas.  Ahi no hay «columna de entrada numero 3»: se escribe el
+           rectangulo entero, del tamaño que tenga el rango. */
+        var propias = parte.de ? parte.de(filas) : null;
+        if (propias) {
+          ancho = rg.columnCount;
+          var m2 = [];
+          for (i = 0; i < capacidad; i++) {
+            var f2 = [];
+            for (j = 0; j < ancho; j++) {
+              var v = (propias[i] && propias[i][j] != null) ? propias[i][j] : "";
+              f2.push(v);
+            }
+            m2.push(f2);
+          }
+          rg.getCell(0, 0).getResizedRange(capacidad - 1, ancho - 1).values = m2;
+          return context.sync().then(function () {
+            return { capacidad: capacidad,
+                     escritas: Math.min(propias.length, capacidad) };
+          });
+        }
+
         parte.cols.forEach(function (p) { if (p[0] + 1 > ancho) ancho = p[0] + 1; });
         var caben = Math.min(filas.length, capacidad);
         var m = [];
         for (i = 0; i < capacidad; i++) {
-          var f = [], j;
+          var f = [];
           for (j = 0; j < ancho; j++) f.push("");
           m.push(f);
         }
@@ -5520,14 +5579,160 @@
     return h.cerrar(r);
   }
 
+  function vacio(n, que) {
+    if (!n) throw new Error("no hay " + que + " en el modelo");
+  }
+
+  /* =====================================================================
+     MODELO — LA GEOMETRÍA, ESCRITA DONDE SE PUEDE LEER
+
+     El modelador ya sabe todo esto: las luces de cada eje y la altura de
+     cada entrepiso.  Pero lo guardaba SOLO como JSON en una hoja oculta, y
+     en V1 estaba escrito otra vez A MANO.  El mismo dato en dos sitios es
+     un sitio donde se contradicen: cambias una luz en el modelador y la
+     hoja sigue diciendo la de antes, sin avisar.
+
+     Esta hoja es la copia que se lee.  El JSON oculto se queda como copia
+     de máquina, y las dos salen de lo mismo.
+
+     La maqueta es la de V1: dirección X arriba con su fila prima, dirección
+     Y debajo con la suya, y las alturas de entrepiso acumuladas.  Los ejes
+     PRIMA -X" e Y"- son los que hacen falta cuando la planta no es
+     rectangular: el lado de arriba mide una cosa y el de abajo otra.
+     ===================================================================== */
+  function modelo(P) {
+    var G = P.geo || [];
+    vacio(G.length, "niveles en el modelo");
+    var h = F.hoja("MODELO"), r = 6;
+    h.titulo("MODELO Y GEOMETRÍA DE LA ESTRUCTURA");
+
+    /* Seis vanos caben entre la etiqueta y la suma.  Con más, la fila sigue
+       en la línea de abajo en vez de salirse de la hoja: una luz que no se
+       ve es una luz que no existe para quien lee. */
+    var MAX_VANO = 6;
+    var L_LUZ = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10]];
+
+    function encabezadoVanos(dir, n) {
+      var e = ["Dirección " + dir], i;
+      for (i = 1; i <= Math.min(n, MAX_VANO); i++) e.push("Vano " + i);
+      while (e.length < 7) e.push("—");
+      e.push("Σ (m)");
+      return e;
+    }
+    function filaEje(nombre, luces) {
+      var f = [nombre], i, suma = 0;
+      for (i = 0; i < luces.length; i++) suma += (+luces[i] || 0);
+      for (i = 0; i < Math.min(luces.length, MAX_VANO); i++) f.push(+(+luces[i]).toFixed(4));
+      while (f.length < 7) f.push("—");
+      f.push(+suma.toFixed(4));
+      return f;
+    }
+    function sobran(nombre, luces) {
+      if (luces.length <= MAX_VANO) return null;
+      return [nombre + "  (sigue)"].concat(
+        luces.slice(MAX_VANO, MAX_VANO + 6).map(function (v) {
+          return +(+v).toFixed(4);
+        })).concat(["—"]);
+    }
+
+    r = h.seccion(r, "1. GEOMETRÍA DE LA PLANTA");
+    /* HASTA CUATRO DECIMALES, PERO SIN CEROS DE RELLENO.  Con «0.0000» un
+       vano de 4.3 m se lee «4.3000» y cansa; con «0.00» un vano de 4.485
+       se lee «4.49» y eso ya es otra medida.  «0.####» enseña lo que hay:
+       4.3 y 4.485. */
+    var NUM = { 1:"0.####", 2:"0.####", 3:"0.####", 4:"0.####",
+                5:"0.####", 6:"0.####", 7:"0.####" };
+
+    G.forEach(function (g, k) {
+      var nX = (g.dx || []).length, nY = (g.dy || []).length;
+      r = h.subtitulo(r, "1." + (k + 1) + "   Nivel " + (k + 1)
+                       + " · luces (m)" + (G.length > 1 ? "" : ""));
+      var filas = [filaEje("X (SUPERIOR)", g.dx || [])];
+      if (g.primaX && (g.dx2 || []).length) filas.push(filaEje('X" (INFERIOR)', g.dx2));
+      var mas = sobran("X (SUPERIOR)", g.dx || []);
+      if (mas) filas.push(mas);
+      r = h.tabla(r, L_LUZ, encabezadoVanos("X", nX), filas, NUM, null,
+                  { alinear: ["Left","Center","Center","Center","Center",
+                              "Center","Center","Center"] });
+
+      filas = [filaEje("Y (IZQUIERDA)", g.dy || [])];
+      if (g.primaY && (g.dy2 || []).length) filas.push(filaEje('Y" (DERECHA)', g.dy2));
+      mas = sobran("Y (IZQUIERDA)", g.dy || []);
+      if (mas) filas.push(mas);
+      r = h.tabla(r, L_LUZ, encabezadoVanos("Y", nY), filas, NUM, null,
+                  { alinear: ["Left","Center","Center","Center","Center",
+                              "Center","Center","Center"] });
+    });
+
+    /* LOS EJES PRIMA NO SON UN ADORNO.  Si X" no mide lo mismo que X, la
+       planta no es rectangular y los paños salen en trapecio: por eso se
+       dice aquí la diferencia, en metros, en vez de dejarla implícita entre
+       dos filas de números. */
+    var aviso = [];
+    G.forEach(function (g, k) {
+      function suma(a) { var s = 0, i; for (i = 0; i < (a||[]).length; i++) s += +a[i] || 0; return s; }
+      if (g.primaX && (g.dx2 || []).length) {
+        var dX = suma(g.dx2) - suma(g.dx);
+        if (Math.abs(dX) > 0.0005)
+          aviso.push("Nivel " + (k + 1) + ": el lado inferior mide "
+                     + Math.abs(dX).toFixed(3) + " m "
+                     + (dX > 0 ? "más" : "menos") + " que el superior");
+      }
+      if (g.primaY && (g.dy2 || []).length) {
+        var dY = suma(g.dy2) - suma(g.dy);
+        if (Math.abs(dY) > 0.0005)
+          aviso.push("Nivel " + (k + 1) + ": el lado derecho mide "
+                     + Math.abs(dY).toFixed(3) + " m "
+                     + (dY > 0 ? "más" : "menos") + " que el izquierdo");
+      }
+    });
+    r = h.nota(r, aviso.length
+      ? ("PLANTA IRREGULAR. " + aviso.join(". ") + ". Los ejes prima —X\" e Y\"— "
+         + "son los del lado opuesto: cuando no miden lo mismo, los paños salen "
+         + "en trapecio y la luz de cada viga se mide en su propio eje.")
+      : "Los cuatro ejes miden lo mismo a cada lado: la planta es rectangular. "
+        + "Si en el modelador partes un eje solo por un lado, aparecen aquí las "
+        + "filas X\" e Y\" con lo que mida el lado opuesto.");
+
+    r = h.seccion(r, "2. ALTURAS DE ENTREPISO");
+    r = h.subtitulo(r, "2.1   Alturas");
+    var L_ALT = [[3,4],[5,6],[7,8],[9,10]];
+    var acum = 0;
+    r = h.tabla(r, L_ALT, ["Piso", "H entrepiso (m)", "Nivel acumulado (m)",
+                           "Área techada (m²)"],
+      G.map(function (g, k) {
+        acum += (+g.h || 0);
+        return [String(k + 1), +(+g.h || 0).toFixed(2), +acum.toFixed(2),
+                +(+g.area || 0).toFixed(2)];
+      }), { 1: "0.00", 2: "0.00", 3: "0.00" }, null,
+      { alinear: ["Left", "Center", "Center", "Center"] });
+    r = h.nota(r, "Altura total del edificio: " + acum.toFixed(2) + " m en "
+      + G.length + " nivel(es). El nivel acumulado se mide desde el nivel del "
+      + "terreno, no desde la cimentación: el peralte de la zapata va debajo y "
+      + "se calcula en PRE_ZAPATA.");
+
+    r = h.seccion(r, "3. EL PLANO DE FONDO");
+    r = h.nota(r, "El plano en PDF o imagen se trae desde el MODELADOR, con "
+      + "«Traer plano», y sirve para calcar los ejes encima. No se copia a esta "
+      + "hoja: aquí van las medidas, que es lo que usan las hojas de "
+      + "predimensionamiento. En V1 hay además los botones «Traer plano» y "
+      + "«Quitar plano», que son macros del libro y no del complemento.");
+
+    r = h.nota(r, "ESTA HOJA NO SE ESCRIBE A MANO. Sale del modelador, y se "
+      + "vuelve a escribir entera cada vez que generas. Si cambias un número "
+      + "aquí, el modelador no se entera y a la siguiente lo pierdes: cámbialo "
+      + "en el modelador y vuelve a generar.");
+    return h.cerrar(r);
+  }
+
   return { criteriosOviedo: criteriosOviedo, normaE020: normaE020,
-           cuadrosE030: cuadrosE030, datos: datos };
+           cuadrosE030: cuadrosE030, datos: datos, modelo: modelo };
 });
 </script>
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v84 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v86 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -5813,6 +6018,7 @@ var REGISTRO = {
   "NORMA E020":         function(){ return HOJAS.normaE020(); },
   "CRITERIOS_OVIEDO":   function(){ return HOJAS.criteriosOviedo(); },
   "DATOS":              function(p){ return HOJAS.datos(p); },
+  "MODELO":             function(p){ return HOJAS.modelo(p); },
   "ESPECIFICACIONES":   function(p){ return HOJAS_PRE.especificaciones(p); },
   "PRE_LOSA_ALIGERADA": function(p){ return HOJAS_PRE.losaAligerada(p); },
   "PRE_LOSA_MACIZA":    function(p){ return HOJAS_PRE.losaMaciza(p); },
@@ -5833,6 +6039,11 @@ var REGISTRO = {
    que llenar la lista de V1.  Lo que viaja son las ENTRADAS; el resto lo
    calcula Excel con las formulas que la hoja ya tiene. */
 var ELEMENTOS = {
+  /* MODELO no lleva elementos: lleva la geometria.  Pero va por el mismo
+     camino, porque lo que importa es el mismo: si el libro es V1, se LLENA
+     y no se rehace -si se rehiciera, se irian los botones de «Traer plano»
+     y las macros que los mueven-. */
+  "MODELO":             function (P) { return P && P.geo; },
   "PRE_LOSA_ALIGERADA": function (P) { return P && P.L && P.L.aligerada; },
   "PRE_LOSA_MACIZA":    function (P) { return P && P.L && P.L.maciza; },
   "PRE_LOSA_NERVADA":   function (P) { return P && P.L && P.L.nervada; },

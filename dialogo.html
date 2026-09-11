@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v84 · 11-09-2026";
+  var BUILD="v86 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -6424,6 +6424,17 @@ var TT={script:performance.now()};
             niveles:S.niveles.length,
             areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z,
             proy:pr,cargas:cp,
+            /* LA GEOMETRIA, para la hoja MODELO.  Hasta ahora el modelo solo
+               viajaba como JSON a una hoja OCULTA: el panel sabia las luces
+               pero no habia forma de verlas, y en V1 se escriben a mano.  Son
+               el mismo dato en dos sitios, que es como se contradicen. */
+            geo:S.niveles.map(function(m){
+              return {h:+m.h||2.80,
+                      dx:(m.dx||[]).slice(), dx2:(m.dx2||[]).slice(),
+                      dy:(m.dy||[]).slice(), dy2:(m.dy2||[]).slice(),
+                      primaX:!!m.primaX, primaY:!!m.primaY,
+                      area:+areaNivel(m).toFixed(2)};
+            }),
             /* lo que la E.030 deduce, listo para las hojas de la fase 5 */
             e030:sitio()};
   }
@@ -6956,6 +6967,7 @@ var TT={script:performance.now()};
     {n:"NORMA E020",         tit:"Norma E.020",        t:"ref"},
     {n:"CRITERIOS_OVIEDO",   tit:"Criterios Oviedo",   t:"ref"},
     {n:"DATOS",              tit:"Datos del proyecto", t:"ref"},
+    {n:"MODELO",             tit:"Modelo y geometría", t:"ref"},
     {n:"ESPECIFICACIONES",   tit:"Especificaciones",   t:"ref"},
     {n:"PRE_LOSA_ALIGERADA", tit:"Pre losa aligerada", t:"ele", q:function(c){return c.losa.aligerada}},
     {n:"PRE_LOSA_MACIZA",    tit:"Pre losa maciza",    t:"ele", q:function(c){return c.losa.maciza}},
@@ -6968,10 +6980,10 @@ var TT={script:performance.now()};
     {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}}
   ];
-  /* Las quince.  Se deja el mapa -en vez de darlas todas por buenas- porque
+  /* Las dieciseis.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
   var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,ESPECIFICACIONES:true,
-    "CUADROS E030":true,DATOS:true,
+    "CUADROS E030":true,DATOS:true,MODELO:true,
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_COLUMNA_CIRCULAR:true,
