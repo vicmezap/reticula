@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v100 · 11-09-2026";
+  var BUILD="v107 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3704,14 +3704,25 @@ var TT={script:performance.now()};
              y:(1-t)*acum(dy,j)+t*acum(dy2,j) };
   }
   function dist(a,b){var dx=b.x-a.x,dy=b.y-a.y;return Math.sqrt(dx*dx+dy*dy)}
+  function med(u,v){return {x:(u.x+v.x)/2,y:(u.y+v.y)/2}}
+  function centro(A){var c={x:0,y:0},k;
+    for(k=0;k<A.length;k++){c.x+=A[k].x/A.length;c.y+=A[k].y/A.length}return c}
 
-  /* Area REAL del paño: es un cuadrilatero, no un rectangulo. */
-  function areaPano(i,j,m){
-    m=m||N();
-    var p=[nodo(i,j,m),nodo(i+1,j,m),nodo(i+1,j+1,m),nodo(i,j+1,m)],a=0,k;
-    for(k=0;k<4;k++){var q=p[k],r=p[(k+1)%4];a+=q.x*r.y-r.x*q.y;}
+  /* Area de un poligono cualquiera, por el cordon de zapato.  Una sola
+     cuenta para el paño, para el trozo de esquina y para la franja de una
+     viga: lo que se dibuja y lo que se calcula salen de la misma formula. */
+  function areaPoli(P){
+    var a=0,k,n=P.length;
+    for(k=0;k<n;k++){var u=P[k],v=P[(k+1)%n];a+=u.x*v.y-v.x*u.y;}
     return Math.abs(a)/2;
   }
+  /* Los cuatro nudos del paño (i,j): un CUADRILATERO, no un rectangulo. */
+  function quadPano(i,j,m){
+    m=m||N();
+    return [nodo(i,j,m),nodo(i+1,j,m),nodo(i+1,j+1,m),nodo(i,j+1,m)];
+  }
+  /* Area REAL del paño. */
+  function areaPano(i,j,m){ return areaPoli(quadPano(i,j,m)); }
   /* ¿la planta se aparta del rectangulo? */
   function irregular(m){
     m=m||N();
@@ -3958,19 +3969,109 @@ var TT={script:performance.now()};
      inventa carga.  Y en un rectangulo da exactamente un cuarto: lo que ya
      estaba bien no cambia.
      ===================================================================== */
-  function areaEsquina(pi,pj,i,j,m){
+  /* LA FIGURA del trozo que le toca a la esquina (i,j) del paño (pi,pj):
+     el cuadrilatero [nudo, medio hacia un vecino, centro del paño, medio
+     hacia el otro vecino].
+
+     Devuelve la figura y no solo su area a proposito: de aqui salen LAS DOS
+     COSAS, el numero que se reporta y el recuadro que se dibuja.  Antes el
+     area salia de aqui y el dibujo de un rectangulo aparte que solo
+     coincidia cuando la planta era recta. */
+  function quadEsquina(pi,pj,i,j,m){
     m=m||N();
-    var V=[nodo(pi,pj,m),nodo(pi+1,pj,m),nodo(pi+1,pj+1,m),nodo(pi,pj+1,m)];
+    var V=quadPano(pi,pj,m);
     var IJ=[[pi,pj],[pi+1,pj],[pi+1,pj+1],[pi,pj+1]],k=-1,t;
     for(t=0;t<4;t++) if(IJ[t][0]===i&&IJ[t][1]===j) k=t;
-    if(k<0) return areaPano(pi,pj,m)/4;      /* no es esquina de este paño */
-    var O={x:(V[0].x+V[1].x+V[2].x+V[3].x)/4,
-           y:(V[0].y+V[1].y+V[2].y+V[3].y)/4};
-    function med(u,v){return {x:(u.x+v.x)/2,y:(u.y+v.y)/2};}
-    var P=[V[k], med(V[k],V[(k+1)%4]), O, med(V[k],V[(k+3)%4])];
-    var a=0,q;
-    for(q=0;q<4;q++){var u=P[q],w=P[(q+1)%4];a+=u.x*w.y-w.x*u.y;}
-    return Math.abs(a)/2;
+    if(k<0) return null;                     /* no es esquina de este paño */
+    var O=centro(V);
+    return [V[k], med(V[k],V[(k+1)%4]), O, med(V[k],V[(k+3)%4])];
+  }
+  function areaEsquina(pi,pj,i,j,m){
+    var P=quadEsquina(pi,pj,i,j,m);
+    return P ? areaPoli(P) : areaPano(pi,pj,m)/4;
+  }
+
+  /* EL BORDE DE FUERA de varios cuadrilateros que solo comparten aristas
+     enteras -los trozos de esquina alrededor de una columna-.  Cada arista
+     interior aparece dos veces en sentidos opuestos y se anula; lo que
+     sobrevive se encadena, y eso es el contorno de la union.
+
+     Con esto el recuadro tributario que se ve ES la region cuya area se
+     reporta, en vez de un rectangulo dibujado por su cuenta. */
+  function contorno(quads){
+    function cl(p){return p.x.toFixed(4)+","+p.y.toFixed(4)}
+    var vivas={},ini={},orden=[],q,k,P,a,b;
+    for(q=0;q<quads.length;q++){
+      P=quads[q];
+      for(k=0;k<P.length;k++){
+        a=P[k]; b=P[(k+1)%P.length];
+        if(vivas[cl(b)+"|"+cl(a)]) delete vivas[cl(b)+"|"+cl(a)];
+        else vivas[cl(a)+"|"+cl(b)]={a:a,b:b};
+      }
+    }
+    for(k in vivas){orden.push(vivas[k]); ini[cl(vivas[k].a)]=vivas[k];}
+    if(!orden.length) return [];
+    var ruta=[],usada={},cur=orden[0],g=0;
+    while(cur && !usada[cl(cur.a)+"|"+cl(cur.b)] && g++<400){
+      usada[cl(cur.a)+"|"+cl(cur.b)]=1;
+      ruta.push(cur.a);
+      cur=ini[cl(cur.b)];
+    }
+    return ruta;
+  }
+
+  /* EL LIENZO: cuanto ocupa la planta, donde empieza y a que escala.
+
+     Lo calculaban por su cuenta draw(), drawUsos() y xyModelo().  En cuanto
+     draw() subio su margen a 76 para que cupieran las etiquetas de seccion,
+     xyModelo() se quedo en 56: CON LAS DIMENSIONES A LA VISTA, UN CLIC DE
+     CALIBRADO DEL CALCO CAIA 20 px DESVIADO -medio metro a la escala de una
+     planta normal-, y la escala que sacabas del plano de fondo salia mal sin
+     que nada avisara.  Comprobado abriendo el dialogo: el viewBox crece 40
+     px y el que traduce el clic no se entera.
+
+     Ahora hay una sola cuenta, y ademas se guarda la ultima pintada: quien
+     traduce un clic lee EXACTAMENTE el lienzo que se esta viendo, no uno
+     que vuelve a deducir. */
+  var LIENZO=null;
+  function lienzo(conDims){
+    var m=N(),
+        W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
+        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),
+        mg=conDims?76:56,
+        esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
+    LIENZO={m:m,W:W,H:H,mg:mg,esc:esc,w:W*esc+2*mg,h:H*esc+2*mg};
+    return LIENZO;
+  }
+
+  /* El kit de dibujo sobre la planta REAL: de indices y metros a puntos de
+     pantalla.  Se fabrica porque draw() y drawUsos() tienen cada uno su
+     margen y su escala. */
+  function lapiz(m,mg,esc){
+    function P(i,j){var n=nodo(i,j,m);return {x:mg+n.x*esc,y:mg+n.y*esc}}
+    function centro2(A){return centro(A)}
+    return {
+      P:P,
+      aPant:function(p){return {x:mg+p.x*esc,y:mg+p.y*esc}},
+      q4:function(i,j){return [P(i,j),P(i+1,j),P(i+1,j+1),P(i,j+1)]},
+      /* dos decimales, no una: a 40 px/m una decima de pixel son 2.5 mm
+         por vertice, y al medir de vuelta el area de un contorno de doce
+         vertices eso ya se aparta un 0.04 % de la cuenta.  No lo ve el ojo,
+         pero lo ve la comprobacion, y prefiero que la comprobacion pueda
+         ser estricta. */
+      pts:function(A){return A.map(function(p){
+             return p.x.toFixed(2)+","+p.y.toFixed(2)}).join(" ")},
+      /* encogido hacia el centro: asi la zona de clic sigue al paño en vez
+         de ser un rectangulo que se mete en el vecino */
+      encoge:function(A,d){
+        var c=centro2(A);
+        return A.map(function(p){
+          var vx=c.x-p.x, vy=c.y-p.y, L=Math.sqrt(vx*vx+vy*vy)||1;
+          var t=Math.min(d,L*0.4)/L;
+          return {x:p.x+vx*t, y:p.y+vy*t};
+        });
+      }
+    };
   }
 
   function medCol(i,j,m){
@@ -4243,20 +4344,30 @@ var TT={script:performance.now()};
   function drawUsos(){
     var sv=$("#plano");while(sv.firstChild)sv.removeChild(sv.firstChild);
     /* El lienzo tiene que caber la planta REAL: con el lote sesgado el
-       borde largo puede pasarse del de referencia y quedaria cortado. */
-    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
-        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=56;
-    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
-    var w=W*esc+2*mg,h=H*esc+2*mg;
+       borde largo puede pasarse del de referencia y quedaria cortado.
+       La vista de usos no lleva etiquetas de seccion: margen corto. */
+    var L0=lienzo(false),
+        m=L0.m, mg=L0.mg, esc=L0.esc, w=L0.w, h=L0.h;
     sv.setAttribute("viewBox","0 0 "+w+" "+h);
     sv.style.maxWidth=(S.zoom>1?w+"px":"100%");
-    /* La posicion depende de los DOS indices cuando la planta es
-       irregular.  Se conserva la firma corta -X(i), Y(j)- para no reescribir
-       cincuenta llamadas: sin segundo indice se usa el borde de referencia,
-       que es exactamente lo que se dibujaba antes.  Donde el elemento conoce
-       sus dos indices se le pasan los dos y queda en su sitio real. */
-    var X=function(i,j){return mg+nodo(i,j||0,m).x*esc},
-        Y=function(j,i){return mg+nodo(i||0,j,m).y*esc};
+    /* LOS DOS INDICES SON OBLIGATORIOS.
+
+       El segundo era opcional y, si faltaba, caia al borde de referencia.
+       Asi es como el lienzo se dibujaba recto sobre una planta que no lo
+       es: no fallaba nada, devolvia un numero plausible.  Ahora lo dice.
+
+       Un nudo de una planta sesgada no esta en la columna i ni en la fila
+       j: esta donde diga nodo(i,j), y eso necesita los dos. */
+    function XY(i,j){
+      if(i==null||j==null||i!==i||j!==j)
+        console.warn("nudo pedido sin sus dos indices:",i,j);
+      var n=nodo(i||0,j||0,m);
+      return {x:mg+n.x*esc, y:mg+n.y*esc};
+    }
+    var X=function(i,j){return XY(i,j).x},
+        Y=function(j,i){return XY(i,j).y};
+    var lp=lapiz(m,mg,esc), q4p=lp.q4, pts=lp.pts,
+        aPant=lp.aPant, encoge=lp.encoge;
     var defs=el("defs",{});
     var pt=el("pattern",{id:"sinuso",width:"8",height:"8",patternUnits:"userSpaceOnUse",
                          patternTransform:"rotate(45)"});
@@ -4278,15 +4389,14 @@ var TT={script:performance.now()};
       if(!o)continue;
       /* el paño es un cuadrilatero: el recuadro que se pinta es su caja,
          y el centro, el de sus cuatro nudos.  En planta recta coinciden. */
-      var q4=[[X(i,j),Y(j,i)],[X(i+1,j),Y(j,i+1)],
-              [X(i+1,j+1),Y(j+1,i+1)],[X(i,j+1),Y(j+1,i)]];
-      var xs=q4.map(function(p){return p[0]}),ys=q4.map(function(p){return p[1]});
+      var Q=q4p(i,j), C=centro(Q);
+      var xs=Q.map(function(p){return p.x}),ys=Q.map(function(p){return p.y});
       var x=Math.min.apply(null,xs),y=Math.min.apply(null,ys);
-      var an=Math.max.apply(null,xs)-x,al=Math.max.apply(null,ys)-y;
-      var cx=(xs[0]+xs[1]+xs[2]+xs[3])/4,cy=(ys[0]+ys[1]+ys[2]+ys[3])/4;
+      var an=Math.max.apply(null,xs)-x;
+      var cx=C.x,cy=C.y;
       var asignado=!!o.uso;
       g.appendChild(el("polygon",{
-        points:q4.map(function(p){return p[0].toFixed(1)+","+p[1].toFixed(1)}).join(" "),
+        points:pts(Q),
         fill:asignado?col[claveAmb(o.uso,o.amb||"")]:"url(#sinuso)",
         "fill-opacity":asignado?0.42:1,
         stroke:asignado?col[claveAmb(o.uso,o.amb||"")]:"var(--line)","stroke-width":1}));
@@ -4304,7 +4414,7 @@ var TT={script:performance.now()};
       }else{
         txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);
       }
-      var hit=el("rect",{x:x+5,y:y+5,width:Math.max(2,an-10),height:Math.max(2,al-10),"class":"hit"});
+      var hit=el("polygon",{points:pts(encoge(Q,5)),"class":"hit"});
       hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
     }
     /* estructura en gris: contexto, no protagonista */
@@ -4506,19 +4616,28 @@ var TT={script:performance.now()};
        El margen sube a 76 cuando se ven las secciones: la etiqueta de una
        viga de borde sobresale por la izquierda y se comia la tira de cotas.
        Con 56 las dos cosas se pisaban. */
-    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
-        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=S.verDims?76:56;
-    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
-    var w=W*esc+2*mg,h=H*esc+2*mg;
+    var L0=lienzo(S.verDims),
+        m=L0.m, mg=L0.mg, esc=L0.esc, w=L0.w, h=L0.h;
     s.setAttribute("viewBox","0 0 "+w+" "+h);
     s.style.maxWidth=(S.zoom>1?w+"px":"100%");
-    /* La posicion depende de los DOS indices cuando la planta es
-       irregular.  Se conserva la firma corta -X(i), Y(j)- para no reescribir
-       cincuenta llamadas: sin segundo indice se usa el borde de referencia,
-       que es exactamente lo que se dibujaba antes.  Donde el elemento conoce
-       sus dos indices se le pasan los dos y queda en su sitio real. */
-    var X=function(i,j){return mg+nodo(i,j||0,m).x*esc},
-        Y=function(j,i){return mg+nodo(i||0,j,m).y*esc};
+    /* LOS DOS INDICES SON OBLIGATORIOS.
+
+       El segundo era opcional y, si faltaba, caia al borde de referencia.
+       Asi es como el lienzo se dibujaba recto sobre una planta que no lo
+       es: no fallaba nada, devolvia un numero plausible.  Ahora lo dice.
+
+       Un nudo de una planta sesgada no esta en la columna i ni en la fila
+       j: esta donde diga nodo(i,j), y eso necesita los dos. */
+    function XY(i,j){
+      if(i==null||j==null||i!==i||j!==j)
+        console.warn("nudo pedido sin sus dos indices:",i,j);
+      var n=nodo(i||0,j||0,m);
+      return {x:mg+n.x*esc, y:mg+n.y*esc};
+    }
+    var X=function(i,j){return XY(i,j).x},
+        Y=function(j,i){return XY(i,j).y};
+    var lp=lapiz(m,mg,esc), q4p=lp.q4, pts=lp.pts,
+        aPant=lp.aPant, encoge=lp.encoge;
     var defs=el("defs",{});
     var mk=el("marker",{id:"ar",viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"5",markerHeight:"5",orient:"auto"});
     mk.appendChild(el("path",{d:"M0,0 L8,4 L0,8 z",fill:"currentColor"}));defs.appendChild(mk);
@@ -4544,14 +4663,11 @@ var TT={script:performance.now()};
            sesgada sus cuatro esquinas no forman angulos rectos.  Se dibuja
            por sus cuatro nudos; en planta recta sale el rectangulo de
            siempre y no se nota la diferencia. */
-        var q4=[[X(i,j),Y(j,i)],[X(i+1,j),Y(j,i+1)],
-                [X(i+1,j+1),Y(j+1,i+1)],[X(i,j+1),Y(j+1,i)]];
-        g.appendChild(el("polygon",{
-          points:q4.map(function(p){return p[0].toFixed(1)+","+p[1].toFixed(1)}).join(" "),
+        var Q=q4p(i,j), C=centro(Q);
+        g.appendChild(el("polygon",{points:pts(Q),
           fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
-        var cx=(q4[0][0]+q4[1][0]+q4[2][0]+q4[3][0])/4,
-            cy=(q4[0][1]+q4[1][1]+q4[2][1]+q4[3][1])/4,
-            r=Math.min(Math.abs(q4[1][0]-q4[0][0]),Math.abs(q4[3][1]-q4[0][1]))*0.26;
+        var cx=C.x, cy=C.y,
+            r=Math.min(Math.abs(Q[1].x-Q[0].x),Math.abs(Q[3].y-Q[0].y))*0.26;
         var ln=o.dir==="y"?el("line",{x1:cx,y1:cy-r,x2:cx,y2:cy+r}):el("line",{x1:cx-r,y1:cy,x2:cx+r,y2:cy});
         ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
         ln.setAttribute("color","var("+tp.c+")");
@@ -4560,8 +4676,10 @@ var TT={script:performance.now()};
         if(S.verDims&&pl2)
           txt(g,cx,cy+r+13,"e = "+pl2.e+" cm","var(--acc-ink)",9.5);
       }
-      var hit=el("rect",{x:X(i)+7,y:Y(j)+7,width:Math.max(2,X(i+1)-X(i)-14),
-        height:Math.max(2,Y(j+1)-Y(j)-14),"class":"hit"});
+      /* La zona de clic sigue al paño.  Un rectangulo recto sobre una
+         planta sesgada deja fuera una punta del paño y se mete en el de al
+         lado: pinchabas uno y se seleccionaba el vecino. */
+      var hit=el("polygon",{points:pts(encoge(q4p(i,j),7)),"class":"hit"});
       hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
     }
     /* LOS EJES SE INCLINAN.
@@ -4684,105 +4802,170 @@ var TT={script:performance.now()};
 
     var q=S.sel;
     if(q&&q.t==="col"&&m.cols[key(q.i,q.j)]){
+      /* =================================================================
+         LA ZONA TRIBUTARIA DE UNA COLUMNA
+
+         Lo que se enseña:
+
+           · la region, que es LA UNION DE LOS TROZOS DE ESQUINA de los
+             paños que la rodean -los mismos que suma medCol() para dar el
+             area-.  Hasta aqui era un rectangulo dibujado aparte: en un
+             paño en punta no era la region cuya area se reportaba, y el
+             reparto a un cuarto por esquina sobrevivio tanto tiempo
+             precisamente porque el dibujo lo hacia parecer razonable;
+           · las medias, del nudo al medio de cada vano: son las que parten
+             el vano, y van inclinadas porque el nudo y sus dos vecinos no
+             estan en linea;
+           · las cotas, paralelas a lo que miden;
+           · y una placa con el area y el coeficiente k.
+
+         LA PLACA VA AL LADO CONTRARIO DE LA COLUMNA, fuera de la region.
+         Centrada tapaba justo lo que se quiere mirar, y en una planta llena
+         no hay hueco libre: se coloca en la diagonal opuesta a la columna,
+         que es la unica direccion que la propia region deja despejada, y se
+         ata con una guia para que se vea de quien habla.
+         ================================================================= */
       var d0=medCol(q.i,q.j),ps=panos(q.i,q.j);
       if(ps.length){
-        /* EL RECUADRO SE DIBUJA CON LOS MISMOS LADOS QUE DICEN LAS COTAS.
-           Antes salia de medio vano de la RETICULA y las cotas decian medio
-           vano REAL: el recuadro no llegaba a donde decia el numero. */
-        var L=d0.lados;
-        var x0=X(q.i)-L.izq*esc, x1b=X(q.i)+L.der*esc,
-            y0=Y(q.j)-L.arr*esc, y1b=Y(q.j)+L.aba*esc;
-        g.appendChild(el("rect",{x:x0,y:y0,width:x1b-x0,height:y1b-y0,fill:"var(--trib-fill)",
-          stroke:"var(--trib)","stroke-width":1.6,"stroke-dasharray":"7 4"}));
-        /* las dos lineas medias, que son las que parten el paño: sin ellas
-           el recuadro parece puesto a ojo */
-        if(L.izq&&L.der)
-          g.appendChild(el("line",{x1:X(q.i),y1:y0,x2:X(q.i),y2:y1b,
-            stroke:"var(--trib)","stroke-width":.8,"stroke-dasharray":"2 3"}));
-        if(L.arr&&L.aba)
-          g.appendChild(el("line",{x1:x0,y1:Y(q.j),x2:x1b,y2:Y(q.j),
-            stroke:"var(--trib)","stroke-width":.8,"stroke-dasharray":"2 3"}));
-        /* cotas fuera, con sus patillas, como una cota de plano */
-        var ya=y0-15;
-        g.appendChild(el("line",{x1:x0,y1:ya,x2:x1b,y2:ya,stroke:"var(--trib)","stroke-width":.9}));
-        g.appendChild(el("line",{x1:x0,y1:ya-4,x2:x0,y2:ya+4,stroke:"var(--trib)","stroke-width":.9}));
-        g.appendChild(el("line",{x1:x1b,y1:ya-4,x2:x1b,y2:ya+4,stroke:"var(--trib)","stroke-width":.9}));
-        txt(g,(x0+x1b)/2,ya-5,d0.bx.toFixed(3)+" m","var(--trib)",10,null,true);
-        var xd=x1b+15;
-        g.appendChild(el("line",{x1:xd,y1:y0,x2:xd,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
-        g.appendChild(el("line",{x1:xd-4,y1:y0,x2:xd+4,y2:y0,stroke:"var(--trib)","stroke-width":.9}));
-        g.appendChild(el("line",{x1:xd-4,y1:y1b,x2:xd+4,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
-        txt(g,xd+6,(y0+y1b)/2+3,d0.by.toFixed(3)+" m","var(--trib)",10,"start",true);
-        /* Y EL AREA, QUE ES LO QUE DE VERDAD USA LA TABLA.
+        var L=d0.lados, nd=nodo(q.i,q.j,m), nP=aPant(nd);
 
-           Los dos numeros de fuera son MEDIOS VANOS: cuanto abarca la
-           columna a cada lado.  En una planta recta su producto es el area
-           tributaria y no hacia falta decirlo.  En una planta en punta NO
-           lo es -se llevan un 4 % en tu caso- porque el area se mide sobre
-           el cuadrilatero real y el recuadro de la pantalla se dibuja
-           recto.  Sin este numero, el dibujo decia una cosa y la hoja otra,
-           y no habia forma de saber cual mandaba. */
-        /* DENTRO, LO QUE DE VERDAD USA LA TABLA.
+        /* LA REGION ES LA UNION DE LOS TROZOS DE ESQUINA, los mismos que
+           suma medCol() para dar el area.  Se pintan y se les saca el borde
+           de fuera: lo que se ve y lo que dice la placa ya son la misma
+           figura, no dos dibujos que casualmente coincidian en recto. */
+        var trozos=ps.map(function(p){
+              return quadEsquina(p[0],p[1],q.i,q.j,m).map(aPant); }),
+            borde=contorno(trozos);
+        trozos.forEach(function(A){
+          g.appendChild(el("polygon",{points:pts(A),fill:"var(--trib-fill)"}));
+        });
+        g.appendChild(el("polygon",{points:pts(borde),fill:"none",
+          stroke:"var(--trib)","stroke-width":1.8,
+          "stroke-dasharray":"8 4","stroke-linejoin":"round"}));
 
-           Las dos cotas de fuera son MEDIOS VANOS.  En una planta recta su
-           producto es el area tributaria y no hacia falta decirla; en una
-           planta en punta NO lo es -se llevan un 4 %-, porque el area se
-           mide sobre el cuadrilatero real y el lienzo se dibuja recto.
+        /* LAS MEDIAS, por donde se parte cada vano: del nudo de la columna
+           al medio del vano.  En planta sesgada salen inclinadas, y pasan
+           POR el nudo en vez de de lado a lado, porque el nudo y sus dos
+           vecinos no estan en linea. */
+        function medio(di,dj){
+          var a=q.i+di, b=q.j+dj;
+          if(a<0||b<0||a>=nx()||b>=ny())return null;
+          return aPant(med(nd,nodo(a,b,m)));
+        }
+        var Mz=L.izq?medio(-1,0):null, Md=L.der?medio(1,0):null,
+            Ma=L.arr?medio(0,-1):null, Mb=L.aba?medio(0,1):null;
+        [[Mz,Md],[Ma,Mb]].forEach(function(par){
+          var Rt=[]; if(par[0])Rt.push(par[0]); Rt.push(nP); if(par[1])Rt.push(par[1]);
+          if(Rt.length<2)return;
+          g.appendChild(el("polyline",{points:pts(Rt),fill:"none",
+            stroke:"var(--trib)","stroke-width":.9,"stroke-dasharray":"3 3"}));
+        });
 
-           Y la UBICACION, porque no es un adorno: de ella sale el
-           coeficiente k -0.30 dentro, 0.20 exterior, 0.10 en esquina- y es
-           lo que mas mueve la seccion.  Va aqui para poder comprobarla sin
-           irse a la tabla. */
-        /* FUERA DEL RECUADRO, DEBAJO.  Dentro se pisaba con los rotulos
-           que ya hay en el paño -el «e = 15 cm» de la losa cae justo en el
-           centro del paño, que es una esquina del recuadro- y con la cota
-           de la derecha.  Dos textos superpuestos no se leen ninguno. */
-        /* UNA PLACA, NO UN TEXTO SUELTO.
+        /* LAS COTAS, PARALELAS A LO QUE MIDEN.  Una cota horizontal sobre
+           una longitud inclinada da el numero bueno con la linea puesta
+           sobre otra cosa, que es justo la clase de desacuerdo callado que
+           se esta quitando.  Las patillas cruzan la cota y hacen de tope. */
+        function cota(A,B,texto){
+          var dx=B.x-A.x, dy=B.y-A.y, Lg=Math.sqrt(dx*dx+dy*dy);
+          if(Lg<1)return null;
+          var ux=-dy/Lg, uy=dx/Lg;                    /* normal unitaria */
+          /* LA COTA VA FUERA DE LA REGION, no a un palmo de lo que mide.
+             Apartarla una distancia fija del segmento la dejaba dentro en
+             cuanto la columna era interior: los dos numeros acababan uno
+             encima del otro sobre el propio nudo.  Se mira hasta donde
+             llega la region por ese lado y se aparta 15 px mas. */
+          var sep=0;
+          borde.forEach(function(P){
+            sep=Math.min(sep,(P.x-A.x)*ux+(P.y-A.y)*uy); });
+          sep-=15;
+          var a={x:A.x+ux*sep,y:A.y+uy*sep}, b={x:B.x+ux*sep,y:B.y+uy*sep};
+          /* las patillas van del punto medido hasta pasada la cota: el
+             cruce hace de tope y no hace falta dibujarlo aparte */
+          [[A,a],[B,b]].forEach(function(p){
+            g.appendChild(el("line",{x1:p[0].x+ux*3,y1:p[0].y+uy*3,
+              x2:p[1].x-ux*5,y2:p[1].y-uy*5,
+              stroke:"var(--trib)","stroke-width":.7,opacity:.85}));
+          });
+          g.appendChild(el("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,
+            stroke:"var(--trib)","stroke-width":.9}));
+          /* el texto, hacia fuera tambien: sumar la normal lo devolvia
+             adentro, que es donde acababa pisando la viga */
+          var c={x:(a.x+b.x)/2-ux*9, y:(a.y+b.y)/2-uy*9};
+          txt(g,c.x,c.y+3,texto,"var(--trib)",10,null,true);
+          return {a:a,b:b,c:c};
+        }
+        var cX=cota(Mz||nP, Md||nP, d0.bx.toFixed(3)+" m"),
+            cY=cota(Ma||nP, Mb||nP, d0.by.toFixed(3)+" m");
 
-           Se probo dentro del recuadro y se pisaba con el «e = 15 cm» de la
-           losa -que cae en el centro del paño, o sea en una esquina del
-           recuadro-; se probo debajo y se pisaba con la viga y con la
-           seccion de la columna.  En una planta llena no hay hueco libre:
-           lo que hay que hacer es tapar, como una etiqueta de plano.
+        /* la caja de la region, para colocar la placa */
+        var bxs=borde.map(function(p){return p.x}),
+            bys=borde.map(function(p){return p.y});
+        var x0=Math.min.apply(null,bxs), x1b=Math.max.apply(null,bxs),
+            y0=Math.min.apply(null,bys), y1b=Math.max.apply(null,bys);
+        var ya=cX?Math.min(cX.a.y,cX.b.y,cX.c.y)-6:y0-16,
+            xd=cY?Math.max(cY.a.x,cY.b.x,cY.c.x):x1b;
 
-           Va centrada en el recuadro, opaca, con su borde.  Encima de todo
-           porque es lo que se acaba de pedir mirar. */
+        /* LA PLACA VA AL LADO CONTRARIO DE LA COLUMNA, fuera de la region.
+           Centrada tapaba justo lo que se quiere mirar, y en una planta
+           llena no hay hueco libre: se coloca en la diagonal opuesta, que
+           es la unica direccion que la propia region deja despejada, y se
+           ata con una guia para que se vea de quien habla. */
         var l1="A trib = "+d0.at.toFixed(3)+" m²";
         var l2=d0.tipo+" · k = "
               +(d0.tipo==="Interior"?"0.30":d0.tipo==="Exterior"?"0.20":"0.10");
-        var an=Math.max(l1.length*6.7,l2.length*5.9)+16;
-        var cx=(x0+x1b)/2, cy=(y0+y1b)/2;
-        /* y que no invada la cota de la derecha, que va en x1b+15: si la
-           placa es mas ancha que el recuadro se corre a la izquierda */
-        if(cx+an/2 > x1b+5) cx = x1b+5-an/2;
-        g.appendChild(el("rect",{x:cx-an/2,y:cy-17,width:an,height:34,rx:4,
-          fill:"var(--sheet)",stroke:"var(--trib)","stroke-width":1,
-          "fill-opacity":.94}));
-        txt(g,cx,cy-2,l1,"var(--trib)",11);
-        txt(g,cx,cy+12,l2,"var(--trib)",9.5);
+        var an=Math.max(l1.length*6.7,l2.length*5.9)+16, al=34;
+        var hx=(L.izq>=L.der)? +1 : -1;      /* columna a la derecha -> placa a la izq */
+        var hy=(L.arr>=L.aba)? +1 : -1;
+        if(L.izq&&L.der) hx=0;               /* interior: no hay lado libre en X */
+        if(L.arr&&L.aba) hy=0;
+        var px=(hx>0)? x0-12-an : (hx<0? xd+52 : (x0+x1b)/2-an/2);
+        var py=(hy>0)? ya-18-al : (hy<0? y1b+14 : (y0+y1b)/2-al/2);
+        if(hx===0&&hy===0){ py=ya-18-al; }   /* interior: encima de la cota */
+        px=Math.max(4,Math.min(px,w-an-4));
+        py=Math.max(4,Math.min(py,h-al-4));
+        g.appendChild(el("line",{x1:px+an/2,y1:py+al/2, x2:nP.x,y2:nP.y,
+          stroke:"var(--trib)","stroke-width":.8,"stroke-dasharray":"2 3",
+          opacity:.7}));
+        g.appendChild(el("rect",{x:px,y:py,width:an,height:al,rx:4,
+          fill:"var(--sheet)",stroke:"var(--trib)","stroke-width":1.2,
+          "fill-opacity":.97}));
+        txt(g,px+an/2,py+15,l1,"var(--trib)",11);
+        txt(g,px+an/2,py+29,l2,"var(--trib)",9.5);
       }
     }
     if(q&&q.t==="viga"&&m.vigas[key(q.o,q.i,q.j)]){
-      var v=medViga(q.o,q.i,q.j);
-      if(q.o==="h"){
-        var ya=Y(q.j)-(m.losas[key(q.i,q.j-1)]?m.dy[q.j-1]/2*esc:0),
-            yb2=Y(q.j)+(m.losas[key(q.i,q.j)]?m.dy[q.j]/2*esc:0);
-        g.appendChild(el("rect",{x:X(q.i),y:ya,width:X(q.i+1)-X(q.i),height:yb2-ya,fill:"var(--trib-fill)",
-          stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
-        txt(g,(X(q.i)+X(q.i+1))/2,Y(q.j)-8,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10);
-        txt(g,(X(q.i)+X(q.i+1))/2,yb2+13,"B = "+v.B.toFixed(3)+" m","var(--trib)",10);
+      /* LA FRANJA TRIBUTARIA: medio paño a cada lado que tenga losa, que
+         es exactamente lo que suma anchoTrib().  Con la planta sesgada es
+         un cuadrilatero; el rectangulo de antes se salia del paño por un
+         extremo y no llegaba por el otro. */
+      var v=medViga(q.o,q.i,q.j), hz=(q.o==="h");
+      var a0=[q.i,q.j], a1=hz?[q.i+1,q.j]:[q.i,q.j+1];
+      var A=nodo(a0[0],a0[1],m), B=nodo(a1[0],a1[1],m);
+      function ladoV(di,dj,hayLosa){
+        if(!hayLosa)return [A,B];
+        return [med(A,nodo(a0[0]+di,a0[1]+dj,m)),
+                med(B,nodo(a1[0]+di,a1[1]+dj,m))];
+      }
+      var uno=hz?ladoV(0,-1,!!m.losas[key(q.i,q.j-1)])    /* arriba    */
+                :ladoV(-1,0,!!m.losas[key(q.i-1,q.j)]),   /* izquierda */
+          dos=hz?ladoV(0, 1,!!m.losas[key(q.i,q.j)])      /* abajo     */
+                :ladoV( 1,0,!!m.losas[key(q.i,q.j)]);     /* derecha   */
+      var F=[uno[0],uno[1],dos[1],dos[0]].map(aPant);
+      g.appendChild(el("polygon",{points:pts(F),fill:"var(--trib-fill)",
+        stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
+      var cm=centro([aPant(A),aPant(B)]),          /* medio de la viga */
+          bo=centro([F[2],F[3]]);                  /* medio del borde de fuera */
+      if(hz){
+        txt(g,cm.x,cm.y-8,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10,null,true);
+        txt(g,bo.x,bo.y+13,"B = "+v.B.toFixed(3)+" m","var(--trib)",10,null,true);
       }else{
-        var xa=X(q.i)-(m.losas[key(q.i-1,q.j)]?m.dx[q.i-1]/2*esc:0),
-            xb2=X(q.i)+(m.losas[key(q.i,q.j)]?m.dx[q.i]/2*esc:0);
-        g.appendChild(el("rect",{x:xa,y:Y(q.j),width:xb2-xa,height:Y(q.j+1)-Y(q.j),fill:"var(--trib-fill)",
-          stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
-        txt(g,X(q.i)+6,(Y(q.j)+Y(q.j+1))/2,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10,"start");
-        txt(g,xb2+5,(Y(q.j)+Y(q.j+1))/2+14,"B = "+v.B.toFixed(3)+" m","var(--trib)",10,"start");
+        txt(g,cm.x+6,cm.y,"Ln = "+v.Ln.toFixed(2)+" m","var(--trib)",10,"start",true);
+        txt(g,bo.x+5,bo.y+14,"B = "+v.B.toFixed(3)+" m","var(--trib)",10,"start",true);
       }
     }
     if(q&&q.t==="losa"&&m.losas[key(q.i,q.j)]){
-      var lo=medLosa(q.i,q.j);
-      txt(g,(X(q.i)+X(q.i+1))/2,(Y(q.j)+Y(q.j+1))/2-8,"Ln = "+lo.Ln.toFixed(2)+" m","var(--trib)",10);
+      var lo=medLosa(q.i,q.j), Cl=centro(q4p(q.i,q.j));
+      txt(g,Cl.x,Cl.y-8,"Ln = "+lo.Ln.toFixed(2)+" m","var(--trib)",10,null,true);
     }
   }
 
@@ -5670,9 +5853,8 @@ var TT={script:performance.now()};
      mientras calibras, un clic en el lienzo es un punto, no una columna. */
   function xyModelo(e){
     var r=svg.getBoundingClientRect();
-    var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1)),
-        H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),mg=56;
-    var esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
+    /* el lienzo QUE SE ESTA VIENDO, no uno deducido otra vez */
+    var L0=LIENZO||lienzo(S.verDims), mg=L0.mg, esc=L0.esc;
     /* el SVG se escala al ancho del contenedor: hay que deshacerlo */
     var k=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)
           ? svg.viewBox.baseVal.width/r.width : 1;
@@ -5828,11 +6010,10 @@ var TT={script:performance.now()};
     $("#hint").textContent=PISTAS[t]||"";
   }
 
-  /* El dibujo sigue siendo una retícula RECTA aunque la planta no lo sea:
-     pinta cada cosa en (X(i), Y(j)), un numero por eje, y con dos medidas
-     por direccion la posicion depende de los dos indices.  Las medidas de
-     las tablas SI son las del cuadrilatero.  Mientras el dibujo no se
-     rehaga, se dice en pantalla en vez de dejar que enganie. */
+  /* El dibujo ES el cuadrilatero: cada cosa se pinta en nodo(i,j), no en
+     una retícula recta.  El aviso se queda, pero ya no para disculpar el
+     plano sino para DECIR el sesgo, que es lo primero que hay que mirar en
+     una planta asi. */
   function avisaIrregular(){
     var e=$("#avisoIrreg"); if(!e)return;
     var m=N();
@@ -5842,9 +6023,9 @@ var TT={script:performance.now()};
     var p=[];
     if(Math.abs(sx)>0.005)p.push("el borde de abajo mide "+(sx>0?"+":"")+sx.toFixed(2)+" m");
     if(Math.abs(sy)>0.005)p.push("el de la derecha mide "+(sy>0?"+":"")+sy.toFixed(2)+" m");
-    e.innerHTML="<b>Planta irregular</b> ("+p.join(" y ")+"). El dibujo se "+
-      "muestra como retícula recta; las medidas de las tablas y de las hojas "+
-      "sí son las reales del cuadrilátero.";
+    e.innerHTML="<b>Planta irregular</b> ("+p.join(" y ")+"). El plano se "+
+      "dibuja con la geometría real del cuadrilátero, y las medidas de las "+
+      "tablas y de las hojas son las de esa misma geometría.";
     ver(e,true);
   }
   function elegirModo(md){
@@ -7453,7 +7634,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
