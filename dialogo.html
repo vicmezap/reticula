@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v88 · 11-09-2026";
+  var BUILD="v89 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4314,6 +4314,73 @@ var TT={script:performance.now()};
       }
     });
     c.innerHTML=html;
+  }
+
+
+  /* =====================================================================
+     LA PLANTA DE CADA NIVEL, EN IMAGEN
+
+     El 2D es un <svg>, no un lienzo: para llevarlo a Excel hay que
+     serializarlo, pasarlo por un <img> y pintarlo en un canvas.  Se hace
+     nivel por nivel, cambiando el nivel activo y volviendo a dibujar, y al
+     final se deja como estaba -si no, al cerrar la ventana te encontrarias
+     en otro piso del que estabas-.
+
+     POR QUE EN PNG Y NO EN JPEG: la planta son lineas finas sobre blanco, y
+     el JPEG las emborrona con su ruido de bloques.  Pesa mas, pero se lee.
+
+     El plano de fondo -el PDF que traes con «Traer plano»- NO entra: va al
+     45 % de opacidad y tapa los codigos de los elementos.  Esto es el
+     modelo, no el calco.
+     ===================================================================== */
+  var PLANO_ANCHO = 1100;          /* px de ancho de la imagen que se manda */
+
+  function svgAPng(svg, ancho){
+    return new Promise(function(res){
+      var vb=(svg.getAttribute("viewBox")||"0 0 100 100").split(/\s+/);
+      var w=+vb[2]||100, h=+vb[3]||100;
+      var copia=svg.cloneNode(true);
+      /* el calco se quita: es el PDF del arquitecto, no el modelo */
+      Array.prototype.slice.call(copia.querySelectorAll("image")).forEach(
+        function(im){ if(im.parentNode) im.parentNode.removeChild(im); });
+      copia.setAttribute("width", w);
+      copia.setAttribute("height", h);
+      copia.setAttribute("xmlns","http://www.w3.org/2000/svg");
+      var txt=new XMLSerializer().serializeToString(copia);
+      var img=new Image();
+      img.onload=function(){
+        var k=ancho/w, c=document.createElement("canvas");
+        c.width=Math.round(w*k); c.height=Math.round(h*k);
+        var g=c.getContext("2d");
+        g.fillStyle="#FFFFFF"; g.fillRect(0,0,c.width,c.height);
+        g.drawImage(img,0,0,c.width,c.height);
+        var url="";
+        try{ url=c.toDataURL("image/png"); }catch(e){ url=""; }
+        res({png:url.replace(/^data:image\/png;base64,/,""),
+             w:c.width, h:c.height});
+      };
+      img.onerror=function(){ res(null); };
+      img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(txt);
+    });
+  }
+
+  function plantasEnImagen(){
+    var svg=$("#plano");
+    if(!svg || !S.niveles.length) return Promise.resolve([]);
+    var antes=S.act, antesSel=S.sel, out=[];
+    function paso(k){
+      if(k>=S.niveles.length){
+        S.act=antes; S.sel=antesSel; render();
+        return out;
+      }
+      S.act=k; S.sel=null; render();
+      return svgAPng(svg, PLANO_ANCHO).then(function(im){
+        if(im && im.png) out.push({nivel:k+1, png:im.png, w:im.w, h:im.h});
+        return paso(k+1);
+      });
+    }
+    return Promise.resolve().then(function(){ return paso(0); })
+      .catch(function(){ S.act=antes; S.sel=antesSel; render(); return out; });
   }
 
   function draw(){
@@ -7207,7 +7274,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
@@ -7339,15 +7406,31 @@ var TT={script:performance.now()};
     if(St&&St.hojasSel)for(k in St.hojasSel)if(St.hojasSel[k])cuales.push(k);
     if(!cuales.length){ di("No hay ninguna hoja marcada."); return; }
     if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return; }
-    var paq=null;
-    try{ paq=JSON.stringify(window.RET.paquete()); }
-    catch(e){ di("No se pudo preparar el proyecto: "+e.message); return; }
     b.dataset.txt=b.textContent;
     b.disabled=true; b.textContent="Generando...";
-    if(!mandaLargo("proy",paq)||!manda({a:"hojas",cuales:cuales})){
-      b.disabled=false; b.textContent=b.dataset.txt;
-      di("No se pudo hablar con Excel."); return;
-    }
+    /* LAS PLANTAS SE RETRATAN ANTES, y eso tarda: hay que cambiar de nivel,
+       volver a dibujar y esperar a que el navegador convierta el SVG en
+       imagen, nivel por nivel.  Por eso el boton se bloquea primero y el
+       envio va dentro de la promesa: si se mandara el paquete antes, las
+       imagenes llegarian tarde o no llegarian. */
+    var quiereModelo=cuales.indexOf("MODELO")>=0;
+    var pedir=(quiereModelo&&window.RET&&RET.plantas)
+      ? RET.plantas() : Promise.resolve([]);
+    Promise.resolve(pedir).catch(function(){ return []; }).then(function(planos){
+      var paq=null;
+      try{
+        var o=window.RET.paquete();
+        o.planos=planos||[];
+        paq=JSON.stringify(o);
+      }catch(e){
+        b.disabled=false; b.textContent=b.dataset.txt;
+        di("No se pudo preparar el proyecto: "+e.message); return;
+      }
+      if(!mandaLargo("proy",paq)||!manda({a:"hojas",cuales:cuales})){
+        b.disabled=false; b.textContent=b.dataset.txt;
+        di("No se pudo hablar con Excel."); return;
+      }
+    });
     setTimeout(function(){
       if(b.disabled){ b.disabled=false; b.textContent=b.dataset.txt;
         di("El panel no respondió en 60 s."); }

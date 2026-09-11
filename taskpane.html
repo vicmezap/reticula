@@ -3634,6 +3634,45 @@
          + "Si de verdad quieres rehacerla, bórrala tú y vuelve a generar.";
   }
 
+
+  /* LAS IMAGENES DE LA PLANTA.
+
+     Van en su propio lote y despues de todo, por lo mismo que las formas: si
+     a Excel no le gusta una, que no se lleve por delante el formato de la
+     hoja entera.  Y cada una en su propio envio, porque una imagen grande
+     puede tardar y aqui no hay nada que ganar juntandolas.
+
+     addImage quiere el base64 A SECAS, sin el «data:image/png;base64,» de
+     delante: si se lo mandas entero contesta que el argumento no vale. */
+  function pintarImagenes(plan, opciones) {
+    var o = opciones || {};
+    var IM = plan.imagenes || [];
+    if (!IM.length || o.imagenes === false) return Promise.resolve(0);
+    if (typeof Excel === "undefined" || !Excel.run) return Promise.resolve(0);
+    var puestas = 0;
+    function paso(i) {
+      if (i >= IM.length) return puestas;
+      var im = IM[i];
+      return Excel.run(function (context) {
+        var ws = context.workbook.worksheets.getItem(plan.nombre);
+        var caja = hueco({ anchos: plan.anchos, alturas: plan.alturas,
+                           figura: { r0: im.r0, r1: im.r1,
+                                     c0: im.c0, c1: im.c1 } });
+        var sh = ws.shapes.addImage(String(im.png || "")
+                   .replace(/^data:image\/[a-z]+;base64,/, ""));
+        /* se mete en el hueco sin deformarla: manda el lado que sobre */
+        var k = Math.min(caja.ancho / Math.max(im.w, 1),
+                         caja.alto / Math.max(im.h, 1));
+        sh.width = Math.max(im.w * k, 1);
+        sh.height = Math.max(im.h * k, 1);
+        sh.left = caja.x + (caja.ancho - sh.width) / 2;
+        sh.top = caja.y;
+        return context.sync().then(function () { puestas++; });
+      }).catch(function () { }).then(function () { return paso(i + 1); });
+    }
+    return Promise.resolve().then(function () { return paso(0); });
+  }
+
   function generar(plan, opciones) {
     var t0 = (typeof performance !== "undefined") ? performance.now() : Date.now();
     var stats = null, tCola = 0, saltada = null;
@@ -3681,14 +3720,22 @@
          solo a veces -cuatro hojas de nueve, y no siempre las mismas-.  Por
          eso aqui salia todo bien y en el Excel de Victor salia un disco
          gris.  El Excel.run de arriba termina, y solo entonces se dibuja. */
-      return dibujar(plan, opciones);
+      return dibujar(plan, opciones).then(function (dib) {
+        /* y las imagenes, tambien fuera: otro Excel.run mas, en fila */
+        return pintarImagenes(plan, opciones).then(function (nIm) {
+          dib.imagenes = nIm;
+          return dib;
+        });
+      });
     }).then(function (dib) {
       var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
       if (saltada) return { hoja: plan.nombre, ms: Math.round(t1 - t0),
                             formas: 0, saltada: true, error: saltada };
       var r = { hoja: plan.nombre, ms: Math.round(t1 - t0),
                 msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
-                formas: dib.n, stats: stats };
+                formas: dib.n, imagenes: dib.imagenes || 0, stats: stats };
+      if ((plan.imagenes || []).length && !r.imagenes)
+        r.error = "la hoja salió, pero las plantas no se pudieron pegar";
       if (dib.error) r.error = "la hoja salió, pero la sección no se pudo "
                              + "dibujar: " + dib.error;
       else if (plan.figura && dib.n === 0)
@@ -5586,80 +5633,157 @@
      a proposito: si algo esta mal, se ve enseguida de cual de los dos lados
      esta el problema.
      ===================================================================== */
+  /* =====================================================================
+     DATOS — LA HOJA DE V1, CON LO QUE LE FALTABA
+
+     Estaba ordenada por QUIÉN DECIDE cada número: lo que elige el
+     proyectista arriba, lo que deduce el complemento abajo.  Tenía su
+     lógica, pero no es como se busca un dato: cuando quieres el f'c no
+     piensas «esto lo elegí yo», piensas «esto es un material».
+
+     Así que manda el orden de V1 —por temas— y lo que aporta el complemento
+     se queda como COLUMNA: «de dónde sale», que dice de qué artículo de qué
+     norma viene cada valor deducido, o si lo eliges tú.  Eso es lo que no se
+     puede reconstruir mirando la hoja, y es lo que salva cuando un número no
+     cuadra.
+
+     Los datos que V1 no tenía no se pierden: cada uno entra en la sección
+     que le toca.  σs va a UBICACIÓN porque sale del estudio de suelos, no de
+     los materiales; el % de placas va a GEOMETRÍA porque se mide contra el
+     área techada.
+     ===================================================================== */
   function datos(P) {
     var pr = (P && P.proy) || {};
     var e = (P && P.e030) || {};
     var cg = (P && P.cargas) || {};
+    var G = (P && P.geo) || [];
     var cat = C.CATEGORIA[P && P.categoria] || C.CATEGORIA.comun;
     var fc = +(P && P.fc) || 210;
     var h = F.hoja("DATOS"), r = 6;
-    h.titulo("DATOS DEL PROYECTO");
+    h.titulo("DETALLES DEL PROYECTO");
 
-    r = h.seccion(r, "1. IDENTIFICACIÓN");
-    r = h.encabezado(r, L2, ["Dato", "Valor"], 22.0);
+    /* Dato | Valor | Unidad | De dónde sale */
+    var L4D = [[3,4],[5,6],[7,7],[8,10]];
+    var ALIN = { alinear: ["Left", "Center", "Left", "Left"] };
+    var TUYO = "lo eliges tú";
+
+    function bloque(titulo, filas) {
+      r = h.seccion(r, titulo);
+      r = h.encabezado(r, L4D, ["Dato", "Valor", "Unidad", "De dónde sale"], 22.0);
+      filas.forEach(function (f) { r = h.fila(r, L4D, f, null, ALIN); });
+    }
+
+    r = h.seccion(r, "0. IDENTIFICACIÓN");
+    r = h.encabezado(r, [[3,4],[5,10]], ["Dato", "Valor"], 22.0);
     [["Proyecto", pr.nombre || "-"], ["Ubicación", pr.ubicacion || "-"],
      ["Proyectista", pr.proyectista || "-"], ["Fecha", pr.fecha || "-"]
-    ].forEach(function (f) { r = h.fila(r, L2, f, null, { alinear: ["Left", "Left"] }); });
+    ].forEach(function (f) {
+      r = h.fila(r, [[3,4],[5,10]], f, null, { alinear: ["Left", "Left"] });
+    });
     r++;
 
-    r = h.seccion(r, "2. LO QUE ELIGE EL PROYECTISTA");
-    r = h.encabezado(r, L3, ["Dato", "Valor", "Unidad"], 22.0);
-    [["Uso de la estructura", pr.uso || "-", ""],
-     ["Distrito", pr.distrito || "-", ""],
-     ["Perfil de suelo", pr.suelo || "-", ""],
-     ["Sistema estructural en X", pr.sistemaX || "-", ""],
-     ["Sistema estructural en Y", pr.sistemaY || "-", ""],
-     ["f'c del concreto", fc, "kg/cm²"],
-     /* fy NO se usa en predimensionamiento -el acero entra en el diseño, que
-        es la fase siguiente-, pero va aquí porque es donde se busca, y
-        porque Ec sí sale de f'c y conviene verlos juntos.  V1 lo tenía y el
-        complemento no: la hoja generada no era la misma hoja. */
-     ["fy del acero", +pr.fy || 4200, "kg/cm²"],
-     ["Peso del concreto armado", +pr.concreto || 2400, "kg/m³"],
-     ["σs capacidad portante", +(P && P.sigma) || 3.0, "kg/cm²"],
-     /* El MATERIAL del acabado, no solo su espesor.  El peso por m² sale de
-        multiplicar uno por otro, y con solo el espesor no hay forma de saber
-        de dónde salió el peso ni de cambiarlo con criterio. */
-     ["Material del piso terminado", pr.acabado || "Mortero de cemento", ""],
-     ["Espesor del piso terminado", +pr.pisoEsp || 5, "cm"],
-     ["Espesor del cielo raso", +pr.cieloEsp || 2, "cm"],
-     ["Tabiquería", +pr.tabiqueria || 0, "kg/m²"]
-    ].forEach(function (f) {
-      r = h.fila(r, L3, f, null, { alinear: ["Left", "Center", "Left"] });
-    });
-    r = h.nota(r, "La tabiquería es el único ESTIMADO: los tabiques no se "
-      + "dibujan. La E.020 Art. 5 (1.1) manda usar los pesos reales de los "
-      + "planos.");
+    bloque("1. USO Y SISTEMA", [
+      ["Uso de la estructura", pr.uso || "-", "", TUYO],
+      ["Categoría de la edificación", e.catE030 || "-", "",
+       "E.030 Tabla N.º 5, del uso"],
+      ["Factor de uso U", e.U == null ? "-" : e.U, "", "E.030 Art. 19"],
+      ["Peso en servicio", cat.peso, "kg/m²", "Oviedo pág. 80, de la categoría"],
+      ["% CV para peso sísmico", (cat.pctSC * 100).toFixed(0) + " %", "",
+       "E.030 Art. 31"],
+      ["Sistema estructural en X", pr.sistemaX || "-", "", TUYO],
+      ["Sistema estructural en Y", pr.sistemaY || "-", "", TUYO],
+      ["R₀ en X", e.R0x == null ? "-" : e.R0x, "", "E.030 Tabla N.º 7"],
+      ["R₀ en Y", e.R0y == null ? "-" : e.R0y, "", "E.030 Tabla N.º 7"]
+    ]);
 
-    r = h.seccion(r, "3. LO QUE DEDUCE EL COMPLEMENTO");
-    r = h.encabezado(r, L3, ["Dato", "Valor", "De dónde sale"], 22.0);
-    [["Categoría de la edificación", e.catE030 || "-", "E.030 Tabla N.º 5, del uso"],
-     ["Factor de uso U", e.U == null ? "-" : e.U, "E.030 Art. 19"],
-     ["Peso en servicio", cat.peso, "Oviedo pág. 80, de la categoría"],
-     ["% de sobrecarga sísmica", (cat.pctSC * 100).toFixed(0) + " %", "E.030 Art. 31"],
-     ["% de placas", pct(cat.pctPlaca), "Oviedo, del área techada"],
-     ["Zona sísmica", e.zona || "-", "E.030 Anexo N.º 1, del distrito"],
-     ["Factor Z", e.Z == null ? "-" : e.Z, "E.030 Tabla N.º 1"],
-     ["Factor S", e.S == null ? "no tabulado" : e.S, "E.030 Tabla N.º 3"],
-     ["TP", e.Tp == null ? "-" : e.Tp, "E.030 Tabla N.º 4"],
-     ["TL", e.Tl == null ? "-" : e.Tl, "E.030 Tabla N.º 4"],
-     ["R₀ en X", e.R0x == null ? "-" : e.R0x, "E.030 Tabla N.º 7"],
-     ["R₀ en Y", e.R0y == null ? "-" : e.R0y, "E.030 Tabla N.º 7"],
-     ["Ec del concreto", Math.round(15000 * Math.sqrt(fc)), "E.060 Art. 8.5: 15000·√f'c"],
-     ["Piso terminado", cg.piso == null ? "-" : cg.piso, "mortero × espesor (E.020 Anexo 1)"],
-     ["Cielo raso", cg.cielo == null ? "-" : cg.cielo, "yeso × espesor (E.020 Anexo 1)"],
-     ["Peso de vigas, columnas y placas",
-      cg.estructura == null ? "-" : cg.estructura,
-      cg.estructuraAuto ? "calculado del modelo" : "ESTIMADO en 150 kg/m²"]
-    ].forEach(function (f) {
-      r = h.fila(r, L3, f, null, { alinear: ["Left", "Center", "Left"] });
-    });
+    bloque("2. UBICACIÓN (ZONA Y SUELO)", [
+      ["Lugar", pr.distrito || "-", "", TUYO],
+      ["Zona sísmica", e.zona || "-", "", "E.030 Anexo N.º 1, del distrito"],
+      ["Factor Z", e.Z == null ? "-" : e.Z, "", "E.030 Tabla N.º 1"],
+      ["Tipo de suelo", pr.suelo || "-", "", "del estudio de suelos"],
+      ["Factor de suelo S", e.S == null ? "no tabulado" : e.S, "",
+       "E.030 Tabla N.º 3"],
+      ["TP", e.Tp == null ? "-" : e.Tp, "s", "E.030 Tabla N.º 4"],
+      ["TL", e.Tl == null ? "-" : e.Tl, "s", "E.030 Tabla N.º 4"],
+      /* σs va AQUÍ y no en materiales: el concreto no la fija, la fija el
+         terreno.  La usan las zapatas. */
+      ["σs capacidad portante", +(P && P.sigma) || 3.0, "kg/cm²",
+       "del estudio de suelos · la usa PRE_ZAPATA"]
+    ]);
 
-    r = h.nota(r, "Lo del apartado 3 no se escribe: sale del apartado 2. Si "
-      + "algo no cuadra, el error está arriba, no aquí.");
-    r = h.nota(r, "Las luces, las alturas y el número de pisos NO están en "
-      + "esta hoja: los mide el modelador de la planta y salen en las hojas "
-      + "de predimensionamiento.");
+    bloque("3. MATERIALES (E.060)", [
+      ["f'c del concreto", fc, "kg/cm²", TUYO],
+      /* fy no se usa en predimensionamiento -el acero entra en el diseño-,
+         pero va aquí porque es donde se busca */
+      ["fy del acero", +pr.fy || 4200, "kg/cm²",
+       TUYO + " · no se usa todavía: es del diseño"],
+      ["Ec = 15000·√f'c", Math.round(15000 * Math.sqrt(fc)), "kg/cm²",
+       "E.060 Art. 8.5"],
+      ["Peso específico del concreto", +pr.concreto || 2400, "kg/m³",
+       "E.020 Anexo 1"]
+    ]);
+
+    bloque("4. CARGAS PERMANENTES Y NO PERMANENTES", [
+      ["Material del acabado", pr.acabado || "Mortero de cemento", "", TUYO],
+      ["Espesor del acabado", +pr.pisoEsp || 5, "cm", TUYO],
+      ["Peso del acabado", cg.piso == null ? "-" : cg.piso, "kg/m²",
+       "mortero × espesor (E.020 Anexo 1)"],
+      ["Material del cielo raso", pr.cielo || "Yeso", "", TUYO],
+      ["Espesor del cielo raso", +pr.cieloEsp || 2, "cm", TUYO],
+      ["Peso del cielo raso", cg.cielo == null ? "-" : cg.cielo, "kg/m²",
+       "yeso × espesor (E.020 Anexo 1)"],
+      ["Peso de tabiquería", +pr.tabiqueria || 0, "kg/m²",
+       "ESTIMADO · los tabiques no se dibujan"],
+      ["Peso de vigas, columnas y placas",
+       cg.estructura == null ? "-" : cg.estructura, "kg/m²",
+       cg.estructuraAuto ? "calculado del modelo" : "ESTIMADO en 150 kg/m²"]
+    ]);
+    r = h.nota(r, "LA TABIQUERÍA ES EL ÚNICO ESTIMADO QUE QUEDA. Los tabiques "
+      + "no se dibujan en el modelador, y la E.020 Art. 5 (1.1) manda usar los "
+      + "pesos reales de los planos de arquitectura. El resto sale del modelo "
+      + "o de la norma.");
+
+    /* La sobrecarga por nivel: es la misma que usa METRADO_CARGAS, y se
+       escribe aquí porque es donde la busca V1 para su tabla. */
+    r = h.subtitulo(r, "4.1   Sobrecarga por nivel (E.020)");
+    var L_AMB = [[3,4],[5,8],[9,10]];
+    r = h.encabezado(r, L_AMB, ["Nivel", "Ambiente (E.020)", "s/c (kg/m²)"], 22.0);
+    var A = (P && P.A) || [];
+    if (A.length) {
+      A.forEach(function (f) {
+        var uso = String(f[1] || "").trim(), amb = String(f[2] || "").trim();
+        r = h.fila(r, L_AMB, [f[0] || "-",
+                              uso ? uso + " · " + (amb && amb !== "—" ? amb : "-") : "-",
+                              +f[4] || 0],
+                   { 2: "0" }, { alinear: ["Left", "Left", "Center"] });
+      });
+    } else {
+      r = h.fila(r, L_AMB, ["—", "—", "—"], null,
+                 { alinear: ["Left", "Left", "Center"] });
+    }
+    r = h.nota(r, "El mismo dato que METRADO_CARGAS, y sale del mismo sitio: "
+      + "el modelador. No se escribe en los dos lados, se escribe una vez.");
+
+    bloque("5. GEOMETRÍA GENERAL", [
+      ["N.º de pisos", G.length || (P && P.niveles) || 0, "", "del modelador"],
+      ["Altura total hn", +(G.reduce(function (s, g) {
+        return s + (+g.h || 0);
+      }, 0)).toFixed(2), "m", "suma de las alturas de entrepiso · ver MODELO"],
+      ["N.º de vanos en X", G.length ? (G[0].dx || []).length : 0, "",
+       "del modelador · ver MODELO"],
+      ["N.º de vanos en Y", G.length ? (G[0].dy || []).length : 0, "",
+       "del modelador · ver MODELO"],
+      ["Área techada", +(P && P.areaTechada) || 0, "m²", "del modelador"],
+      ["% de placas del área techada", pct(cat.pctPlaca), "",
+       "Oviedo, de la categoría · lo verifica PRE_PLACA"]
+    ]);
+    r = h.nota(r, "LAS LUCES NO ESTÁN AQUÍ, ESTÁN EN MODELO. Aquí van los "
+      + "totales; eje por eje se ven allí, con su fila prima cuando la planta "
+      + "no es rectangular.");
+    r = h.nota(r, "LA COLUMNA «DE DÓNDE SALE» NO ES UN ADORNO. Cuando un "
+      + "número no cuadra, dice si el error está en algo que elegiste tú o en "
+      + "un artículo de la norma, que son dos sitios muy distintos donde "
+      + "buscar.");
     return h.cerrar(r);
   }
 
@@ -5685,7 +5809,7 @@
      rectangular: el lado de arriba mide una cosa y el de abajo otra.
      ===================================================================== */
   function modelo(P) {
-    var G = P.geo || [];
+    var G = P.geo || [], P_IMG = null;
     vacio(G.length, "niveles en el modelo");
     var h = F.hoja("MODELO"), r = 6;
     h.titulo("MODELO Y GEOMETRÍA DE LA ESTRUCTURA");
@@ -5795,7 +5919,32 @@
       + "terreno, no desde la cimentación: el peralte de la zapata va debajo y "
       + "se calcula en PRE_ZAPATA.");
 
-    r = h.seccion(r, "3. EL PLANO DE FONDO");
+    /* ---------------- 3 · LAS PLANTAS ----------------
+       La planta que dibujas en el modelador, en imagen, una por nivel.  No
+       es el PDF del arquitecto: es TU modelo, con sus ejes, sus columnas y
+       sus codigos, y se rehace cada vez que generas, asi que no se puede
+       desincronizar de los numeros de arriba.
+
+       El hueco se reserva aqui y la imagen la pega el escritor, que es el
+       unico que sabe si este Excel admite imagenes. */
+    var PL = (P && P.planos) || [];
+    r = h.seccion(r, "3. LA PLANTA DE CADA NIVEL");
+    if (PL.length) {
+      P_IMG = [];
+      PL.forEach(function (im, k) {
+        var alto = Math.max(10, Math.min(30,
+          Math.round((im.h / Math.max(im.w, 1)) * 34) + 2));
+        r = h.subtitulo(r, "3." + (k + 1) + "   Planta del nivel "
+                         + (im.nivel || k + 1));
+        P_IMG.push({ png: im.png, r0: r, r1: r + alto - 1, c0: 3, c1: 10,
+                     w: im.w, h: im.h });
+        r = r + alto + 1;
+      });
+    } else {
+      r = h.nota(r, "No hay plantas retratadas. Salen solas al generar MODELO "
+        + "desde el modelador: se retrata la planta de cada nivel tal como la "
+        + "ves, sin el plano de calco.");
+    }
     r = h.nota(r, "El plano en PDF o imagen se trae desde el MODELADOR, con "
       + "«Traer plano», y sirve para calcar los ejes encima. No se copia a esta "
       + "hoja: aquí van las medidas, que es lo que usan las hojas de "
@@ -5806,7 +5955,9 @@
       + "vuelve a escribir entera cada vez que generas. Si cambias un número "
       + "aquí, el modelador no se entera y a la siguiente lo pierdes: cámbialo "
       + "en el modelador y vuelve a generar.");
-    return h.cerrar(r);
+    var plan = h.cerrar(r);
+    if (P_IMG && P_IMG.length) plan.imagenes = P_IMG;
+    return plan;
   }
 
   return { criteriosOviedo: criteriosOviedo, normaE020: normaE020,
@@ -5816,7 +5967,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v88 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v89 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
