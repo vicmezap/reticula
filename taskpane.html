@@ -2945,6 +2945,55 @@
     return { fin: r, primera: r - filas.length, ultima: r - 1 };
   }
 
+
+  /* =====================================================================
+     EL ELEMENTO QUE MANDA
+
+     De toda la lista, el que gobierna: el unico cuya seccion hay que
+     dibujar.  Es el criterio de Oviedo -el mismo que usa el libro de Excel-
+     y lo confirmo el cuaderno de NotebookLM el 10-09-2026:
+
+       losas          mayor Ln, que es de donde sale el espesor
+       viga principal mayor seccion b x h
+       viga chata     mayor Ln  (el ancho sale de la losa y no distingue nada)
+       columna        mayor Ac
+       placa          mayor espesor
+       zapata         mayor area
+
+     Va por FORMULA sobre la propia lista y no con el valor ya resuelto: si
+     tocas la lista a mano, el cuadro sigue diciendo la verdad.
+
+     La clave se guarda en una columna de ANCHO 0.  Se probo evitarla con
+     formulas matriciales y fallan EN SILENCIO -la clave salia redonda y
+     acertaba de casualidad-, asi que mejor una columna de mas que un numero
+     que parece bueno y no lo es.
+     ===================================================================== */
+
+  /* celda suelta, sin tocar la altura de la fila: h.fila() volveria a
+     fijarla y encogeria las filas de la lista, que van a 28.05 y no a 18 */
+  function celda(h, r, c, v) {
+    var P = h.plan();
+    P.valores.push({ r: r, c: c, v: v });
+    if (typeof v === "string" && v.charAt(0) === "=") P.tieneFormulas = true;
+    if (r > P.ultima) P.ultima = r;
+  }
+
+  function manda(h, r, layout, encab, L, clave, titulo) {
+    var ultima = layout[layout.length - 1][1];
+    var aux = ultima + 1, A = F.col(aux), i;
+    h.plan().anchos[A] = 0;                  /* el mecanismo no se ve */
+    for (i = L.primera; i <= L.ultima; i++) celda(h, i, aux, clave(i));
+    var rg = "$" + A + "$" + L.primera + ":$" + A + "$" + L.ultima;
+    r = h.subtitulo(r, titulo, ultima);
+    r = h.encabezado(r, layout, encab, ALTO_LISTA);
+    h.fila(r, layout, layout.map(function (par) {
+      var c = F.col(par[0]);
+      return '=IF(MAX(' + rg + ')=0,"",INDEX($' + c + "$" + L.primera + ":$"
+        + c + "$" + L.ultima + ",MATCH(MAX(" + rg + ")," + rg + ",0)))";
+    }), null, ALTO_LISTA, { alinear: CENTRO });
+    return r + 2;
+  }
+
   function vacio(n, que) {
     if (!n) throw new Error("no hay " + que + " en el modelo");
   }
@@ -3145,6 +3194,10 @@
             + C.MINIMOS.viguetaAligerada + ")*100)"];
       }, { 2: "0.00", 4: "0.000", 6: "0" });
     r = L.fin + 1;
+    r = manda(h, r, L7_ALIG,
+        ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)"],
+        L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
+        "La losa que manda");
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
       + "de 5 cm   |   b = h / " + C.PROPORCION.viguetaAligerada + ", TAMBIÉN al "
@@ -3183,6 +3236,10 @@
           "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))"];
       }, { 2: "0.00", 4: "0.000" });
     r = L.fin + 1;
+    r = manda(h, r, L6_MAC,
+        ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)"],
+        L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
+        "La losa que manda");
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
       + "de 5 cm. La maciza no lleva vigueta ni separación: es una sola pieza.");
@@ -3225,6 +3282,10 @@
           "=IF(N(G" + i + ')=0,"",ROUND(' + C.PROPORCION.nervadura + "*G" + i + ",2))"];
       }, { 2: "0.00", 4: "0.000", 6: "0" });
     r = L.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)", "S (m)"],
+        L, function (i) { return "=IFERROR(E" + i + "*1,0)"; },
+        "La losa que manda");
 
     r = h.nota(r, "A diferencia de la aligerada, la separación de la nervada NO es "
       + "fija: S ≤ " + C.PROPORCION.nervadura + " h, así que depende del peralte. "
@@ -3272,6 +3333,10 @@
             + C.PROPORCION.baseVigaPrincipal + "*100,5)," + bmin + "))"];
       }, { 2: "0.00", 3: "0.000", 5: "0.000" });
     r = L.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "Eje", "Ln (m)", "B (m)", "α", "h (m)", "h (cm)", "b (cm)"],
+        L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(J" + i + "*1,0)/1000+IFERROR(E" + i + "*1,0)/1000000"; },
+        "La viga que manda");
 
     r = h.nota(r, "B es el ancho tributario: medio paño a cada lado que tenga losa. "
       + "h = Ln / α, redondeado hacia arriba al múltiplo de 5 cm   |   b = B / "
@@ -3325,6 +3390,10 @@
             + ',"CUMPLE","NO CUMPLE"))'];
       }, { 2: "0.00", 5: "0.00" });
     r = L.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
+        L, function (i) { return "=(J" + i + "=\"NO CUMPLE\")*10000+IFERROR(E" + i + "*1,0)"; },
+        "La viga chata que manda");
 
     r = h.nota(r, "El peralte de una viga chata NO se calcula: es el espesor de la "
       + "losa en la que se apoya, y el complemento lo trae ya resuelto de la hoja de "
@@ -3419,6 +3488,10 @@
             + i + "/J" + i + ",5)," + cmin + ")))"];
       }, { 4: "0.000", 5: "0.00", 6: "0" });
     r = L.fin + 1;
+    r = manda(h, r, L9,
+        ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)", "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
+        L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(H" + i + "*1,0)/1000"; },
+        "La columna que manda");
 
     r = h.nota(r, "P = N.º de pisos × A trib × peso/m²   |   Ac = P / (k · f'c), con "
       + "k = " + C.COLUMNA.C.interior + " interior, " + C.COLUMNA.C.exterior
@@ -3509,6 +3582,10 @@
           "=IF(N(I" + i + ')=0,"",F' + i + "*I" + i + "/100)"];
       }, { 3: "0.00", 4: "0.00", 5: "0.000", 7: "0.000" });
     r = L.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "Eje", "Dir", "lm (m)", "hm (m)", "t mín (m)", "t (cm)", "Área (m²)"],
+        L, function (i) { return "=IFERROR(I" + i + "*1,0)+IFERROR(J" + i + "*1,0)/1000"; },
+        "La placa que manda");
 
     /* --- verificacion POR DIRECCION --- */
     var a = L.primera, b = L.ultima;
@@ -3839,6 +3916,10 @@
           "=IF(H" + i + ">=" + az + '-0.0001,"CUMPLE","REVISAR")'];
       }, { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.000", 6: "0.00" });
     r = T2.fin + 1;
+    r = manda(h, r, L8,
+        ["Código", "col b (m)", "col h (m)", "B menor (m)", "L mayor (m)", "Área B×L (m²)", "H (m)", "Estado"],
+        T2, function (i) { return "=IFERROR(H" + i + "*1,0)+IFERROR(I" + i + "*1,0)/1000"; },
+        "La zapata que manda");
 
     r = h.nota(r, "POR QUÉ HAY UNA COLUMNA «Estado». Los lados se construyen como "
       + "√Az ± d, con d = (h − b)/2. Esa pareja conserva la SUMA de los lados, no el "
@@ -4247,7 +4328,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v64 · 10-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v65 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
