@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v92 · 11-09-2026";
+  var BUILD="v93 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3906,13 +3906,52 @@ var TT={script:performance.now()};
   /* La linea media va a la mitad del vano REAL: con un prima sin apoyo el
      vano abarca varios tramos y la mitad se corre con el.  Sin primas,
      tramoLosa da un vano y esto es literalmente lo de siempre. */
+  /* =====================================================================
+     EL TROZO QUE LE TOCA A UNA ESQUINA DEL PAÑO
+
+     El area tributaria de una columna se mide hasta la MITAD de cada vano:
+     las dos lineas medias del paño lo parten en cuatro, y a la columna le
+     toca el trozo que la contiene.
+
+     En un paño RECTANGULAR esos cuatro trozos son iguales y basta con
+     dividir el area entre cuatro.  En un paño en PUNTA no lo son: la
+     esquina del lado ancho recoge mas y la de la punta menos.  Con un
+     trapecio de lados 3.165 y 3.705 -el «+0.54 m» que avisa el propio
+     modelador- la diferencia es de un 3.9 %; con lados 1 y 4 es del 30 %.
+     Y va EN CONTRA DE LA SEGURIDAD en la esquina ancha, que es a la que se
+     le estaba dando de menos.
+
+     Asi que se mide el trozo de verdad: del nodo a los puntos medios de sus
+     dos lados y al centro del paño, por la formula de Gauss.  El centro es
+     donde se cruzan las dos lineas medias, que en un cuadrilatero cualquiera
+     es la media de los cuatro vertices.
+
+     Los cuatro trozos SUMAN el paño entero, asi que no se pierde ni se
+     inventa carga.  Y en un rectangulo da exactamente un cuarto: lo que ya
+     estaba bien no cambia.
+     ===================================================================== */
+  function areaEsquina(pi,pj,i,j,m){
+    m=m||N();
+    var V=[nodo(pi,pj,m),nodo(pi+1,pj,m),nodo(pi+1,pj+1,m),nodo(pi,pj+1,m)];
+    var IJ=[[pi,pj],[pi+1,pj],[pi+1,pj+1],[pi,pj+1]],k=-1,t;
+    for(t=0;t<4;t++) if(IJ[t][0]===i&&IJ[t][1]===j) k=t;
+    if(k<0) return areaPano(pi,pj,m)/4;      /* no es esquina de este paño */
+    var O={x:(V[0].x+V[1].x+V[2].x+V[3].x)/4,
+           y:(V[0].y+V[1].y+V[2].y+V[3].y)/4};
+    function med(u,v){return {x:(u.x+v.x)/2,y:(u.y+v.y)/2};}
+    var P=[V[k], med(V[k],V[(k+1)%4]), O, med(V[k],V[(k+3)%4])];
+    var a=0,q;
+    for(q=0;q<4;q++){var u=P[q],w=P[(q+1)%4];a+=u.x*w.y-w.x*u.y;}
+    return Math.abs(a)/2;
+  }
+
   function medCol(i,j,m){
     m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0,vx={},vy={};
     ps.forEach(function(q){
       var lx=tramoLosa("x",q[0],q[1],m).L/2, ly=tramoLosa("y",q[0],q[1],m).L/2;
-      /* un cuarto del paño REAL, no lx*ly: en un cuadrilatero el producto de
-         los medios lados no es el area.  En un rectangulo si, y da igual. */
-      at+=areaPano(q[0],q[1],m)/4; vx[q[0]]=lx; vy[q[1]]=ly;});
+      /* EL TROZO DE ESTA ESQUINA, no un cuarto del paño: en un paño en
+         punta los cuatro trozos no son iguales.  Ver areaEsquina(). */
+      at+=areaEsquina(q[0],q[1],i,j,m); vx[q[0]]=lx; vy[q[1]]=ly;});
     if(vx[i-1]!=null)bx+=vx[i-1];
     if(vx[i]  !=null)bx+=vx[i];
     if(vy[j-1]!=null)by+=vy[j-1];
