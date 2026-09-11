@@ -2620,6 +2620,412 @@
 });
 </script>
 <script>
+/* ===== dibujos.js (inlinado) ===== */
+/* =====================================================================
+   dibujos.js — LAS SIETE SECCIONES TIPICAS
+
+   Portadas del VBA de V1, donde ya funcionaban.  Alli el dibujo se hace con
+   cuatro primitivas -rectangulo, linea, ovalo y cuadro de texto- y
+   aritmetica para que quepa en el hueco disponible.  Aqui es lo mismo, con
+   una diferencia que importa:
+
+   NO SE DIBUJA NADA.  Cada figura DEVUELVE una lista de formas.  Quien las
+   pinte -Office.js dentro de Excel, o un renderizador de prueba- es cosa
+   suya.
+
+   Asi la geometria se puede comprobar en Node, que es donde se cazan los
+   errores: que el acero quede dentro del estribo, que las cotas digan lo
+   que miden, que nada se salga del hueco.  Un dibujo que solo se puede
+   mirar con los ojos solo se comprueba con los ojos.
+
+   Formas:
+     {t:"rect",  x,y,w,h, relleno, linea, peso, sinRelleno}
+     {t:"ovalo", cx,cy,d, relleno, linea}
+     {t:"linea", x1,y1,x2,y2, color, peso, flecha}
+     {t:"texto", x,y, s, anclaX}      anclaX: centra el texto ahi
+
+   El hueco llega como {x, y, ancho, alto} en puntos.  En Excel lo calcula
+   el escritor sumando anchos de columna y altos de fila, porque Office.js
+   -al reves que VBA- no sabe decir donde cae una celda.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.DIBUJOS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var NEGRO = "000000", BLANCO = "FFFFFF", ROJO = "C00000",
+      GRIS_LIN = "505050", GRIS_LOSA = "BEBEBE", GRIS_NER = "CDCDCD",
+      GRIS_VIG = "F2F2F2", GRIS = "C8C8C8", GRIS_MURO = "D7D7D7",
+      GRIS_BORDE = "969696",
+      LAD = "C46C3A", LAD_INT = "E09B6A", LAD_LIN = "8C461E";
+
+  function rect(x, y, w, h, relleno, linea, peso, sinRelleno) {
+    return { t: "rect", x: x, y: y, w: w, h: h, relleno: relleno,
+             linea: linea, peso: peso || 0.75, sinRelleno: !!sinRelleno };
+  }
+  function ovalo(cx, cy, d, relleno, linea) {
+    return { t: "ovalo", cx: cx, cy: cy, d: d,
+             relleno: relleno || BLANCO, linea: linea || NEGRO };
+  }
+  function linea(x1, y1, x2, y2, color, peso, flecha) {
+    return { t: "linea", x1: x1, y1: y1, x2: x2, y2: y2,
+             color: color || NEGRO, peso: peso || 0.5, flecha: !!flecha };
+  }
+  function texto(x, y, s, anclaX) {
+    return { t: "texto", x: x, y: y, s: s, anclaX: anclaX };
+  }
+  /* rotulo = texto centrado + flecha roja hasta lo que senala */
+  function rotulo(f, s, tx, ty, ax, ay) {
+    f.push(texto(0, ty, s, tx));
+    f.push(linea(tx, ty + 14, ax, ay, ROJO, 1.25, true));
+  }
+  function nm(v) { return String(Math.round(v)); }
+  /* cota entre dos x, con sus dos patillas y el texto centrado debajo */
+  function cotaH(f, xa, xb, yPieza, yCota, s) {
+    f.push(linea(xa, yPieza, xa, yCota + 4));
+    f.push(linea(xb, yPieza, xb, yCota + 4));
+    f.push(linea(xa, yCota, xb, yCota));
+    f.push(texto(0, yCota + 3, s, (xa + xb) / 2));
+  }
+
+  /* ------------------------------------------------------------------
+     1 · LOSA ALIGERADA
+     Loseta arriba, viguetas de concreto y ladrillos de techo entre ellas.
+     La cadena de cotas de abajo reparte el metro: ladrillo, vigueta,
+     ladrillo, vigueta, ladrillo.
+     ------------------------------------------------------------------ */
+  function losaAligerada(espesorCm, bCm, caja) {
+    var hf = 5, hLad, rotLad;
+    if (espesorCm > 0) {
+      hLad = Math.max(espesorCm - hf, 5);
+      rotLad = nm(hLad) + " cm";
+    } else { hLad = 15; rotLad = "12, 15 o 20 cm"; }
+    var b = bCm > 0 ? bCm : 10;
+    var anchoLad = Math.max(40 - b, 10), anchoTot = 3 * anchoLad + 2 * b;
+    var s = Math.min((caja.alto - 96) / (hf + hLad), (caja.ancho - 95) / anchoTot);
+    var x0 = caja.x + 12 + (caja.ancho - 95 - anchoTot * s) / 2, y0 = caja.y + 62;
+    var f = [], yl = y0 + hf * s;
+
+    f.push(rect(x0, y0, anchoTot * s, hf * s, GRIS_LOSA, GRIS_LIN));
+    [anchoLad, 2 * anchoLad + b].forEach(function (xv) {
+      f.push(rect(x0 + xv * s, yl, b * s, hLad * s, GRIS_VIG, GRIS_LIN));
+    });
+    [0, anchoLad + b, 2 * (anchoLad + b)].forEach(function (xb) {
+      f.push(rect(x0 + xb * s, yl, anchoLad * s, hLad * s, LAD, LAD_LIN));
+      f.push(rect(x0 + (xb + 1.2) * s, y0 + (hf + 1.2) * s,
+                  (anchoLad - 2.4) * s, (hLad - 2.4) * s, LAD_INT, LAD_LIN, 0.5));
+      for (var k = 1; k <= 3; k++) {
+        var xh = x0 + (xb + 1.2 + k * (anchoLad - 2.4) / 4) * s;
+        f.push(linea(xh, y0 + (hf + 1.2) * s, xh, y0 + (hf + hLad - 1.2) * s,
+                     LAD_LIN, 0.5));
+      }
+    });
+    /* fierro de temperatura, dentro de la loseta */
+    f.push(linea(x0 + 2 * s, y0 + 2.4 * s, x0 + (anchoTot - 2) * s, y0 + 2.4 * s,
+                 NEGRO, 0.9));
+    var d = 1.6 * s;
+    [anchoLad + b / 2, 2 * anchoLad + 1.5 * b].forEach(function (xv) {
+      f.push(ovalo(x0 + xv * s, y0 + (hf + 1.3) * s, d));
+      f.push(ovalo(x0 + (xv - b * 0.24) * s, y0 + (hf + hLad - 2) * s, d));
+      f.push(ovalo(x0 + (xv + b * 0.24) * s, y0 + (hf + hLad - 2) * s, d));
+    });
+    rotulo(f, "Losa de techo", x0 + anchoTot * 0.07 * s, y0 - 52,
+           x0 + anchoTot * 0.13 * s, y0 + 2 * s);
+    rotulo(f, "Fierro de\ntemperatura", x0 + anchoTot * 0.27 * s, y0 - 58,
+           x0 + anchoTot * 0.24 * s, y0 + 2.4 * s);
+    rotulo(f, "Fierro\nvigueta", x0 + anchoTot * 0.44 * s, y0 - 58,
+           x0 + (anchoLad + b / 2) * s, y0 + (hf + 1.3) * s);
+    rotulo(f, "Vigueta", x0 + anchoTot * 0.6 * s, y0 - 52,
+           x0 + (2 * anchoLad + 1.5 * b) * s, y0 + (hf + hLad * 0.5) * s);
+    rotulo(f, "Ladrillo\nde techo", x0 + anchoTot * 0.8 * s, y0 - 58,
+           x0 + (2 * (anchoLad + b) + anchoLad * 0.5) * s, y0 + (hf + hLad * 0.5) * s);
+
+    var xd = x0 + anchoTot * s, xc = xd + 10, yT = y0 + (hf + hLad) * s;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, yl, xc + 6, yl));
+    f.push(linea(xd, yT, xc + 6, yT));
+    f.push(linea(xc, y0, xc, yl));
+    f.push(linea(xc, yl, xc, yT));
+    f.push(texto(xc + 9, y0 + hf * s / 2 - 6, nm(hf) + " cm"));
+    f.push(texto(xc + 9, y0 + (hf + hLad / 2) * s - 6, rotLad));
+
+    var yb = yT + 14;
+    [[0, anchoLad], [anchoLad, anchoLad + b], [anchoLad + b, 2 * anchoLad + b],
+     [2 * anchoLad + b, 2 * anchoLad + 2 * b], [2 * anchoLad + 2 * b, anchoTot]]
+      .forEach(function (p) {
+        cotaH(f, x0 + p[0] * s, x0 + p[1] * s, yT, yb, nm(p[1] - p[0]) + " cm");
+      });
+    return f;
+  }
+
+  /* ------------------------------------------------------------------
+     2 · LOSA MACIZA
+     Una franja de un metro, con su parrilla arriba y abajo.
+     ------------------------------------------------------------------ */
+  function losaMaciza(espesorCm, caja) {
+    var anchoTot = 100, rec = 2, h, rotH;
+    if (espesorCm > 0) { h = espesorCm; rotH = "h = " + nm(h) + " cm"; }
+    else { h = 20; rotH = "h"; }
+    if (h < 10) h = 10;
+    var s = Math.min((caja.alto - 96) / h, (caja.ancho - 95) / anchoTot);
+    var x0 = caja.x + 12 + (caja.ancho - 95 - anchoTot * s) / 2, y0 = caja.y + 62;
+    var f = [];
+    f.push(rect(x0, y0, anchoTot * s, h * s, GRIS_LOSA, GRIS_LIN));
+    f.push(linea(x0 + rec * s, y0 + rec * s, x0 + (anchoTot - rec) * s,
+                 y0 + rec * s, NEGRO, 0.9));
+    f.push(linea(x0 + rec * s, y0 + (h - rec) * s, x0 + (anchoTot - rec) * s,
+                 y0 + (h - rec) * s, NEGRO, 0.9));
+    var d = 1.6 * s;
+    [10, 30, 50, 70, 90].forEach(function (xb) {
+      f.push(ovalo(x0 + xb * s, y0 + (rec + 0.8) * s, d));
+      f.push(ovalo(x0 + xb * s, y0 + (h - rec - 0.8) * s, d));
+    });
+    rotulo(f, "Losa maciza", x0 + anchoTot * 0.1 * s, y0 - 52,
+           x0 + anchoTot * 0.15 * s, y0 + h * 0.35 * s);
+    rotulo(f, "Acero superior\n(temperatura)", x0 + anchoTot * 0.42 * s, y0 - 58,
+           x0 + 50 * s, y0 + (rec + 0.8) * s);
+    rotulo(f, "Acero inferior\n(principal)", x0 + anchoTot * 0.76 * s, y0 - 58,
+           x0 + 70 * s, y0 + (h - rec - 0.8) * s);
+    var xd = x0 + anchoTot * s, xc = xd + 10;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, y0 + h * s, xc + 6, y0 + h * s));
+    f.push(linea(xc, y0, xc, y0 + h * s));
+    f.push(texto(xc + 9, y0 + h * s / 2 - 6, rotH));
+    var yb = y0 + h * s + 14;
+    f.push(texto(x0 + 78 * s, yb + 20, "r = 2 cm"));
+    f.push(linea(x0 + 82 * s, yb + 20, x0 + 90 * s, y0 + (h - rec - 0.8) * s,
+                 ROJO, 1.25, true));
+    cotaH(f, x0, x0 + anchoTot * s, y0 + h * s, yb, "franja de 1.00 m");
+    return f;
+  }
+
+  /* ------------------------------------------------------------------
+     3 · LOSA NERVADA
+     Losa superior y nervios separados por el intereje.
+     ------------------------------------------------------------------ */
+  function losaNervada(espesorCm, bCm, sCm, caja) {
+    var hf = 5, hNer, rotNer;
+    if (espesorCm > 0) {
+      hNer = Math.max(espesorCm - hf, 5); rotNer = nm(hNer) + " cm";
+    } else { hNer = 25; rotNer = "h - 5 cm"; }
+    var b = bCm > 0 ? bCm : 12;
+    var S = (sCm <= b + 10) ? b + 30 : sCm;
+    var anchoTot = 2 * S + b;
+    var s = Math.min((caja.alto - 96) / (hf + hNer), (caja.ancho - 95) / anchoTot);
+    var x0 = caja.x + 12 + (caja.ancho - 95 - anchoTot * s) / 2, y0 = caja.y + 62;
+    var f = [], yl = y0 + hf * s, yT = y0 + (hf + hNer) * s;
+
+    f.push(rect(x0, y0, anchoTot * s, hf * s, GRIS_LOSA, GRIS_LIN));
+    [0, S, 2 * S].forEach(function (xv) {
+      f.push(rect(x0 + xv * s, yl, b * s, hNer * s, GRIS_NER, GRIS_LIN));
+    });
+    f.push(linea(x0 + 2 * s, y0 + 2.4 * s, x0 + (anchoTot - 2) * s, y0 + 2.4 * s,
+                 NEGRO, 0.9));
+    var d = 1.6 * s;
+    [b / 2, S + b / 2, 2 * S + b / 2].forEach(function (xv) {
+      f.push(ovalo(x0 + xv * s, y0 + (hf + 1.3) * s, d));
+      f.push(ovalo(x0 + (xv - b * 0.22) * s, y0 + (hf + hNer - 2) * s, d));
+      f.push(ovalo(x0 + (xv + b * 0.22) * s, y0 + (hf + hNer - 2) * s, d));
+    });
+    rotulo(f, "Losa superior", x0 + anchoTot * 0.1 * s, y0 - 52,
+           x0 + anchoTot * 0.16 * s, y0 + 2 * s);
+    rotulo(f, "Fierro de\ntemperatura", x0 + anchoTot * 0.3 * s, y0 - 58,
+           x0 + anchoTot * 0.27 * s, y0 + 2.4 * s);
+    rotulo(f, "Fierro del\nnervio", x0 + anchoTot * 0.52 * s, y0 - 58,
+           x0 + (S + b / 2) * s, y0 + (hf + 1.3) * s);
+    rotulo(f, "Nervio\n(vigueta)", x0 + anchoTot * 0.78 * s, y0 - 58,
+           x0 + (2 * S + b / 2) * s, y0 + (hf + hNer * 0.55) * s);
+    var xd = x0 + anchoTot * s, xc = xd + 10;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, yl, xc + 6, yl));
+    f.push(linea(x0 + (2 * S + b) * s, yT, xc + 6, yT));
+    f.push(linea(xc, y0, xc, yl));
+    f.push(linea(xc, yl, xc, yT));
+    f.push(texto(xc + 9, y0 + hf * s / 2 - 6, nm(hf) + " cm"));
+    f.push(texto(xc + 9, y0 + (hf + hNer / 2) * s - 6, rotNer));
+    var yb = yT + 14;
+    f.push(texto(x0 + (2 * S + b + 4) * s, yb + 20, "2 cm"));
+    f.push(linea(x0 + (2 * S + b + 4) * s, yb + 20,
+                 x0 + (2 * S + b / 2 + b * 0.22) * s, y0 + (hf + hNer - 2) * s,
+                 ROJO, 1.25, true));
+    [[0, b], [b, S], [S, S + b], [S + b, 2 * S], [2 * S, 2 * S + b]]
+      .forEach(function (p) {
+        cotaH(f, x0 + p[0] * s, x0 + p[1] * s, yT, yb, nm(p[1] - p[0]) + " cm");
+      });
+    return f;
+  }
+
+  /* ------------------------------------------------------------------
+     4 · VIGA PRINCIPAL — seccion con estribo y cuatro fierros
+     ------------------------------------------------------------------ */
+  function vigaPrincipal(bCm, hCm, caja) {
+    return seccionRect(bCm, hCm, caja, {
+      bDef: 25, hDef: 50, bMin: 15, hMin: 20, margen: 230, xIni: 62, rotX: 95,
+      centros: false,
+      rotulos: [["Acero superior", "sup"], ["Estribo", "estribo"],
+                ["Acero inferior", "inf"]],
+      rec: 4, recX: 56, recDX: 8
+    });
+  }
+
+  /* ------------------------------------------------------------------
+     5 · COLUMNA — igual, con dos fierros mas en el centro de cada lado
+     ------------------------------------------------------------------ */
+  function columna(bCm, hCm, caja) {
+    return seccionRect(bCm, hCm, caja, {
+      bDef: 30, hDef: 30, bMin: 20, hMin: 20, margen: 240, xIni: 66, rotX: 108,
+      centros: true,
+      rotulos: [["Acero longitudinal", "sup"], ["Estribo", "estribo072"]],
+      rec: 4, recX: 60, recDX: 10
+    });
+  }
+
+  /* viga y columna son la misma seccion con otros numeros y otros rotulos:
+     una sola rutina, que es como no se separan con el tiempo */
+  function seccionRect(bCm, hCm, caja, o) {
+    var rec = o.rec;
+    var b = bCm > 0 ? bCm : o.bDef, h = hCm > 0 ? hCm : o.hDef;
+    if (b < o.bMin) b = o.bMin;
+    if (h < o.hMin) h = o.hMin;
+    var s = Math.min((caja.alto - 60) / h, (caja.ancho - o.margen) / b);
+    var x0 = caja.x + o.xIni + (caja.ancho - (b * s + o.margen)) / 2;
+    var y0 = caja.y + 22;
+    var f = [];
+    f.push(rect(x0, y0, b * s, h * s, GRIS, GRIS_LIN));
+    f.push(rect(x0 + rec * s, y0 + rec * s, (b - 2 * rec) * s, (h - 2 * rec) * s,
+                GRIS, NEGRO, 1.25, true));
+    var d = 2 * s, xi = x0 + (rec + 1.5) * s, xd2 = x0 + (b - rec - 1.5) * s,
+        ya = y0 + (rec + 1.5) * s, yz = y0 + (h - rec - 1.5) * s;
+    [[xi, ya], [xd2, ya], [xi, yz], [xd2, yz]].forEach(function (p) {
+      f.push(ovalo(p[0], p[1], d));
+    });
+    if (o.centros) {
+      f.push(ovalo(x0 + b * s / 2, ya, d));
+      f.push(ovalo(x0 + b * s / 2, yz, d));
+      f.push(ovalo(xi, y0 + h * s / 2, d));
+      f.push(ovalo(xd2, y0 + h * s / 2, d));
+    }
+    var xd = x0 + b * s, xc = xd + 12;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, y0 + h * s, xc + 6, y0 + h * s));
+    f.push(linea(xc, y0, xc, y0 + h * s));
+    f.push(texto(xc + 8, y0 + h * s / 2 - 6, "h = " + nm(h) + " cm"));
+    var yb = y0 + h * s + 14;
+    cotaH(f, x0, xd, y0 + h * s, yb, "b = " + nm(b) + " cm");
+
+    var xL = xd + o.rotX;
+    o.rotulos.forEach(function (r) {
+      var y = r[1] === "sup" ? ya
+            : r[1] === "inf" ? yz
+            : r[1] === "estribo072" ? y0 + h * s * 0.72 : y0 + h * s / 2;
+      var hasta = (r[1] === "sup" || r[1] === "inf") ? xd2 + 4 : x0 + (b - rec) * s + 2;
+      f.push(texto(xL, y - 5, r[0]));
+      f.push(linea(xL - 4, y, hasta, y, ROJO, 1.25, true));
+    });
+    f.push(texto(x0 - o.recX, y0 + h * s * 0.72 - 5, "r = " + nm(rec) + " cm"));
+    f.push(linea(x0 - o.recDX, y0 + h * s * 0.72, x0 + rec * 0.6 * s,
+                 y0 + h * s * 0.72, ROJO, 1.25, true));
+    return f;
+  }
+
+  /* ------------------------------------------------------------------
+     6 · PLACA — seccion EN PLANTA, con sus dos elementos de borde
+     ------------------------------------------------------------------ */
+  function placa(lwCm, espCm, caja) {
+    var lw = lwCm > 0 ? lwCm : 400, esp = espCm > 0 ? espCm : 25;
+    if (lw < 60) lw = 60;
+    if (esp < 10) esp = 10;
+    var lb = Math.min(30, lw / 3);
+    var s = Math.min((caja.alto - 96) / (esp * 2.2), (caja.ancho - 210) / lw);
+    var x0 = caja.x + 58 + (caja.ancho - (lw * s + 210)) / 2, y0 = caja.y + 52;
+    var f = [];
+    f.push(rect(x0, y0, lw * s, esp * s, GRIS_MURO, GRIS_LIN));
+    f.push(rect(x0, y0, lb * s, esp * s, GRIS_BORDE, NEGRO, 1.25));
+    f.push(rect(x0 + (lw - lb) * s, y0, lb * s, esp * s, GRIS_BORDE, NEGRO, 1.25));
+    var yb = y0 + esp * s + 16;
+    cotaH(f, x0, x0 + lw * s, y0 + esp * s, yb,
+          "lm = " + (lw / 100).toFixed(2) + " m");
+    var xd = x0 + lw * s, xc = xd + 14;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, y0 + esp * s, xc + 6, y0 + esp * s));
+    f.push(linea(xc, y0, xc, y0 + esp * s));
+    f.push(texto(xc + 8, y0 + esp * s / 2 - 6, "t = " + nm(esp) + " cm"));
+    rotulo(f, "Elemento de borde", x0 + lb * s / 2, y0 - 30, x0 + lb * s / 2, y0);
+    rotulo(f, "Alma del muro", x0 + lw * s / 2, y0 - 30, x0 + lw * s / 2, y0);
+    f.push(texto(x0, yb + 20, "Sección en planta. Los elementos de borde miden "
+                 + "30 cm como mínimo en cada extremo."));
+    return f;
+  }
+
+  /* ------------------------------------------------------------------
+     7 · VIGA CHATA — no descuelga: su peralte ES el espesor de la losa
+     ------------------------------------------------------------------ */
+  function vigaChata(bCm, hCm, caja) {
+    var b = bCm > 0 ? bCm : 25, h = hCm > 0 ? hCm : 20;
+    if (b < 15) b = 15;
+    if (h < 10) h = 10;
+    var anchoTot = 3.2 * b, hSup = Math.min(5, h / 2);
+    var s = Math.min((caja.alto - 78) / h, (caja.ancho - 200) / anchoTot);
+    var x0 = caja.x + 40 + (caja.ancho - (anchoTot * s + 200)) / 2;
+    var y0 = caja.y + 30;
+    var f = [];
+    f.push(rect(x0, y0, anchoTot * s, h * s, "E4E4E4", GRIS_LIN));
+    var wLad = 0.42 * b * s, hLad = (h - hSup) * s, yLad = y0 + hSup * s;
+    [0.0867, 0.5933, 2.1867, 2.6933].forEach(function (o) {
+      f.push(rect(x0 + o * b * s, yLad, wLad, hLad, BLANCO, GRIS_LIN));
+    });
+    var xv = x0 + 1.1 * b * s;
+    f.push(rect(xv, y0, b * s, h * s, GRIS_BORDE, NEGRO, 1.25));
+    var xd = x0 + anchoTot * s, xc = xd + 12;
+    f.push(linea(xd, y0, xc + 6, y0));
+    f.push(linea(xd, y0 + h * s, xc + 6, y0 + h * s));
+    f.push(linea(xc, y0, xc, y0 + h * s));
+    f.push(texto(xc + 8, y0 + h * s / 2 - 6, "h = " + nm(h) + " cm"));
+    var yb = y0 + h * s + 14;
+    cotaH(f, xv, xv + b * s, y0 + h * s, yb, "b = " + nm(b) + " cm");
+    rotulo(f, "Viga chata", xv + b * s / 2, y0 - 24, xv + b * s / 2, y0);
+    rotulo(f, "Losa aligerada", x0 + 0.55 * b * s, y0 - 24, x0 + 0.55 * b * s, y0);
+    f.push(texto(x0, yb + 22,
+      "El peralte de la viga chata es el espesor de la losa."));
+    return f;
+  }
+
+  /* Caja envolvente: para comprobar que el dibujo no se sale del hueco. */
+  function envolvente(formas) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    formas.forEach(function (f) {
+      var a, b, c, d;
+      if (f.t === "rect") { a = f.x; b = f.y; c = f.x + f.w; d = f.y + f.h; }
+      else if (f.t === "ovalo") {
+        a = f.cx - f.d / 2; b = f.cy - f.d / 2; c = f.cx + f.d / 2; d = f.cy + f.d / 2;
+      } else if (f.t === "linea") {
+        a = Math.min(f.x1, f.x2); b = Math.min(f.y1, f.y2);
+        c = Math.max(f.x1, f.x2); d = Math.max(f.y1, f.y2);
+      } else {
+        /* el texto lo mide Excel al pintarlo; aqui se estima a 4.4 pt por
+           caracter de la linea mas larga, que basta para decir si se sale */
+        var largo = 0, alto = 1;
+        String(f.s).split("\n").forEach(function (l) {
+          if (l.length > largo) largo = l.length; alto++;
+        });
+        var w = largo * 4.4;
+        a = (f.anclaX != null) ? f.anclaX - w / 2 : f.x;
+        b = f.y; c = a + w; d = f.y + 11 * (alto - 1);
+      }
+      if (a < x0) x0 = a; if (b < y0) y0 = b;
+      if (c > x1) x1 = c; if (d > y1) y1 = d;
+    });
+    return { x: x0, y: y0, x1: x1, y1: y1, ancho: x1 - x0, alto: y1 - y0 };
+  }
+
+  return { losaAligerada: losaAligerada, losaMaciza: losaMaciza,
+           losaNervada: losaNervada, vigaPrincipal: vigaPrincipal,
+           columna: columna, placa: placa, vigaChata: vigaChata,
+           envolvente: envolvente };
+});
+</script>
+<script>
 /* ===== escritor.js (inlinado) ===== */
 /* =====================================================================
    escritor.js — aplica un PLAN de formato.js sobre una hoja de Excel.
@@ -2636,9 +3042,10 @@
        borraria lo escrito fuera de la celda superior izquierda.
    ===================================================================== */
 (function (raiz, definir) {
-  if (typeof module === "object" && module.exports) module.exports = definir();
-  else raiz.ESCRITOR = definir();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./dibujos.js"));
+  else raiz.ESCRITOR = definir(raiz.DIBUJOS);
+})(typeof self !== "undefined" ? self : this, function (DIB) {
   "use strict";
 
   var PESO = { Thin: "Thin", Medium: "Medium", Thick: "Thick" };
@@ -2691,6 +3098,107 @@
   }
 
   /* Encola TODO el plan.  No hace sync: eso lo decide quien llama. */
+
+  /* =====================================================================
+     LAS SECCIONES TIPICAS
+
+     Office.js sabe crear formas -rectangulos, elipses, lineas y cuadros de
+     texto- desde ExcelApi 1.9.  Lo que NO sabe es decir donde cae una
+     celda: un rango no expone left ni top, que es justo lo que el VBA de V1
+     usa para situar el dibujo.
+
+     Pero el complemento pone el los anchos de columna y los altos de fila,
+     asi que los sabe.  El hueco se calcula sumandolos.  No es un apaño: es
+     el mismo numero que Excel usaria.
+     ===================================================================== */
+  var ANCHO_DEF = 54, ALTO_DEF = 15;      /* columna y fila sin tocar, en puntos */
+
+  function anchoCol(plan, c) {
+    var v = plan.anchos ? plan.anchos[col(c)] : null;
+    return (typeof v === "number") ? v : ANCHO_DEF;
+  }
+  function altosDe(plan) {
+    var m = {};
+    (plan.alturas || []).forEach(function (a) { m[a.fila] = a.alto; });
+    return m;
+  }
+  function punto(plan, altos, fila, columna) {
+    var x = 0, y = 0, i;
+    for (i = 1; i < columna; i++) x += anchoCol(plan, i);
+    for (i = 1; i < fila; i++) y += (altos[i] == null ? ALTO_DEF : altos[i]);
+    return { x: x, y: y };
+  }
+  /* el hueco que ocupa el bloque de la figura, en puntos desde la esquina */
+  function hueco(plan) {
+    var g = plan.figura, altos = altosDe(plan);
+    var a = punto(plan, altos, g.r0, g.c0);
+    var b = punto(plan, altos, g.r1 + 1, g.c1 + 1);
+    return { x: a.x, y: a.y, ancho: b.x - a.x, alto: b.y - a.y };
+  }
+
+  /* El cuadro de texto de Office.js no se autoajusta como el de VBA, asi que
+     para centrarlo hay que estimar su ancho.  4.4 pt por caracter a 8 pt de
+     Aptos Narrow: se mide, no se adivina. */
+  function anchoTexto(s) {
+    var largo = 0;
+    String(s).split("\n").forEach(function (l) { if (l.length > largo) largo = l.length; });
+    return Math.max(largo * 4.4 + 4, 12);
+  }
+
+  function pintarFormas(ws, formas) {
+    formas.forEach(function (f) {
+      var sh;
+      if (f.t === "rect" || f.t === "ovalo") {
+        var tipo = (f.t === "rect") ? Excel.GeometricShapeType.rectangle
+                                    : Excel.GeometricShapeType.ellipse;
+        sh = ws.shapes.addGeometricShape(tipo);
+        if (f.t === "rect") {
+          sh.left = f.x; sh.top = f.y;
+          sh.width = Math.max(f.w, 0.75); sh.height = Math.max(f.h, 0.75);
+        } else {
+          sh.left = f.cx - f.d / 2; sh.top = f.cy - f.d / 2;
+          sh.width = Math.max(f.d, 1); sh.height = Math.max(f.d, 1);
+        }
+        if (f.sinRelleno) sh.fill.clear();
+        else sh.fill.setSolidColor("#" + f.relleno);
+        sh.lineFormat.color = "#" + f.linea;
+        sh.lineFormat.weight = f.peso || 0.5;
+      } else if (f.t === "linea") {
+        sh = ws.shapes.addLine(f.x1, f.y1, f.x2, f.y2,
+                               Excel.ConnectorType.straight);
+        sh.lineFormat.color = "#" + f.color;
+        sh.lineFormat.weight = f.peso;
+        if (f.flecha) {
+          sh.lineFormat.endArrowheadStyle = Excel.ArrowheadStyle.triangle;
+          sh.lineFormat.endArrowheadLength = Excel.ArrowheadLength.short;
+          sh.lineFormat.endArrowheadWidth = Excel.ArrowheadWidth.narrow;
+        }
+      } else {
+        var w = anchoTexto(f.s);
+        sh = ws.shapes.addTextBox(f.s);
+        sh.left = (f.anclaX != null) ? f.anclaX - w / 2 : f.x;
+        sh.top = f.y;
+        sh.width = w;
+        sh.height = 11 * String(f.s).split("\n").length + 2;
+        var t = sh.textFrame.textRange.font;
+        t.name = "Aptos Narrow"; t.size = 8; t.italic = true; t.color = "#000000";
+        sh.fill.clear();
+        sh.lineFormat.visible = false;
+      }
+      sh.name = "";        /* Office.js las nombra solo; no hace falta mas */
+    });
+  }
+
+  /* Dibuja la seccion tipica de la hoja, si la hay y si Excel la admite. */
+  function dibujarSeccion(ws, plan, opciones) {
+    var g = plan.figura;
+    if (!g || !DIB || typeof DIB[g.tipo] !== "function") return 0;
+    if (opciones && opciones.formas === false) return 0;
+    var formas = DIB[g.tipo].apply(null, (g.args || []).concat([hueco(plan)]));
+    pintarFormas(ws, formas);
+    return formas.length;
+  }
+
   function encolar(ws, plan, opciones) {
     var o = opciones || {}, i, k;
 
@@ -2739,6 +3247,8 @@
       grupos[s].rangos.push(f.rango);
     });
     var usadas = 0;
+    /* la figura va al final: encima de los rellenos y los bordes */
+    try { dibujarSeccion(ws, plan, o); } catch (e) { /* sin formas no se rompe */ }
     orden.forEach(function (s) {
       var g = grupos[s];
       if (o.rangeAreas && g.rangos.length > 1) {
@@ -2930,6 +3440,8 @@
   }
 
   return { generar: generar, encolar: encolar, col: col,
+           hueco: hueco, punto: punto, anchoTexto: anchoTexto,
+           dibujarSeccion: dibujarSeccion,
            llenar: llenar, configLlenado: configLlenado, LLENAR: LLENAR };
 });
 </script>
@@ -3070,6 +3582,44 @@
          de las cosas que mas desconfianza dan en una hoja. */
     }), numfmt || null, ALTO_LISTA, { alinear: CENTRO });
     return r + 2;
+  }
+
+
+  /* =====================================================================
+     LA SECCION TIPICA
+
+     Reserva el hueco y deja dicho QUE figura va y con que medidas.  Quien
+     la dibuja es el escritor, que es el unico que sabe si este Excel admite
+     formas; aqui solo se aparta el sitio.
+
+     Las medidas son las del ELEMENTO QUE MANDA, calculadas aqui con los
+     mismos criterios de criterios.js que usan las formulas de la hoja.  Y
+     se dibuja la del que manda por lo que dice Oviedo: al cumplir el mas
+     critico, los demas del mismo tipo quedan cubiertos.
+
+     Aviso honesto: en un libro en blanco no hay macros, asi que el dibujo
+     NO se rehace si tocas la lista a mano.  Es una foto del momento en que
+     se genero.  En V1 si se rehace, con el boton.
+     ===================================================================== */
+  /* 17 filas.  Con 15 la maciza se salia 7 pt: su rotulo de recubrimiento
+     va por debajo de la cadena de cotas.  Se midio, no se tanteo. */
+  var ALTO_FIG = 17;
+
+  function seccion(h, r, titulo, tipo, args) {
+    r = h.subtitulo(r, titulo, 10);
+    var P = h.plan();
+    P.figura = { tipo: tipo, args: args, r0: r, r1: r + ALTO_FIG - 1, c0: 3, c1: 10 };
+    return r + ALTO_FIG + 1;
+  }
+
+  /* el que manda de una lista, por la columna que gobierna */
+  function elQueManda(filas, valor) {
+    var mejor = null, mx = -Infinity;
+    (filas || []).forEach(function (f) {
+      var v = valor(f);
+      if (typeof v === "number" && isFinite(v) && v > mx) { mx = v; mejor = f; }
+    });
+    return mejor;
   }
 
   function vacio(n, que) {
@@ -3258,6 +3808,8 @@
       + "El peralte que manda es el de la columna h, que sale de h = Ln / α.");
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0, q?Math.max(Math.ceil(hh/C.PROPORCION.viguetaAligerada/0.05)*0.05,C.MINIMOS.viguetaAligerada)*100:0];
+    r = seccion(h, r, "1.3   Sección típica del techo aligerado", "losaAligerada", arg);
     var L = lista(h, r, L7_ALIG,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)"],
       fs,
@@ -3305,6 +3857,8 @@
         + C.ALFA_LOSA.maciza.alfa + ")"]], null, null, { alinear: DFIN });
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0];
+    r = seccion(h, r, "1.3   Sección típica de la losa maciza", "losaMaciza", arg);
     var L = lista(h, r, L6_MAC,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)"],
       fs,
@@ -3348,6 +3902,8 @@
       null, null, { alinear: ["Left","Left","Left","Left","Left"] });
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var bn=q?Math.max(Math.ceil(hh/C.PROPORCION.nervadura/0.05)*0.05,C.MINIMOS.nervadura)*100:0;var arg=[q?a5(hh):0, bn, q?Math.round(C.PROPORCION.nervadura*hh*100):0];
+    r = seccion(h, r, "1.3   Sección típica de la losa nervada", "losaNervada", arg);
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "α", "h (m)", "espesor (cm)", "b (cm)", "S (m)"],
       fs,
@@ -3400,6 +3956,8 @@
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var bmin = Math.round(C.MINIMOS.baseViga * 100);
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[4]):0;var arg=[q?Math.max(Math.ceil((+q[3])/C.PROPORCION.baseVigaPrincipal*100/5)*5,bmin):0, q?a5(hh):0];
+    r = seccion(h, r, "1.3   Sección típica de la viga principal", "vigaPrincipal", arg);
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "B (m)", "α", "h (m)", "h (cm)", "b (cm)"],
       fs,
@@ -3456,6 +4014,8 @@
 
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var bmin = Math.round(C.MINIMOS.baseViga * 100);
+    var q=elQueManda(fs,function(f){return +f[2]});var arg=[q?Math.max(Math.ceil((+q[4])/C.PROPORCION.baseViga/5)*5,bmin):0, q?+q[4]:0];
+    r = seccion(h, r, "1.3   Sección típica de la viga chata", "vigaChata", arg);
     var L = lista(h, r, L8,
       ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
       fs,
@@ -3550,6 +4110,8 @@
     /* C Codigo | D Ubicacion | E Forma | F pisos | G A trib | H P | I Ac
        J b o diametro | K h.   La forma solo decide COMO se reparte Ac; el
        coeficiente k sigue saliendo de la ubicacion, que es la columna D. */
+    var q=elQueManda(fs,function(f){return (+f[3])*(+f[4])}), ac=0;if(q){var k=(q[1]==="Interior"?C.COLUMNA.C.interior:q[1]==="Exterior"?C.COLUMNA.C.exterior:C.COLUMNA.C.esquinera);ac=(+q[3])*(+q[4])*(C.CATEGORIA[P.categoria]?C.CATEGORIA[P.categoria].peso:1000)/1000*1000/(k*P.fc);}var lado=ac>0?Math.max(Math.ceil(Math.sqrt(ac)/5)*5,cmin):0;var arg=[lado,lado];
+    r = seccion(h, r, "1.4   Sección típica de la columna", "columna", arg);
     var L = lista(h, r, L9,
       ["Código", "Ubicación", "Forma", "N.º pisos", "A trib (m²)", "P (t)",
        "Ac (cm²)", "b o Ø (cm)", "h (cm)"],
@@ -3649,6 +4211,8 @@
 
     r = h.seccion(r, "3. PREDIMENSIONAMIENTO");
     var tmin = Math.round(C.MINIMOS.espesorPlaca * 100);
+    var q=elQueManda(fs,function(f){return +f[3]});var arg=[q?(+q[3])*100:0, q?Math.max(Math.ceil(Math.max((+q[3])/C.PLACA.divisorLongitud,(+q[4])/C.PLACA.divisorAltura,C.MINIMOS.espesorPlaca)*100/5)*5,tmin):0];
+    r = seccion(h, r, "1.4   Sección en planta de la placa", "placa", arg);
     var L = lista(h, r, L8,
       ["Código", "Eje", "Dir", "lm (m)", "hm (m)", "t mín (m)", "t (cm)", "Área (m²)"],
       fs,
@@ -4406,7 +4970,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v67 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v68 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
