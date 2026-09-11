@@ -3336,7 +3336,12 @@
         sh.fill.clear();
         sh.lineFormat.visible = false;
       }
-      sh.name = "";        /* Office.js las nombra solo; no hace falta mas */
+      /* NO SE LE PONE NOMBRE.  Aqui habia un sh.name = "" y Excel no admite
+         un nombre vacio: rechaza la orden, y como todas las formas van en un
+         mismo lote, aborta ahi.  Se quedaba la PRIMERA forma -creada antes de
+         la orden mala- y se perdian todas las demas.  En la columna circular
+         eso era el circulo exterior a secas, sin estribo, sin barras, sin
+         cotas y sin rotulos: un disco gris.  Office.js las nombra solo. */
     });
   }
 
@@ -3502,8 +3507,14 @@
     return Excel.run(function (context) {
       var ws = context.workbook.worksheets.getItem(plan.nombre);
       var n = dibujarSeccion(ws, plan, o);
-      return context.sync().then(function () { return n; });
-    }).catch(function () { return 0; });
+      return context.sync().then(function () { return { n: n, error: null }; });
+    }).catch(function (e) {
+      /* SE DICE QUE FALLO.  Antes este catch devolvia 0 y nadie se enteraba:
+         la hoja salia con media figura -o con una sola forma- y el panel
+         escribia «Generadas 1 de 1» tan tranquilo.  Un dibujo a medias que
+         se presenta como terminado es peor que no dibujar nada. */
+      return { n: 0, error: (e && e.message) ? e.message : String(e) };
+    });
   }
 
   function generar(plan, opciones) {
@@ -3530,11 +3541,16 @@
            primera vez que se probo.
 
            Separada, lo peor que puede pasar es quedarse sin dibujo. */
-        return dibujar(plan, opciones).then(function (formas) {
+        return dibujar(plan, opciones).then(function (dib) {
           var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
-          return { hoja: plan.nombre, ms: Math.round(t1 - t0),
-                   msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
-                   formas: formas, stats: stats };
+          var r = { hoja: plan.nombre, ms: Math.round(t1 - t0),
+                    msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
+                    formas: dib.n, stats: stats };
+          if (dib.error) r.error = "la hoja salió, pero la sección no se pudo "
+                                 + "dibujar: " + dib.error;
+          else if (plan.figura && dib.n === 0)
+            r.error = "la hoja salió sin la sección típica";
+          return r;
         });
       });
     });
@@ -5425,7 +5441,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v76 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v77 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
