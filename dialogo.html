@@ -348,6 +348,8 @@
         <button class="btn" id="undo" title="Ctrl+Z">↶</button>
         <button class="btn" id="redo" title="Ctrl+Y">↷</button>
       </div>
+      <button class="btn" id="limpiar" style="margin:4px 2px 0"
+        title="Deja el nivel en blanco: quita columnas, vigas, losas, placas y zapatas">Limpiar</button>
       <span class="lbl" style="padding:8px 8px 4px">Plano de fondo</span>
       <input type="file" id="calcoFile" accept=".pdf,image/*" hidden>
       <button class="btn" id="calcoCargar" style="margin:0 2px">Traer plano…</button>
@@ -3216,14 +3218,78 @@
     return r;
   }
 
-  /* De las tres fuentes, la mejor que de al menos dos ejes en cada
-     direccion.  Menos de dos no es una retica: es una linea suelta. */
-  function elige(items) {
-    var conCapa = items.filter(function (t) { return RE_CAPA.test(t.capa || ""); });
-    if (conCapa.length >= 2) return { lista: conCapa, fuente: "capa" };
-    var conGuion = items.filter(function (t) { return t.guion; });
-    if (conGuion.length >= 2) return { lista: conGuion, fuente: "guion" };
-    return { lista: items, fuente: "largas" };
+  var FUENTES = ["capa", "guion", "largas"];
+  function porFuente(gs, f) {
+    if (f === "capa") return gs.filter(function (t) { return RE_CAPA.test(t.capa || ""); });
+    if (f === "guion") return gs.filter(function (t) { return t.guion; });
+    return gs;
+  }
+
+  /* ------------------------------------------------------------------
+     EL LISTON DE "CRUZA EL PLANO"
+
+     Aqui habia un error mio que costo caro.  El liston lo ponia el eje MAS
+     LARGO de la familia, y eso funciona hasta que entra en la lista el
+     marco del formato: entonces el liston sube a la altura de la hoja y lo
+     unico que lo pasa son los dos bordes del papel.  Victor lo vio en su
+     plano: le salieron dos ejes en Y, y eran los bordes de la lamina.
+
+     El liston lo pone ahora la MEDIANA de los candidatos.  Se probo con el
+     percentil 75 y no bastaba: con cuatro ejes y dos lineas de marco, el
+     percentil 75 cae todavia dentro del intruso y los ejes se seguian
+     perdiendo.  La mediana no.
+
+     Y la asimetria es a proposito.  Que se cuele el marco cuesta un clic
+     en el panel; que se pierda un eje de verdad no se ve, y sale mal tres
+     hojas de calculo mas tarde.  Ante la duda, sobra.
+     ------------------------------------------------------------------ */
+  function pctl(a, p) {
+    if (!a.length) return 0;
+    var o = a.slice().sort(function (x, y) { return x - y; });
+    var i = (o.length - 1) * p, b = Math.floor(i), r = i - b;
+    return (b + 1 < o.length) ? o[b] + (o[b + 1] - o[b]) * r : o[b];
+  }
+  function filtraLargos(lista) {
+    if (!lista.length) return [];
+    var ref = pctl(lista.map(function (t) { return t.span; }), 0.50);
+    if (!(ref > 0)) return [];
+    return lista.filter(function (t) { return t.span >= FRAC_LARGO * ref; });
+  }
+
+  function media(a) {
+    var s = 0, i;
+    for (i = 0; i < a.length; i++) s += a[i];
+    return a.length ? s / a.length : 0;
+  }
+  /* Dos lineas a 12 cm no son dos ejes: son las dos caras de un muro, o el
+     eje calcado encima del muro.  Esto las junta en una sola.
+
+     La distancia va en PIXELES aqui, pero quien llama la piensa en metros:
+     es una decision de obra -"nada mas junto que esto es un eje"- y no una
+     de resolucion de PDF. */
+  function junta(pos, minSep) {
+    if (!(minSep > 0) || pos.length < 2) return pos.slice();
+    var r = [], g = [pos[0]], i;
+    for (i = 1; i < pos.length; i++) {
+      if (pos[i] - g[0] <= minSep) g.push(pos[i]);
+      else { r.push(media(g)); g = [pos[i]]; }
+    }
+    r.push(media(g));
+    return r;
+  }
+
+  /* Las capas que trae el PDF y cuantas lineas cae en cada una.  No entra
+     en ningun calculo: se ensena.  Cuando la lectura no sale, esto es lo
+     unico que dice POR QUE, sin tener que abrir el PDF en otro programa. */
+  function capasDe(segs) {
+    var m = {}, i, c, r = [];
+    for (i = 0; i < segs.length; i++) {
+      c = segs[i].capa || "";
+      if (c) m[c] = (m[c] || 0) + 1;
+    }
+    for (c in m) r.push({ nombre: c, n: m[c] });
+    r.sort(function (a, b) { return b.n - a.n; });
+    return r;
   }
 
   function nombreCapa(lista) {
@@ -3270,14 +3336,26 @@
         cand.push(s);
       }
 
+    /* El tamano total que implica cada escala.  Es el unico filtro de
+       cordura que queda, y es el correcto: un edificio mide entre un par
+       de metros y unos cientos.
+
+       Antes se descartaba la escala en cuanto UN hueco salia fuera de lo
+       que mide un vano, y eso la tumbaba por la razon equivocada: dos
+       caras de muro dejan un hueco de 12 cm, perfectamente real, y con el
+       se iba a la basura la escala BUENA.  Ese hueco ahora simplemente no
+       cuenta como acierto; no descalifica a nadie. */
+    var total = 0;
+    for (i = 0; i < gs.length; i++) total += gs[i];
+
     var mejor = null;
     for (i = 0; i < cand.length; i++) {
       s = cand[i];
+      if (total * s < 2 || total * s > 1000) continue;
       var n1 = 0, n2 = 0, pares = [], k, m, g, mejorD, mejorV;
-      var fuera = false;
       for (k = 0; k < gs.length; k++) {
         g = gs[k] * s;
-        if (g < VANO_MIN / 2 || g > VANO_MAX) { fuera = true; break; }
+        if (g < VANO_MIN || g > VANO_MAX) continue;   /* no es un vano: ni suma ni resta */
         mejorD = Infinity; mejorV = 0;
         for (m = 0; m < vals.length; m++) {
           var d = Math.abs(vals[m] - g);
@@ -3288,11 +3366,18 @@
           pares.push([gs[k], mejorV]);
         }
       }
-      if (fuera) continue;
-      if (!mejor || n1 > mejor.n || (n1 === mejor.n && n2 > mejor.peso))
+      /* Gana la escala que EXPLICA MAS PLANO, no la que acierta mas veces.
+         Contando aciertos ganaba una escala absurda que hacia coincidir
+         cuatro huecos de 12 cm entre caras de muro con una cota de 3.53 m,
+         y dejaba el resto del plano midiendo cien metros por vano.  Medido
+         en longitud explicada, esa escala vale 39 y la buena vale 960. */
+      if (!mejor || n2 > mejor.peso || (n2 === mejor.peso && n1 > mejor.n))
         mejor = { n: n1, peso: n2, pares: pares };
     }
-    if (!mejor || mejor.n < 3) return null;
+    /* Tres cotas cuadrando, y que entre ellas den cuenta de una quinta
+       parte del plano.  Por debajo de eso no se ha entendido el plano: se
+       ha encontrado una coincidencia. */
+    if (!mejor || mejor.n < 3 || mejor.peso < 0.20 * total) return null;
 
     /* la escala definitiva sale de TODAS las parejas que cuadraron, por
        minimos cuadrados, no de la pareja que la propuso */
@@ -3329,40 +3414,50 @@
     var gv = funde(agrupa(fam.v, tol), tol);
     var gh = funde(agrupa(fam.h, tol), tol);
 
-    var ev = elige(gv), eh = elige(gh);
-    /* Las dos direcciones tienen que salir de la MISMA fuente.  Si los ejes
-       verticales salen de una capa y los horizontales de lo largo que son,
-       lo que se esta mezclando son dos cosas distintas. */
-    var fuente = ev.fuente === eh.fuente ? ev.fuente
-               : (ev.fuente === "largas" || eh.fuente === "largas" ? "largas"
-                  : "guion");
-    if (fuente !== ev.fuente) ev = { lista: fuente === "largas" ? gv : gv.filter(function (t) { return t.guion; }), fuente: fuente };
-    if (fuente !== eh.fuente) eh = { lista: fuente === "largas" ? gh : gh.filter(function (t) { return t.guion; }), fuente: fuente };
-
-    var capa = nombreCapa(ev.lista) || nombreCapa(eh.lista);
-
-    /* Solo los que cruzan el plano.  El liston lo pone el eje mas largo de
-       su propia familia. */
-    function largos(lista) {
-      var mx = 0, i;
-      for (i = 0; i < lista.length; i++) mx = Math.max(mx, lista[i].span);
-      if (!(mx > 0)) return [];
-      return lista.filter(function (t) { return t.span >= FRAC_LARGO * mx; });
+    /* LAS TRES LECTURAS, SIEMPRE, aunque solo se use una.  Cuesta poco y
+       cambia todo: el panel puede ofrecer las otras dos con su cuenta de
+       ejes al lado, asi que cuando la automatica falla, cambiar de fuente
+       es un clic y no un misterio. */
+    var F = {}, i, f, lv, lh;
+    for (i = 0; i < FUENTES.length; i++) {
+      f = FUENTES[i];
+      lv = filtraLargos(porFuente(gv, f));
+      lh = filtraLargos(porFuente(gh, f));
+      F[f] = { x: posDe(lv), y: posDe(lh), capa: nombreCapa(lv) || nombreCapa(lh) };
     }
-    var lv = largos(ev.lista), lh = largos(eh.lista);
-    if (lv.length < 2 || lh.length < 2)
-      return { ok: false, ang: ang, fuente: fuente,
-               motivo: "No se reconocieron dos familias de ejes en el plano." };
 
-    var x = lv.map(function (t) { return t.p; }).sort(function (a, b) { return a - b; });
-    var y = lh.map(function (t) { return t.p; }).sort(function (a, b) { return a - b; });
+    var fuente = (opc.fuente && F[opc.fuente]) ? opc.fuente : mejorFuente(F);
+    var el = F[fuente];
+    var comun = { ang: ang, fuente: fuente, fuentes: F, capas: capasDe(segs),
+                  n: segs.length, tol: tol, caja: cj };
+    if (el.x.length < 2 || el.y.length < 2) {
+      comun.ok = false;
+      comun.motivo = "No se reconocieron dos familias de ejes en el plano.";
+      return comun;
+    }
 
-    var esc = escalaPorCotas(difs(x).concat(difs(y)), nums || []);
+    var esc = escalaPorCotas(difs(el.x).concat(difs(el.y)), nums || []);
+    comun.ok = true; comun.capa = el.capa;
+    comun.x = el.x; comun.y = el.y;
+    comun.esc = esc ? esc.esc : null;
+    comun.aciertos = esc ? esc.aciertos : 0;
+    comun.cotas = esc ? esc.de : 0;
+    return comun;
+  }
 
-    return { ok: true, ang: ang, fuente: fuente, capa: capa,
-             x: x, y: y, esc: esc ? esc.esc : null,
-             aciertos: esc ? esc.aciertos : 0, cotas: esc ? esc.de : 0,
-             tol: tol, caja: cj };
+  function posDe(lista) {
+    return lista.map(function (t) { return t.p; })
+                .sort(function (a, b) { return a - b; });
+  }
+  /* La primera fuente que de una retica de verdad: dos ejes en cada
+     direccion.  Una sola linea no es una familia. */
+  function mejorFuente(F) {
+    var i, f;
+    for (i = 0; i < FUENTES.length; i++) {
+      f = FUENTES[i];
+      if (F[f].x.length >= 2 && F[f].y.length >= 2) return f;
+    }
+    return "largas";
   }
 
   /* De las posiciones en pixeles a los vanos en metros del modelo.  Aparte
@@ -3378,6 +3473,8 @@
     dominante: dominante, gira: gira, caja: caja, reparte: reparte,
     agrupa: agrupa, funde: funde, escalaPorCotas: escalaPorCotas,
     propone: propone, vanos: vanos, difs: difs,
+    junta: junta, pctl: pctl, filtraLargos: filtraLargos,
+    capasDe: capasDe, porFuente: porFuente, FUENTES: FUENTES,
     TOL_ANG: TOL_ANG, TOL_POS: TOL_POS, FRAC_LARGO: FRAC_LARGO,
     RE_CAPA: RE_CAPA
   };
@@ -3427,7 +3524,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v49 · 10-09-2026";
+  var BUILD="v51 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4006,7 +4103,8 @@ var TT={script:performance.now()};
       sv.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
         width:c.w*c.esc*esc,height:c.h*c.esc*esc,
         opacity:c.op,preserveAspectRatio:"none",
-        href:c.src,"pointer-events":"none"}));})();
+        href:c.src,"pointer-events":"none"}));
+      pintaCandidatos(sv,mg,esc,c);})();
     var g=el("g",{});sv.appendChild(g);
     var col=coloresAmb(),i,j;
 
@@ -4163,7 +4261,8 @@ var TT={script:performance.now()};
       s.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
         width:c.w*c.esc*esc,height:c.h*c.esc*esc,
         opacity:c.op,preserveAspectRatio:"none",
-        href:c.src,"pointer-events":"none"}));})();
+        href:c.src,"pointer-events":"none"}));
+      pintaCandidatos(s,mg,esc,c);})();
     var g=el("g",{});s.appendChild(g);
     var i,j;
 
@@ -4609,7 +4708,10 @@ var TT={script:performance.now()};
        exacto, para eso esta el calibrado -o la lectura de los ejes, que lo
        deja exacto de una vez */
     var m=N(),W=Math.max(posX(nx()-1),acum(ladoX2(m),nx()-1))||10;
-    var c={src:im.src,w:im.w,h:im.h,esc:W/im.w,dx:0,dy:0,op:0.45};
+    /* cal=false dice que esta escala no mide nada: solo encaja la imagen
+       al ancho de la planta que hubiera antes.  Sin esa marca, el panel la
+       tomaba por buena y salian vanos de 0.44 m que parecian una medida. */
+    var c={src:im.src,w:im.w,h:im.h,esc:W/im.w,dx:0,dy:0,op:0.45,cal:false};
     var hay=!!(vec&&vec.segs&&vec.segs.length>=4);
     VECT[S.act]=hay?vec:null;
     if(hay)c.vect=vec.segs.length;
@@ -4710,10 +4812,61 @@ var TT={script:performance.now()};
      tres hojas de calculo mas tarde cuesta la tarde.
      ===================================================================== */
   var PROP=null;
+  var JUNTAR=0.25;      /* metros: mas juntas que esto no son dos ejes */
 
   function ejesActivos(p){
     return {x:p.x.filter(function(_,i){return p.onX[i]}),
             y:p.y.filter(function(_,i){return p.onY[i]})};
+  }
+
+  /* Dibuja sobre el plano lo que se ha entendido de el, ANTES de aplicarlo.
+     Una lista de numeros no deja ver que tres de los ejes son las dos caras
+     de un muro; verlos encima del plano, si. */
+  function pintaCandidatos(cont,mg,esc,c){
+    if(!PROP||!c)return;
+    var g=el("g",{"pointer-events":"none"});
+    var X0=mg+c.dx*esc, Y0=mg+c.dy*esc;
+    var X1=X0+c.w*c.esc*esc, Y1=Y0+c.h*c.esc*esc;
+    function raya(a,b,x2,y2,viva){
+      g.appendChild(el("line",{x1:a,y1:b,x2:x2,y2:y2,
+        stroke:viva?"var(--trib)":"var(--ink-3)",
+        "stroke-width":viva?1.7:1,
+        "stroke-dasharray":viva?"7 4":"2 4",
+        opacity:viva?0.95:0.5}));
+    }
+    PROP.x.forEach(function(px,i){
+      var x=mg+(c.dx+px*c.esc)*esc; raya(x,Y0,x,Y1,PROP.onX[i]);
+    });
+    PROP.y.forEach(function(py,j){
+      var y=mg+(c.dy+py*c.esc)*esc; raya(X0,y,X1,y,PROP.onY[j]);
+    });
+    cont.appendChild(g);
+  }
+
+  /* Junta los ejes que estan demasiado pegados y, con la retica ya limpia,
+     vuelve a pedirle la escala a las cotas.  Ese segundo intento importa:
+     los huecos de 12 cm entre caras de muro ensucian el primero. */
+  function armaJunta(P){
+    var F=P.base.fuentes?P.base.fuentes[P.fuente]:{x:P.base.x,y:P.base.y};
+    var jx=F.x.slice(), jy=F.y.slice(), e2;
+    if(P.esc>0&&P.juntar>0){
+      jx=TRAZAS.junta(F.x,P.juntar/P.esc);
+      jy=TRAZAS.junta(F.y,P.juntar/P.esc);
+      if(P.nums&&P.nums.length){
+        e2=TRAZAS.escalaPorCotas(TRAZAS.difs(jx).concat(TRAZAS.difs(jy)),P.nums);
+        if(e2){
+          P.esc=e2.esc; P.origen="cotas";
+          P.aciertos=e2.aciertos; P.cotas=e2.de;
+          jx=TRAZAS.junta(F.x,P.juntar/P.esc);
+          jy=TRAZAS.junta(F.y,P.juntar/P.esc);
+        }
+      }
+    }
+    P.x=jx; P.y=jy;
+    P.onX=jx.map(function(){return true});
+    P.onY=jy.map(function(){return true});
+    P.capa=F.capa;
+    return P;
   }
 
   function leerEjes(){
@@ -4723,11 +4876,10 @@ var TT={script:performance.now()};
       /* tras cerrar y volver a abrir, las lineas ya no estan, pero la
          propuesta si: se reabre en vez de mentir con un panel vacio */
       if(c.ejes){
-        PROP={x:c.ejes.x.slice(),y:c.ejes.y.slice(),
-              onX:c.ejes.x.map(function(){return true}),
-              onY:c.ejes.y.map(function(){return true}),
-              esc:c.ejes.esc,fuente:c.ejes.fuente,capa:c.ejes.capa,
-              aciertos:c.ejes.aciertos,cotas:c.ejes.cotas,auto:c.ejes.auto};
+        PROP=armaJunta({base:{x:c.ejes.x.slice(),y:c.ejes.y.slice()},
+              fuente:c.ejes.fuente,capa:c.ejes.capa,nums:[],juntar:0,
+              esc:c.ejes.esc,origen:c.ejes.origen||"cotas",
+              aciertos:c.ejes.aciertos,cotas:c.ejes.cotas});
         return pintaPanelEjes();
       }
       return toast("Las líneas del PDF no se guardan al cerrar. "+
@@ -4735,44 +4887,54 @@ var TT={script:performance.now()};
     }
     /* el plano ya se enderezo al traerlo: aqui no hay que girar nada mas */
     var r=TRAZAS.propone(v.segs,v.nums,{ang:0});
-    if(!r.ok)return toast(r.motivo);
-    PROP={x:r.x,y:r.y,
-          onX:r.x.map(function(){return true}),
-          onY:r.y.map(function(){return true}),
-          esc:r.esc,fuente:r.fuente,capa:r.capa,
-          aciertos:r.aciertos,cotas:r.cotas,auto:r.esc!=null};
-    /* sin cotas que cuadren no se inventa una escala: se hereda la del
-       calibrado, y el panel lo dice con todas las letras */
-    if(PROP.esc==null)PROP.esc=c.esc;
+    if(!r.ok)return toast(r.motivo+"  El PDF trae "+(r.n||0)+" líneas"+
+      (r.capas&&r.capas.length?" en "+r.capas.length+" capas.":"."));
+    PROP=armaJunta({base:r,fuente:r.fuente,nums:v.nums||[],juntar:JUNTAR,
+      esc:r.esc, origen:r.esc?"cotas":(c.cal?"calibrado":null),
+      aciertos:r.aciertos,cotas:r.cotas});
+    /* Si no hay origen de escala, NO se hereda la del encaje inicial.  Esa
+       escala sale de estirar la imagen al ancho de la planta que hubiera
+       antes: no mide nada.  Con ella salieron vanos de 0.44 m que parecian
+       una medida y no lo eran. */
+    if(!PROP.origen&&c.cal){PROP.esc=c.esc;PROP.origen="calibrado";armaJunta(PROP);}
     pintaPanelEjes();
   }
 
+  var FUENTE_NOM={capa:"la capa del PDF",guion:"las líneas a trazos",
+                  largas:"las líneas largas"};
+
   function pintaPanelEjes(){
     var pe=$("#panelEjes"); if(!pe)return;
-    if(!PROP){ver(pe,false);return}
-    var a=ejesActivos(PROP), esc=PROP.esc;
-    var dx=TRAZAS.vanos(a.x,esc), dy=TRAZAS.vanos(a.y,esc);
-    var tx=a.x.length>1?(a.x[a.x.length-1]-a.x[0])*esc:0;
-    var ty=a.y.length>1?(a.y[a.y.length-1]-a.y[0])*esc:0;
+    if(!PROP){ver(pe,false);render();return}
+    var a=ejesActivos(PROP), esc=PROP.esc, hayEsc=!!(esc>0);
+    var dx=hayEsc?TRAZAS.vanos(a.x,esc):[], dy=hayEsc?TRAZAS.vanos(a.y,esc):[];
+    var tx=(hayEsc&&a.x.length>1)?(a.x[a.x.length-1]-a.x[0])*esc:0;
+    var ty=(hayEsc&&a.y.length>1)?(a.y[a.y.length-1]-a.y[0])*esc:0;
+    var F=PROP.base.fuentes;
+
     var de=PROP.fuente==="capa"
         ? 'Los ejes salen de la capa <b>«'+(PROP.capa||"?")+'»</b> del PDF.'
         : PROP.fuente==="guion"
         ? 'Los ejes salen de las <b>líneas a trazos</b> del PDF.'
-        : 'El PDF no trae capas ni líneas a trazos: los ejes salen de las '+
-          '<b>líneas largas</b>, y ahí se cuela el marco del formato. '+
-          'Quita con ✕ lo que no sea un eje.';
-    var esca=PROP.auto
-        ? 'La escala la puso el propio plano: <b>'+PROP.aciertos+' de '+
+        : 'Ni capas ni líneas a trazos: los ejes salen de las <b>líneas '+
+          'largas</b>, y ahí se cuela el marco de la lámina. Quita con ✕ lo '+
+          'que no sea un eje, o cambia de fuente arriba.';
+    var esca=PROP.origen==="cotas"
+        ? 'Escala: la puso el propio plano — <b>'+PROP.aciertos+' de '+
           PROP.cotas+' cotas</b> cuadran con un mismo factor.'
-        : 'Ninguna cota del plano cuadró, así que la escala es la del '+
-          'calibrado. Corrige abajo una medida real y se ajusta todo.';
+        : PROP.origen==="calibrado"
+        ? 'Escala: la del calibrado de dos puntos que hiciste.'
+        : PROP.origen==="escrito"
+        ? 'Escala: la que fijaste tú escribiendo un total.'
+        : '<b>Sin escala.</b> Ninguna cota del plano cuadró. Escribe abajo '+
+          'una medida real del plano y todo se ajusta a ella.';
 
     function lista(dir,pos,on,vanos,nom){
-      var h='<ul>',i;
+      var h='<ul>',i,z,k;
       for(i=0;i<pos.length;i++){
-        var act=on[i], v="—", k=-1, z;
-        if(act){ for(z=0,k=-1;z<=i;z++)if(on[z])k++; }
-        if(act&&k>0)v=vanos[k-1].toFixed(2)+" m";
+        var act=on[i], v=hayEsc?"—":"·";
+        if(act&&hayEsc){ for(z=0,k=-1;z<=i;z++)if(on[z])k++;
+                         if(k>0)v=vanos[k-1].toFixed(2)+" m"; }
         h+='<li class="'+(act?"":"off")+'"><b>'+nom(i)+'</b>'+
            '<span class="med">'+v+'</span>'+
            '<button data-d="'+dir+'" data-i="'+i+'" title="'+
@@ -4781,43 +4943,86 @@ var TT={script:performance.now()};
       return h+"</ul>";
     }
     var LET="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    var mal=a.x.length<2||a.y.length<2||a.x.length>13||a.y.length>13;
+    var mal=!hayEsc||a.x.length<2||a.y.length<2||a.x.length>13||a.y.length>13;
+    var aviso=!hayEsc
+      ? "Sin escala no se puede aplicar nada: escribe un total real."
+      : (a.x.length<2||a.y.length<2) ? "Hacen falta al menos dos ejes en cada dirección."
+      : (a.x.length>13||a.y.length>13) ? "El modelador admite 13 ejes por dirección como mucho. Quita los que sobren."
+      : "";
+
+    /* El selector de fuente es lo que convierte una lectura mala en un
+       clic.  Va con la cuenta de ejes de cada una para poder elegir con
+       criterio y no a ciegas. */
+    var sel="";
+    if(F){
+      sel='<div class="row" style="gap:6px;margin:8px 0 0;flex-wrap:wrap">';
+      TRAZAS.FUENTES.forEach(function(f){
+        var n=F[f].x.length+"×"+F[f].y.length;
+        sel+='<button class="btn" data-f="'+f+'"'+
+             (f===PROP.fuente?' style="background:var(--acc);color:#fff;border-color:var(--acc)"':'')+
+             '>'+FUENTE_NOM[f]+' · '+n+'</button>';
+      });
+      sel+='</div>';
+    }
+
+    var diag="";
+    if(PROP.base.capas){
+      diag='<p class="nota" style="margin:8px 0 0">El PDF trae <b>'+
+        (PROP.base.n||0)+' líneas</b>'+
+        (PROP.base.capas.length
+          ? ' en estas capas: '+PROP.base.capas.slice(0,8).map(function(c){
+              return c.nombre+" ("+c.n+")" }).join(" · ")
+          : ' y ninguna capa')+'.</p>';
+    }
 
     pe.innerHTML=
       '<h3>Lo que dice el plano</h3>'+
       '<p class="nota" style="margin:4px 0 0">'+de+'</p>'+
       '<p class="nota" style="margin:2px 0 0">'+esca+'</p>'+
+      sel+
       '<div class="cols">'+
         '<div><div class="lbl">Ejes ↔ · '+a.x.length+'</div>'+
           lista("x",PROP.x,PROP.onX,dx,function(i){return LET.charAt(i)||("X"+i)})+
-          '<label class="pf" style="margin:8px 0 0"><span class="pfe">Total ↔</span>'+
-          '<input type="text" inputmode="decimal" id="ejTotX" value="'+tx.toFixed(3)+'"></label></div>'+
+          '<label class="pf" style="margin:8px 0 0"><span class="pfe">Total ↔ (m)</span>'+
+          '<input type="text" inputmode="decimal" id="ejTotX" value="'+
+          (hayEsc?tx.toFixed(3):"")+'" placeholder="escríbelo"></label></div>'+
         '<div><div class="lbl">Ejes ↕ · '+a.y.length+'</div>'+
-          lista("y",PROP.y,PROP.onY,dy,function(i){return String(i+1)})+
-          '<label class="pf" style="margin:8px 0 0"><span class="pfe">Total ↕</span>'+
-          '<input type="text" inputmode="decimal" id="ejTotY" value="'+ty.toFixed(3)+'"></label></div>'+
+          lista("y",PROP.y,PROP.onY,dy,function(j){return String(j+1)})+
+          '<label class="pf" style="margin:8px 0 0"><span class="pfe">Total ↕ (m)</span>'+
+          '<input type="text" inputmode="decimal" id="ejTotY" value="'+
+          (hayEsc?ty.toFixed(3):"")+'" placeholder="escríbelo"></label></div>'+
       '</div>'+
-      (mal?'<p class="aviso" style="margin:10px 0 0">'+
-        (a.x.length<2||a.y.length<2
-          ? "Hacen falta al menos dos ejes en cada dirección."
-          : "El modelador admite 13 ejes por dirección como mucho. "+
-            "Quita los que sobren.")+'</p>':'')+
+      (PROP.base.fuentes
+        ?'<label class="pf" style="margin:10px 0 0"><span class="pfe">'+
+         'Juntar ejes a menos de (m)</span><input type="text" inputmode="decimal" '+
+         'id="ejJunta" value="'+(PROP.juntar||0).toFixed(2)+'"></label>'
+        :'')+
+      diag+
+      (aviso?'<p class="aviso" style="margin:10px 0 0">'+aviso+'</p>':'')+
       '<div class="row" style="margin:12px 0 0;gap:6px;flex-wrap:wrap">'+
         '<button class="btn" id="ejAplicaC"'+(mal?" disabled":"")+
-          ' style="background:var(--acc);color:#fff;border-color:var(--acc)">'+
+          ' style="background:'+(mal?"var(--panel)":"var(--acc)")+';color:'+
+          (mal?"var(--ink-3)":"#fff")+';border-color:'+(mal?"var(--line)":"var(--acc)")+'">'+
           'Aplicar ejes y columnas</button>'+
         '<button class="btn" id="ejAplica"'+(mal?" disabled":"")+'>Solo los ejes</button>'+
         '<button class="btn" id="ejCancela">Cancelar</button>'+
       '</div>'+
-      '<p class="nota" style="margin:8px 0 0">Al aplicar, el plano queda '+
-      'anclado bajo la retícula: el eje '+(LET.charAt(0))+'–1 cae en el origen '+
-      'del modelo y ya no hay que arrastrarlo.</p>';
+      '<p class="nota" style="margin:8px 0 0">Los ejes que ves en rojo sobre '+
+      'el plano son estos. Al aplicar, el plano queda anclado: el eje A–1 cae '+
+      'en el origen del modelo y ya no hay que arrastrarlo.</p>';
 
     pe.querySelectorAll("li button").forEach(function(b){
       b.onclick=function(){
         var d=b.dataset.d, i=+b.dataset.i;
         var on=d==="x"?PROP.onX:PROP.onY;
         on[i]=!on[i];
+        pintaPanelEjes();
+      };
+    });
+    pe.querySelectorAll("button[data-f]").forEach(function(b){
+      b.onclick=function(){
+        PROP.fuente=b.dataset.f;
+        armaJunta(PROP);
         pintaPanelEjes();
       };
     });
@@ -4831,7 +5036,7 @@ var TT={script:performance.now()};
         if(p.length<2)return;
         var span=p[p.length-1]-p[0];
         if(v===null||!(v>0)||!(span>0))return pintaPanelEjes();
-        PROP.esc=v/span; PROP.auto=false; PROP.aciertos=0;
+        PROP.esc=v/span; PROP.origen="escrito"; PROP.aciertos=0;
         pintaPanelEjes();
       }
       inp.addEventListener("change",aplicar);
@@ -4839,13 +5044,26 @@ var TT={script:performance.now()};
       inp.addEventListener("keydown",function(ev){
         if(ev.key==="Enter"){ev.preventDefault();aplicar()}});
     });
+    (function(){
+      var inp=pe.querySelector("#ejJunta"); if(!inp)return;
+      function aplicar(){
+        var v=leerNum(inp.value);
+        if(v===null||v<0)return pintaPanelEjes();
+        PROP.juntar=v; JUNTAR=v; armaJunta(PROP); pintaPanelEjes();
+      }
+      inp.addEventListener("change",aplicar);
+      inp.addEventListener("blur",aplicar);
+      inp.addEventListener("keydown",function(ev){
+        if(ev.key==="Enter"){ev.preventDefault();aplicar()}});
+    })();
     pe.querySelector("#ejCancela").onclick=function(){
-      PROP=null; ver(pe,false); toast("No se cambió nada.");
+      PROP=null; ver(pe,false); render(); toast("No se cambió nada.");
     };
     var bA=pe.querySelector("#ejAplica"), bC=pe.querySelector("#ejAplicaC");
     if(bA&&!mal)bA.onclick=function(){aplicaEjes(false)};
     if(bC&&!mal)bC.onclick=function(){aplicaEjes(true)};
     ver(pe,true);
+    render();        /* para que los ejes candidatos salgan sobre el plano */
   }
 
   /* Los elementos que se quedan fuera de la nueva retica se van.  Guardar
@@ -4868,6 +5086,12 @@ var TT={script:performance.now()};
   function aplicaEjes(conCols){
     if(!PROP)return;
     var niv=S.act, a=ejesActivos(PROP), esc=PROP.esc;
+    /* Sin escala no hay medidas, y sin medidas no hay nada que aplicar.
+       Antes se heredaba la del encaje inicial, que no mide nada, y de ahi
+       salian vanos de 0.44 m con toda la pinta de ser una medida. */
+    if(!(esc>0))
+      return toast("Sin escala no se puede aplicar. Escribe en el panel un "+
+                   "total real del plano y todo se ajusta a él.");
     if(a.x.length<2||a.y.length<2)
       return toast("Hacen falta al menos dos ejes en cada dirección.");
     if(a.x.length>13||a.y.length>13)
@@ -4898,7 +5122,8 @@ var TT={script:performance.now()};
     if(c){
       c.esc=esc; c.dx=-a.x[0]*esc; c.dy=-a.y[0]*esc;
       c.ejes={x:a.x,y:a.y,esc:esc,fuente:PROP.fuente,capa:PROP.capa,
-              aciertos:PROP.aciertos,cotas:PROP.cotas,auto:PROP.auto};
+              aciertos:PROP.aciertos,cotas:PROP.cotas,origen:PROP.origen};
+      c.cal=true;          /* la escala ya sale de algo, no del encaje inicial */
       guardarCalco(niv,c);
     }
     PROP=null; S.sel=null; ver("#panelEjes",false); render();
@@ -4933,7 +5158,7 @@ var TT={script:performance.now()};
       if(real===null||!(real>0)){ pintaCalcoCtl(); render();
         return toast("Calibrado cancelado."); }
       var f=real/d;                       /* cuanto hay que estirar */
-      c.esc*=f;
+      c.esc*=f; c.cal=true;               /* ahora la escala ya mide algo */
       /* se estira respecto al primer punto, que asi se queda donde estaba */
       c.dx=a.x-(a.x-c.dx)*f; c.dy=a.y-(a.y-c.dy)*f;
       guardarCalco(S.act,c);
@@ -4974,6 +5199,36 @@ var TT={script:performance.now()};
   $("#calcoFile").addEventListener("change",function(){
     traerCalco(this.files&&this.files[0]); this.value="";
   });
+  /* LIMPIAR · deja el nivel en blanco.
+     Va en dos clics a proposito: borrar el nivel entero de un toque, con el
+     raton pasando por encima de la barra, seria una forma nueva de perder
+     trabajo -que es justo lo que llevamos meses cerrando-.  Y se deshace
+     con Ctrl+Z, como todo lo demas.
+
+     Los EJES no se tocan.  Si lo que quieres es cambiarlos, esta el editor
+     de ejes; si quieres empezar de cero, estan las plantas tipo. */
+  var limpiaArmado=0;
+  $("#limpiar").onclick=function(){
+    var b=this;
+    if(!limpiaArmado){
+      limpiaArmado=setTimeout(function(){
+        limpiaArmado=0; b.textContent="Limpiar";
+        b.removeAttribute("style"); b.style.margin="4px 2px 0";
+      },4000);
+      b.textContent="¿Seguro?";
+      b.style.cssText="margin:4px 2px 0;background:var(--trib);color:#fff;border-color:var(--trib)";
+      return;
+    }
+    clearTimeout(limpiaArmado); limpiaArmado=0;
+    b.textContent="Limpiar";
+    b.removeAttribute("style"); b.style.margin="4px 2px 0";
+    snap();
+    var m=N();
+    m.cols={}; m.vigas={}; m.losas={}; m.placas={}; m.zapatas={};
+    S.sel=null; render();
+    toast("Nivel en blanco. Los ejes siguen ahí · Ctrl+Z lo devuelve.");
+  };
+
   $("#calcoEjes").onclick=leerEjes;
   $("#calcoQuitar").onclick=function(){
     guardarCalco(S.act,null); VECT[S.act]=null; calibrando=null;
