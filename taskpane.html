@@ -4049,10 +4049,27 @@
     return f;
   }
 
-  /* Redondeo al multiplo de 5 cm superior, en centimetros enteros.
-     Es lo mismo que hace CEILING(x*100,5) en la hoja: se calcula aqui
-     cuando el numero tiene que viajar a OTRA hoja como valor. */
-  function a5(m) { return Math.ceil(m * 100 / 5) * 5; }
+  /* REDONDEO HACIA ARRIBA, CON HOLGURA PARA LA COMA FLOTANTE.
+
+     Este archivo tenia diecisiete Math.ceil sueltos y ninguno llevaba la
+     holgura.  Con un valor EXACTO la coma flotante lo deja un pelo por
+     encima del escalon -0.55*100/5 vale 11.000000000000002- y ceil sube un
+     escalon de mas: la viga salia de 60 cm en vez de 55.
+
+     No es una sutileza teorica: pasa en 14 de 14418 pares Ln/alfa corrientes,
+     y uno de ellos es Ln 5.50 con alfa 10.  Y el comentario que habia aqui
+     afirmaba que esto era «lo mismo que hace CEILING(x*100,5) en la hoja».
+     Se le pregunto a Excel: CEILING(5.5/10*100,5) da 55.  La hoja tenia
+     razon y este archivo no, asi que la hoja escribia un numero y su propia
+     formula calculaba otro.
+
+     Es la misma funcion que CALCULO.arriba (calculo.js:21), palabra por
+     palabra.  Las dos estan atadas por probar_redondeo.js. */
+  var EPS_ARRIBA = 1e-9;
+  function arriba(v, paso) { return Math.ceil(v / paso - EPS_ARRIBA) * paso; }
+
+  /* Al multiplo de 5 cm superior, en centimetros enteros. */
+  function a5(m) { return arriba(m * 100, 5); }
 
   /* Escribe una lista con formulas que se refieren a su propia fila. */
   function lista(h, r, layout, encab, filas, hacer, numfmt) {
@@ -4363,7 +4380,7 @@
       + "Se reproduce como estaba: úsala como orientación, no como criterio. "
       + "El peralte que manda es el de la columna h, que sale de h = Ln / α.");
 
-    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0, q?Math.max(Math.ceil(hh/C.PROPORCION.viguetaAligerada/0.05)*0.05,C.MINIMOS.viguetaAligerada)*100:0];
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var arg=[q?a5(hh):0, q?Math.max(arriba(hh/C.PROPORCION.viguetaAligerada,0.05),C.MINIMOS.viguetaAligerada)*100:0];
     /* 1.4, no 1.3: encima hay ya un 1.3 -la tabla de espesores por luz-,
        que las demas losas no tienen */
     r = seccion(h, r, "1.4   Sección típica del techo aligerado", "losaAligerada", arg, q && q[0]);
@@ -4459,7 +4476,7 @@
         "hf ≤ (S − b) / 20 > " + C.MINIMOS.losita.toFixed(2) + " m"]],
       null, null, { alinear: ["Left","Left","Left","Left","Left"] });
 
-    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var bn=q?Math.max(Math.ceil(hh/C.PROPORCION.nervadura/0.05)*0.05,C.MINIMOS.nervadura)*100:0;var arg=[q?a5(hh):0, bn, q?Math.round(C.PROPORCION.nervadura*hh*100):0];
+    var q=elQueManda(fs,function(f){return +f[2]}), hh=q?(+q[2])/(+q[3]):0;var bn=q?Math.max(arriba(hh/C.PROPORCION.nervadura,0.05),C.MINIMOS.nervadura)*100:0;var arg=[q?a5(hh):0, bn, q?Math.round(C.PROPORCION.nervadura*hh*100):0];
     r = seccion(h, r, "1.3   Sección típica de la losa nervada", "losaNervada", arg, q && q[0]);
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
@@ -4519,7 +4536,7 @@
        nombraba otra. Aqui la clave es la de la columna I mas los
        desempates: h (cm), luego b (cm), luego Ln. */
     function bVigaCm(f) {
-      return Math.max(Math.ceil((+f[3]) / C.PROPORCION.baseVigaPrincipal * 100 / 5) * 5, bmin);
+      return Math.max(arriba((+f[3]) / C.PROPORCION.baseVigaPrincipal * 100, 5), bmin);
     }
     function hVigaCm(f) { return a5((+f[2]) / (+f[4])); }
     var q = elQueManda(fs, function (f) {
@@ -4592,7 +4609,7 @@
       var lnMax = (+f[4]) / 100 * (+f[3]);          /* h losa (cm) · α */
       return ((+f[2]) > lnMax ? 10000 : 0) + (+f[2]);
     });
-    var arg = [q ? Math.max(Math.ceil((+q[4]) / C.PROPORCION.baseViga / 5) * 5, bmin) : 0,
+    var arg = [q ? Math.max(arriba((+q[4]) / C.PROPORCION.baseViga, 5), bmin) : 0,
                q ? +q[4] : 0];
     r = seccion(h, r, "1.3   Sección típica de la viga chata", "vigaChata", arg, q && q[0]);
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
@@ -4733,7 +4750,7 @@
     var cu = cuentasColumna(P);
     var q = elQueManda(fs, cu.clave);
     var ac = q ? cu.Ac(q) : 0;
-    var lado = ac > 0 ? Math.max(Math.ceil(Math.sqrt(ac) / 5) * 5, cmin) : 0;
+    var lado = ac > 0 ? Math.max(arriba(Math.sqrt(ac), 5), cmin) : 0;
     r = seccion(h, r, "Sección típica de la columna", "columna",
                 [lado, lado], q && q[0]);
 
@@ -4805,7 +4822,7 @@
     var q = elQueManda(fs, cu.clave);
     var ac = q ? cu.Ac(q) : 0;
     var diam = ac > 0
-      ? Math.max(Math.ceil(Math.sqrt(4 * ac / Math.PI) / 5) * 5, cmin) : 0;
+      ? Math.max(arriba(Math.sqrt(4 * ac / Math.PI), 5), cmin) : 0;
     r = seccion(h, r, "Sección típica de la columna circular", "columnaCircular",
                 [diam], q && q[0]);
 
@@ -4914,9 +4931,9 @@
        puede fijar la ALTURA: t = max(lm/divisor, hm/divisor, minimo).
        Manda el espesor, y desempata el area. */
     function tPlacaCm(f) {
-      return Math.max(Math.ceil(Math.max((+f[3]) / C.PLACA.divisorLongitud,
-                                         (+f[4]) / C.PLACA.divisorAltura,
-                                         C.MINIMOS.espesorPlaca) * 100 / 5) * 5, tmin);
+      return Math.max(arriba(Math.max((+f[3]) / C.PLACA.divisorLongitud,
+                                     (+f[4]) / C.PLACA.divisorAltura,
+                                     C.MINIMOS.espesorPlaca) * 100, 5), tmin);
     }
     var q = elQueManda(fs, function (f) {
       return tPlacaCm(f) + (+f[3]) * tPlacaCm(f) / 100 / 1000;
@@ -5233,16 +5250,16 @@
     function ladosDe(f) {
       var az = azDe(f), red = Z.redondeoLado, B, L;
       if (f[1] === "Medianera") {
-        B = Math.ceil(Math.sqrt(az / 2) / red) * red;
-        L = Math.ceil(2 * Math.sqrt(az / 2) / red) * red;
+        B = arriba(Math.sqrt(az / 2), red);
+        L = arriba(2 * Math.sqrt(az / 2), red);
       } else {
         var d = ((+f[6]) - (+f[5])) / 2;                /* (col h - col b) / 2 */
-        B = Math.ceil((Math.sqrt(az) - d) / red) * red;
-        L = Math.ceil((Math.sqrt(az) + d) / red) * red;
+        B = arriba(Math.sqrt(az) - d, red);
+        L = arriba(Math.sqrt(az) + d, red);
       }
       var div = (f[1] === "Esquinera") ? Z.divisorPeralte.esquinera
                                        : Z.divisorPeralte.centrada;
-      var H = Math.ceil((L - (+f[6])) / div / Z.redondeoPeralte) * Z.redondeoPeralte;
+      var H = arriba((L - (+f[6])) / div, Z.redondeoPeralte);
       return { B: B, L: L, H: H, area: B * L };
     }
     var qZ = elQueManda(fs, function (f) {
@@ -5986,7 +6003,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v107 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v109 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

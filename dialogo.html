@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v107 · 11-09-2026";
+  var BUILD="v109 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7472,17 +7472,41 @@ var TT={script:performance.now()};
     var res="";
     if(r&&r.hojas&&r.hojas.length){
       res='<div class="hg-res"><div class="rule" style="margin:0 0 10px"></div>'+
-        '<h3>Última generación</h3><table><thead><tr><th>Hoja</th><th>Total</th>'+
+        '<h3>Última generación</h3><table><thead><tr><th>Hoja</th><th>Escrito</th>'+
         '<th>Encolar</th><th>Excel</th><th>Detalle</th></tr></thead><tbody>'+
         r.hojas.map(function(x){
-          return x.error
-            ? '<tr><td>'+x.hoja+'</td><td colspan="4" style="color:#c62828">'+x.error+'</td></tr>'
-            : "<tr><td>"+x.hoja+"</td><td><b>"+x.ms+" ms</b></td><td>"+x.msEncolar+
-              " ms</td><td>"+x.msSync+" ms</td><td>"+x.stats.valores+" valores · "+
-              x.stats.merges+" merges · "+x.stats.formatosAplicados+" fmt en "+
-              x.stats.grupos+" grupos</td></tr>";
+          if(x.error)
+            return '<tr><td>'+x.hoja+'</td><td colspan="4" style="color:#c62828">'+
+                   x.error+'</td></tr>';
+          /* HAY DOS CAMINOS Y DEVUELVEN COSAS DISTINTAS.
+
+             Si el libro es V1 se LLENA en sitio y escritor.llenar devuelve
+             {modo:"llenada", escritas, capacidad, sobran} — sin stats y sin
+             tiempos.  Esto leía x.stats.valores a ciegas, y como en ese
+             camino stats no existe, reventaba con «Cannot read properties
+             of undefined» y la pestaña entera se quedaba EN BLANCO: el
+             fallo se comía el informe y de paso el resto de render().
+
+             Justo después de llenar V1, que es el camino normal. */
+          if(x.modo==="llenada"){
+            var sobran=+x.sobran||0;
+            return "<tr><td>"+x.hoja+"</td><td><b>"+x.escritas+"</b> fila(s)</td>"+
+              '<td colspan="2">llenada en sitio</td><td'+
+              (sobran>0?' style="color:#c62828"':'')+">"+
+              (sobran>0
+                ? "la lista admite "+x.capacidad+" y hay "+(x.escritas+sobran)+
+                  ": <b>"+sobran+" se quedaron fuera</b>"
+                : "cabe entera ("+x.capacidad+" filas disponibles)")+
+              "</td></tr>";
+          }
+          var st=x.stats||{};
+          return "<tr><td>"+x.hoja+"</td><td><b>"+x.ms+" ms</b></td><td>"+x.msEncolar+
+            " ms</td><td>"+x.msSync+" ms</td><td>"+(st.valores||0)+" valores · "+
+            (st.merges||0)+" merges · "+(st.formatosAplicados||0)+" fmt en "+
+            (st.grupos||0)+" grupos</td></tr>";
         }).join("")+'</tbody></table>'+
-        '<p class="nota">«Encolar» es preparar las órdenes; «Excel» es aplicarlas.</p></div>';
+        '<p class="nota">«Encolar» es preparar las órdenes; «Excel» es aplicarlas. '+
+        'Las hojas llenadas en sitio no se rehacen, así que no llevan tiempos.</p></div>';
     }
 
     /* Los dos datos del proyecto que NO salen de la planta y que sin embargo
