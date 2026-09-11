@@ -199,42 +199,52 @@
   .eje input:focus{outline:2px solid var(--acc);outline-offset:-1px}
   /* 1.1 Luces · la tabla de la hoja, traspuesta.
 
-     Un vano por fila y un borde por columna.  En la hoja las columnas
-     sobran; aqui el inspector es una tira estrecha y con tres columnas de
-     vano salia una barra horizontal.  Con table-layout fijo y anchos en
-     tanto por ciento, la tabla nunca se pasa del panel: crece hacia
-     abajo, que es donde hay sitio. */
-  .luces-cja{margin:2px 0 0}
-  .luces{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px}
-  .luces th,.luces td{border:1px solid var(--line);padding:2px 3px}
-  .luces thead th{background:var(--acc);color:#fff;text-align:center;
-    font:600 9.5px "Barlow Condensed",sans-serif;text-transform:uppercase;
-    letter-spacing:.04em;line-height:1.15;vertical-align:middle}
-  .luces th.dir{text-align:left}
-  .luces .cbx{display:flex;align-items:center;gap:3px;cursor:pointer;justify-content:center}
-  .luces .cbx input{margin:0;flex:none}
-  .luces th.lab{background:var(--panel);text-align:left;color:var(--ink);
-    font:600 10px "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.03em}
-  .luces th.lab small{display:block;letter-spacing:0;text-transform:none;
-    font:500 9.5px "IBM Plex Mono",monospace;color:var(--ink-3)}
-  .luces th.lab small.pr{font-style:italic}
+     Un vano por fila y un borde por columna: en la hoja las columnas
+     sobran, pero aqui el inspector no da para tres columnas de vano y
+     salia una barra de desplazamiento horizontal.
+
+     Los anchos van en pixeles y la tabla tiene tope.  Con porcentajes se
+     estiraba con el panel: en pantalla ancha la etiqueta quedaba a media
+     cuadra de su numero y todo se veia deshilachado. */
+  .luces-cja{margin:4px 0 10px;max-width:420px}
+  .luces{width:100%;table-layout:fixed;border-collapse:collapse}
+  .luces col.c-lab{width:114px}
+  .luces col.c-ops{width:78px}
+  .luces th,.luces td{border:1px solid var(--line);padding:4px 7px;vertical-align:middle}
+
+  .luces thead th{background:var(--acc);color:#fff;text-align:right;white-space:nowrap;
+    border-color:rgba(255,255,255,.32);padding:5px 7px;line-height:1.2;
+    font:600 10px "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.05em}
+  .luces thead th.dir{text-align:left}
+  .luces .cbx{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+  .luces .cbx input{margin:0;flex:none;width:12px;height:12px}
+
+  /* la etiqueta del vano va en UNA linea: "VANO 1  A-B".  Apilada, cada
+     fila media el doble y la tabla se volvia una escalera. */
+  .luces th.lab{background:var(--panel);text-align:left;color:var(--ink);white-space:nowrap;
+    font:600 10.5px "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.04em}
+  .luces th.lab em{font:500 10px "IBM Plex Mono",monospace;color:var(--ink-3);
+    font-style:normal;text-transform:none;letter-spacing:0;margin-left:6px}
+  .luces th.lab em.pr{font-style:italic}
+
   .luces td.val{padding:0}
   .luces td.val input{width:100%;min-width:0;box-sizing:border-box;border:none;
-    background:transparent;color:var(--ink);text-align:right;padding:3px 4px;
-    font:500 11.5px "IBM Plex Mono",monospace}
+    background:transparent;color:var(--ink);text-align:right;padding:5px 7px;
+    font:500 12px "IBM Plex Mono",monospace}
   .luces td.val input:focus{outline:2px solid var(--acc);outline-offset:-2px}
   .luces td.val input:disabled{color:var(--ink-3);background:var(--panel)}
-  .luces tr.sumf th.lab,.luces td.tot{background:var(--panel)}
-  .luces td.tot{text-align:right;font:600 11.5px "IBM Plex Mono",monospace}
-  .luces td.ops{text-align:center;padding:1px;white-space:nowrap}
-  .luces td.ops button{border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);
-    border-radius:2px;cursor:pointer;padding:1px 3px;font:600 10px sans-serif}
+
+  .luces tr.sumf th,.luces tr.sumf td{background:var(--panel);border-top:2px solid var(--line)}
+  .luces td.tot{text-align:right;font:600 12px "IBM Plex Mono",monospace;color:var(--ink)}
+
+  .luces td.ops{text-align:center;padding:2px;white-space:nowrap}
+  .luces td.ops button{width:20px;height:20px;padding:0;margin:0 1px;line-height:1;
+    border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);
+    border-radius:3px;cursor:pointer;font:600 11px sans-serif}
   .luces td.ops button:hover{border-color:var(--acc);color:var(--acc-ink)}
-  .luces tr.add td{padding:3px 2px;border-top:none}
-  .luces tr.add button{width:100%;border:1px solid var(--line);background:var(--sheet);
-    color:var(--ink-2);border-radius:3px;cursor:pointer;padding:4px 0;
-    font:600 11px "IBM Plex Sans",sans-serif}
-  .luces tr.add button:hover{border-color:var(--acc);color:var(--acc-ink)}
+  .luces tr.sumf td.ops{border-color:var(--line)}
+
+  .btn.luces-add{margin:6px 0 0;padding:5px 12px}
   .mini{border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);border-radius:2px;
         cursor:pointer;font:600 12px sans-serif;padding:2px 0;line-height:1.1}
   .mini:hover{border-color:var(--acc);color:var(--acc-ink)}
@@ -455,12 +465,10 @@
       <h2 id="inspTitle">Elemento</h2>
       <div id="inspBody"><p class="empty">Selecciona un elemento de la planta.</p></div>
       <div class="rule"></div>
-      <h2>Ejes ↔ <span id="totX"></span></h2>
+      <h2>Ejes ↔</h2>
       <div class="ejes" id="ejesX"></div>
-      <div class="ejes" id="ladoX"></div>
-      <h2>Ejes ↕ <span id="totY"></span></h2>
+      <h2>Ejes ↕</h2>
       <div class="ejes" id="ejesY"></div>
-      <div class="ejes" id="ladoY"></div>
     </aside>
   </div>
 
@@ -3571,7 +3579,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v54 · 10-09-2026";
+  var BUILD="v56 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -5697,11 +5705,10 @@ var TT={script:performance.now()};
      es exactamente lo que valen los dos bordes de un lote recto.
      ===================================================================== */
   function editorEjes(){
+    /* El total ya no se repite en el titulo: vive en la fila Σ de cada
+       tabla, que es donde se lee junto a lo que suma. */
     tablaLuces($("#ejesX"),true);
     tablaLuces($("#ejesY"),false);
-    $("#totX").textContent=posX(nx()-1).toFixed(2)+" m";
-    $("#totY").textContent=posY(ny()-1).toFixed(2)+" m";
-    ver("#ladoX",false); ver("#ladoY",false);
   }
 
   /* Hasta CUATRO decimales, minimo dos.
@@ -5729,19 +5736,22 @@ var TT={script:performance.now()};
     var sa=acum(base,base.length), sb=acum(esp,esp.length);
     var i,h;
 
+    /* Los anchos van en PIXELES, no en tanto por ciento.  Con porcentajes
+       la tabla se estiraba con el panel y, en pantalla ancha, la etiqueta
+       quedaba a media cuadra del numero.  Las dos columnas de medida son
+       las unicas que reparten lo que sobra, y la tabla tiene tope. */
     h='<div class="luces-cja"><table class="luces">'+
-      '<colgroup><col style="width:34%"><col style="width:23%">'+
-      '<col style="width:23%"><col style="width:20%"></colgroup>'+
+      '<colgroup><col class="c-lab"><col><col><col class="c-ops"></colgroup>'+
       '<thead><tr><th class="dir">Dirección '+(ejeX?"X":"Y")+'</th>'+
       '<th>'+nom[0]+'</th>'+
       '<th><label class="cbx"><input type="checkbox" id="usa'+(ejeX?"X":"Y")+'"'+
       (otro?" checked":"")+'><span>'+nom[1]+'</span></label></th>'+
-      '<th></th></tr></thead><tbody>';
+      '<th class="ops"></th></tr></thead><tbody>';
 
     for(i=0;i<base.length;i++){
-      h+='<tr><th class="lab">Vano '+(i+1)+'<small'+
+      h+='<tr><th class="lab">Vano '+(i+1)+'<em'+
          (esPrima(ejeX,i+1)?' class="pr"':'')+'>'+
-         nomEje(ejeX,i,m)+"–"+nomEje(ejeX,i+1,m)+'</small></th>'+
+         nomEje(ejeX,i,m)+"–"+nomEje(ejeX,i+1,m)+'</em></th>'+
          '<td class="val"><input type="text" inputmode="decimal" data-f="1" data-t="'+i+
          '" value="'+nm(base[i])+'" aria-label="'+nom[0]+' vano '+(i+1)+'"></td>'+
          '<td class="val"><input type="text" inputmode="decimal" data-f="2" data-t="'+i+
@@ -5755,10 +5765,8 @@ var TT={script:performance.now()};
     }
     h+='<tr class="sumf"><th class="lab">Σ (m)</th>'+
        '<td class="tot">'+nm(sa)+'</td><td class="tot">'+nm(sb)+'</td>'+
-       '<td class="ops"></td></tr>'+
-       '<tr class="add"><td colspan="4">'+
-       '<button data-op="+" title="Añadir un vano al final">+ tramo al final</button>'+
-       '</td></tr></tbody></table></div>';
+       '<td class="ops"></td></tr></tbody></table>'+
+       '<button class="btn luces-add" data-op="+">+ tramo al final</button></div>';
 
     /* el sesgo, dicho con todas las letras cuando lo hay */
     if(Math.abs(sa-sb)>0.00005)
