@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v93 · 11-09-2026";
+  var BUILD="v94 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3784,12 +3784,30 @@ var TT={script:performance.now()};
      y se interrumpe donde hay VIGA, que es lo que la sostiene */
   function tramoLosa(dir,i,j,m){
     m=m||N();var ejeX=(dir==="x");
-    return tramo(ejeX,i,j,m,
+    var t=tramo(ejeX,i,j,m,
       function(k){return !!m.losas[ejeX?(k+":"+j):(i+":"+k)]},
       function(a){
         if(!esPrima(ejeX,a,m))return true;
         return !!m.vigas[ejeX?("v:"+a+":"+j):("h:"+i+":"+a)];
       });
+    /* LA LOSA TIENE DOS BORDES EN LA DIRECCION DE SU LUZ, Y EN UN PAÑO EN
+       PUNTA NO MIDEN LO MISMO.
+
+       tramo() mide por UNO de los dos -el de la fila j, o el de la columna
+       i-, y en una planta inclinada el de enfrente puede ser mas largo.  Si
+       se toma el corto, el peralte sale para la parte estrecha y se queda
+       corto donde la losa mas luz tiene, que es justo donde importa.
+
+       Manda el LARGO.  No es prudencia de mas: es que h = Ln/alfa tiene que
+       valer en la seccion mas ancha, no en el promedio.  En un paño
+       rectangular los dos bordes miden igual y esto no cambia nada. */
+    var A2,B2;
+    if(ejeX){ A2=nodo(t.desde,j+1,m); B2=nodo(t.hasta,j+1,m); }
+    else    { A2=nodo(i+1,t.desde,m); B2=nodo(i+1,t.hasta,m); }
+    var L2=dist(A2,B2);
+    t.Lcorto=Math.min(t.L,L2);
+    t.L=Math.max(t.L,L2);
+    return t;
   }
 
   /* ---------- historial ---------- */
