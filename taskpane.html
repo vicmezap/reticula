@@ -4247,7 +4247,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v60 · 10-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v64 · 10-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -4337,10 +4337,17 @@ function leerModelo(){
   });
 }
 
-function guardarModelo(){
-  var s = null;
-  try{ s = localStorage.getItem("reticula"); }catch(e){}
+/* Lo ultimo que mando la ventana.  ANTES esto se leia de localStorage, y esa
+   era la mitad del fallo: la ventana del modelador tiene su propia particion
+   de almacenamiento, asi que lo que ella guardaba nunca llegaba aqui. */
+var ultimoModelo = null;
+
+function guardarModelo(json){
+  var s = json || ultimoModelo;
+  if(!s){ try{ s = localStorage.getItem("reticula"); }catch(e){} }
   if(!s) return Promise.reject(new Error("todavia no hay modelo: abre el modelador"));
+  try{ localStorage.setItem("reticula", s); }catch(e){}
+  ultimoModelo = s;
   var trozos = [], i;
   for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
   if(trozos.length > 200)
@@ -4362,10 +4369,12 @@ Office.onReady(function(){
   if(a) a.onclick = abrirModelador;
   var g = document.getElementById("btnGuardar");
   if(g) g.onclick = function(){
-    guardarModelo().then(function(){
+    guardarModelo(null).then(function(){
       estado("Modelo guardado en el libro.", "ok");
       return revisar();
-    }).catch(function(e){ estado("No se pudo guardar: " + e.message, "err"); });
+    }).catch(function(e){
+      estado("No se pudo guardar: " + e.message
+             + "  Guarda desde la ventana del modelador.", "err"); });
   };
   revisarBuild();
   comprobarCache();
@@ -4418,18 +4427,85 @@ function abrirModelador(){
   }).catch(function(e){ estado("Error: " + e.message, "err"); });
 }
 
+/* ---------------- el canal con la ventana ----------------
+   Todo va troceado: messageParent y messageChild tienen tope de tamano y un
+   edificio de varios niveles lo pasa de largo. */
+var TROZO_MSG = 8000;
+var trozos = {};          /* lo que llega a medias, por clase */
+var proyectoRecibido = null;
+
+function responde(o){
+  try{
+    if(dialogo && typeof dialogo.messageChild === "function")
+      dialogo.messageChild(JSON.stringify(o));
+  }catch(e){}
+}
+function respondeLargo(clase, texto){
+  var n = Math.max(1, Math.ceil(texto.length / TROZO_MSG)), i;
+  for(i = 0; i < n; i++)
+    responde({ a: clase, i: i, n: n, d: texto.substr(i * TROZO_MSG, TROZO_MSG) });
+}
+function juntaTrozos(m){
+  var c = trozos[m.a];
+  if(!c || c.n !== m.n || m.i === 0) c = trozos[m.a] = { n: m.n, v: [], cuantos: 0 };
+  if(c.v[m.i] === undefined){ c.v[m.i] = m.d; c.cuantos++; }
+  if(c.cuantos < c.n) return null;
+  trozos[m.a] = null;
+  return c.v.join("");
+}
+
 function alRecibir(arg){
   var msg;
   try{ msg = JSON.parse(arg.message); }catch(e){ return; }
-  if(msg.accion === "cerrar"){
-    guardarModelo().then(function(){
+
+  /* la ventana pide el modelo que haya en el libro */
+  if(msg.a === "pide"){
+    if(!dialogo || typeof dialogo.messageChild !== "function"){
+      estado("Esta versión de Excel no deja responder a la ventana "
+             + "(hace falta DialogApi 1.2).", "err");
+      return;
+    }
+    leerModelo().then(function(s){
+      if(!s){ responde({ a: "mod", n: 0 }); return; }
+      ultimoModelo = s;
+      try{ localStorage.setItem("reticula", s); }catch(e){}
+      respondeLargo("mod", s);
+    }).catch(function(e){ responde({ a: "mod", n: 0 }); estado("Error: " + e.message, "err"); });
+    return;
+  }
+
+  /* la ventana manda su modelo para que se escriba en el libro */
+  if(msg.a === "mod"){
+    var j = juntaTrozos(msg);
+    if(j === null) return;
+    guardarModelo(j).then(function(){
       estado("Modelo guardado en el libro.", "ok");
-    }).catch(function(){}).then(function(){
+      responde({ a: "guardado", ok: true });
+      return revisar();
+    }).catch(function(e){
+      estado("No se pudo guardar: " + e.message, "err");
+      responde({ a: "guardado", ok: false, msg: e.message });
+    });
+    return;
+  }
+
+  /* el proyecto para las hojas, tambien troceado */
+  if(msg.a === "proy"){
+    var pj = juntaTrozos(msg);
+    if(pj === null) return;
+    try{ proyectoRecibido = JSON.parse(pj); }catch(e){ proyectoRecibido = null; }
+    return;
+  }
+  if(msg.a === "hojas"){
+    generarHojas(msg.cuales || ["CRITERIOS_OVIEDO"], proyectoRecibido);
+    return;
+  }
+  if(msg.a === "cerrar"){
+    guardarModelo().catch(function(){}).then(function(){
       if(dialogo){ dialogo.close(); dialogo = null; }
       revisar();
     });
-  }else if(msg.accion === "generarHojas"){
-    generarHojas(msg.cuales || ["CRITERIOS_OVIEDO"]);
+    return;
   }
 }
 
@@ -4464,16 +4540,14 @@ var REGISTRO = {
   "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); }
 };
 
-/* El proyecto lo deja el dialogo en localStorage antes de pedir la accion:
-   messageParent tiene limite de tamano y un edificio grande lo pasa.  Mismo
-   origen, asi que el taskpane lo lee sin mas. */
-function proyecto(){
-  try{ return JSON.parse(localStorage.getItem("reticula_proyecto")||"null"); }
-  catch(e){ return null; }
-}
-
-function generarHojas(cuales){
-  var P = proyecto();
+/* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
+   localStorage "que comparten por ser el mismo origen": no lo comparten, la
+   ventana tiene su propia particion, y aqui llegaba null o algo viejo. */
+function generarHojas(cuales, P){
+  if(!P){
+    try{ P = JSON.parse(localStorage.getItem("reticula_proyecto")||"null"); }
+    catch(e){ P = null; }
+  }
   var caps = FORMATO.capacidades();
   var opts = { rangeAreas: !!caps.formas };   /* getRanges pide ExcelApi 1.9 */
   var hechas = [], t0 = Date.now();
@@ -4483,8 +4557,10 @@ function generarHojas(cuales){
       var res = { t: Date.now(), total: Date.now() - t0, hojas: hechas, caps: caps };
       try{ localStorage.setItem("reticula_hojas", JSON.stringify(res)); }catch(e){}
       var bien = hechas.filter(function(x){ return !x.error; }).length;
-      estado("Generadas " + bien + " de " + cuales.length + " hoja(s) en "
-             + res.total + " ms.", bien ? "ok" : "err");
+      res.aviso = "Generadas " + bien + " de " + cuales.length + " hoja(s) en "
+                  + res.total + " ms.";
+      estado(res.aviso, bien ? "ok" : "err");
+      responde({ a: "hojas", res: res });    /* la ventana espera esto */
       return;
     }
     var nombre = cuales[i], plan;

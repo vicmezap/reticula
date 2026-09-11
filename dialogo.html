@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v60 · 10-09-2026";
+  var BUILD="v64 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3821,6 +3821,9 @@ var TT={script:performance.now()};
                         pr:S.proy}));
       GUARDADO.ultimo=Date.now();
       selloGuardado();
+      /* y se empuja al libro, espaciado: cerrar la ventana con la X no
+         puede costar el trabajo de la ultima media hora */
+      if(window.EMPUJAR_MODELO)EMPUJAR_MODELO();
       return true;
     }catch(e){
       /* el disco lleno o el modo privado dejan localStorage sin escribir:
@@ -5878,7 +5881,15 @@ var TT={script:performance.now()};
   }
 
   $("#btnGuardar").onclick=function(){
-    if(guardarYa()!==false)toast("Proyecto guardado.");
+    var ok=guardarYa()!==false;
+    /* Guardar de verdad es escribirlo en el LIBRO.  Lo de aqui es la cache
+       de esta ventana, que Office tira al cerrarla: por eso hacia falta el
+       puente, y por eso el aviso definitivo lo da el panel cuando ya lo ha
+       escrito en la hoja oculta. */
+    if(window.ENVIAR_MODELO){
+      if(ENVIAR_MODELO())toast("Guardando en el libro…");
+      else toast("No se pudo hablar con Excel. Vuelve a intentarlo.");
+    }else if(ok)toast("Proyecto guardado en esta ventana.");
   };
   $("#pR").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5],[7,7,7,7],N().h);S.sel=null;render()};
   $("#pL").onclick=function(){snap();S.niveles[S.act]=plantaLlena([5,5,5,5],[6,6,6,6],N().h);
@@ -6933,10 +6944,19 @@ var TT={script:performance.now()};
   }
   /* Catalogo de hojas. "ref" no necesita modelo; "ele" depende de que existan
      elementos de ese tipo; "met" necesita usos asignados. */
+  /* EL MISMO ORDEN QUE EL REGISTRO DEL PANEL, y las mismas hojas.
+
+     El panel sabia hacer catorce y esta lista ofrecia doce: CUADROS E030 y
+     DATOS estaban escritas, probadas y sin forma de pedirlas desde la
+     ventana.  Se generaban solo si algo las nombraba, y nada las nombraba.
+     probar_panel.js compara ahora las dos listas para que no vuelva a
+     separarse una de la otra. */
   var CATALOGO=[
-    {n:"ESPECIFICACIONES",   tit:"Especificaciones",   t:"ref"},
+    {n:"CUADROS E030",       tit:"Cuadros E.030",      t:"ref"},
     {n:"NORMA E020",         tit:"Norma E.020",        t:"ref"},
     {n:"CRITERIOS_OVIEDO",   tit:"Criterios Oviedo",   t:"ref"},
+    {n:"DATOS",              tit:"Datos del proyecto", t:"ref"},
+    {n:"ESPECIFICACIONES",   tit:"Especificaciones",   t:"ref"},
     {n:"PRE_LOSA_ALIGERADA", tit:"Pre losa aligerada", t:"ele", q:function(c){return c.losa.aligerada}},
     {n:"PRE_LOSA_MACIZA",    tit:"Pre losa maciza",    t:"ele", q:function(c){return c.losa.maciza}},
     {n:"PRE_LOSA_NERVADA",   tit:"Pre losa nervada",   t:"ele", q:function(c){return c.losa.nervada}},
@@ -6950,6 +6970,7 @@ var TT={script:performance.now()};
   /* Las diez.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
   var IMPLEMENTADAS={CRITERIOS_OVIEDO:true,"NORMA E020":true,ESPECIFICACIONES:true,
+    "CUADROS E030":true,DATOS:true,
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true};
@@ -7172,59 +7193,151 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script>
+/* =====================================================================
+   EL PUENTE CON EXCEL
+
+   Hasta la v60 todo viajaba por localStorage: el panel dejaba ahi el modelo
+   antes de abrir la ventana, la ventana lo leia, la ventana guardaba ahi lo
+   suyo y el panel lo recogia.  Parecia razonable -es el mismo origen- y
+   estaba MAL.
+
+   displayDialogAsync con displayInIframe:false abre una VENTANA APARTE, y en
+   WebView2 esa ventana tiene su propia particion de almacenamiento.  Su
+   localStorage NO es el del panel.  Ni el panel veia lo que guardaba la
+   ventana ni la ventana veia lo que dejaba el panel: dabas a Guardar,
+   cerrabas, volvias a abrir y salia todo en blanco.  Y lo mismo con el
+   proyecto que se manda a generar las hojas.
+
+   Ahora va por el canal de Office -messageParent hacia el panel y
+   messageChild de vuelta-, troceado, porque el mensaje tiene tope de tamano
+   y un edificio de varios niveles lo pasa.  localStorage se queda solo como
+   cache de la ventana, para no perder el dibujo si se recarga sola.
+   ===================================================================== */
 (function(){
   "use strict";
-  var listo=false;
+  var TROZO=8000;                 /* caracteres por mensaje */
+  var listo=false;                /* Office respondio */
+  var partes={};                  /* lo que llega a medias, por clase */
+  var ultimoEnviado=null;         /* para no repetir el mismo modelo */
+  var pendiente=0, ESPERA=5000;
+
+  function di(t){ try{ if(window.RET&&RET.toast)RET.toast(t); }catch(e){} }
+
+  function manda(o){
+    try{
+      if(!listo||!Office.context||!Office.context.ui)return false;
+      Office.context.ui.messageParent(JSON.stringify(o));
+      return true;
+    }catch(e){ return false; }
+  }
+  function mandaLargo(clase,texto){
+    var n=Math.max(1,Math.ceil(texto.length/TROZO)),i;
+    for(i=0;i<n;i++)
+      if(!manda({a:clase,i:i,n:n,d:texto.substr(i*TROZO,TROZO)}))return false;
+    return true;
+  }
+  /* Junta los trozos que llegan del panel.  Se guarda el total esperado: un
+     trozo suelto de una tanda vieja no puede colarse en la nueva. */
+  function junta(m){
+    var c=partes[m.a];
+    if(!c||c.n!==m.n||m.i===0)c=partes[m.a]={n:m.n,v:[],cuantos:0};
+    if(c.v[m.i]===undefined){c.v[m.i]=m.d;c.cuantos++;}
+    if(c.cuantos<c.n)return null;
+    partes[m.a]=null;
+    return c.v.join("");
+  }
+
+  /* ---------- lo que llega del panel ---------- */
+  function delPanel(arg){
+    var m; try{ m=JSON.parse(arg.message); }catch(e){ return; }
+    if(m.a==="mod"){
+      if(!m.n){ di("El libro no traía ningún modelo guardado."); return; }
+      var s=junta(m); if(s===null)return;
+      try{ localStorage.setItem("reticula",s); }catch(e){}
+      ultimoEnviado=s;
+      if(window.RET&&RET.recargar)RET.recargar();
+      var niv=0; try{ niv=(JSON.parse(s).n||[]).length; }catch(e){}
+      di("Proyecto abierto desde el libro: "+niv+" nivel(es).");
+    }else if(m.a==="guardado"){
+      di(m.ok?"Guardado en el libro.":("No se pudo guardar: "+(m.msg||"")));
+    }else if(m.a==="hojas"){
+      var b=document.getElementById("btnHojas");
+      if(b){ b.disabled=false; b.textContent=b.dataset.txt||"Generar hojas"; }
+      try{ localStorage.setItem("reticula_hojas",JSON.stringify(m.res||{})); }catch(e){}
+      if(window.RET&&RET.render)RET.render();
+      di(m.res&&m.res.aviso?m.res.aviso:"Hojas generadas.");
+    }
+  }
+
+  /* ---------- mandar el modelo al libro ---------- */
+  function enviarModelo(forzar){
+    var s=null;
+    try{ if(window.RET&&RET.guardar)RET.guardar();
+         s=localStorage.getItem("reticula"); }catch(e){}
+    if(!s)return false;
+    if(!forzar&&s===ultimoEnviado)return true;   /* nada nuevo que decir */
+    if(!mandaLargo("mod",s))return false;
+    ultimoEnviado=s;
+    return true;
+  }
+  /* El boton Guardar llama a esto.  Devuelve si el mensaje salio; el "ya
+     esta" de verdad lo dice el panel cuando lo ha escrito en la hoja. */
+  window.ENVIAR_MODELO=function(){
+    if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return false; }
+    return enviarModelo(true);
+  };
+  /* Y ademas se manda solo, espaciado, para que cerrar la ventana con la X
+     no cueste el trabajo de la ultima media hora. */
+  window.EMPUJAR_MODELO=function(){
+    if(!listo||pendiente)return;
+    pendiente=setTimeout(function(){ pendiente=0; enviarModelo(false); },ESPERA);
+  };
+  window.addEventListener("beforeunload",function(){ enviarModelo(false); });
+  window.addEventListener("pagehide",function(){ enviarModelo(false); });
+
+  /* ---------- arranque ---------- */
   if(typeof Office!=="undefined"&&Office.onReady){
-    Office.onReady(function(){listo=true;});
+    Office.onReady(function(){
+      listo=true;
+      try{
+        Office.context.ui.addHandlerAsync(
+          Office.EventType.DialogParentMessageReceived, delPanel, function(){});
+      }catch(e){}
+      /* se pide el modelo al libro: la ventana no puede leerlo por su cuenta */
+      manda({a:"pide"});
+    });
   }
-  function avisar(msg){
-    try{ if(listo&&Office.context&&Office.context.ui) Office.context.ui.messageParent(JSON.stringify(msg)); }
-    catch(e){}
-  }
-  /* Ya no hay "Enviar a las hojas": el modelador no manda filas a rangos
-     con nombre.  Calcula solo y la hoja se genera rellena. */
-  /* Generar hojas. El boton lo pinta la pestana en caliente, asi que se
-     escucha por delegacion en vez de agarrarlo una sola vez al cargar. */
+
+  /* ---------- generar hojas ----------
+     El proyecto ya no se deja en localStorage: se manda troceado y el panel
+     contesta cuando ha terminado, en vez de que la ventana ande mirando una
+     clave que en su particion nunca cambiaba. */
   document.addEventListener("click",function(ev){
     var b=ev.target&&ev.target.closest?ev.target.closest("#btnHojas"):null;
     if(!b)return;
-    var antes=0;
-    try{ antes=(JSON.parse(localStorage.getItem("reticula_hojas")||"{}").t)||0; }catch(e){}
     var St=(window.RET&&window.RET.estado)?window.RET.estado():null,cuales=[],k;
     if(St&&St.hojasSel)for(k in St.hojasSel)if(St.hojasSel[k])cuales.push(k);
-    if(!cuales.length){alert("No hay ninguna hoja marcada.");return;}
-    /* El proyecto va por localStorage, no dentro del mensaje: messageParent
-       tiene limite de tamano y un edificio grande lo pasa.  Mismo origen. */
-    try{
-      if(window.RET&&window.RET.paquete)
-        localStorage.setItem("reticula_proyecto",JSON.stringify(window.RET.paquete()));
-    }catch(e){
-      alert("No se pudo preparar el proyecto: "+e.message); return;
+    if(!cuales.length){ di("No hay ninguna hoja marcada."); return; }
+    if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return; }
+    var paq=null;
+    try{ paq=JSON.stringify(window.RET.paquete()); }
+    catch(e){ di("No se pudo preparar el proyecto: "+e.message); return; }
+    b.dataset.txt=b.textContent;
+    b.disabled=true; b.textContent="Generando...";
+    if(!mandaLargo("proy",paq)||!manda({a:"hojas",cuales:cuales})){
+      b.disabled=false; b.textContent=b.dataset.txt;
+      di("No se pudo hablar con Excel."); return;
     }
-    b.disabled=true; var txt=b.textContent; b.textContent="Generando...";
-    avisar({accion:"generarHojas",cuales:cuales});
-    var t0=Date.now();
-    var reloj=setInterval(function(){
-      var d=null;
-      try{ d=JSON.parse(localStorage.getItem("reticula_hojas")||"null"); }catch(e){}
-      if(d&&d.t>antes){
-        clearInterval(reloj); b.disabled=false; b.textContent=txt;
-        if(window.RET&&window.RET.render)window.RET.render();
-      }else if(Date.now()-t0>60000){
-        clearInterval(reloj); b.disabled=false; b.textContent=txt;
-        alert("El panel no respondio en 60 s.");
-      }
-    },250);
+    setTimeout(function(){
+      if(b.disabled){ b.disabled=false; b.textContent=b.dataset.txt;
+        di("El panel no respondió en 60 s."); }
+    },60000);
   });
-
-  /* Tampoco hay "Leer dimensiones": las secciones ya no vienen de Excel,
-     se calculan al dibujar. */
 })();
 </script>
