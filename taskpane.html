@@ -3609,28 +3609,36 @@
         tCola = ((typeof performance !== "undefined") ? performance.now() : Date.now()) - t0;
         ws.activate();
         return context.sync();
-      }).then(function () {
-        /* LA FIGURA VA EN SU PROPIO LOTE, Y DESPUES.
-
-           Estaba encolada junto a los rellenos y los bordes, y ahi hizo un
-           destrozo: si una sola orden de forma no le gusta a Excel, el sync
-           entero se cae y la hoja sale SIN FORMATO -sin colores, sin bordes,
-           sin anchos-, con los valores puestos y nada mas.  Asi salio la
-           primera vez que se probo.
-
-           Separada, lo peor que puede pasar es quedarse sin dibujo. */
-        return dibujar(plan, opciones).then(function (dib) {
-          var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
-          var r = { hoja: plan.nombre, ms: Math.round(t1 - t0),
-                    msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
-                    formas: dib.n, stats: stats };
-          if (dib.error) r.error = "la hoja salió, pero la sección no se pudo "
-                                 + "dibujar: " + dib.error;
-          else if (plan.figura && dib.n === 0)
-            r.error = "la hoja salió sin la sección típica";
-          return r;
-        });
       });
+    }).then(function () {
+      /* LA FIGURA VA EN SU PROPIO LOTE, Y DESPUES.  Y FUERA.
+
+         Dos cosas distintas, las dos aprendidas a golpes.
+
+         EN SU PROPIO LOTE: estaba encolada junto a los rellenos y los
+         bordes, y si una sola orden de forma no le gustaba a Excel, el sync
+         entero se caia y la hoja salia SIN FORMATO -sin colores, sin bordes,
+         sin anchos-, con los valores puestos y nada mas.
+
+         Y FUERA: la llamada estaba AQUI DENTRO, en el .then() del Excel.run
+         de arriba.  Como dibujar() abre su propio Excel.run, quedaba un
+         Excel.run dentro de otro, con el contexto de fuera todavia vivo.
+         Office.js no lo admite, pero tampoco lo dice claro: contesta «falta
+         el argumento, este no es valido o tiene un formato incorrecto» y
+         solo a veces -cuatro hojas de nueve, y no siempre las mismas-.  Por
+         eso aqui salia todo bien y en el Excel de Victor salia un disco
+         gris.  El Excel.run de arriba termina, y solo entonces se dibuja. */
+      return dibujar(plan, opciones);
+    }).then(function (dib) {
+      var t1 = (typeof performance !== "undefined") ? performance.now() : Date.now();
+      var r = { hoja: plan.nombre, ms: Math.round(t1 - t0),
+                msEncolar: Math.round(tCola), msSync: Math.round(t1 - t0 - tCola),
+                formas: dib.n, stats: stats };
+      if (dib.error) r.error = "la hoja salió, pero la sección no se pudo "
+                             + "dibujar: " + dib.error;
+      else if (plan.figura && dib.n === 0)
+        r.error = "la hoja salió sin la sección típica";
+      return r;
     });
   }
 
@@ -5519,7 +5527,7 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v78 · 11-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v84 · 11-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -5655,19 +5663,24 @@ Office.onReady(function(){
 
 /* ---------------- diagnostico ---------------- */
 function revisar(){
-  Excel.run(function(context){
-    /* Un libro en blanco ya sirve: el complemento no necesita nada preparado.
-       Lo unico que se mira es si este libro ya trae un modelo guardado. */
-    return leerModelo().then(function(s){
-      var q = document.getElementById("qModelo"), n = document.getElementById("qNiv");
-      if(!s){ q.textContent = "no"; n.textContent = "—"; return; }
-      q.textContent = "sí";
-      try{
-        var d = JSON.parse(s);
-        n.textContent = (d.n && d.n.length) ? d.n.length : "—";
-        localStorage.setItem("reticula", s);
-      }catch(e){ n.textContent = "—"; }
-    });
+  /* SIN Excel.run AQUI.  Lo tenia, y dentro llamaba a leerModelo(), que abre
+     el suyo: un Excel.run dentro de otro.  Office.js no lo admite y no lo
+     dice claro -contesta «falta el argumento, este no es valido»-, a veces
+     ahi y a veces mas adelante, en la siguiente hoja que toque dibujar.  Y
+     esto corre al ABRIR el panel, antes de que toques nada.
+
+     Un libro en blanco ya sirve: el complemento no necesita nada preparado.
+     Lo unico que se mira es si este libro ya trae un modelo guardado, y de
+     eso ya se encarga leerModelo con su propio contexto. */
+  leerModelo().then(function(s){
+    var q = document.getElementById("qModelo"), n = document.getElementById("qNiv");
+    if(!s){ q.textContent = "no"; n.textContent = "—"; return; }
+    q.textContent = "sí";
+    try{
+      var d = JSON.parse(s);
+      n.textContent = (d.n && d.n.length) ? d.n.length : "—";
+      localStorage.setItem("reticula", s);
+    }catch(e){ n.textContent = "—"; }
   }).catch(function(e){ estado("Error: " + e.message, "err"); });
 }
 
