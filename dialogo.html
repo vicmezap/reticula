@@ -197,6 +197,33 @@
   .eje input{width:100%;background:var(--sheet);color:var(--ink);border:1px solid var(--line);
              border-radius:2px;padding:3px 5px;font:500 12px "IBM Plex Mono",monospace;text-align:right}
   .eje input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+  /* 1.1 Luces · la misma tabla de la hoja de Excel.  Va con scroll propio
+     porque el inspector es estrecho y con doce vanos no cabe: antes que
+     apretar los numeros hasta que no se lean, que se deslice. */
+  .luces-cja{overflow-x:auto;margin:2px 0 0}
+  .luces{border-collapse:collapse;font-size:11px}
+  .luces th,.luces td{border:1px solid var(--line);padding:2px 4px}
+  .luces thead th{background:var(--acc);color:#fff;text-align:center;white-space:nowrap;
+    font:600 10px "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.05em}
+  .luces thead th small{display:block;letter-spacing:0;text-transform:none;
+    font:500 9.5px "IBM Plex Mono",monospace;opacity:.9}
+  .luces thead th small.pr{opacity:.7;font-style:italic}
+  .luces th.dir{text-align:left}
+  .luces th.lab{background:var(--panel);text-align:left;white-space:nowrap;color:var(--ink);
+    font:600 10px "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.04em}
+  .luces .cbx{display:flex;align-items:center;gap:4px;cursor:pointer}
+  .luces td.val{padding:0}
+  .luces td.val input{width:100%;min-width:46px;box-sizing:border-box;border:none;
+    background:transparent;color:var(--ink);text-align:right;padding:3px 4px;
+    font:500 11.5px "IBM Plex Mono",monospace}
+  .luces td.val input:focus{outline:2px solid var(--acc);outline-offset:-2px}
+  .luces td.val input:disabled{color:var(--ink-3);background:var(--panel)}
+  .luces td.tot{text-align:right;white-space:nowrap;background:var(--panel);
+    font:600 11.5px "IBM Plex Mono",monospace}
+  .luces tr.ops td{text-align:center;padding:1px;white-space:nowrap}
+  .luces tr.ops button{border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);
+    border-radius:2px;cursor:pointer;padding:1px 4px;margin:0 1px;font:600 10px sans-serif}
+  .luces tr.ops button:hover{border-color:var(--acc);color:var(--acc-ink)}
   .mini{border:1px solid var(--line);background:var(--sheet);color:var(--ink-2);border-radius:2px;
         cursor:pointer;font:600 12px sans-serif;padding:2px 0;line-height:1.1}
   .mini:hover{border-color:var(--acc);color:var(--acc-ink)}
@@ -3533,7 +3560,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v52 · 10-09-2026";
+  var BUILD="v53 · 10-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -5638,110 +5665,129 @@ var TT={script:performance.now()};
          if(op){op[p-1]=+(op[p-1]+op[p]).toFixed(2);op.splice(p,1);}}
     pr.splice(p,1);
     remap(ejeX,function(k){return k===p?null:(k>p?k-1:k)},-1);limpiarSueltos();render();}
+  /* =====================================================================
+     1.1 LUCES · la tabla de la hoja, dentro del complemento
+
+     Antes esto era una lista: una fila por vano, y el borde opuesto en
+     OTRA lista mas abajo, detras de una casilla.  Para ver si el lote
+     estaba sesgado habia que bajar y comparar de memoria.
+
+     Ahora es la misma tabla del Excel de Victor: una columna por vano,
+     una fila por borde, y la suma a la derecha.  Los dos bordes quedan
+     uno encima del otro, que es donde se ve el sesgo de un vistazo:
+
+        Dirección X  | Vano 1 | Vano 2 |  Σ (m)
+        X (SUPERIOR) |  3.69  |  3.10  |  6.79
+        X" (INFERIOR)|  3.06  |  4.00  |  7.06
+
+     La fila de abajo esta SIEMPRE, como en la hoja.  Mientras la casilla
+     de su nombre no este marcada, no hay dx2 en el modelo: la fila ensena
+     los mismos numeros de arriba en gris y no deja escribir, porque eso
+     es exactamente lo que valen los dos bordes de un lote recto.
+     ===================================================================== */
   function editorEjes(){
-    /* --- el lado opuesto, para plantas irregulares --------------------
-       Por defecto no existe: la planta es un rectangulo y los dos bordes
-       de cada direccion miden lo mismo.  Solo cuando el lote esta sesgado
-       -20.55 m por la calle y 21.09 por el lindero- se activa el segundo
-       lado y se escriben sus vanos. */
-    function lados(){
-      var m=N();
-      ["X","Y"].forEach(function(eje){
-        var ejeX=(eje==="X"), cont=$("#lado"+eje);
-        if(!cont)return;
-        var base=ejeX?m.dx:m.dy, otro=ejeX?m.dx2:m.dy2;
-        var nom=ejeX?["arriba","abajo"]:["izquierda","derecha"];
-        var h='<label class="pf" style="margin:6px 0 2px"><input type="checkbox" id="usa'+eje+
-              '"'+(otro?" checked":"")+'> <span>El borde de '+nom[1]+
-              ' mide distinto</span></label>';
-        if(otro){
-          h+='<div class="lbl" style="margin:4px 0 2px">Borde de '+nom[1]+'</div>';
-          otro.forEach(function(d,t){
-            h+='<div class="eje"><span>'+nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1)+
-               '</span><input type="text" inputmode="decimal" data-op="'+eje+
-               '" data-t="'+t+'" value="'+d.toFixed(2)+'"></div>';
-          });
-          var sa=acum(base,base.length), sb=acum(otro,otro.length);
-          h+='<p class="nota" style="margin:4px 0 0">'+nom[0]+' '+sa.toFixed(2)+
-             ' m · '+nom[1]+' '+sb.toFixed(2)+' m'+
-             (Math.abs(sa-sb)>0.005?('  ·  <b>'+(sb-sa>0?"+":"")+(sb-sa).toFixed(2)+
-             ' m de sesgo</b>'):'  ·  iguales')+'</p>';
-        }
-        cont.innerHTML=h;
-        var chk=$("#usa"+eje);
-        if(chk)chk.onchange=function(){
-          snap();
-          if(this.checked){ if(ejeX)m.dx2=m.dx.slice(); else m.dy2=m.dy.slice(); }
-          else { if(ejeX)delete m.dx2; else delete m.dy2; }
-          render();
-        };
-        cont.querySelectorAll("input[data-op]").forEach(function(inp){
-          function aplicar(){
-            var v=leerNum(inp.value), arr=ejeX?m.dx2:m.dy2, t=+inp.dataset.t;
-            if(v===null||!(v>0)){inp.value=arr[t].toFixed(2);
-              return toast("El vano tiene que ser un número mayor que cero.")}
-            if(Math.abs(v-arr[t])<1e-9)return;
-            snap();arr[t]=+v.toFixed(3);render();
-          }
-          inp.addEventListener("change",aplicar);
-          inp.addEventListener("blur",aplicar);
-          inp.addEventListener("keydown",function(e){
-            if(e.key==="Enter"){e.preventDefault();aplicar()}});
-        });
-      });
-    }
-
-    function pinta(cont,arr,ejeX){
-      cont.innerHTML="";
-      arr.forEach(function(d,t){
-        var row=document.createElement("div");row.className="eje";
-        var nom=nomEje(ejeX,t)+"–"+nomEje(ejeX,t+1);
-        /* El vano lo pones tu: ni tope inferior ni superior.  Habia un rango
-           de 1 a 20 m que no sale de ningun criterio del libro y dejaba fuera
-           cosas reales, como un retranqueo de 0.55 m o una nave de 25 m.
-
-           Y va como TEXTO, no como number: con type="number" el navegador
-           valida por su cuenta -min, max, step- y ante un valor que no le
-           cuadra devuelve cadena vacia, asi que lo tecleado se pierde sin
-           que nadie diga nada.  Aqui el unico que juzga el valor es leerNum. */
-        row.innerHTML='<span'+(esPrima(ejeX,t)?' style="color:var(--ink-2)"':'')+
-          '>'+nom+'</span><input type="text" inputmode="decimal" value="'+
-          d.toFixed(2)+'" aria-label="Luz '+nom+'"><button class="mini" title="Partir en dos con un eje principal">÷</button>'+
-          '<button class="mini" title="Insertar un eje prima: no parte las vigas ni las losas que cruza">′</button>'+
-          '<button class="mini" title="Eliminar el eje '+nomEje(ejeX,t+1)+'">✕</button>';
-        var cja=row.querySelector("input");
-        function aplicar(){
-          /* lo unico que se sigue exigiendo es que sea positivo: un vano de
-             cero o negativo no es un vano, es un modelo roto */
-          var v=leerNum(cja.value);
-          if(v===null||!(v>0)){cja.value=arr[t].toFixed(2);
-            return toast("El vano tiene que ser un número mayor que cero.")}
-          if(Math.abs(v-arr[t])<1e-9)return;
-          snap();arr[t]=+v.toFixed(3);render();
-        }
-        /* change no llega a dispararse si sales de la casilla sin soltarla
-           -por ejemplo pulsando directamente otro boton-, asi que se escucha
-           tambien blur, y Enter aplica sin esperar a nada */
-        cja.addEventListener("change",aplicar);
-        cja.addEventListener("blur",aplicar);
-        cja.addEventListener("keydown",function(e){
-          if(e.key==="Enter"){e.preventDefault();aplicar()}});
-        row.querySelectorAll("button")[0].onclick=function(){partir(ejeX,t,false)};
-        row.querySelectorAll("button")[1].onclick=function(){partir(ejeX,t,true)};
-        row.querySelectorAll("button")[2].onclick=function(){borrarEje(ejeX,t+1)};
-        cont.appendChild(row);});
-      var add=document.createElement("button");add.className="btn";add.style.marginTop="4px";
-      add.textContent="+ tramo al final";
-      add.onclick=function(){if(arr.length>=12)return toast("Máximo 13 ejes.");snap();
-        arr.push(ejeX?5:6);
-        var op=ejeX?N().dx2:N().dy2; if(op)op.push(ejeX?5:6);
-        render()};
-      cont.appendChild(add);
-    }
-    pinta($("#ejesX"),N().dx,true);pinta($("#ejesY"),N().dy,false);
-    lados();
+    tablaLuces($("#ejesX"),true);
+    tablaLuces($("#ejesY"),false);
     $("#totX").textContent=posX(nx()-1).toFixed(2)+" m";
     $("#totY").textContent=posY(ny()-1).toFixed(2)+" m";
+    ver("#ladoX",false); ver("#ladoY",false);
+  }
+
+  function tablaLuces(cont,ejeX){
+    if(!cont)return;
+    var m=N(), base=ejeX?m.dx:m.dy, otro=ejeX?m.dx2:m.dy2;
+    var esp=otro||base;                       /* lo que ensena la 2.a fila */
+    var nom=ejeX?["X (SUPERIOR)","X″ (INFERIOR)"]:["Y (IZQUIERDA)","Y″ (DERECHA)"];
+    var sa=acum(base,base.length), sb=acum(esp,esp.length);
+    var i,h;
+
+    h='<div class="luces-cja"><table class="luces">'+
+      '<thead><tr><th class="dir">Dirección '+(ejeX?"X":"Y")+'</th>';
+    for(i=0;i<base.length;i++)
+      h+='<th>Vano '+(i+1)+'<small'+(esPrima(ejeX,i+1)?' class="pr"':'')+'>'+
+         nomEje(ejeX,i,m)+"–"+nomEje(ejeX,i+1,m)+'</small></th>';
+    h+='<th class="dir" style="text-align:right">Σ (m)</th></tr></thead><tbody>';
+
+    /* fila 1 · el borde de referencia */
+    h+='<tr><th class="lab">'+nom[0]+'</th>';
+    for(i=0;i<base.length;i++)
+      h+='<td class="val"><input type="text" inputmode="decimal" data-f="1" data-t="'+i+
+         '" value="'+base[i].toFixed(2)+'" aria-label="'+nom[0]+' vano '+(i+1)+'"></td>';
+    h+='<td class="tot">'+sa.toFixed(2)+'</td></tr>';
+
+    /* fila 2 · el borde opuesto, con su casilla en el nombre */
+    h+='<tr><th class="lab"><label class="cbx"><input type="checkbox" id="usa'+
+       (ejeX?"X":"Y")+'"'+(otro?" checked":"")+'> '+nom[1]+'</label></th>';
+    for(i=0;i<esp.length;i++)
+      h+='<td class="val"><input type="text" inputmode="decimal" data-f="2" data-t="'+i+
+         '" value="'+esp[i].toFixed(2)+'"'+(otro?"":" disabled")+
+         ' aria-label="'+nom[1]+' vano '+(i+1)+'"></td>';
+    h+='<td class="tot">'+sb.toFixed(2)+'</td></tr>';
+
+    /* fila 3 · lo que se puede hacer con cada vano */
+    h+='<tr class="ops"><th class="lab"></th>';
+    for(i=0;i<base.length;i++)
+      h+='<td><button data-op="p" data-t="'+i+'" title="Partir en dos con un eje principal">÷</button>'+
+         '<button data-op="q" data-t="'+i+'" title="Insertar un eje prima: no parte las vigas ni las losas que cruza">′</button>'+
+         '<button data-op="x" data-t="'+i+'" title="Eliminar el eje '+nomEje(ejeX,i+1,m)+'">✕</button></td>';
+    h+='<td><button data-op="+" title="Añadir un vano al final">+ tramo</button></td>';
+    h+='</tr></tbody></table></div>';
+
+    /* el sesgo, dicho con todas las letras cuando lo hay */
+    if(Math.abs(sa-sb)>0.005)
+      h+='<p class="nota" style="margin:4px 0 0">Lote sesgado: <b>'+
+         (sb-sa>0?"+":"")+(sb-sa).toFixed(2)+' m</b> entre un borde y el otro.</p>';
+    cont.innerHTML=h;
+
+    /* ---- las casillas de medida ---- */
+    cont.querySelectorAll("input[data-t]").forEach(function(inp){
+      function aplicar(){
+        var fila=inp.dataset.f, t=+inp.dataset.t;
+        var arr=(fila==="2")?(ejeX?N().dx2:N().dy2):(ejeX?N().dx:N().dy);
+        if(!arr)return;                       /* fila espejo: no se escribe */
+        /* Lo unico que se exige es que sea positivo: un vano de cero o
+           negativo no es un vano, es un modelo roto.  Ni tope inferior ni
+           superior, que un retranqueo de 0.55 m y una nave de 25 m son
+           las dos cosas reales. */
+        var v=leerNum(inp.value);
+        if(v===null||!(v>0)){inp.value=arr[t].toFixed(2);
+          return toast("El vano tiene que ser un número mayor que cero.")}
+        if(Math.abs(v-arr[t])<1e-9)return;
+        snap(); arr[t]=+v.toFixed(3); render();
+      }
+      /* change no llega a dispararse si sales de la casilla sin soltarla
+         -por ejemplo pulsando directamente otro boton-, asi que se escucha
+         tambien blur, y Enter aplica sin esperar a nada */
+      inp.addEventListener("change",aplicar);
+      inp.addEventListener("blur",aplicar);
+      inp.addEventListener("keydown",function(e){
+        if(e.key==="Enter"){e.preventDefault();aplicar()}});
+    });
+
+    /* ---- la casilla del borde opuesto ---- */
+    var chk=cont.querySelector("#usa"+(ejeX?"X":"Y"));
+    if(chk)chk.onchange=function(){
+      snap();
+      var mm=N();
+      if(this.checked){ if(ejeX)mm.dx2=mm.dx.slice(); else mm.dy2=mm.dy.slice(); }
+      else { if(ejeX)delete mm.dx2; else delete mm.dy2; }
+      render();
+    };
+
+    /* ---- partir, prima, borrar y añadir ---- */
+    cont.querySelectorAll("button[data-op]").forEach(function(b){
+      var op=b.dataset.op, t=+b.dataset.t;
+      b.onclick=function(){
+        if(op==="p")return partir(ejeX,t,false);
+        if(op==="q")return partir(ejeX,t,true);
+        if(op==="x")return borrarEje(ejeX,t+1);
+        var arr=ejeX?N().dx:N().dy;
+        if(arr.length>=12)return toast("Máximo 13 ejes.");
+        snap(); arr.push(ejeX?5:6);
+        var o2=ejeX?N().dx2:N().dy2; if(o2)o2.push(ejeX?5:6);
+        render();
+      };
+    });
   }
 
   $("#btnGuardar").onclick=function(){
