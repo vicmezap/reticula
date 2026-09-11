@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v99 · 11-09-2026";
+  var BUILD="v100 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3804,9 +3804,19 @@ var TT={script:performance.now()};
     var A2,B2;
     if(ejeX){ A2=nodo(t.desde,j+1,m); B2=nodo(t.hasta,j+1,m); }
     else    { A2=nodo(i+1,t.desde,m); B2=nodo(i+1,t.hasta,m); }
-    var L2=dist(A2,B2);
-    t.Lcorto=Math.min(t.L,L2);
-    t.L=Math.max(t.L,L2);
+    /* LOS DOS BORDES, CADA UNO CON SU NOMBRE.
+
+       L1 es el de la linea por la que se pregunto -la fila j, o la columna
+       i-; L2 el de enfrente.  L se queda con el LARGO, que es el que manda
+       para el peralte de la losa.
+
+       Pero quien mide cuanto abarca UNA COLUMNA necesita el borde de SU
+       linea, no el largo: si no, la columna del lado estrecho se cree que
+       abarca lo del lado ancho.  Por eso van los dos. */
+    t.L1=t.L;
+    t.L2=dist(A2,B2);
+    t.Lcorto=Math.min(t.L1,t.L2);
+    t.L=Math.max(t.L1,t.L2);
     return t;
   }
 
@@ -3966,7 +3976,13 @@ var TT={script:performance.now()};
   function medCol(i,j,m){
     m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0,vx={},vy={};
     ps.forEach(function(q){
-      var lx=tramoLosa("x",q[0],q[1],m).L/2, ly=tramoLosa("y",q[0],q[1],m).L/2;
+      /* EL BORDE DE ESTA COLUMNA, no el mas largo del paño.  tramoLosa
+         devuelve L = el largo de los dos -que es lo que manda para el
+         peralte de la losa- y L1/L2 por separado.  Aqui hace falta el de la
+         linea donde esta la columna: para el paño (q0,q1), la fila j es la
+         q1 o la q1+1, y la columna i es la q0 o la q0+1. */
+      var tx=tramoLosa("x",q[0],q[1],m), ty=tramoLosa("y",q[0],q[1],m);
+      var lx=(j===q[1]?tx.L1:tx.L2)/2, ly=(i===q[0]?ty.L1:ty.L2)/2;
       /* EL TROZO DE ESTA ESQUINA, no un cuarto del paño: en un paño en
          punta los cuatro trozos no son iguales.  Ver areaEsquina(). */
       at+=areaEsquina(q[0],q[1],i,j,m); vx[q[0]]=lx; vy[q[1]]=ly;});
@@ -7437,7 +7453,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
