@@ -3588,7 +3588,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v94 · 11-09-2026";
+  var BUILD="v99 · 11-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3975,7 +3975,14 @@ var TT={script:performance.now()};
     if(vy[j-1]!=null)by+=vy[j-1];
     if(vy[j]  !=null)by+=vy[j];
     var n=ps.length;
-    return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",at:at,bx:bx,by:by,n:n};
+    /* CUANTO ABARCA A CADA LADO, por separado.  El recuadro de la pantalla
+       se dibujaba con medio vano de la RETICULA y los numeros decian medio
+       vano REAL: con un eje prima sin apoyo la losa cruza varios tramos y
+       las dos cuentas se separan.  Se veia un recuadro que no llegaba a
+       donde decia el numero.  Ahora el dibujo usa estos mismos lados. */
+    var lados={izq:vx[i-1]||0, der:vx[i]||0, arr:vy[j-1]||0, aba:vy[j]||0};
+    return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",
+           at:at,bx:bx,by:by,n:n,lados:lados};
   }
   /* Ancho tributario de una viga: medio paño a cada lado que tenga losa. */
   function anchoTrib(o,i,j,m){
@@ -4203,9 +4210,17 @@ var TT={script:performance.now()};
   /* ---------- dibujo ---------- */
   var SVG="http://www.w3.org/2000/svg";
   function el(n,a){var e=document.createElementNS(SVG,n);for(var k in a)e.setAttribute(k,a[k]);return e}
-  function txt(g,x,y,s,col,size,anchor){
-    var t=el("text",{x:x,y:y,"text-anchor":anchor||"middle","font-size":size||10,fill:col||"var(--ink-3)",
-      "font-family":"IBM Plex Mono, monospace"});t.textContent=s;g.appendChild(t);return t}
+  function txt(g,x,y,s,col,size,anchor,halo){
+    var at={x:x,y:y,"text-anchor":anchor||"middle","font-size":size||10,
+            fill:col||"var(--ink-3)","font-family":"IBM Plex Mono, monospace"};
+    /* HALO.  Las cotas de la zona tributaria caian encima de los rotulos de
+       las secciones -«25x35» partido por una linea de cota- y no se leia ni
+       una cosa ni la otra.  Un borde blanco por debajo del trazo las separa
+       sin tapar el dibujo.  paint-order es lo que hace que el borde vaya
+       DEBAJO de la letra y no por encima. */
+    if(halo){ at["paint-order"]="stroke"; at.stroke="var(--sheet)";
+              at["stroke-width"]=3.5; at["stroke-linejoin"]="round"; }
+    var t=el("text",at);t.textContent=s;g.appendChild(t);return t}
   /* Planta de solo lectura: la geometria no se toca aqui, solo el uso.
      Vigas y columnas van en gris tenue para reconocer el plano sin competir
      con el color del ambiente. */
@@ -4655,16 +4670,80 @@ var TT={script:performance.now()};
     if(q&&q.t==="col"&&m.cols[key(q.i,q.j)]){
       var d0=medCol(q.i,q.j),ps=panos(q.i,q.j);
       if(ps.length){
-        var x0=X(q.i)-(ps.some(function(p){return p[0]===q.i-1})?m.dx[q.i-1]/2*esc:0),
-            x1b=X(q.i)+(ps.some(function(p){return p[0]===q.i})?m.dx[q.i]/2*esc:0),
-            y0=Y(q.j)-(ps.some(function(p){return p[1]===q.j-1})?m.dy[q.j-1]/2*esc:0),
-            y1b=Y(q.j)+(ps.some(function(p){return p[1]===q.j})?m.dy[q.j]/2*esc:0);
+        /* EL RECUADRO SE DIBUJA CON LOS MISMOS LADOS QUE DICEN LAS COTAS.
+           Antes salia de medio vano de la RETICULA y las cotas decian medio
+           vano REAL: el recuadro no llegaba a donde decia el numero. */
+        var L=d0.lados;
+        var x0=X(q.i)-L.izq*esc, x1b=X(q.i)+L.der*esc,
+            y0=Y(q.j)-L.arr*esc, y1b=Y(q.j)+L.aba*esc;
         g.appendChild(el("rect",{x:x0,y:y0,width:x1b-x0,height:y1b-y0,fill:"var(--trib-fill)",
           stroke:"var(--trib)","stroke-width":1.6,"stroke-dasharray":"7 4"}));
-        g.appendChild(el("line",{x1:x0,y1:y0-13,x2:x1b,y2:y0-13,stroke:"var(--trib)","stroke-width":.9}));
-        txt(g,(x0+x1b)/2,y0-17,d0.bx.toFixed(3)+" m","var(--trib)",10);
-        g.appendChild(el("line",{x1:x1b+13,y1:y0,x2:x1b+13,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
-        txt(g,x1b+17,(y0+y1b)/2+3,d0.by.toFixed(3)+" m","var(--trib)",10,"start");
+        /* las dos lineas medias, que son las que parten el paño: sin ellas
+           el recuadro parece puesto a ojo */
+        if(L.izq&&L.der)
+          g.appendChild(el("line",{x1:X(q.i),y1:y0,x2:X(q.i),y2:y1b,
+            stroke:"var(--trib)","stroke-width":.8,"stroke-dasharray":"2 3"}));
+        if(L.arr&&L.aba)
+          g.appendChild(el("line",{x1:x0,y1:Y(q.j),x2:x1b,y2:Y(q.j),
+            stroke:"var(--trib)","stroke-width":.8,"stroke-dasharray":"2 3"}));
+        /* cotas fuera, con sus patillas, como una cota de plano */
+        var ya=y0-15;
+        g.appendChild(el("line",{x1:x0,y1:ya,x2:x1b,y2:ya,stroke:"var(--trib)","stroke-width":.9}));
+        g.appendChild(el("line",{x1:x0,y1:ya-4,x2:x0,y2:ya+4,stroke:"var(--trib)","stroke-width":.9}));
+        g.appendChild(el("line",{x1:x1b,y1:ya-4,x2:x1b,y2:ya+4,stroke:"var(--trib)","stroke-width":.9}));
+        txt(g,(x0+x1b)/2,ya-5,d0.bx.toFixed(3)+" m","var(--trib)",10,null,true);
+        var xd=x1b+15;
+        g.appendChild(el("line",{x1:xd,y1:y0,x2:xd,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
+        g.appendChild(el("line",{x1:xd-4,y1:y0,x2:xd+4,y2:y0,stroke:"var(--trib)","stroke-width":.9}));
+        g.appendChild(el("line",{x1:xd-4,y1:y1b,x2:xd+4,y2:y1b,stroke:"var(--trib)","stroke-width":.9}));
+        txt(g,xd+6,(y0+y1b)/2+3,d0.by.toFixed(3)+" m","var(--trib)",10,"start",true);
+        /* Y EL AREA, QUE ES LO QUE DE VERDAD USA LA TABLA.
+
+           Los dos numeros de fuera son MEDIOS VANOS: cuanto abarca la
+           columna a cada lado.  En una planta recta su producto es el area
+           tributaria y no hacia falta decirlo.  En una planta en punta NO
+           lo es -se llevan un 4 % en tu caso- porque el area se mide sobre
+           el cuadrilatero real y el recuadro de la pantalla se dibuja
+           recto.  Sin este numero, el dibujo decia una cosa y la hoja otra,
+           y no habia forma de saber cual mandaba. */
+        /* DENTRO, LO QUE DE VERDAD USA LA TABLA.
+
+           Las dos cotas de fuera son MEDIOS VANOS.  En una planta recta su
+           producto es el area tributaria y no hacia falta decirla; en una
+           planta en punta NO lo es -se llevan un 4 %-, porque el area se
+           mide sobre el cuadrilatero real y el lienzo se dibuja recto.
+
+           Y la UBICACION, porque no es un adorno: de ella sale el
+           coeficiente k -0.30 dentro, 0.20 exterior, 0.10 en esquina- y es
+           lo que mas mueve la seccion.  Va aqui para poder comprobarla sin
+           irse a la tabla. */
+        /* FUERA DEL RECUADRO, DEBAJO.  Dentro se pisaba con los rotulos
+           que ya hay en el paño -el «e = 15 cm» de la losa cae justo en el
+           centro del paño, que es una esquina del recuadro- y con la cota
+           de la derecha.  Dos textos superpuestos no se leen ninguno. */
+        /* UNA PLACA, NO UN TEXTO SUELTO.
+
+           Se probo dentro del recuadro y se pisaba con el «e = 15 cm» de la
+           losa -que cae en el centro del paño, o sea en una esquina del
+           recuadro-; se probo debajo y se pisaba con la viga y con la
+           seccion de la columna.  En una planta llena no hay hueco libre:
+           lo que hay que hacer es tapar, como una etiqueta de plano.
+
+           Va centrada en el recuadro, opaca, con su borde.  Encima de todo
+           porque es lo que se acaba de pedir mirar. */
+        var l1="A trib = "+d0.at.toFixed(3)+" m²";
+        var l2=d0.tipo+" · k = "
+              +(d0.tipo==="Interior"?"0.30":d0.tipo==="Exterior"?"0.20":"0.10");
+        var an=Math.max(l1.length*6.7,l2.length*5.9)+16;
+        var cx=(x0+x1b)/2, cy=(y0+y1b)/2;
+        /* y que no invada la cota de la derecha, que va en x1b+15: si la
+           placa es mas ancha que el recuadro se corre a la izquierda */
+        if(cx+an/2 > x1b+5) cx = x1b+5-an/2;
+        g.appendChild(el("rect",{x:cx-an/2,y:cy-17,width:an,height:34,rx:4,
+          fill:"var(--sheet)",stroke:"var(--trib)","stroke-width":1,
+          "fill-opacity":.94}));
+        txt(g,cx,cy-2,l1,"var(--trib)",11);
+        txt(g,cx,cy+12,l2,"var(--trib)",9.5);
       }
     }
     if(q&&q.t==="viga"&&m.vigas[key(q.o,q.i,q.j)]){
