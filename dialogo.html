@@ -162,6 +162,19 @@
   .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
   svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
   .hit{cursor:pointer;fill:transparent}
+  /* los avisos de la pestana de comprobacion */
+  .avisos{display:grid;gap:6px;margin-top:8px}
+  .av{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;
+      background:var(--sheet);border:1px solid var(--line-soft);
+      border-left:3px solid var(--line);border-radius:2px;padding:7px 10px;font-size:13px}
+  .av-g{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11.5px;
+        letter-spacing:.07em;text-transform:uppercase;padding-top:2px;white-space:nowrap}
+  .av-t{color:var(--ink-2);line-height:1.45}
+  .av-b{display:flex;gap:5px;align-items:center;white-space:nowrap}
+  .av-b .btn{padding:2px 8px;font-size:12px}
+  .modo .cuenta{display:inline-block;margin-left:6px;padding:0 5px;border-radius:8px;
+                color:#fff;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+                letter-spacing:0;vertical-align:1px}
   .hint{position:absolute;left:14px;bottom:10px;font-size:11.5px;color:var(--ink-3);
         background:var(--sheet);padding:2px 6px;border:1px solid var(--line-soft);border-radius:2px}
   .zoom{position:absolute;right:14px;top:10px;display:flex;gap:4px}
@@ -347,9 +360,15 @@
   </header>
 
   <div class="modos" role="group" aria-label="Modo de trabajo">
-    <button class="modo" data-modo="proyecto" aria-pressed="false">Proyecto</button>
-    <button class="modo" data-modo="modelo" aria-pressed="true">Modelo 2D</button>
-    <button class="modo" data-modo="usos" aria-pressed="false">Usos y cargas</button>
+    <!-- El data-modo es la identidad; el texto es solo lo que se lee.  No se
+         renombran: render() y pintaNiveles() comparan estas cadenas tal cual.
+         El orden SI cambia: se abre por las decisiones, que es lo que se
+         entrega, y los datos van al final porque se tocan una vez. -->
+    <button class="modo" data-modo="decisiones" aria-pressed="false">Decisiones</button>
+    <button class="modo" data-modo="modelo" aria-pressed="true">Planta</button>
+    <button class="modo" data-modo="usos" aria-pressed="false">Cargas</button>
+    <button class="modo" data-modo="comprobacion" aria-pressed="false">Comprobación</button>
+    <button class="modo" data-modo="proyecto" aria-pressed="false">Datos</button>
     <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button>
   </div>
 
@@ -446,6 +465,8 @@
       <div class="edif" id="edificio" hidden></div>
       <div class="edif" id="panelHojas" hidden></div>
       <div class="edif" id="panelProy" hidden></div>
+      <div class="edif" id="panelDeci" hidden></div>
+      <div class="edif" id="panelComp" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
@@ -3927,7 +3948,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v110 · 12-09-2026";
+  var BUILD="v118 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4544,7 +4565,7 @@ var TT={script:performance.now()};
         if(pesoAmb(o.uso,o.amb||"")===null){
           var c="N"+(k+1)+"|"+o.uso+"|"+(o.amb||"");
           if(!vistos[c]){vistos[c]=1;
-            pr.push("N"+(k+1)+": "+(o.amb||o.uso)+" no tiene carga viva. Escríbela en Usos y cargas.");}
+            pr.push("N"+(k+1)+": "+(o.amb||o.uso)+" no tiene carga viva. Escríbela en Cargas.");}
         }}
     });
     return pr;
@@ -4791,6 +4812,131 @@ var TT={script:performance.now()};
       txt(g,(X(i,ny()-1)+X(i+1,ny()-1))/2,h-16,nm(ladoX2(m)[i]));
     for(j=0;j<ny()-1;j++)
       txt(g,16,(Y(j,0)+Y(j+1,0))/2+3,nm(m.dy[j]));
+  }
+
+  /* =====================================================================
+     DECISIONES y COMPROBACION
+
+     Entran vacias a proposito.  Esta etapa solo abre el hueco y comprueba
+     que el panel sigue funcionando con seis pestanas en vez de cuatro; lo
+     que va dentro llega despues, y llega leyendo MANDA y las comprobaciones
+     que hoy se tiran por un toast.
+
+     Se dice lo que falta en vez de ensenar una pantalla a medias: una
+     pestana que promete algo y no lo da es peor que una que avisa.
+     ===================================================================== */
+  function enObras(cont, titulo, lineas){
+    var e=$(cont); if(!e)return;
+    e.innerHTML='<div class="sec"><h3>'+titulo+'</h3>'+
+      '<p class="nota">'+lineas.join('</p><p class="nota">')+'</p></div>';
+  }
+  function pintaDecisiones(){
+    enObras("#panelDeci", "Decisiones",
+      ["Aquí van las seis decisiones del edificio —peralte de losa, sección "+
+       "de viga, viga chata, columna, placa y zapata— cada una con su número "+
+       "adoptado, el elemento que la manda y de dónde sale.",
+       "El criterio de quién manda ya existe y es uno solo: oviedo/manda.js. "+
+       "Esta pantalla lo va a leer de ahí, no a decidirlo por su cuenta."]);
+  }
+  /* =====================================================================
+     LA PESTANA DE COMPROBACION
+
+     Los avisos se quedan PUESTOS.  Antes salian por un toast de 2.8 segundos
+     que ensenaba tres de N y no dejaba rastro: si estabas mirando otra cosa,
+     el aviso ya no habia existido nunca.
+
+     Van por gravedad y no por orden de aparicion, porque lo que decide si
+     sigues o paras es lo peor que hay, no lo primero que salio.  Y cada uno
+     lleva a donde esta: «Ir al elemento» cambia de nivel, de pestana y
+     selecciona la cosa.
+     ===================================================================== */
+  var GRAV={grave:{n:"Grave",c:"var(--trib)",o:0},
+            revisar:{n:"Revisar",c:"#b26a00",o:1},
+            blando:{n:"Leve",c:"var(--ink-3)",o:2}};
+
+  /* El numero en la propia pestana.  Sin el, los avisos se quedan puestos
+     pero hay que acordarse de ir a mirarlos, que es casi lo mismo que
+     perderlos. */
+  function marcaAvisos(){
+    var b=document.querySelector('.modo[data-modo="comprobacion"]'); if(!b)return;
+    var ab=avisosAbiertos(), graves=ab.filter(function(a){return a.gravedad==="grave"}).length;
+    var n=b.querySelector(".cuenta");
+    if(!ab.length){ if(n)n.remove(); return; }
+    if(!n){ n=document.createElement("span"); n.className="cuenta"; b.appendChild(n); }
+    n.textContent=ab.length;
+    n.style.background=graves?"var(--trib)":"#b26a00";
+  }
+
+  function pintaComprobacion(){
+    var e=$("#panelComp"); if(!e)return;
+    var todos=revisarModelo();
+    var abiertos=todos.filter(function(a){return !VISTOS[claveAviso(a)]});
+    var vistos=todos.length-abiertos.length;
+    abiertos.sort(function(a,b){
+      var d=GRAV[a.gravedad].o-GRAV[b.gravedad].o; if(d)return d;
+      return (a.nivel||0)-(b.nivel||0);
+    });
+    var cuenta={grave:0,revisar:0,blando:0};
+    abiertos.forEach(function(a){cuenta[a.gravedad]++});
+
+    var h='<div class="sec"><h3>Avisos abiertos</h3>';
+    if(!todos.length){
+      h+='<p class="nota">Nada que revisar: cada paño está apoyado en vigas y '+
+         'columnas, las luces dan y las cargas están puestas.</p>';
+    }else if(!abiertos.length){
+      h+='<p class="nota">Los '+vistos+' aviso(s) están marcados como vistos. '+
+         '<button class="btn" data-verall="1">Volver a enseñarlos</button></p>';
+    }else{
+      h+='<p class="nota">'+
+         [["grave","que hay que arreglar"],["revisar","por mirar"],
+          ["blando","leve(s)"]].filter(function(p){return cuenta[p[0]]})
+           .map(function(p){return '<b style="color:'+GRAV[p[0]].c+'">'+
+                cuenta[p[0]]+'</b> '+p[1]}).join(" · ")+
+         (vistos?'  ·  '+vistos+' marcado(s) como visto(s). '+
+                 '<button class="btn" data-verall="1">Volver a enseñarlos</button>':'')+
+         '</p><div class="avisos">';
+      abiertos.forEach(function(a,n){
+        var g=GRAV[a.gravedad];
+        h+='<div class="av" style="border-left-color:'+g.c+'">'+
+             '<span class="av-g" style="color:'+g.c+'">'+g.n+'</span>'+
+             '<span class="av-t">'+
+               (a.donde?'<b>'+a.donde+'</b> · ':(a.nivel?'<b>N'+a.nivel+'</b> · ':''))+
+               a.texto+'</span>'+
+             '<span class="av-b">'+
+               (a.ir?'<button class="btn" data-ir="'+n+'">Ir al elemento</button>':'')+
+               '<button class="btn" data-visto="'+n+'">Ya lo vi</button>'+
+             '</span></div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+    h+=bloquePlacas();
+    e.innerHTML=h;
+
+    /* los botones.  Se guarda la lista ordenada para que el indice del boton
+       sea el mismo que el usuario esta viendo. */
+    e.querySelectorAll("[data-ir]").forEach(function(b){
+      b.onclick=function(){
+        var a=abiertos[+b.dataset.ir]; if(!a||!a.ir)return;
+        if(a.nivel)S.act=Math.min(a.nivel-1,S.niveles.length-1);
+        S.vista="plano";
+        /* elegirModo() limpia la seleccion -y hace bien: al cambiar de
+           pestana a mano, lo seleccionado ya no viene a cuento-.  Asi que la
+           seleccion va DESPUES, o el boton te deja en el sitio correcto
+           mirando nada, que es lo que hacia. */
+        elegirModo("modelo");
+        S.sel=a.ir; render();
+      };
+    });
+    e.querySelectorAll("[data-visto]").forEach(function(b){
+      b.onclick=function(){
+        var a=abiertos[+b.dataset.visto]; if(!a)return;
+        VISTOS[claveAviso(a)]=1; render();
+      };
+    });
+    e.querySelectorAll("[data-verall]").forEach(function(b){
+      b.onclick=function(){ VISTOS={}; render(); };
+    });
   }
 
   /* ---------- secciones 1 y 3 ---------- */
@@ -6353,9 +6499,22 @@ var TT={script:performance.now()};
      una retícula recta.  El aviso se queda, pero ya no para disculpar el
      plano sino para DECIR el sesgo, que es lo primero que hay que mirar en
      una planta asi. */
+  /* LAS PESTANAS QUE OCUPAN TODO EL ANCHO, y por tanto NO ensenan el plano.
+     Estaba escrita dentro de render() como un «hojas||proy||deci||comp», y
+     cualquiera que necesitara la misma pregunta -por ejemplo, si tiene
+     sentido hablar de la planta- tenia que escribir su propia copia. */
+  function sinPlano(){
+    return S.modo==="hojas" || S.modo==="proyecto" ||
+           S.modo==="decisiones" || S.modo==="comprobacion";
+  }
+
   function avisaIrregular(){
     var e=$("#avisoIrreg"); if(!e)return;
     var m=N();
+    /* En Datos o en Hojas Excel no hay plano a la vista: un aviso sobre la
+       geometria de la planta ahi no avisa de nada, solo ocupa sitio.  Salia
+       en las seis pestanas. */
+    if(sinPlano()){ver(e,false);return}
     if(!irregular(m)){ver(e,false);return}
     var sx=acum(ladoX2(m),ladoX2(m).length)-acum(m.dx,m.dx.length);
     var sy=acum(ladoY2(m),ladoY2(m).length)-acum(m.dy,m.dy.length);
@@ -6372,6 +6531,7 @@ var TT={script:performance.now()};
     if(md==="usos")S.vista="plano";
     document.querySelectorAll(".modo").forEach(function(o){
       o.setAttribute("aria-pressed",o.dataset.modo===md)});
+    marcaAvisos();
     render();
   }
   document.querySelectorAll(".modo").forEach(function(b){
@@ -7260,52 +7420,147 @@ var TT={script:performance.now()};
      leer de vuelta lo que habia salido.  Ahora el calculo esta aqui, se hace
      solo al dibujar, y las hojas se generan ya rellenas desde la pestana
      Hojas Excel. */
-  $("#btnCheck").onclick=function(){
-    var m=N(),pr=[],i,j;
-    for(i=0;i<nx();i++)for(j=0;j<ny();j++)
-      if(panos(i,j).length&&!m.cols[key(i,j)])pr.push("nudo "+ejeCol(i,j)+" con losa sin columna");
-    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)
-      if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
-        pr.push("borde "+eX(i)+eX(i+1)+"-"+eY(j)+" sin viga en X");
-    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)
-      if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
-        pr.push("borde "+eX(i)+"-"+eY(j)+eY(j+1)+" sin viga en Y");
-    /* Ahora que el vano no tiene tope inferior, puede quedar mas corto que
-       los apoyos que lo cierran.  medViga pone un suelo para no dividir por
-       cero, pero ese numero no es una luz: hay que decirlo, no taparlo. */
-    for(i=0;i<nx()-1;i++)for(j=0;j<ny();j++)if(m.vigas[key("h",i,j)]){
-      var vh=medViga("h",i,j,m);
-      if(vh.L-vh.desc<PISO_LUZ)pr.push("viga "+ejeVigaH(i,j,m)+": el vano ("+
-        vh.L.toFixed(2)+" m) no deja luz libre entre apoyos de "+vh.desc.toFixed(2)+" m");}
-    for(i=0;i<nx();i++)for(j=0;j<ny()-1;j++)if(m.vigas[key("v",i,j)]){
-      var vv2=medViga("v",i,j,m);
-      if(vv2.L-vv2.desc<PISO_LUZ)pr.push("viga "+ejeVigaV(i,j,m)+": el vano ("+
-        vv2.L.toFixed(2)+" m) no deja luz libre entre apoyos de "+vv2.desc.toFixed(2)+" m");}
-    /* dos zapatas que se pisan no son un error de dibujo: son la senal de
-       que ahi hace falta una combinada */
-    /* una columna del nivel 1 sin zapata suele ser un olvido, pero no
-       siempre: una columna que nace sobre una viga no lleva.  Se avisa una
-       sola vez y sin dramatizar. */
+  /* =====================================================================
+     REVISAR EL MODELO
+
+     Esto vivia dentro del onclick de un boton y acababa en un toast de 2.8
+     segundos que ensenaba LOS TRES PRIMEROS avisos.  Con doce columnas y
+     diecisiete vigas por planta casi siempre hay mas de tres: lo normal era
+     que se perdieran.  Y miraba solo el nivel activo, asi que un fallo del
+     4to piso no existia hasta que te ponias en el 4to piso.
+
+     Ahora devuelve los avisos, con:
+       familia    para agrupar
+       gravedad   "grave" hay que arreglarlo · "revisar" miralo ·
+                  "blando" probablemente esta bien
+       nivel      0 = del edificio entero
+       ir         que seleccionar al pulsar «Ir al elemento», o null
+
+     No inventa ninguna comprobacion nueva: son las mismas ocho, pero sobre
+     TODO el edificio y sin tirarlas.
+     ===================================================================== */
+  function revisarModelo(){
+    var av=[],nn0;
+    function mete(familia,gravedad,texto,nivel,ir){
+      av.push({familia:familia,gravedad:gravedad,texto:texto,
+               nivel:nivel==null?0:nivel,ir:ir||null});
+    }
+    S.niveles.forEach(function(m,k){
+      var nX=m.dx.length+1,nY=m.dy.length+1,i,j,nv=k+1;
+      /* nombres de eje del NIVEL k, no del activo */
+      function ex(a){return nomEje(true,a,m)}
+      function ey(a){return nomEje(false,a,m)}
+      function panosDe(i,j){
+        var r=[];
+        [[i-1,j-1],[i,j-1],[i-1,j],[i,j]].forEach(function(p){
+          if(p[0]>=0&&p[1]>=0&&p[0]<nX-1&&p[1]<nY-1&&m.losas[p[0]+":"+p[1]])r.push(p);});
+        return r;
+      }
+      for(i=0;i<nX;i++)for(j=0;j<nY;j++)
+        if(panosDe(i,j).length&&!m.cols[key(i,j)])
+          mete("apoyo","grave","nudo "+ex(i)+"-"+ey(j)+" con losa sin columna",
+               nv,{t:"col",i:i,j:j});
+      for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)
+        if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
+          mete("apoyo","grave","borde "+ex(i)+ex(i+1)+"-"+ey(j)+" sin viga en X",
+               nv,{t:"viga",o:"h",i:i,j:j});
+      for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)
+        if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
+          mete("apoyo","grave","borde "+ex(i)+"-"+ey(j)+ey(j+1)+" sin viga en Y",
+               nv,{t:"viga",o:"v",i:i,j:j});
+      /* El vano puede quedar mas corto que los apoyos que lo cierran.
+         medViga pone un suelo para no dividir por cero, pero ese numero ya
+         no es una luz: hay que decirlo, no taparlo. */
+      for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas[key("h",i,j)]){
+        var vh=medViga("h",i,j,m);
+        if(vh.L-vh.desc<PISO_LUZ)
+          mete("luz","grave","viga "+ejeVigaH(i,j,m)+": el vano ("+vh.L.toFixed(2)+
+               " m) no deja luz libre entre apoyos de "+vh.desc.toFixed(2)+" m",
+               nv,{t:"viga",o:"h",i:i,j:j});
+      }
+      for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas[key("v",i,j)]){
+        var vv2=medViga("v",i,j,m);
+        if(vv2.L-vv2.desc<PISO_LUZ)
+          mete("luz","grave","viga "+ejeVigaV(i,j,m)+": el vano ("+vv2.L.toFixed(2)+
+               " m) no deja luz libre entre apoyos de "+vv2.desc.toFixed(2)+" m",
+               nv,{t:"viga",o:"v",i:i,j:j});
+      }
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
+        var lo2=m.losas[key(i,j)];
+        if(lo2&&losaFueraTabla(lo2))
+          mete("cargas","revisar","paño "+ex(i)+ex(i+1)+"-"+ey(j)+ey(j+1)+" con S/C "+
+               scPano(lo2)+" kg/m²: fuera de la tabla α de losas (máx 500)",
+               nv,{t:"losa",i:i,j:j});
+      }
+      /* el sesgo del lote: no es un fallo, pero es lo primero que hay que
+         saber de una planta asi, y hasta ahora solo se veia en el lienzo */
+      if(irregular(m)){
+        var sx=acum(ladoX2(m),ladoX2(m).length)-acum(m.dx,m.dx.length);
+        var sy=acum(ladoY2(m),ladoY2(m).length)-acum(m.dy,m.dy.length);
+        var q=[];
+        if(Math.abs(sx)>0.005)q.push("el borde de abajo mide "+(sx>0?"+":"")+sx.toFixed(2)+" m");
+        if(Math.abs(sy)>0.005)q.push("el de la derecha mide "+(sy>0?"+":"")+sy.toFixed(2)+" m");
+        mete("geometria","revisar","planta irregular: "+q.join(" y ")+
+             ". Las luces salen del borde mas largo.",nv,null);
+      }
+    });
+    /* LA CIMENTACION es del 1er piso, no de cada nivel. */
     (function(){
       var m0=S.niveles[0]; if(!m0)return;
       var sin=0,k0;
       for(k0 in m0.cols)if(!m0.zapatas||!m0.zapatas[k0])sin++;
-      if(sin)pr.push(sin+" columna(s) del 1er piso sin zapata dibujada"+
-                     " (correcto si nacen sobre una viga)");
+      if(sin)mete("cimentacion","blando",sin+" columna(s) del 1er piso sin zapata"+
+                  " dibujada (correcto si nacen sobre una viga)",1,null);
+      solapesZapata(zapatasDelNivel()).forEach(function(x){
+        mete("cimentacion","grave","zapatas "+x.a.cod+" y "+x.b.cod+" se solapan "+
+             x.area.toFixed(2)+" m²: piden zapata combinada",1,
+             {t:"col",i:x.a.i,j:x.a.j});
+      });
     })();
-    solapesZapata(zapatasDelNivel()).forEach(function(x){
-      pr.push("zapatas "+x.a.cod+" y "+x.b.cod+" se solapan "+x.area.toFixed(2)+
-              " m²: piden zapata combinada");
+    /* LOS AMBIENTES SIN CARGA VIVA.  faltanCargas() existe desde hace tiempo,
+       recorre todos los niveles y no la llamaba nadie: el aviso estaba
+       escrito y no llegaba a ninguna pantalla. */
+    faltanCargas().forEach(function(t){
+      /* El nivel se quita del texto y va en su etiqueta: si no, sale «N1 ·
+         N1: Sala…» y, peor, cuatro avisos que dicen lo mismo en cuatro
+         plantas no se pueden juntar porque el texto los hace distintos. */
+      nn0=/^N(\d+):\s*/.exec(t);
+      mete("cargas","revisar",nn0?t.slice(nn0[0].length):t,nn0?+nn0[1]:0,null);
     });
-    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
-      var lo2=m.losas[key(i,j)];
-      if(lo2&&losaFueraTabla(lo2))
-        pr.push("paño "+eX(i)+eX(i+1)+"-"+eY(j)+eY(j+1)+" con S/C "+scPano(lo2)+
-                " kg/m²: fuera de la tabla α de losas (máx 500)");
-    }
-    toast(pr.length?pr.length+" aviso(s) · "+pr.slice(0,3).join(" · ")+(pr.length>3?" …":"")
-                   :"Nivel consistente: cada paño apoyado en vigas y columnas.");
-  };
+    /* LO MISMO DICHO CUATRO VECES NO SON CUATRO AVISOS.
+
+       El sesgo del lote es el mismo en las cuatro plantas, y salia repetido
+       una vez por nivel: cuatro lineas identicas empujando hacia abajo las
+       dos que si habia que leer.  Se junta lo que dice exactamente lo mismo
+       y no apunta a ningun elemento concreto -si apuntara, cada uno lleva a
+       un sitio distinto y hay que dejarlos sueltos-. */
+    var porTexto={},juntos=[];
+    av.forEach(function(a){
+      if(a.ir){juntos.push(a);return}
+      var c=a.familia+"|"+a.gravedad+"|"+a.texto;
+      if(!porTexto[c]){porTexto[c]={a:a,niveles:[]};juntos.push(porTexto[c]);}
+      porTexto[c].niveles.push(a.nivel);
+    });
+    return juntos.map(function(x){
+      if(!x.niveles)return x;                       /* uno suelto, con su ir */
+      var a=x.a,ns=x.niveles.filter(function(n){return n>0});
+      if(ns.length<2)return a;
+      ns.sort(function(p,q){return p-q});
+      var seguidos=ns[ns.length-1]-ns[0]===ns.length-1;
+      var donde=seguidos?("N"+ns[0]+"–N"+ns[ns.length-1])
+                        :ns.map(function(n){return "N"+n}).join(", ");
+      return {familia:a.familia,gravedad:a.gravedad,texto:a.texto,
+              nivel:0,ir:null,donde:donde};
+    });
+  }
+
+  var VISTOS={};                 /* los que ya marcaste como vistos */
+  function claveAviso(a){return a.familia+"|"+a.nivel+"|"+a.texto}
+  function avisosAbiertos(){
+    return revisarModelo().filter(function(a){return !VISTOS[claveAviso(a)]});
+  }
+
+  $("#btnCheck").onclick=function(){ elegirModo("comprobacion"); };
 
   /* ---------- verificacion de placas por direccion (Oviedo cap. VI) ----------
      El area total NO es el criterio: tiene que estar repartida 50/50 entre los
@@ -7346,7 +7601,7 @@ var TT={script:performance.now()};
       '<p class="nota" style="margin:0 0 8px">Categoría <b>'+
       S.categoria.charAt(0).toUpperCase()+S.categoria.slice(1)+'</b> · '+
       (CRITERIOS.CATEGORIA[S.categoria].pctPlaca*100).toFixed(2)+
-      ' % del área techada. Se cambia en la pestaña Proyecto.</p>'+
+      ' % del área techada. Se cambia en la pestaña Datos.</p>'+
       '<table><thead><tr><th>Nivel</th><th>Ap (m²)</th><th>t (m)</th>'+
       '<th>n X</th><th>Área X</th><th>Estado X</th>'+
       '<th>n Y</th><th>Área Y</th><th>Estado Y</th><th>Total</th></tr></thead><tbody>'+
@@ -7656,7 +7911,7 @@ var TT={script:performance.now()};
       fijo("Área techada total",tot.toFixed(2),"m²","")+
       fijo("Altura total",hTot.toFixed(2),"m","")+
       '<p class="nota" style="margin:8px 0 0">Solo lectura: sale de la planta. La altura de '+
-      'entrepiso se cambia nivel a nivel en la barra de Modelo 2D, porque no tiene por qué '+
+      'entrepiso se cambia nivel a nivel en la barra de Planta, porque no tiene por qué '+
       'ser la misma en todos.</p>'+
       '</section>';
 
@@ -7959,8 +8214,9 @@ var TT={script:performance.now()};
     $("#areaTot").textContent=tot.toFixed(2)+" m²";
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
-    var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto");
-    var solo=hojas||proy;                 /* pestanas a todo el ancho */
+    var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto"),
+        deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion");
+    var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
     ver(".tools:not(#toolsUso)",!(usos||solo));
     ver("#toolsUso",usos);
@@ -7968,6 +8224,8 @@ var TT={script:performance.now()};
     ver("#panelUso",usos);
     ver("#panelHojas",hojas);
     ver("#panelProy",proy);
+    ver("#panelDeci",deci);
+    ver("#panelComp",comp);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
@@ -7983,7 +8241,10 @@ var TT={script:performance.now()};
     ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
     pintaNiveles();
-    if(proy){pintaProyecto();}
+    marcaAvisos();
+    if(deci){pintaDecisiones();}
+    else if(comp){pintaComprobacion();}
+    else if(proy){pintaProyecto();}
     else if(hojas){pintaHojas();}
     else if(!esPlano){pintaEdificio();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
