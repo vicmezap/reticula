@@ -315,6 +315,30 @@
   border-radius:2px;padding:4px 6px;font:500 12px "IBM Plex Mono",monospace;
   text-align:right;width:100%}
 .pf select.pfi{text-align:left}
+/* pestana ETABS: las tarjetas de Datos, con tablas de secciones dentro */
+/* 460 y no los 310 de Datos: una fila lleva nombre, calculada, dos medidas y
+   piezas, y a 360 se cortaban la segunda medida y las piezas */
+.etb{grid-template-columns:repeat(auto-fit,minmax(min(460px,100%),1fr))}
+.etb-scroll{overflow-x:auto}
+/* min-width:0 anula el table{min-width:600px} global: con el, cada tabla median 600
+   aunque la tarjeta midiera 559, y se cortaban las medidas */
+.etb-t{width:100%;min-width:0;border-collapse:collapse;font:400 11.5px "IBM Plex Mono",monospace}
+.etb-t th{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+.etb-t td{padding:5px 6px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-soft);
+  color:var(--ink-2);white-space:nowrap}
+.etb-t td small{display:block;font:400 10px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin-top:2px}
+.etb-t input{background:var(--sheet);color:var(--ink);border:1px solid var(--line);border-radius:2px;
+  font:500 12px "IBM Plex Mono",monospace;padding:3px 5px}
+.etb-t input[type=text]{width:82px}
+.etb-t input[type=number]{width:46px;text-align:right}
+.etb-t input:focus{outline:2px solid var(--acc);outline-offset:-1px}
+.etb-t tr.dif td{background:var(--acc-soft)}
+.etb-t tr.choca td{background:var(--acc-soft);box-shadow:inset 0 -2px 0 var(--mal,#c62828)}
+.etb-x{margin:0 4px;color:var(--ink-3)}
+.etb-ch{display:flex;gap:8px;align-items:flex-start;font:400 12px "IBM Plex Sans",sans-serif;
+  color:var(--ink-2);margin:4px 0 8px;cursor:pointer}
+.etb-mal{border-color:var(--mal,#c62828)}
 .pfi:focus{outline:2px solid var(--acc);outline-offset:-1px}
 .pfv{font:600 12px "IBM Plex Mono",monospace;color:var(--acc-ink);text-align:right}
 .pfu{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
@@ -370,6 +394,7 @@
     <button class="modo" data-modo="comprobacion" aria-pressed="false">Comprobación</button>
     <button class="modo" data-modo="proyecto" aria-pressed="false">Datos</button>
     <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button>
+    <button class="modo" data-modo="etabs" aria-pressed="false">ETABS</button>
   </div>
 
   <div class="niv" id="niveles"></div>
@@ -467,6 +492,7 @@
       <div class="edif" id="panelProy" hidden></div>
       <div class="edif" id="panelDeci" hidden></div>
       <div class="edif" id="panelComp" hidden></div>
+      <div class="edif" id="panelEtabs" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
@@ -3948,7 +3974,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v124 · 12-09-2026";
+  var BUILD="v128 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4217,7 +4243,7 @@ var TT={script:performance.now()};
       localStorage.setItem("reticula",
         JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
                         vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
-                        pr:S.proy}));
+                        pr:S.proy,et:S.etabs}));
       GUARDADO.ultimo=Date.now();
       selloGuardado();
       /* y se empuja al libro, espaciado: cerrar la ventana con la X no
@@ -4263,6 +4289,7 @@ var TT={script:performance.now()};
       if(d.vd!==undefined)S.verDims=!!d.vd;
       if(d.vc!==undefined)S.verCim=!!d.vc;
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
+      if(d.et&&typeof d.et==="object")S.etabs=d.et;
       if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
       /* Un modelo guardado ANTES de la E.030 trae categoria pero no uso.
          Como ahora la categoria sigue al uso, dejarlo asi le cambiaria la
@@ -6505,7 +6532,7 @@ var TT={script:performance.now()};
      sentido hablar de la planta- tenia que escribir su propia copia. */
   function sinPlano(){
     return S.modo==="hojas" || S.modo==="proyecto" ||
-           S.modo==="decisiones" || S.modo==="comprobacion";
+           S.modo==="decisiones" || S.modo==="comprobacion" || S.modo==="etabs";
   }
 
   function avisaIrregular(){
@@ -7350,6 +7377,278 @@ var TT={script:performance.now()};
      Unidades: metros.  Y va hacia ARRIBA, al reves que en el lienzo, para que
      en la planta de ETABS el eje 1 quede arriba igual que aqui.
      ===================================================================== */
+  /* =====================================================================
+     PESTANA ETABS · COMO SE LLAMA Y QUE MIDE CADA SECCION EN ETABS
+
+     El predimensionamiento dice que medidas salen; esta pestana dice como se
+     llaman en ETABS -C1, V2, LA1...- y deja cambiarlas SOLO para ETABS.  Las
+     hojas siguen con las del predimensionamiento: si en ETABS una seccion va
+     distinta, se ve marcada con la calculada al lado, y la teoria no se
+     pierde.
+
+     Las secciones se agrupan por lo que dio el predimensionamiento: treinta
+     columnas de 25x25 son UNA seccion.  El nombre y la medida propios se
+     guardan con esa clave; si la planta cambia y sale otra seccion, esa
+     empieza con su nombre y su medida calculados.
+     ===================================================================== */
+  var LIM_ETABS={b:[10,300],h:[10,300],D:[10,300],e:[5,100],t:[10,100]};
+  function etabsCfg(){
+    if(!S.etabs||typeof S.etabs!=="object")S.etabs={};
+    var E=S.etabs;
+    if(!E.nom||typeof E.nom!=="object")E.nom={};
+    if(!E.med||typeof E.med!=="object")E.med={};
+    if(!Array.isArray(E.pisos))E.pisos=[];
+    if(typeof E.mat!=="string")E.mat="";
+    return E;
+  }
+  /* Lo que ETABS acepta sin sorpresas: letras, numeros, espacio y - _ . ( ) /
+     Un apostrofo -f'c- o un igual se quitan, no se escapan. */
+  function nombreEtabs(t){
+    return String(t==null?"":t).replace(new RegExp("[^A-Za-z0-9 _.()/-]","g"),"")
+      .replace(new RegExp(" +","g")," ").trim().slice(0,31).trim();
+  }
+  function aplicaSeccionesEtabs(out){
+    var E=etabsCfg(), G={}, orden=[];
+    var PREF_LOSA={aligerada:"LA",maciza:"LM",nervada:"LN"};
+    function cm(v){return Math.round((+v||0)*100)}
+    function grupo(key,fam,pref,def,medida,k){
+      var g=G[key];
+      if(!g){g=G[key]={key:key,fam:fam,pref:pref,def:def,medida:medida,n:0,niv:{}};orden.push(g);}
+      g.n++; g.niv[k]=1; return g;
+    }
+    out.niveles.forEach(function(L,k){
+      L.columnas.forEach(function(c){
+        c._g=(c.forma==="circular")
+          ? grupo("C|c|"+cm(c.D),"col","C",{forma:"circular",D:cm(c.D)},cm(c.D)*cm(c.D),k)
+          : grupo("C|r|"+cm(c.b)+"|"+cm(c.h),"col","C",{forma:"rect",b:cm(c.b),h:cm(c.h)},
+                  cm(c.b)*cm(c.h),k);
+      });
+      L.vigas.forEach(function(v){
+        var t=(v.tipo==="chata")?"chata":"principal";
+        v._g=grupo("V|"+t+"|"+cm(v.b)+"|"+cm(v.h),"viga",t==="chata"?"VCH":"V",
+                   {tipo:t,b:cm(v.b),h:cm(v.h)},cm(v.b)*cm(v.h),k);
+      });
+      L.losas.forEach(function(l){
+        if(l.e===null)return;
+        var t=l.tipo||"aligerada", d;
+        /* los mismos valores por defecto que pone el puente a una losa nervada */
+        if(t==="maciza")d={tipo:t,e:cm(l.e)};
+        else d={tipo:t,dir:(l.dir||"x"),e:cm(l.e),vigueta:cm(l.vigueta||0.10),
+                s:cm(l.s||0.40),hf:cm(l.hf||0.05)};
+        l._g=grupo("L|"+[d.tipo,d.dir||"",d.e,d.vigueta||"",d.s||"",d.hf||""].join("|"),
+                   "losa",PREF_LOSA[t]||"L",d,d.e,k);
+      });
+      L.placas.forEach(function(p){
+        p._g=grupo("P|"+cm(p.t),"placa","P",{t:cm(p.t)},cm(p.t),k);
+      });
+    });
+
+    /* NOMBRES: primero los que puso el usuario; los demas se numeran por
+       tamano -C1 la menor- saltando los que ya estan cogidos. */
+    var tomado={}, porPref={};
+    orden.forEach(function(g){
+      var t=nombreEtabs(E.nom[g.key]);
+      if(t){g.nombre=t;g.propio=true;tomado[t.toUpperCase()]=1;}
+    });
+    orden.forEach(function(g){if(!g.propio)(porPref[g.pref]=porPref[g.pref]||[]).push(g)});
+    Object.keys(porPref).forEach(function(p){
+      var n=1;
+      porPref[p].sort(function(a,b){return (a.medida-b.medida)||(a.key<b.key?-1:(a.key>b.key?1:0))})
+        .forEach(function(g){
+          while(tomado[(p+n).toUpperCase()])n++;
+          g.nombre=p+n; tomado[g.nombre.toUpperCase()]=1; n++;
+        });
+    });
+
+    /* MEDIDAS: la calculada, salvo que se haya puesto otra razonable */
+    orden.forEach(function(g){
+      var o=E.med[g.key]||{}, f={}, c, v;
+      for(c in g.def)f[c]=g.def[c];
+      for(c in LIM_ETABS)if((c in g.def)&&o[c]!=null&&o[c]!==""){
+        v=+o[c];
+        if(isFinite(v)&&v>=LIM_ETABS[c][0]&&v<=LIM_ETABS[c][1])f[c]=Math.round(v);
+      }
+      g.fin=f; g.cambiada=false;
+      for(c in LIM_ETABS)if((c in g.def)&&f[c]!==g.def[c])g.cambiada=true;
+    });
+
+    /* UN NOMBRE, UNA SECCION.  En ETABS columnas y vigas comparten la lista de
+       secciones de barra, y losas y placas la de area.  Dos secciones que
+       miden lo mismo pueden llamarse igual -son la misma-; dos distintas no. */
+    out.errores=[];
+    function descr(g){var f=g.fin;
+      if(g.fam==="col")return f.forma==="circular"?("columna Ø"+f.D):("columna "+f.b+"×"+f.h);
+      if(g.fam==="viga")return "viga "+(f.tipo==="chata"?"chata ":"")+f.b+"×"+f.h;
+      if(g.fam==="losa")return "losa "+f.tipo+" de "+f.e+" cm";
+      return "placa de "+f.t+" cm";}
+    var porNombre={};
+    orden.forEach(function(g){
+      var id=((g.fam==="col"||g.fam==="viga")?"barra|":"area|")+g.nombre.toUpperCase(),
+          sig=g.fam+"|"+JSON.stringify(g.fin), o=porNombre[id];
+      if(!o){porNombre[id]={sig:sig,g:g};return}
+      if(o.sig!==sig){
+        g.choca=true; o.g.choca=true;
+        out.errores.push("El nombre «"+g.nombre+"» está en dos secciones distintas ("+
+          descr(o.g)+" y "+descr(g)+"): en ETABS cada nombre es una sola sección.");
+      }
+    });
+
+    /* A CADA PIEZA, su nombre y su medida; la calculada queda en «pre» */
+    out.niveles.forEach(function(L){
+      function pone(x,campos){
+        var g=x._g; delete x._g; if(!g)return;
+        x.sec=g.nombre;
+        if(g.cambiada){
+          x.pre={};
+          campos.forEach(function(c){ if(c in g.fin){ x.pre[c]=x[c]; x[c]=g.fin[c]/100; } });
+        }
+      }
+      L.columnas.forEach(function(c){pone(c,c.forma==="circular"?["D"]:["b","h"])});
+      L.vigas.forEach(function(v){pone(v,["b","h"])});
+      L.losas.forEach(function(l){pone(l,["e"])});
+      L.placas.forEach(function(p){pone(p,["t"])});
+    });
+
+    var fc=+S.fc||210;
+    out.material={nombre:nombreEtabs(E.mat)||("CONC"+Math.round(fc)), tipo:"concreto",
+                  fc:fc, E:Math.round(15000*Math.sqrt(fc)),
+                  peso:(+(S.proy&&S.proy.concreto)||2400)};
+    var vistos={};
+    out.niveles.forEach(function(L,k){
+      var t=nombreEtabs(E.pisos[k]); if(t)L.nombre=t;
+      var u=L.nombre.toUpperCase();
+      if(vistos[u])out.errores.push("Dos pisos se llaman «"+L.nombre+"»: ETABS no lo admite.");
+      vistos[u]=1;
+    });
+    out.limpiar=(E.limpiar!==false);
+    /* en la pestana se leen de menor a mayor: V1, V2, V3... y no en el orden
+       en que aparecieron en la planta */
+    var FAM_ORD={col:0,viga:1,losa:2,placa:3};
+    out.secciones=orden.slice().sort(function(x,y){
+      return (FAM_ORD[x.fam]-FAM_ORD[y.fam])||(x.pref<y.pref?-1:(x.pref>y.pref?1:0))||
+             (x.medida-y.medida)||(x.key<y.key?-1:(x.key>y.key?1:0));
+    }).map(function(g){
+      return {clave:g.key, fam:g.fam, nombre:g.nombre, propio:!!g.propio,
+              predim:g.def, etabs:g.fin, cambiada:g.cambiada, choca:!!g.choca, piezas:g.n,
+              niveles:Object.keys(g.niv).map(function(k){return out.niveles[+k].nombre})};
+    });
+    return out;
+  }
+
+  function pintaEtabs(){
+    var P=$("#panelEtabs"); if(!P)return;
+    function escE(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                                                .replace(/"/g,"&quot;")}
+    var ex=null, err="";
+    try{ex=exportaEtabs();}catch(e){err=(e&&e.message)||String(e);}
+    if(!ex){P.innerHTML='<p class="aviso">No se pudo preparar el modelo para ETABS: '+
+                        escE(err)+'</p>';return}
+    var E=etabsCfg(), h='<div class="pgrid etb">';
+
+    h+='<section class="pbox"><h3>1 · Material</h3>'+
+      campo("eMat","Nombre en ETABS",ex.material.nombre)+
+      fijo("Tipo","Concreto","","")+
+      fijo("f'c",ex.material.fc,"kg/cm²","de Datos")+
+      fijo("Ec = 15000·√f'c",ex.material.E.toLocaleString("es-PE"),"kg/cm²","E.060 Art. 8.5")+
+      fijo("Peso unitario",ex.material.peso,"kg/m³","de Datos")+
+      '<p class="nota">f&#39;c y el peso se cambian en <b>Datos</b>; aquí va el nombre con el '+
+      'que ETABS lo muestra. Columnas, vigas, losas y placas usan este material.</p></section>';
+
+    h+='<section class="pbox"><h3>2 · Pisos</h3>';
+    ex.niveles.forEach(function(L,k){
+      h+='<label class="pf"><span class="pfe">Nivel '+(k+1)+' · h '+nm(L.h)+
+         ' m · cota '+nm(L.z1)+' m</span><input class="pfi" type="text" data-piso="'+k+
+         '" value="'+escE(L.nombre)+'" aria-label="Nombre del nivel '+(k+1)+' en ETABS">'+
+         '<span class="pfu"></span></label>';
+    });
+    h+='<p class="nota">El nombre de cada piso en ETABS. La altura se cambia en <b>Planta</b>.</p>'+
+       '</section>';
+
+    function filaSec(s){
+      var k=escE(s.clave), p=s.predim, f=s.etabs, pre, med, tipo;
+      function num(c,min,max){
+        return '<input type="number" data-k="'+k+'" data-c="'+c+'" min="'+min+'" max="'+max+
+               '" step="5" value="'+f[c]+'" aria-label="'+c+' en cm">';
+      }
+      var x='<span class="etb-x">×</span>';
+      if(s.fam==="col"){
+        tipo="columna de concreto";
+        if(p.forma==="circular"){pre="Ø "+p.D; med="Ø "+num("D",10,300);}
+        else{pre=p.b+"×"+p.h; med=num("b",10,300)+x+num("h",10,300);}
+      }else if(s.fam==="viga"){
+        tipo=(p.tipo==="chata")?"viga chata":"viga principal";
+        pre=p.b+"×"+p.h; med=num("b",10,300)+x+num("h",10,300);
+      }else if(s.fam==="losa"){
+        tipo=(p.tipo==="maciza")?"maciza":(p.tipo+" · viguetas en "+String(p.dir||"x").toUpperCase());
+        pre="e "+p.e; med="e "+num("e",5,100);
+      }else{
+        tipo="muro de concreto"; pre="t "+p.t; med="t "+num("t",10,100);
+      }
+      return '<tr class="'+(s.choca?"choca":(s.cambiada?"dif":""))+'">'+
+        '<td><input type="text" data-k="'+k+'" data-c="nom" value="'+escE(s.nombre)+
+        '" aria-label="Nombre en ETABS"><small>'+tipo+'</small></td>'+
+        '<td>'+pre+(s.cambiada?'<small>calculada</small>':'')+'</td>'+
+        '<td>'+med+(s.cambiada?' <button type="button" class="mini" data-reset="'+k+
+          '" title="Volver a la medida calculada">↺</button>':'')+'</td>'+
+        '<td>'+s.piezas+'<small>'+escE(s.niveles.join(", "))+'</small></td></tr>';
+    }
+    function tarjeta(num,fam,tit,nota){
+      var gs=ex.secciones.filter(function(s){return s.fam===fam});
+      var t='<section class="pbox"><h3>'+num+' · '+tit+'</h3>';
+      if(!gs.length)return t+'<p class="nota">No hay '+tit.toLowerCase()+' en la planta.</p></section>';
+      return t+'<div class="etb-scroll"><table class="etb-t"><thead><tr><th>Nombre</th>'+
+        '<th>Predim. (cm)</th><th>En ETABS (cm)</th><th>Piezas</th></tr></thead><tbody>'+
+        gs.map(filaSec).join("")+'</tbody></table></div>'+
+        (nota?'<p class="nota">'+nota+'</p>':'')+'</section>';
+    }
+    h+=tarjeta(3,"col","Columnas","Una fila por cada sección distinta del predimensionamiento. "+
+      "El nombre y las medidas son <b>solo para ETABS</b>: las hojas siguen con las calculadas. "+
+      "Una fila marcada va a ETABS con otra medida; ↺ la devuelve a la calculada.");
+    h+=tarjeta(4,"viga","Vigas","");
+    h+=tarjeta(5,"losa","Losas","Aligeradas y nervadas van a ETABS como losa nervada en una "+
+      "dirección, con sus viguetas.");
+    h+=tarjeta(6,"placa","Placas","");
+
+    var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
+                        .replace('<div class="rule" style="margin:0 0 10px"></div>','');
+    h+='<section class="pbox"><h3>7 · Envío a ETABS</h3>'+
+      (ex.errores.length
+        ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
+          ex.errores.map(escE).join("<br>")+'</p>' : '')+
+      '<label class="etb-ch"><input id="eLimp" type="checkbox"'+(E.limpiar!==false?" checked":"")+
+      '><span>Quitar de ETABS las secciones que trae por defecto y no se usan (perfiles W, '+
+      'A-GravBm, ConcBm, Slab1, Deck1…)</span></label>'+nota+'</section>';
+    h+='</div>';
+    P.innerHTML=h;
+
+    var eM=$("#eMat");
+    if(eM)eM.onchange=function(){ E.mat=nombreEtabs(this.value); guardar(); render(); };
+    var eL=$("#eLimp");
+    if(eL)eL.onchange=function(){ E.limpiar=!!this.checked; guardar(); render(); };
+    P.querySelectorAll("input[data-piso]").forEach(function(inp){
+      inp.onchange=function(){
+        E.pisos[+this.dataset.piso]=nombreEtabs(this.value); guardar(); render(); };
+    });
+    P.querySelectorAll("input[data-k]").forEach(function(inp){
+      inp.onchange=function(){
+        var k=this.dataset.k, c=this.dataset.c;
+        if(!k||!c)return;
+        if(c==="nom"){
+          var t=nombreEtabs(this.value);
+          if(t)E.nom[k]=t; else delete E.nom[k];
+        }else{
+          var o=E.med[k]||(E.med[k]={}), v=+this.value;
+          if(this.value===""||!isFinite(v))delete o[c]; else o[c]=Math.round(v);
+          if(!Object.keys(o).length)delete E.med[k];
+        }
+        guardar(); render();
+      };
+    });
+    P.querySelectorAll("button[data-reset]").forEach(function(b){
+      b.onclick=function(){ delete E.med[this.dataset.reset]; guardar(); render(); };
+    });
+  }
+
   function exportaEtabs(){
     /* el +0 convierte el -0 en 0: al darle la vuelta a Y, el eje 1 salia
        como y=-0.0, que no molesta a ETABS pero ensucia la exportacion */
@@ -7449,6 +7748,7 @@ var TT={script:performance.now()};
       out.niveles.push(L);
     });
     plantasQueSobresalen().forEach(function(p){ out.avisos.push("N"+p.nivel+": "+p.texto); });
+    aplicaSeccionesEtabs(out);
     return out;
   }
 
@@ -8239,9 +8539,10 @@ var TT={script:performance.now()};
       t.v+'</b> vigas, <b>'+t.l+'</b> losas y <b>'+t.p+'</b> placas, sobre <b>'+
       ex.ejes.length+'</b> ejes.</p>'+
       '<p class="nota">'+llego+'</p>'+
-      '<p class="nota">Para llevarla, abre ETABS con un modelo en blanco y ejecuta '+
-      '<code>scripts/etabs/a_etabs.bat</code>. No pisa un modelo que ya tenga algo, '+
-      'y al terminar comprueba pieza a pieza lo que creó.</p>'+
+      '<p class="nota">Para llevarla: dale a <b>Guardar proyecto</b>, abre ETABS con un modelo '+
+      'en blanco y ejecuta <code>scripts/etabs/a_etabs.bat</code>. No pisa un modelo que ya '+
+      'tenga algo; lo guarda en <code>Documentos/Reticula_ETABS</code> y comprueba pieza a '+
+      'pieza lo que creó.</p>'+
       (ex.avisos.length
         ? '<p class="nota" style="color:#c62828">'+ex.avisos.join('<br>')+'</p>' : '')+
       '</div>';
@@ -8332,7 +8633,9 @@ var TT={script:performance.now()};
       ctrl+
       '<span class="lbl">El complemento no necesita un libro preparado: lo produce. '+
       'Abre un Excel en blanco y genera.</span></div>'+
-      '<div class="hg">'+tarjetas+'</div>'+res+notaEtabs();
+      '<div class="hg">'+tarjetas+'</div>'+res+
+      '<p class="nota" style="margin:12px 0 0">El modelo para ETABS -nombres, secciones y '+
+      'envío- está en la pestaña <b>ETABS</b>.</p>';
 
     $("#catHojas").onchange=function(){ S.categoria=this.value; guardar(); render(); };
     $("#fcHojas").onchange=function(){
@@ -8418,7 +8721,8 @@ var TT={script:performance.now()};
     $("#hAcum").textContent=ha.toFixed(2)+" m";
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
     var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto"),
-        deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion");
+        deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion"),
+        etab=(S.modo==="etabs");
     var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
     ver(".tools:not(#toolsUso)",!(usos||solo));
@@ -8429,6 +8733,7 @@ var TT={script:performance.now()};
     ver("#panelProy",proy);
     ver("#panelDeci",deci);
     ver("#panelComp",comp);
+    ver("#panelEtabs",etab);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
@@ -8449,6 +8754,7 @@ var TT={script:performance.now()};
     else if(comp){pintaComprobacion();}
     else if(proy){pintaProyecto();}
     else if(hojas){pintaHojas();}
+    else if(etab){pintaEtabs();}
     else if(!esPlano){pintaEdificio();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else{draw();inspector();}
@@ -8541,7 +8847,7 @@ var TT={script:performance.now()};
       try{ localStorage.setItem("reticula_etabs_libro",
              JSON.stringify({ok:!!m.ok, cuando:Date.now(), msg:m.msg||""})); }catch(e){}
       if(!m.ok)di("No se pudo guardar el modelo para ETABS: "+(m.msg||""));
-      if(window.RET&&RET.estado&&RET.estado().modo==="hojas"&&RET.render)RET.render();
+      if(window.RET&&RET.estado&&(RET.estado().modo==="hojas"||RET.estado().modo==="etabs")&&RET.render)RET.render();
     }else if(m.a==="hojas"){
       var b=document.getElementById("btnHojas");
       if(b){ b.disabled=false; b.textContent=b.dataset.txt||"Generar hojas"; }
