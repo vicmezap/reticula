@@ -438,6 +438,8 @@
       </div>
       <button class="tool" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
         <span>Placa<small>clic o arrastra</small></span></button>
+      <button class="tool" data-tool="unir" aria-pressed="false"><span class="swatch" style="background:var(--sheet);border-style:dashed"></span>
+        <span>Unir / separar<small>losas o vigas seguidas</small></span></button>
       <button class="tool" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
         <span>Zapata<small>solo bajo columna</small></span></button>
       <div class="sub" id="subZapata" hidden role="group" aria-label="Zapatas">
@@ -3974,7 +3976,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v128 · 12-09-2026";
+  var BUILD="v129 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -3997,6 +3999,8 @@ var TT={script:performance.now()};
     if(!m.placas)m.placas={};
     /* la cimentacion se dibuja: un modelo sin este mapa es anterior */
     if(!m.zapatas)m.zapatas={};
+    /* las uniones de losas y vigas: ver JUNTAS */
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
     var k;
     for(k in m.cols)  if(typeof m.cols[k]  !=="object")m.cols[k]={};
     for(k in m.placas)if(typeof m.placas[k]!=="object")m.placas[k]={};
@@ -4167,14 +4171,139 @@ var TT={script:performance.now()};
     var B=ejeX?nodo(b,j,m):nodo(i,b,m);
     return {desde:a, hasta:b, dueno:(a===(ejeX?i:j)), L:dist(A,B)};
   }
+  /* =====================================================================
+     JUNTAS · UNIR Y SEPARAR LOSAS Y VIGAS A MANO
+
+     La luz va de APOYO a APOYO, no de eje a eje.  Un prima sin apoyo ya no
+     partia nada, pero un eje principal partia siempre aunque debajo no hubiera
+     viga: una losa de 3.31 m salia como dos de 1.33 y 1.98, con peraltes de
+     5 y 10 cm.  La junta es la decision del proyectista sobre UN borde:
+       m.juntas["Ly:i:a"]  losa armada en Y de la columna i, cruzando el eje a
+       m.juntas["Lx:a:j"]  losa armada en X de la fila j, cruzando el eje a
+       m.juntas["Vh:a:j"]  viga en X de la fila j, pasando por el nudo (a,j)
+       m.juntas["Vv:i:a"]  viga en Y de la columna i, pasando por el nudo (i,a)
+     true une y false separa.  Un APOYO -viga bajo la losa, columna bajo la
+     viga- corta siempre: una junta no se salta un apoyo que existe.  tramo()
+     hace el resto, y con el todo lo que ya sabia medir un tramo: la luz, el
+     peralte, la fila de la hoja, el codigo y ETABS.
+     ===================================================================== */
+  function junta(m,k){var J=m&&m.juntas;return (J&&typeof J==="object"&&(k in J))?J[k]:null}
+  function dirLosa(o){return (o&&o.dir==="y")?"y":"x"}
+  /* La S/C de una losa unida es la MAYOR de sus paños: del lado seguro,
+     igual que la viga toma la mayor de los paños que carga. */
+  function scTramoLosa(i,j,m){
+    m=m||N(); var o=m.losas[key(i,j)]; if(!o)return scDefecto();
+    var d=dirLosa(o), t=tramoLosa(d,i,j,m), mx=0, k, q;
+    for(k=t.desde;k<t.hasta;k++){ q=m.losas[d==="x"?key(k,j):key(i,k)]; if(q)mx=Math.max(mx,scPano(q)); }
+    return mx>0?mx:scPano(o);
+  }
+  /* la losa (i,j) sigue de largo por su borde de arriba (en Y) o de la
+     izquierda (en X): ese borde esta DENTRO de una losa, no la limita */
+  function losaCruza(dir,i,j,m){
+    var o=m.losas[key(i,j)]; if(!o||dirLosa(o)!==dir)return false;
+    return tramoLosa(dir,i,j,m).desde<(dir==="y"?j:i);
+  }
+  /* por el nudo (i,j) pasa de largo una viga o una losa: no pide columna */
+  function pasaDeLargo(i,j,m){
+    if(i>0&&m.vigas[key("h",i,j)]&&m.vigas[key("h",i-1,j)]&&tramoViga("h",i,j,m).desde<i)return true;
+    if(j>0&&m.vigas[key("v",i,j)]&&m.vigas[key("v",i,j-1)]&&tramoViga("v",i,j,m).desde<j)return true;
+    return losaCruza("y",i-1,j,m)||losaCruza("y",i,j,m)||losaCruza("x",i,j-1,m)||losaCruza("x",i,j,m);
+  }
+  var UNIR=null;                    /* lo primero que se pincho con Unir */
+  /* Une o separa dos piezas seguidas.  El mismo gesto hace las dos cosas:
+     si ya van juntas -a mano, o solas por un prima sin apoyo- las separa. */
+  function unirPar(a,b,m){
+    m=m||N();
+    function no(t){return {ok:false,msg:t}}
+    if(!a||!b||a.t!==b.t)return no("Se une losa con losa, o viga con viga.");
+    var clave,ejeX,eje,dentro,nomE;
+    if(a.t==="losa"){
+      var la=m.losas[key(a.i,a.j)], lb=m.losas[key(b.i,b.j)], d;
+      if(!la||!lb)return no("Uno de los dos paños no tiene losa.");
+      if(a.i===b.i&&Math.abs(a.j-b.j)===1){d="y";eje=Math.max(a.j,b.j);clave="Ly:"+a.i+":"+eje;}
+      else if(a.j===b.j&&Math.abs(a.i-b.i)===1){d="x";eje=Math.max(a.i,b.i);clave="Lx:"+eje+":"+a.j;}
+      else return no("Esas dos losas no están una junto a la otra.");
+      ejeX=(d==="x"); nomE=ejeX?eX(eje,m):eY(eje,m);
+      if(dirLosa(la)!==dirLosa(lb))
+        return no("Las dos losas tienen la flecha en distinta dirección: se unen en la dirección de su armado.");
+      if(dirLosa(la)!==d)
+        return no("Esas losas están una al lado de la otra: unirlas no cambia su luz, que va en la dirección de la flecha.");
+      if((la.tipo||"aligerada")!==(lb.tipo||"aligerada"))
+        return no("Una es "+(la.tipo||"aligerada")+" y la otra "+(lb.tipo||"aligerada")+
+                  ": solo se une el mismo tipo de losa.");
+      if(m.vigas[ejeX?key("v",eje,a.j):key("h",a.i,eje)])
+        return no("En el eje "+nomE+" hay una viga entre las dos: es su apoyo, y la luz va de "+
+                  "apoyo a apoyo. Si la losa pasa de largo, quita esa viga.");
+      var tl=tramoLosa(d,a.i,a.j,m), ol=ejeX?b.i:b.j;
+      dentro=(tl.desde<=ol&&ol<tl.hasta);
+    }else{
+      if(a.o!==b.o)return no("Solo se unen tramos de viga en la misma línea.");
+      ejeX=(a.o==="h");
+      var va=m.vigas[key(a.o,a.i,a.j)], vb=m.vigas[key(b.o,b.i,b.j)];
+      if(!va||!vb)return no("Uno de los dos tramos no tiene viga.");
+      if(ejeX&&a.j===b.j&&Math.abs(a.i-b.i)===1){eje=Math.max(a.i,b.i);clave="Vh:"+eje+":"+a.j;}
+      else if(!ejeX&&a.i===b.i&&Math.abs(a.j-b.j)===1){eje=Math.max(a.j,b.j);clave="Vv:"+a.i+":"+eje;}
+      else return no("Esos dos tramos no van seguidos en la misma línea.");
+      nomE=ejeX?(eX(eje,m)+"-"+eY(a.j,m)):(eX(a.i,m)+"-"+eY(eje,m));
+      if(tipoViga(va)!==tipoViga(vb))
+        return no("Una es "+tipoViga(va)+" y la otra "+tipoViga(vb)+": solo se une el mismo tipo de viga.");
+      if(m.cols[ejeX?key(eje,a.j):key(a.i,eje)])
+        return no("En el nudo "+nomE+" hay columna: es su apoyo, y la luz va de apoyo a apoyo. "+
+                  "Si la viga pasa de largo, quita esa columna.");
+      var tv=tramoViga(a.o,a.i,a.j,m), ov=ejeX?b.i:b.j;
+      dentro=(tv.desde<=ov&&ov<tv.hasta);
+    }
+    /* sin junta, un prima sin apoyo ya une: ahi separar es poner false */
+    var porDefecto=esPrima(ejeX,eje,m);
+    var valor=dentro?(porDefecto?false:null):(porDefecto?null:true);
+    snap();
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    if(valor===null)delete m.juntas[clave]; else m.juntas[clave]=valor;
+    var msg, t2;
+    if(dentro)msg=(a.t==="losa"?"Losas separadas en el eje ":"Vigas separadas en el nudo ")+nomE+".";
+    else{
+      t2=(a.t==="losa")?tramoLosa(dirLosa(m.losas[key(a.i,a.j)]),a.i,a.j,m):tramoViga(a.o,a.i,a.j,m);
+      msg=(a.t==="losa"?"Losa unida":"Viga unida")+": va de "+
+          (ejeX?eX(t2.desde,m):eY(t2.desde,m))+" a "+(ejeX?eX(t2.hasta,m):eY(t2.hasta,m))+
+          ", luz "+nm(t2.L)+" m.";
+    }
+    return {ok:true,unida:!dentro,clave:clave,valor:valor,msg:msg};
+  }
+  function unirClic(d,i,j){
+    var m=N(), e=(d.t==="viga")?{t:"viga",o:d.o,i:i,j:j}:(d.t==="losa"?{t:"losa",i:i,j:j}:null);
+    if(!e){UNIR=null;S.sel=null;render();return}
+    if(e.t==="losa"&&!m.losas[key(i,j)]){UNIR=null;toast("Ese paño no tiene losa.");return}
+    if(e.t==="viga"&&!m.vigas[key(e.o,i,j)]){UNIR=null;toast("Ese tramo no tiene viga.");return}
+    if(!UNIR){
+      UNIR=e; S.sel=e; render();
+      toast(e.t==="losa"?"Ahora clic en la losa que sigue, en la dirección de su flecha."
+                        :"Ahora clic en el tramo de viga que sigue en la misma línea.");
+      return;
+    }
+    var a=UNIR; UNIR=null;
+    if(a.t===e.t&&a.i===e.i&&a.j===e.j&&(a.o||"")===(e.o||"")){S.sel=null;render();return}
+    var r=unirPar(a,e,m);
+    S.sel=e; render(); toast(r.msg);
+  }
+
   /* La viga se interrumpe donde hay COLUMNA */
   function tramoViga(o,i,j,m){
     m=m||N();var ejeX=(o==="h");
     return tramo(ejeX,i,j,m,
       function(k){return !!m.vigas[ejeX?("h:"+k+":"+j):("v:"+i+":"+k)]},
       function(a){
-        if(!esPrima(ejeX,a,m))return true;
-        return !!m.cols[ejeX?(a+":"+j):(i+":"+a)];
+        /* una COLUMNA siempre es apoyo.  Sin columna manda la junta, si la
+           hay -unir o separar a mano-, y si no el eje: el principal corta y
+           el prima no.  Sin juntas esto es exactamente lo de antes. */
+        if(m.cols[ejeX?(a+":"+j):(i+":"+a)])return true;
+        var jt=junta(m,ejeX?("Vh:"+a+":"+j):("Vv:"+i+":"+a));
+        if(jt===true){
+          var b1=m.vigas[ejeX?("h:"+(a-1)+":"+j):("v:"+i+":"+(a-1))],
+              b2=m.vigas[ejeX?("h:"+a+":"+j):("v:"+i+":"+a)];
+          return !(b1&&b2&&tipoViga(b1)===tipoViga(b2));
+        }
+        if(jt===false)return true;
+        return !esPrima(ejeX,a,m);
       });
   }
   /* La losa se estira en la direccion de su armado, que es la que da su luz,
@@ -4184,8 +4313,19 @@ var TT={script:performance.now()};
     var t=tramo(ejeX,i,j,m,
       function(k){return !!m.losas[ejeX?(k+":"+j):(i+":"+k)]},
       function(a){
-        if(!esPrima(ejeX,a,m))return true;
-        return !!m.vigas[ejeX?("v:"+a+":"+j):("h:"+i+":"+a)];
+        /* una VIGA siempre es apoyo; sin viga, la junta y si no el eje.  La
+           junta solo vale entre losas del mismo tipo y armadas a lo largo:
+           si luego giras una o le cambias el tipo, vuelven a ser dos. */
+        if(m.vigas[ejeX?("v:"+a+":"+j):("h:"+i+":"+a)])return true;
+        var jt=junta(m,ejeX?("Lx:"+a+":"+j):("Ly:"+i+":"+a));
+        if(jt===true){
+          var c1=m.losas[ejeX?((a-1)+":"+j):(i+":"+(a-1))],
+              c2=m.losas[ejeX?(a+":"+j):(i+":"+a)];
+          return !(c1&&c2&&(c1.tipo||"aligerada")===(c2.tipo||"aligerada")&&
+                   dirLosa(c1)===dirLosa(c2)&&dirLosa(c1)===(ejeX?"x":"y"));
+        }
+        if(jt===false)return true;
+        return !esPrima(ejeX,a,m);
       });
     /* LA LOSA TIENE DOS BORDES EN LA DIRECCION DE SU LUZ, Y EN UN PAÑO EN
        PUNTA NO MIDEN LO MISMO.
@@ -4697,17 +4837,29 @@ var TT={script:performance.now()};
       C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j)};}
     function regViga(k,tv,ej){v[tv]++;
       V[k]={cod:p+"-"+(tv==="chata"?"VCH":"VP")+"-"+nn(v[tv]),eje:ej,tipo:tv};}
-    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])
-      regViga("h:"+i+":"+j,tipoViga(m.vigas["h:"+i+":"+j]),ejeVigaH(i,j));
-    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])
-      regViga("v:"+i+":"+j,tipoViga(m.vigas["v:"+i+":"+j]),ejeVigaV(i,j));
+    /* UNA VIGA UNIDA ES UNA: sus tramos comparten el codigo del primero.
+       Antes cada tramo gastaba un numero y los codigos salian con huecos. */
+    function vigaUnida(o,i2,j2){
+      var k=o+":"+i2+":"+j2, t=tramoViga(o,i2,j2,m),
+          dk=(o==="h")?("h:"+t.desde+":"+j2):("v:"+i2+":"+t.desde);
+      if(!t.dueno&&V[dk]){V[k]=V[dk];return}
+      regViga(k,tipoViga(m.vigas[k]),o==="h"?ejeVigaH(i2,j2,m):ejeVigaV(i2,j2,m));
+    }
+    for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])vigaUnida("h",i,j);
+    for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])vigaUnida("v",i,j);
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j]){pl++;
       P["h:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaH(i,j)};}
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j]){pl++;
       P["v:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaV(i,j)};}
+    /* igual la losa, y su eje va de apoyo a apoyo: «A-B / 3-4», no «3-3′» */
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
-      var t2=m.losas[i+":"+j].tipo;l[t2]++;
-      L[i+":"+j]={cod:p+"-"+TIPO_LOSA[t2]+"-"+nn(l[t2]),eje:ejeLosa(i,j)};}
+      var ol=m.losas[i+":"+j], dl=dirLosa(ol), tl=tramoLosa(dl,i,j,m),
+          dk=(dl==="y")?(i+":"+tl.desde):(tl.desde+":"+j);
+      if(!tl.dueno&&L[dk]){L[i+":"+j]=L[dk];continue;}
+      var t2=ol.tipo;l[t2]++;
+      L[i+":"+j]={cod:p+"-"+TIPO_LOSA[t2]+"-"+nn(l[t2]),
+        eje:(dl==="y")?(eX(i,m)+"-"+eX(i+1,m)+" / "+eY(tl.desde,m)+"-"+eY(tl.hasta,m))
+                      :(eX(tl.desde,m)+"-"+eX(tl.hasta,m)+" / "+eY(j,m)+"-"+eY(j+1,m))};}
     return{C:C,V:V,L:L,P:P,nivel:p};
   }
 
@@ -5166,6 +5318,9 @@ var TT={script:performance.now()};
       pintaCandidatos(s,mg,esc,c);})();
     var g=el("g",{});s.appendChild(g);
     var i,j;
+    /* flechas, espesores y contornos van ENCIMA de todos los paños: la de
+       una losa unida cruza los paños que se pintan despues de ella */
+    var sobre=el("g",{"pointer-events":"none"}), luego=[];
 
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
@@ -5175,18 +5330,34 @@ var TT={script:performance.now()};
            sesgada sus cuatro esquinas no forman angulos rectos.  Se dibuja
            por sus cuatro nudos; en planta recta sale el rectangulo de
            siempre y no se nota la diferencia. */
-        var Q=q4p(i,j), C=centro(Q);
+        /* LOSA UNIDA: sus paños se iluminan juntos al seleccionar, y la
+           flecha y el espesor van UNA vez, en el centro de la losa entera,
+           con su contorno punteado.  Antes cada paño llevaba los suyos y
+           una losa parecia dos. */
+        var dl=dirLosa(o), tl=tramoLosa(dl,i,j,m), unida=(tl.hasta-tl.desde>1);
+        if(!sl&&unida&&S.sel&&S.sel.t==="losa")
+          sl=(dl==="y")?(S.sel.i===i&&S.sel.j>=tl.desde&&S.sel.j<tl.hasta)
+                       :(S.sel.j===j&&S.sel.i>=tl.desde&&S.sel.i<tl.hasta);
+        var Q=q4p(i,j);
         g.appendChild(el("polygon",{points:pts(Q),
           fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
-        var cx=C.x, cy=C.y,
-            r=Math.min(Math.abs(Q[1].x-Q[0].x),Math.abs(Q[3].y-Q[0].y))*0.26;
-        var ln=o.dir==="y"?el("line",{x1:cx,y1:cy-r,x2:cx,y2:cy+r}):el("line",{x1:cx-r,y1:cy,x2:cx+r,y2:cy});
-        ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
-        ln.setAttribute("color","var("+tp.c+")");
-        ln.setAttribute("marker-end","url(#ar)");ln.setAttribute("marker-start","url(#ar)");g.appendChild(ln);
-        var pl2=predimLosa(i,j,m);
-        if(S.verDims&&pl2)
-          txt(g,cx,cy+r+13,"e = "+pl2.e+" cm","var(--acc-ink)",9.5);
+        if(tl.dueno)(function(i,j,o,tp,Q,dl,tl,unida){ luego.push(function(){
+          var QT=!unida?Q:((dl==="y")
+                ?[XY(i,tl.desde),XY(i+1,tl.desde),XY(i+1,tl.hasta),XY(i,tl.hasta)]
+                :[XY(tl.desde,j),XY(tl.hasta,j),XY(tl.hasta,j+1),XY(tl.desde,j+1)]);
+          var C=centro(QT), cx=C.x, cy=C.y,
+              r=!unida?Math.min(Math.abs(Q[1].x-Q[0].x),Math.abs(Q[3].y-Q[0].y))*0.26
+                      :((dl==="y")?Math.abs(QT[3].y-QT[0].y):Math.abs(QT[1].x-QT[0].x))*0.3;
+          if(unida)sobre.appendChild(el("polygon",{points:pts(QT),fill:"none",
+            stroke:"var("+tp.c+")","stroke-width":1.2,"stroke-dasharray":"5 3"}));
+          var ln=o.dir==="y"?el("line",{x1:cx,y1:cy-r,x2:cx,y2:cy+r}):el("line",{x1:cx-r,y1:cy,x2:cx+r,y2:cy});
+          ln.setAttribute("stroke","var("+tp.c+")");ln.setAttribute("stroke-width",1.5);
+          ln.setAttribute("color","var("+tp.c+")");
+          ln.setAttribute("marker-end","url(#ar)");ln.setAttribute("marker-start","url(#ar)");sobre.appendChild(ln);
+          var pl2=predimLosa(i,j,m);
+          if(S.verDims&&pl2)
+            txt(sobre,cx,cy+r+13,"e = "+pl2.e+" cm","var(--acc-ink)",9.5);
+        });})(i,j,o,tp,Q,dl,tl,unida);
       }
       /* La zona de clic sigue al paño.  Un rectangulo recto sobre una
          planta sesgada deja fuera una punta del paño y se mete en el de al
@@ -5194,6 +5365,7 @@ var TT={script:performance.now()};
       var hit=el("polygon",{points:pts(encoge(q4p(i,j),7)),"class":"hit"});
       hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
     }
+    g.appendChild(sobre); luego.forEach(function(f){f()});
     /* LOS EJES SE INCLINAN.
 
        Esta linea iba de X(i) a X(i): del nudo de ARRIBA al nudo de ARRIBA,
@@ -5238,6 +5410,13 @@ var TT={script:performance.now()};
       if(o==="h"){x1=X(i,j);y1=Y(j,i);x2=X(i+1,j);y2=Y(j,i+1)}
       else       {x1=X(i,j);y1=Y(j,i);x2=X(i,j+1);y2=Y(j+1,i)}
       var sl=S.sel&&S.sel.t==="viga"&&S.sel.o===o&&S.sel.i===i&&S.sel.j===j;
+      /* VIGA UNIDA: al seleccionar un tramo se ilumina la viga entera, y su
+         seccion se rotula una vez, en el centro de la viga */
+      var tv=m.vigas[k]?tramoViga(o,i,j,m):null;
+      if(!sl&&tv&&tv.hasta-tv.desde>1&&S.sel&&S.sel.t==="viga"&&S.sel.o===o&&
+         m.vigas[key(o,S.sel.i,S.sel.j)])
+        sl=(o==="h")?(S.sel.j===j&&S.sel.i>=tv.desde&&S.sel.i<tv.hasta)
+                    :(S.sel.i===i&&S.sel.j>=tv.desde&&S.sel.j<tv.hasta);
       if(m.placas[k]){          /* la placa va debajo y mas gruesa: es el muro */
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--placa)",
           "stroke-width":9,opacity:sl?1:.9,"stroke-linecap":"butt"}));
@@ -5252,8 +5431,9 @@ var TT={script:performance.now()};
       /* La cota sale del calculo, no de lo que devolviera Excel: ya no hay
          estado "obsoleta", porque se recalcula con cada cambio. */
       var pv2=m.vigas[k]?predimViga(o,i,j,m):null;
-      if(S.verDims&&pv2){
-        var vx=(x1+x2)/2,vy=(y1+y2)/2;
+      if(S.verDims&&pv2&&tv&&tv.dueno){
+        var T1=(o==="h")?XY(tv.desde,j):XY(i,tv.desde), T2=(o==="h")?XY(tv.hasta,j):XY(i,tv.hasta);
+        var vx=(T1.x+T2.x)/2,vy=(T1.y+T2.y)/2;
         txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,
             Math.round(pv2.b*100)+"×"+Math.round(pv2.h*100),
             (pv2.tipo==="chata"&&!pv2.cumple)?"#c62828":"var(--acc-ink)",9);
@@ -5498,6 +5678,7 @@ var TT={script:performance.now()};
       render();return;
     }
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
+    if(S.tool==="unir"){if(primero)unirClic(d,i,j);return}
     if(S.tool==="col"&&d.t==="col"){
       var ec=m.cols[key(i,j)];
       /* misma forma -> quita;  forma distinta -> convierte.  Igual que las
@@ -6406,12 +6587,13 @@ var TT={script:performance.now()};
     }
     if(!e.target.dataset||!e.target.dataset.t)return;
     if(!e.target.dataset||!e.target.dataset.t)return;
-    if(S.tool!=="sel")snap();
+    /* Unir guarda su propio paso de deshacer, y solo cuando une o separa */
+    if(S.tool!=="sel"&&S.tool!=="unir")snap();
     pintando=true;modo=null;tocados={};aplicar(e.target,true);
     if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}}
   });
   svg.addEventListener("pointermove",function(e){
-    if(!pintando||S.tool==="sel")return;
+    if(!pintando||S.tool==="sel"||S.tool==="unir")return;
     var n=document.elementFromPoint(e.clientX,e.clientY);aplicar(n,false);
   });
   window.addEventListener("pointerup",function(){if(pintando){pintando=false;tocados={};guardar()}});
@@ -6505,9 +6687,10 @@ var TT={script:performance.now()};
     viga:"Clic o arrastra sobre los tramos · el mismo tipo lo quita, otro tipo lo convierte",
     placa:"Clic o arrastra sobre los tramos entre ejes",
     losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado",
-    zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna"};
+    zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna",
+    unir:"Clic en una losa o viga y luego en la que sigue · si ya van juntas, las separa"};
   function elegirTool(t){
-    S.tool=t;
+    S.tool=t; UNIR=null;
     if(S.vista!=="plano"){S.vista="plano";render();}
     document.querySelectorAll(".tool").forEach(function(o){
       o.setAttribute("aria-pressed",o.dataset.tool===t)});
@@ -6666,6 +6849,19 @@ var TT={script:performance.now()};
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){var o=m.losas[key(i,j)];
       if(ejeX){(dup===i?[i,i+1]:[mapa(i)]).forEach(function(x){if(x!==null)l[key(x,j)]=clon(o)})}
       else{(dup===j?[j,j+1]:[mapa(j)]).forEach(function(y){if(y!==null)l[key(i,y)]=clon(o)})}}
+    /* LAS JUNTAS SIGUEN A SU BORDE.  Cada clave lleva un indice de celda y
+       uno de eje o nudo; solo se mueve el de la direccion que cambia: el de
+       celda se duplica con el vano partido, como la losa, y el de eje o nudo
+       se corre como las columnas. */
+    var jn={};
+    if(m.juntas&&typeof m.juntas==="object")Object.keys(m.juntas).forEach(function(k2){
+      var p=k2.split(":"), tj=p[0], A=+p[1], B=+p[2], val=m.juntas[k2];
+      function pon(x,y){if(x!==null&&y!==null)jn[tj+":"+x+":"+y]=val}
+      function celda(cc,f){(dup===cc?[cc,cc+1]:[mapa(cc)]).forEach(f)}
+      if(ejeX){ if(tj==="Ly")celda(A,function(z){pon(z,B)}); else pon(mapa(A),B); }
+      else    { if(tj==="Lx")celda(B,function(z){pon(A,z)}); else pon(A,mapa(B)); }
+    });
+    m.juntas=jn;
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
@@ -6942,6 +7138,9 @@ var TT={script:performance.now()};
             : kv("Peralte h",'<b>'+Math.round(pv.h*100)+" cm</b>  ("+
                  pv.hTeorico.toFixed(3)+" m teórico)",1))+
           kv("Ancho b",'<b>'+Math.round(pv.b*100)+" cm</b>",1)+"</dl>"+
+          (v.tramo.hasta-v.tramo.desde>1
+            ? '<p class="calcnote">Una sola viga de '+(v.tramo.hasta-v.tramo.desde)+
+              ' tramos: no hay columna entre sus apoyos. Se parte con <b>Unir / separar</b>.</p>' : "")+
           (ch&&!pv.cumple
             ? '<p class="aviso" style="margin-top:8px">La luz libre de '+
               pv.Ln.toFixed(2)+" m pasa de los "+pv.LnMax.toFixed(2)+
@@ -6978,7 +7177,7 @@ var TT={script:performance.now()};
         kv("Ancho de las vigas",lo.desc.toFixed(2)+" m",1)+
         kv("Luz libre Ln",lo.L.toFixed(2)+" − "+lo.desc.toFixed(2)+" = "+lo.Ln.toFixed(2)+" m",1)+
         kv("Uso",(m.losas[key(q.i,q.j)].amb||m.losas[key(q.i,q.j)].uso||"sin asignar"),1)+
-        kv("S/C",scPano(m.losas[key(q.i,q.j)])+" kg/m²",1)+
+        kv("S/C",scTramoLosa(q.i,q.j,m)+" kg/m²",1)+
         kv("α",pl.alfa,1)+
         kv("Peralte h",'<b>'+pl.e+" cm</b>  ("+pl.hTeorico.toFixed(3)+" m teórico)",1)+
         (pl.b!=null?kv("Ancho de vigueta b",Math.round(pl.b*100)+" cm",1):"")+
@@ -6990,6 +7189,9 @@ var TT={script:performance.now()};
             " kg/m²: la tabla α de losas de Oviedo llega hasta 500. Se usa 19, pero el valor "+
             "queda fuera del libro y lo tienes que revisar tú.</p>"
           : "")+
+        (lo.tramo.hasta-lo.tramo.desde>1
+          ? '<p class="calcnote">Una sola losa de '+(lo.tramo.hasta-lo.tramo.desde)+
+            ' paños: no hay viga entre sus apoyos. Se parte con <b>Unir / separar</b>.</p>' : "")+
         '<div class="row" style="margin-top:8px"><button class="btn" id="girar">Girar armado</button></div>'+
         '<p class="calcnote">h = Ln / α, al múltiplo de 5 cm superior. '+
         (pl.sMax!=null?'S y hf son topes: el complemento adopta el límite y tú lo bajas si quieres. ':'')+
@@ -7142,7 +7344,7 @@ var TT={script:performance.now()};
     var o = m.losas[key(i,j)];
     if(!o) return null;
     var lo = medLosa(i,j,m);
-    var q = CALCULO.losa({subtipo:lo.tipo, Ln:lo.Ln, sc:scPano(o)});
+    var q = CALCULO.losa({subtipo:lo.tipo, Ln:lo.Ln, sc:scTramoLosa(i,j,m)});
     return {tipo:lo.tipo, dir:lo.dir, L:lo.L, Ln:lo.Ln, desc:lo.desc,
             alfa:q.alfa, h:q.h, e:Math.round(q.h*100), hTeorico:q.h_teorico,
             b:q.b, sMax:q.s_max, hfMin:q.hf_min, fueraDeTabla:q.fueraDeTabla};
@@ -7288,7 +7490,8 @@ var TT={script:performance.now()};
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
       var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
       if(!lo.tramo.dueno)continue;
-      LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),alfaLosa(m.losas[i+":"+j])]);}
+      LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),
+                        CRITERIOS.alfaLosa(lo.tipo,scTramoLosa(i,j,m)).alfa]);}
     /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
     var ar=areasPorTipo(m);
     /* La S/C del nivel ya no viaja: Excel la calcula ponderando los ambientes. */
@@ -7716,10 +7919,15 @@ var TT={script:performance.now()};
         var iMax=(o==="h")?nX-1:nX, jMax=(o==="h")?nY:nY-1, ii, jj;
         for(ii=0;ii<iMax;ii++)for(jj=0;jj<jMax;jj++){
           var kk=key(o,ii,jj), a=pt(m,ii,jj), b=(o==="h")?pt(m,ii+1,jj):pt(m,ii,jj+1);
-          if(m.vigas[kk]){
-            var pv=predimViga(o,ii,jj,m);
+          /* una viga UNIDA -por un prima sin columna o a mano- es UNA barra,
+             de apoyo a apoyo: la lleva su primer tramo y los demas no */
+          var tv=m.vigas[kk]?tramoViga(o,ii,jj,m):null;
+          if(tv&&tv.dueno){
+            var pv=predimViga(o,ii,jj,m),
+                va=(o==="h")?pt(m,tv.desde,jj):pt(m,ii,tv.desde),
+                vb=(o==="h")?pt(m,tv.hasta,jj):pt(m,ii,tv.hasta);
             L.vigas.push({cod:nm.V[kk].cod, tipo:pv.tipo,
-              x1:a[0],y1:a[1],x2:b[0],y2:b[1], b:r4(pv.b), h:r4(pv.h)});
+              x1:va[0],y1:va[1],x2:vb[0],y2:vb[1], b:r4(pv.b), h:r4(pv.h)});
           }
           if(m.placas[kk]){
             var pp=predimPlaca(o,ii,jj,m);
@@ -7732,8 +7940,13 @@ var TT={script:performance.now()};
       /* LOSAS: por sus cuatro nudos reales.  Un paño en punta es un
          trapecio, y a ETABS se le da el trapecio. */
       for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){
+        /* y la losa unida es UN area, por las cuatro esquinas de la losa
+           entera; los paños de dentro no se llevan */
+        var dl=dirLosa(m.losas[key(i,j)]), tl=tramoLosa(dl,i,j,m);
+        if(!tl.dueno)continue;
         var pl=predimLosa(i,j,m), cod=nm.L[key(i,j)].cod;
-        var q=[pt(m,i,j),pt(m,i+1,j),pt(m,i+1,j+1),pt(m,i,j+1)];
+        var q=(dl==="y")?[pt(m,i,tl.desde),pt(m,i+1,tl.desde),pt(m,i+1,tl.hasta),pt(m,i,tl.hasta)]
+                        :[pt(m,tl.desde,j),pt(m,tl.hasta,j),pt(m,tl.hasta,j+1),pt(m,tl.desde,j+1)];
         var e=(pl&&isFinite(pl.e))?pl.e:null;
         /* Sin espesor no se inventa uno: se avisa y el puente la salta. */
         if(e===null)out.avisos.push(cod+": la losa no tiene espesor calculado "+
@@ -7909,17 +8122,17 @@ var TT={script:performance.now()};
            Sin esto, en un modelo con primas mas de la mitad de los avisos
            graves eran falsos (22 de 42 en el de Victor) y tapaban los buenos. */
         if(panosDe(i,j).length&&!m.cols[key(i,j)]&&
-           !esPrima(true,i,m)&&!esPrima(false,j,m))
+           !esPrima(true,i,m)&&!esPrima(false,j,m)&&!pasaDeLargo(i,j,m))
           mete("apoyo","grave","nudo "+ex(i)+"-"+ey(j)+" con losa sin columna",
                nv,{t:"col",i:i,j:j});
       for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)
         if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)]&&
-           !esPrima(false,j,m))
+           !esPrima(false,j,m)&&!losaCruza("y",i,j,m))
           mete("apoyo","grave","borde "+ex(i)+ex(i+1)+"-"+ey(j)+" sin viga en X",
                nv,{t:"viga",o:"h",i:i,j:j});
       for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)
         if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)]&&
-           !esPrima(true,i,m))
+           !esPrima(true,i,m)&&!losaCruza("x",i,j,m))
           mete("apoyo","grave","borde "+ex(i)+"-"+ey(j)+ey(j+1)+" sin viga en Y",
                nv,{t:"viga",o:"v",i:i,j:j});
       /* El vano puede quedar mas corto que los apoyos que lo cierran.
@@ -8767,7 +8980,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
