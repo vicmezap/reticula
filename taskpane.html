@@ -6252,7 +6252,7 @@ var HOJA_MODELO = "RETICULA_MODELO";
    el panel al guardar y lo lee scripts/etabs/a_etabs.py.  Hoja aparte y no
    dentro del modelo, para que un fallo al exportar no toque lo guardado. */
 var HOJA_ETABS = "RETICULA_ETABS";
-var BUILD = "v122 · 12-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v124 · 12-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -6321,6 +6321,20 @@ var COMO_TEXTO = (function(){
   return a;
 })();
 
+/* EL FORMATO DE TEXTO VA EN SU PROPIO PASO, y no puede tumbar el guardado.
+   En v122 iba en el mismo lote que los valores: si Excel rechazara esa orden
+   se caeria el lote entero y el modelo dejaria de guardarse, que es mucho
+   peor que el riesgo que el formato evita.  Por separado, si falla, se sigue
+   y se guarda sin el. */
+function comoTexto(nombreHoja){
+  return Excel.run(function(context){
+    return hojaModelo(context, true, nombreHoja).then(function(ws){
+      ws.getRange("A1:A200").numberFormat = COMO_TEXTO;
+      return context.sync();
+    });
+  }).catch(function(){ /* sin formato de texto, pero se guarda igual */ });
+}
+
 function hojaModelo(context, crear, nombre){
   var libro = context.workbook, hoja = nombre || HOJA_MODELO;
   var ws = libro.worksheets.getItemOrNullObject(hoja);
@@ -6369,16 +6383,15 @@ function guardarModelo(json){
   for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
   if(trozos.length > 200)
     return Promise.reject(new Error("el modelo no cabe en la hoja oculta"));
-  return Excel.run(function(context){
+  return comoTexto(HOJA_MODELO).then(function(){ return Excel.run(function(context){
     return hojaModelo(context, true).then(function(ws){
       /* se limpia antes: un modelo mas corto dejaria cola del anterior */
       ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
-      ws.getRange("A1:A200").numberFormat = COMO_TEXTO;   /* ver COMO_TEXTO */
       ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
       try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
       return context.sync();
     });
-  });
+  }); });
 }
 
 /* El modelo para ETABS, troceado igual que el modelo.  Se limpia antes: una
@@ -6388,15 +6401,14 @@ function guardarEtabs(s){
   for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
   if(trozos.length > 200)
     return Promise.reject(new Error("el modelo para ETABS no cabe en la hoja oculta"));
-  return Excel.run(function(context){
+  return comoTexto(HOJA_ETABS).then(function(){ return Excel.run(function(context){
     return hojaModelo(context, true, HOJA_ETABS).then(function(ws){
       ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
-      ws.getRange("A1:A200").numberFormat = COMO_TEXTO;   /* ver COMO_TEXTO */
       ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
       try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
       return context.sync();
     });
-  });
+  }); });
 }
 
 /* ---------------- arranque ---------------- */
@@ -6534,8 +6546,14 @@ function alRecibir(arg){
   if(msg.a === "etabs"){
     var ej = juntaTrozos(msg);
     if(ej === null) return;
-    guardarEtabs(ej).catch(function(e){
+    /* Y SE CONFIRMA A LA VENTANA, como el modelo.  Sin confirmacion, un panel
+       que no sabe guardar esto -uno viejo que Excel tenga en cache- lo ignoraba
+       sin que nadie se enterara, y el puente de ETABS no encontraba nada. */
+    guardarEtabs(ej).then(function(){
+      responde({ a: "etabsGuardado", ok: true, bytes: ej.length });
+    }).catch(function(e){
       estado("No se pudo guardar el modelo para ETABS: " + e.message, "err");
+      responde({ a: "etabsGuardado", ok: false, msg: e.message });
     });
     return;
   }

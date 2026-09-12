@@ -3948,7 +3948,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v122 · 12-09-2026";
+  var BUILD="v124 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7358,13 +7358,45 @@ var TT={script:performance.now()};
     var m0=S.niveles[0], nX0=m0.dx.length+1, nY0=m0.dy.length+1, i, j, z=0;
     var out={v:1, build:BUILD, unidades:"m", fc:(+S.fc||210),
              categoria:(S.categoria||"comun"), ejes:[], niveles:[], avisos:[]};
-    /* Los ejes son del edificio: se toman del primer nivel.  Cada uno va de
-       su nudo del primer borde al del ultimo, asi que sale INCLINADO cuando
-       el lote esta sesgado, que es como ETABS lo tiene que dibujar. */
-    for(i=0;i<nX0;i++){var a0=pt(m0,i,0),b0=pt(m0,i,nY0-1);
-      out.ejes.push({dir:"X",id:eX(i,m0),x1:a0[0],y1:a0[1],x2:b0[0],y2:b0[1]});}
-    for(j=0;j<nY0;j++){var c0=pt(m0,0,j),d0=pt(m0,nX0-1,j);
-      out.ejes.push({dir:"Y",id:eY(j,m0),x1:c0[0],y1:c0[1],x2:d0[0],y2:d0[1]});}
+    /* Los ejes.  Cada uno va de su nudo del primer borde al del ultimo, asi
+       que sale INCLINADO cuando el lote esta sesgado, que es como ETABS lo
+       tiene que dibujar.  Y son los de TODOS los niveles, no solo los del
+       primero: se daba por hecho que la reticula es la misma en todos, y no
+       tiene por que; con un nivel de otros vanos, sus columnas quedaban en
+       ETABS sin eje debajo (siete en el modelo de Victor).  Dos niveles con
+       la MISMA linea comparten eje, alargado hasta cubrir a los dos; y si dos
+       lineas distintas se llaman igual, la de arriba lleva el nivel en el
+       nombre, porque ETABS no admite dos ejes con el mismo. */
+    function sobreLinea(a,x,y){
+      var dx=a.x2-a.x1, dy=a.y2-a.y1, L=Math.sqrt(dx*dx+dy*dy)||1;
+      return Math.abs((x-a.x1)*(dy/L)-(y-a.y1)*(dx/L))<0.001;
+    }
+    function alarga(a,b){
+      var dx=a.x2-a.x1, dy=a.y2-a.y1, L=Math.sqrt(dx*dx+dy*dy)||1,
+          ux=dx/L, uy=dy/L, x0=a.x1, y0=a.y1;
+      function t(x,y){return (x-x0)*ux+(y-y0)*uy}
+      var ts=[0,L,t(b.x1,b.y1),t(b.x2,b.y2)],
+          lo=Math.min.apply(null,ts), hi=Math.max.apply(null,ts);
+      a.x1=r4(x0+ux*lo); a.y1=r4(y0+uy*lo); a.x2=r4(x0+ux*hi); a.y2=r4(y0+uy*hi);
+    }
+    var usados={};
+    S.niveles.forEach(function(m,k){
+      var nXk=m.dx.length+1, nYk=m.dy.length+1, cand=[], ii, jj;
+      for(ii=0;ii<nXk;ii++){var a1=pt(m,ii,0),b1=pt(m,ii,nYk-1);
+        cand.push({dir:"X",id:eX(ii,m),x1:a1[0],y1:a1[1],x2:b1[0],y2:b1[1]});}
+      for(jj=0;jj<nYk;jj++){var c1=pt(m,0,jj),d1=pt(m,nXk-1,jj);
+        cand.push({dir:"Y",id:eY(jj,m),x1:c1[0],y1:c1[1],x2:d1[0],y2:d1[1]});}
+      cand.forEach(function(e){
+        var ya=null;
+        out.ejes.forEach(function(o){
+          if(!ya&&o.dir===e.dir&&sobreLinea(o,e.x1,e.y1)&&sobreLinea(o,e.x2,e.y2))ya=o;
+        });
+        if(ya){ alarga(ya,e); return; }
+        if(usados[e.id])e.id=e.id+"-N"+(k+1);
+        usados[e.id]=1;
+        out.ejes.push(e);
+      });
+    });
 
     S.niveles.forEach(function(m,k){
       var h=(+m.h||2.80), z0=r4(z), z1=r4(z+h); z+=h;
@@ -7416,6 +7448,7 @@ var TT={script:performance.now()};
       }
       out.niveles.push(L);
     });
+    plantasQueSobresalen().forEach(function(p){ out.avisos.push("N"+p.nivel+": "+p.texto); });
     return out;
   }
 
@@ -7528,6 +7561,31 @@ var TT={script:performance.now()};
      No inventa ninguna comprobacion nueva: son las mismas ocho, pero sobre
      TODO el edificio y sin tirarlas.
      ===================================================================== */
+  /* PISOS QUE SOBRESALEN DEL DE ABAJO.  Uno mas corto que el de abajo es un
+     retranqueo y no pasa nada; uno MAS LARGO deja una parte sin nada debajo,
+     y en ETABS eso son columnas colgando.  Puede ser a proposito -un
+     voladizo-, pero casi siempre es un vano mal escrito, y ninguna
+     comprobacion lo decia. */
+  function medidasPlanta(m){
+    return {X:Math.max(acum(m.dx,m.dx.length),acum(ladoX2(m),ladoX2(m).length)),
+            Y:Math.max(acum(m.dy,m.dy.length),acum(ladoY2(m),ladoY2(m).length))};
+  }
+  function plantasQueSobresalen(){
+    var out=[];
+    S.niveles.forEach(function(m,k){
+      if(!k)return;
+      var a=medidasPlanta(S.niveles[k-1]), b=medidasPlanta(m), q=[];
+      if(b.X>a.X+0.01)q.push("mide "+nm(b.X)+" m en X y el de abajo "+nm(a.X)+
+                             " ("+nm(b.X-a.X)+" m mas)");
+      if(b.Y>a.Y+0.01)q.push("mide "+nm(b.Y)+" m en Y y el de abajo "+nm(a.Y)+
+                             " ("+nm(b.Y-a.Y)+" m mas)");
+      if(q.length)out.push({nivel:k+1, texto:"la planta sobresale del piso de abajo: "+
+        q.join(" y ")+". En ETABS esa parte queda sin nada debajo; si no es a "+
+        "proposito, revisa sus vanos."});
+    });
+    return out;
+  }
+
   function revisarModelo(){
     var av=[],nn0;
     function mete(familia,gravedad,texto,nivel,ir){
@@ -7546,15 +7604,22 @@ var TT={script:performance.now()};
         return r;
       }
       for(i=0;i<nX;i++)for(j=0;j<nY;j++)
-        if(panosDe(i,j).length&&!m.cols[key(i,j)])
+        /* un nudo sobre un eje PRIMA no pide columna, ni un borde a lo largo
+           de uno pide viga: el prima es una referencia de dibujo, no un apoyo.
+           Sin esto, en un modelo con primas mas de la mitad de los avisos
+           graves eran falsos (22 de 42 en el de Victor) y tapaban los buenos. */
+        if(panosDe(i,j).length&&!m.cols[key(i,j)]&&
+           !esPrima(true,i,m)&&!esPrima(false,j,m))
           mete("apoyo","grave","nudo "+ex(i)+"-"+ey(j)+" con losa sin columna",
                nv,{t:"col",i:i,j:j});
       for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)
-        if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)])
+        if((m.losas[key(i,j)]||m.losas[key(i,j-1)])&&!m.vigas[key("h",i,j)]&&
+           !esPrima(false,j,m))
           mete("apoyo","grave","borde "+ex(i)+ex(i+1)+"-"+ey(j)+" sin viga en X",
                nv,{t:"viga",o:"h",i:i,j:j});
       for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)
-        if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)])
+        if((m.losas[key(i,j)]||m.losas[key(i-1,j)])&&!m.vigas[key("v",i,j)]&&
+           !esPrima(true,i,m))
           mete("apoyo","grave","borde "+ex(i)+"-"+ey(j)+ey(j+1)+" sin viga en Y",
                nv,{t:"viga",o:"v",i:i,j:j});
       /* El vano puede quedar mas corto que los apoyos que lo cierran.
@@ -7592,6 +7657,9 @@ var TT={script:performance.now()};
         mete("geometria","revisar","planta irregular: "+q.join(" y ")+
              ". Las luces salen del borde mas largo.",nv,null);
       }
+    });
+    plantasQueSobresalen().forEach(function(p){
+      mete("geometria","revisar",p.texto,p.nivel,null);
     });
     /* LA CIMENTACION es del 1er piso, no de cada nivel. */
     (function(){
@@ -8140,7 +8208,26 @@ var TT={script:performance.now()};
     var ex=null;
     try{ ex=exportaEtabs(); }catch(e){}
     if(!ex) return "";
-    var t={c:0,v:0,l:0,p:0};
+    var t={c:0,v:0,l:0,p:0}, env=null, lib=null, llego;
+    /* SI LLEGO AL LIBRO.  El panel lateral lo confirma al guardarlo.  Si se
+       mando y no hay confirmacion, el panel de Excel es uno viejo que no lo
+       sabe guardar -Excel lo guarda en cache- y el puente no encontraria
+       nada: justo lo que paso la primera vez, sin que nada lo dijera. */
+    try{ env=+localStorage.getItem("reticula_etabs_enviado")||null;
+         lib=JSON.parse(localStorage.getItem("reticula_etabs_libro")||"null"); }catch(e){}
+    function hora(ms){var d=new Date(ms);
+      return (d.getHours()<10?"0":"")+d.getHours()+":"+(d.getMinutes()<10?"0":"")+d.getMinutes()}
+    if(lib&&lib.ok&&(!env||lib.cuando>=env))
+      llego='<b style="color:#2e7d32">Ya está en el libro (guardado a las '+hora(lib.cuando)+').</b>';
+    else if(lib&&!lib.ok&&(!env||lib.cuando>=env))
+      llego='<b style="color:#c62828">El libro no lo pudo guardar: '+(lib.msg||"")+'</b>';
+    else if(env)
+      llego='<b style="color:#b26a00">Mandado a las '+hora(env)+', pero el libro todavía no '+
+            'confirma que lo guardó.</b> Si no cambia en unos segundos, el panel lateral de '+
+            'Excel es una versión vieja que no sabe guardarlo: cierra Excel del todo, vuelve a '+
+            'abrirlo y dale otra vez a <b>Guardar proyecto</b>.';
+    else
+      llego='Todavía no se ha mandado al libro: dale a <b>Guardar proyecto</b>.';
     ex.niveles.forEach(function(L){ t.c+=L.columnas.length; t.v+=L.vigas.length;
                                      t.l+=L.losas.length; t.p+=L.placas.length; });
     return '<div class="hg-res"><div class="rule" style="margin:0 0 10px"></div>'+
@@ -8151,6 +8238,7 @@ var TT={script:performance.now()};
       'mismo: <b>'+ex.niveles.length+'</b> nivel(es), <b>'+t.c+'</b> columnas, <b>'+
       t.v+'</b> vigas, <b>'+t.l+'</b> losas y <b>'+t.p+'</b> placas, sobre <b>'+
       ex.ejes.length+'</b> ejes.</p>'+
+      '<p class="nota">'+llego+'</p>'+
       '<p class="nota">Para llevarla, abre ETABS con un modelo en blanco y ejecuta '+
       '<code>scripts/etabs/a_etabs.bat</code>. No pisa un modelo que ya tenga algo, '+
       'y al terminar comprueba pieza a pieza lo que creó.</p>'+
@@ -8446,6 +8534,14 @@ var TT={script:performance.now()};
       di("Proyecto abierto desde el libro: "+niv+" nivel(es).");
     }else if(m.a==="guardado"){
       di(m.ok?"Guardado en el libro.":("No se pudo guardar: "+(m.msg||"")));
+    }else if(m.a==="etabsGuardado"){
+      /* el libro confirma el modelo para ETABS.  Se apunta para que la
+         pestana Hojas Excel diga cuando llego de verdad, y solo se avisa en
+         voz alta si fallo: en cada guardado automatico seria ruido. */
+      try{ localStorage.setItem("reticula_etabs_libro",
+             JSON.stringify({ok:!!m.ok, cuando:Date.now(), msg:m.msg||""})); }catch(e){}
+      if(!m.ok)di("No se pudo guardar el modelo para ETABS: "+(m.msg||""));
+      if(window.RET&&RET.estado&&RET.estado().modo==="hojas"&&RET.render)RET.render();
     }else if(m.a==="hojas"){
       var b=document.getElementById("btnHojas");
       if(b){ b.disabled=false; b.textContent=b.dataset.txt||"Generar hojas"; }
@@ -8471,7 +8567,12 @@ var TT={script:performance.now()};
     try{
       if(window.RET&&RET.etabs){
         var e=JSON.stringify(RET.etabs());
-        if(forzar||e!==ultimoEtabs){ if(mandaLargo("etabs",e))ultimoEtabs=e; }
+        if(forzar||e!==ultimoEtabs){
+          if(mandaLargo("etabs",e)){
+            ultimoEtabs=e;
+            try{ localStorage.setItem("reticula_etabs_enviado",String(Date.now())); }catch(x2){}
+          }
+        }
       }
     }catch(x){}
     return true;
