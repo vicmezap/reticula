@@ -6248,7 +6248,11 @@
 <script>
 "use strict";
 var HOJA_MODELO = "RETICULA_MODELO";
-var BUILD = "v118 · 12-09-2026";                 /* lo sella gen_complemento.py */
+/* El modelo ya resuelto para ETABS: posiciones reales y secciones.  Lo escribe
+   el panel al guardar y lo lee scripts/etabs/a_etabs.py.  Hoja aparte y no
+   dentro del modelo, para que un fallo al exportar no toque lo guardado. */
+var HOJA_ETABS = "RETICULA_ETABS";
+var BUILD = "v122 · 12-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -6304,15 +6308,27 @@ function comprobarCache(){
    32 767 caracteres y un edificio de varios niveles los pasa; leer un solo
    trozo sigue funcionando, asi que los modelos guardados antes se abren. */
 var TROZO = 30000;
+/* LA COLUMNA DE LOS TROZOS VA COMO TEXTO.  Una celda que recibe un texto que
+   PARECE otra cosa lo convierte: «=...» pasa a formula, «-12.5» o «0001» a
+   numero.  Un trozo de JSON que empezara por «=» quedaria roto sin que nada
+   avisara, y con el, el modelo guardado.  Comprobado en Excel: con el formato
+   @ puesto ANTES de escribir, los siete casos probados se conservan tal cual,
+   y el formato sobrevive al borrado de contenido que se hace antes de cada
+   escritura.  Vale para el modelo y para el modelo de ETABS. */
+var COMO_TEXTO = (function(){
+  var a = [], i;
+  for(i = 0; i < 200; i++) a.push(["@"]);
+  return a;
+})();
 
-function hojaModelo(context, crear){
-  var libro = context.workbook;
-  var ws = libro.worksheets.getItemOrNullObject(HOJA_MODELO);
+function hojaModelo(context, crear, nombre){
+  var libro = context.workbook, hoja = nombre || HOJA_MODELO;
+  var ws = libro.worksheets.getItemOrNullObject(hoja);
   ws.load("isNullObject");
   return context.sync().then(function(){
     if(!ws.isNullObject) return ws;
     if(!crear) return null;
-    var nueva = libro.worksheets.add(HOJA_MODELO);
+    var nueva = libro.worksheets.add(hoja);
     try{ nueva.visibility = Excel.SheetVisibility.veryHidden; }
     catch(e){ try{ nueva.visibility = "Hidden"; }catch(x){} }
     return nueva;
@@ -6357,6 +6373,25 @@ function guardarModelo(json){
     return hojaModelo(context, true).then(function(ws){
       /* se limpia antes: un modelo mas corto dejaria cola del anterior */
       ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
+      ws.getRange("A1:A200").numberFormat = COMO_TEXTO;   /* ver COMO_TEXTO */
+      ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
+      try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
+      return context.sync();
+    });
+  });
+}
+
+/* El modelo para ETABS, troceado igual que el modelo.  Se limpia antes: una
+   exportacion mas corta dejaria cola de la anterior, y el puente la leeria. */
+function guardarEtabs(s){
+  var trozos = [], i;
+  for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
+  if(trozos.length > 200)
+    return Promise.reject(new Error("el modelo para ETABS no cabe en la hoja oculta"));
+  return Excel.run(function(context){
+    return hojaModelo(context, true, HOJA_ETABS).then(function(ws){
+      ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
+      ws.getRange("A1:A200").numberFormat = COMO_TEXTO;   /* ver COMO_TEXTO */
       ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
       try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
       return context.sync();
@@ -6491,6 +6526,16 @@ function alRecibir(arg){
     }).catch(function(e){
       estado("No se pudo guardar: " + e.message, "err");
       responde({ a: "guardado", ok: false, msg: e.message });
+    });
+    return;
+  }
+
+  /* el modelo resuelto para ETABS: lo lee scripts/etabs/a_etabs.py */
+  if(msg.a === "etabs"){
+    var ej = juntaTrozos(msg);
+    if(ej === null) return;
+    guardarEtabs(ej).catch(function(e){
+      estado("No se pudo guardar el modelo para ETABS: " + e.message, "err");
     });
     return;
   }
