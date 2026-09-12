@@ -677,6 +677,345 @@
 });
 </script>
 <script>
+/* ===== manda.js (inlinado) ===== */
+/* =====================================================================
+   manda.js — QUIÉN MANDA, ESCRITO UNA SOLA VEZ
+
+   De toda una lista de elementos, uno gobierna: el único cuya sección hay
+   que dibujar y el que decide la respuesta de la hoja.  Elegirlo parece
+   trivial —«el mayor»— y no lo es, porque en un empate hay que desempatar
+   siempre igual en TODOS los sitios donde se elige.
+
+   Y hasta aquí se elegía en tres sitios distintos:
+
+     · en JS dentro de hojas_pre.js, para decidir a quién se DIBUJA;
+     · como FÓRMULA de Excel, en una columna oculta K, para decidir a quién
+       NOMBRA el cuadro «el que manda» de la hoja;
+     · y en el panel, en cuanto las fichas de decisión empiecen a nombrarlo,
+       habría sido el tercero.
+
+   Los dos primeros son gemelos escritos por separado, y el comentario de
+   hojas_pre.js documenta que ya se separaron una vez: «se dibujaba una
+   sección y justo debajo la hoja nombraba otra».  Lo único que los ata hoy
+   es una prueba.  Este módulo los convierte en uno.
+
+   LA REGLA DEL EMPATE.  elQueManda compara con «>» estricto, así que en un
+   empate gana EL PRIMERO de la lista.  Es exactamente lo que hace
+   MATCH(...;0) en Excel, que devuelve la primera coincidencia.  Esa
+   coincidencia no es casualidad y no se puede tocar: si aquí se pusiera
+   «>=», el panel nombraría el último y la hoja el primero.
+
+   EL REDONDEO.  Vive aquí porque las claves lo necesitan y porque tenía que
+   dejar de estar duplicado: hojas_pre.js llevaba diecisiete Math.ceil sin
+   holgura para la coma flotante y subían un escalón de más sobre un valor
+   exacto (0.55 m salía 60 cm).  Se le preguntó a Excel: CEILING(55;5) da 55.
+   Ver probar_redondeo.js.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./criterios.js"));
+  else raiz.MANDA = definir(raiz.CRITERIOS);
+})(typeof self !== "undefined" ? self : this, function (C) {
+  "use strict";
+
+  /* ---------------- el redondeo, uno solo ---------------- */
+  var EPS = 1e-9;
+  function arriba(v, paso) { return Math.ceil(v / paso - EPS) * paso; }
+  function a5(m) { return arriba(m * 100, 5); }        /* a 5 cm, en cm enteros */
+
+  /* ---------------- el motor del desempate ----------------
+     En empate gana el primero.  Ver la nota de arriba: es lo que hace
+     MATCH(...;0), y de eso depende que la hoja y el panel digan lo mismo. */
+  function elQueManda(filas, valor) {
+    var mejor = null, mx = -Infinity;
+    (filas || []).forEach(function (f) {
+      var v = valor(f);
+      if (typeof v === "number" && isFinite(v) && v > mx) { mx = v; mejor = f; }
+    });
+    return mejor;
+  }
+
+  /* ---------------- lo que cada tipo necesita del proyecto ---------------- */
+  function catDe(P) { return C.CATEGORIA[(P || {}).categoria] || C.CATEGORIA.comun; }
+  function pesoDe(P) { var c = catDe(P); return c && c.peso ? c.peso : 1000; }
+  function fcDe(P) { return +((P || {}).fc) || 210; }
+  function sigmaTDe(P) { return (+((P || {}).sigma) || 3.0) * 10; }
+
+  /* =====================================================================
+     LOS NUEVE TIPOS
+
+     Cada uno declara tres cosas, y nada más:
+
+       clave(f, P)     el número por el que se ordena.  Mayor manda.
+       medidas(f, P)   lo que hace falta para DIBUJAR su sección, en las
+                       mismas unidades que espera el dibujo.
+       formula(i)      la misma clave, pero escrita como fórmula de Excel
+                       para la fila i de la columna oculta.
+
+     clave y formula tienen que dar el mismo número sobre la misma fila.
+     Esa es toda la promesa de este archivo, y probar_hojas.js la comprueba
+     resolviendo la fórmula contra el JS.
+     ===================================================================== */
+
+  /* Las tres losas comparten clave: manda la mayor luz libre.
+     f = [codigo, eje, Ln, alfa, ...] · en la hoja Ln es la columna E. */
+  function claveLosa(f) { return +f[2]; }
+  function formulaLosa(i) { return '=IFERROR(E' + i + '*1,0)'; }
+  function hLosa(f) { return (+f[2]) / (+f[3]); }        /* peralte en metros */
+
+  var TIPOS = {
+
+    aligerada: {
+      clave: claveLosa,
+      formula: formulaLosa,
+      medidas: function (f) {
+        var hh = hLosa(f);
+        return [a5(hh),
+                Math.max(arriba(hh / C.PROPORCION.viguetaAligerada, 0.05),
+                         C.MINIMOS.viguetaAligerada) * 100];
+      }
+    },
+
+    maciza: {
+      clave: claveLosa,
+      formula: formulaLosa,
+      medidas: function (f) { return [a5(hLosa(f))]; }
+    },
+
+    nervada: {
+      clave: claveLosa,
+      formula: formulaLosa,
+      medidas: function (f) {
+        var hh = hLosa(f);
+        return [a5(hh),
+                Math.max(arriba(hh / C.PROPORCION.nervadura, 0.05),
+                         C.MINIMOS.nervadura) * 100,
+                Math.round(C.PROPORCION.nervadura * hh * 100)];
+      }
+    },
+
+    /* VIGA PRINCIPAL.  Manda el peralte en cm; desempata el ancho en cm
+       (peso 1/1000) y, si siguen iguales, la luz en m (peso 1/1e6).  Los
+       factores funcionan porque h y b van de 5 en 5 y Ln < 1000 m.
+       f = [codigo, eje, Ln, B, alfa] · en la hoja: E=Ln, F=B, G=alfa,
+       H=h(m), I=h(cm), J=b(cm). */
+    vigaPrincipal: {
+      clave: function (f) {
+        return hVigaCm(f) + bVigaCm(f) / 1000 + (+f[2]) / 1000000;
+      },
+      formula: function (i) {
+        return '=IFERROR(I' + i + '*1,0)+IFERROR(J' + i + '*1,0)/1000'
+             + '+IFERROR(E' + i + '*1,0)/1000000';
+      },
+      medidas: function (f) { return [bVigaCm(f), hVigaCm(f)]; }
+    },
+
+    /* VIGA CHATA.  Antepone las que NO CUMPLEN con un salto de 10000, y
+       dentro de cada grupo manda la mayor luz.  Es el único tipo cuya clave
+       depende de un veredicto y no solo de una medida.
+       OJO AL CRUCE: en el array alfa va en f[3] y el peralte de la losa en
+       f[4], pero la lista los escribe al revés. */
+    vigaChata: {
+      clave: function (f) {
+        var lnMax = (+f[4]) / 100 * (+f[3]);            /* h losa (cm) · alfa */
+        return ((+f[2]) > lnMax ? 10000 : 0) + (+f[2]);
+      },
+      formula: function (i) {
+        return '=(J' + i + '="NO CUMPLE")*10000+IFERROR(E' + i + '*1,0)';
+      },
+      medidas: function (f) {
+        return [Math.max(arriba((+f[4]) / C.PROPORCION.baseViga, 5), bMinViga()),
+                +f[4]];
+      }
+    },
+
+    /* COLUMNA, rectangular y circular: la MISMA clave.  Manda el área Ac en
+       cm²; desempata el peso en servicio en toneladas.  La forma no entra en
+       la clave, solo separa las dos hojas.
+       f = [codigo, ubicacion, forma, pisos, Atrib] · en la hoja G=P(t), H=Ac. */
+    columna: {
+      clave: function (f, P) { return acDe(f, P) + pServCol(f, P) / 1000; },
+      formula: function (i) {
+        return '=IFERROR(H' + i + '*1,0)+IFERROR(G' + i + '*1,0)/1000';
+      },
+      medidas: function (f, P) {
+        var lado = ladoColumna(f, P);
+        return [lado, lado];
+      }
+    },
+
+    columnaCircular: {
+      clave: function (f, P) { return acDe(f, P) + pServCol(f, P) / 1000; },
+      formula: function (i) {
+        return '=IFERROR(H' + i + '*1,0)+IFERROR(G' + i + '*1,0)/1000';
+      },
+      medidas: function (f, P) { return [diamColumna(f, P)]; }
+    },
+
+    /* PLACA.  Manda el espesor; desempata el área colocada.  El espesor lo
+       puede fijar la ALTURA y no solo la longitud: t = max(lm/div, hm/div, min).
+       f = [codigo, eje, longitud, altura, ...] */
+    placa: {
+      clave: function (f) { return tPlacaCm(f) + (+f[3]) * tPlacaCm(f) / 100 / 1000; },
+      /* I = espesor (cm), J = area colocada.  Copiada de hojas_pre.js:981,
+         no deducida: al deducirla salieron otras dos columnas. */
+      formula: function (i) {
+        return '=IFERROR(I' + i + '*1,0)+IFERROR(J' + i + '*1,0)/1000';
+      },
+      medidas: function (f) { return [(+f[3]) * 100, tPlacaCm(f)]; }
+    },
+
+    /* ZAPATA.  Manda el área en planta B×L; desempata el peralte.
+       f = [codigo, tipo, pisos, Atrib, ?, col_b, col_h] */
+    zapata: {
+      clave: function (f, P) {
+        var d = ladosZapata(f, P);
+        return d.area + d.H / 1000;
+      },
+      /* H = area en planta, I = peralte.  Copiada de hojas_pre.js:1362. */
+      formula: function (i) {
+        return '=IFERROR(H' + i + '*1,0)+IFERROR(I' + i + '*1,0)/1000';
+      },
+      medidas: function (f, P) {
+        var d = ladosZapata(f, P);
+        return [(+f[5]) * 100, (+f[6]) * 100, d.B * 100, d.L * 100, d.H * 100];
+      }
+    }
+  };
+
+  /* ---------------- las cuentas que usan las claves ----------------
+     Están aquí y no en cada hoja porque una clave sin sus cuentas es media
+     clave: si la fórmula viaja sola, el ancho y la longitud se vuelven a
+     escribir en el otro lado y ya son dos copias. */
+
+  function bMinViga() { return Math.round(C.MINIMOS.baseViga * 100); }
+  function bVigaCm(f) {
+    return Math.max(arriba((+f[3]) / C.PROPORCION.baseVigaPrincipal * 100, 5),
+                    bMinViga());
+  }
+  function hVigaCm(f) { return a5((+f[2]) / (+f[4])); }
+
+  function pServCol(f, P) {                                    /* toneladas */
+    return (+f[3]) * (+f[4]) * pesoDe(P) / 1000;
+  }
+  function acDe(f, P) {                                        /* cm2 */
+    var k = (f[1] === "Interior") ? C.COLUMNA.C.interior
+          : (f[1] === "Exterior") ? C.COLUMNA.C.exterior
+          : C.COLUMNA.C.esquinera;
+    return pServCol(f, P) * 1000 / (k * fcDe(P));
+  }
+  function cMin() { return Math.round(C.MINIMOS.anchoColumna * 100); }
+  function ladoColumna(f, P) {
+    var ac = acDe(f, P);
+    return ac > 0 ? Math.max(arriba(Math.sqrt(ac), 5), cMin()) : 0;
+  }
+  function diamColumna(f, P) {
+    var ac = acDe(f, P);
+    return ac > 0 ? Math.max(arriba(Math.sqrt(4 * ac / Math.PI), 5), cMin()) : 0;
+  }
+
+  function tPlacaCm(f) {
+    return Math.max(arriba(Math.max((+f[3]) / C.PLACA.divisorLongitud,
+                                    (+f[4]) / C.PLACA.divisorAltura,
+                                    C.MINIMOS.espesorPlaca) * 100, 5),
+                    Math.round(C.MINIMOS.espesorPlaca * 100));
+  }
+
+  function fSismoZ(f) {
+    var Z = C.ZAPATA;
+    return (f[1] === "Centrada") ? Z.Fsismo.centrada
+         : (f[1] === "Medianera") ? Z.Fsismo.medianera : Z.Fsismo.esquinera;
+  }
+  function pServZ(f, P) { return (+f[2]) * (+f[3]) * pesoDe(P) / 1000; }
+  function azDe(f, P) {                                        /* m2 */
+    return C.ZAPATA.incrementoPesoPropio * pServZ(f, P) * fSismoZ(f) / sigmaTDe(P);
+  }
+  function ladosZapata(f, P) {
+    var Z = C.ZAPATA, az = azDe(f, P), red = Z.redondeoLado, B, L;
+    if (f[1] === "Medianera") {
+      B = arriba(Math.sqrt(az / 2), red);
+      L = arriba(2 * Math.sqrt(az / 2), red);
+    } else {
+      var d = ((+f[6]) - (+f[5])) / 2;                /* (col h - col b) / 2 */
+      B = arriba(Math.sqrt(az) - d, red);
+      L = arriba(Math.sqrt(az) + d, red);
+    }
+    var div = (f[1] === "Esquinera") ? Z.divisorPeralte.esquinera
+                                     : Z.divisorPeralte.centrada;
+    var H = arriba((L - (+f[6])) / div, Z.redondeoPeralte);
+    return { B: B, L: L, H: H, area: B * L };
+  }
+
+  /* =====================================================================
+     LA PUERTA
+
+     de(tipo, filas, P) devuelve el que manda Y sus medidas a la vez, porque
+     quien pregunta siempre quiere las dos cosas: la hoja para dibujar su
+     sección y nombrarla debajo, y el panel para enseñar la ficha.  Pedirlas
+     por separado es justo la grieta por la que se colaba el desacuerdo.
+     ===================================================================== */
+  function de(tipo, filas, P) {
+    var T = TIPOS[tipo];
+    if (!T) throw new Error("no sé quién manda en «" + tipo + "»");
+    var f = elQueManda(filas, function (x) { return T.clave(x, P); });
+    if (!f) return { fila: null, codigo: null, medidas: null, valor: null };
+    return { fila: f, codigo: f[0], indice: (filas || []).indexOf(f),
+             medidas: T.medidas(f, P), valor: T.clave(f, P) };
+  }
+
+  function formula(tipo, i) {
+    var T = TIPOS[tipo];
+    if (!T) throw new Error("no hay fórmula de «" + tipo + "»");
+    return T.formula(i);
+  }
+
+  function clave(tipo) {
+    var T = TIPOS[tipo];
+    if (!T) throw new Error("no hay clave de «" + tipo + "»");
+    return T.clave;
+  }
+
+  /* Las dos hojas de columna salen de la MISMA lista; lo que las separa es
+     la forma.  Va aquí para que el panel no reparta por su cuenta: si lo
+     hiciera, una ficha podría nombrar una circular en la hoja rectangular. */
+  function esCircular(f) { return f[2] === "Circular"; }
+
+  function reparte(P) {
+    P = P || {};
+    var L = P.L || {}, cols = P.C || [];
+    return {
+      aligerada:       L.aligerada || [],
+      maciza:          L.maciza || [],
+      nervada:         L.nervada || [],
+      vigaPrincipal:   P.V || [],
+      vigaChata:       P.VCH || [],
+      columna:         cols.filter(function (f) { return !esCircular(f); }),
+      columnaCircular: cols.filter(esCircular),
+      placa:           P.P || [],
+      zapata:          P.Z || []
+    };
+  }
+
+  /* Todo lo que manda, de una vez: lo que necesita la pantalla de
+     decisiones del panel.  Los tipos sin ningún elemento salen con fila
+     null, no se omiten: «no hay ninguna placa» también es una respuesta. */
+  function todo(P) {
+    var listas = reparte(P), out = {};
+    Object.keys(listas).forEach(function (t) {
+      var r = de(t, listas[t], P);
+      r.cuantos = listas[t].length;
+      out[t] = r;
+    });
+    return out;
+  }
+
+  return { de: de, todo: todo, formula: formula, clave: clave,
+           reparte: reparte, esCircular: esCircular,
+           elQueManda: elQueManda, arriba: arriba, a5: a5,
+           tipos: function () { return Object.keys(TIPOS); } };
+});
+</script>
+<script>
 /* ===== e020.js (inlinado) ===== */
 /* =====================================================================
    e020.js — TABLA 1 DE LA NORMA E.020, copia unica.
@@ -3588,7 +3927,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v109 · 11-09-2026";
+  var BUILD="v110 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
