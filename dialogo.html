@@ -4288,7 +4288,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v136 · 12-09-2026";
+  var BUILD="v137 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8415,8 +8415,13 @@ var TT={script:performance.now()};
                       ". Van las cargas y la masa, sin los patrones SX y SY.");
       return out;
     }
-    function dir(q){return {Cb:q.Cb,k:q.k,T:q.T,C:q.C,R:q.R,V:q.V}}
+    /* las fuerzas de cada piso, el peso de cada nivel y si es regular: con
+       eso ver_tablas compara piso a piso con ETABS y elige 0,75 R u 0,85 R */
+    function dir(q){return {Cb:q.Cb,k:q.k,T:q.T,C:q.C,R:q.R,V:q.V,
+      filas:(q.filas||[]).map(function(f){return {nombre:f.nombre,hi:f.hi,F:f.F,V:f.V}})}}
     out.sismo={norma:c.norma, ecc:0.05, top:out.niveles[n-1].nombre, P:c.est.P,
+      regular:(c.Ia===1&&c.Ip===1),
+      pisos:c.niveles.map(function(x){return {nombre:x.nombre,P:x.P}}),
       x:dir(c.est.x), y:dir(c.est.y),
       patrones:[{nombre:"SX+",dir:"x",campo:"XDirPlusE"},{nombre:"SX-",dir:"x",campo:"XDirMinusE"},
                 {nombre:"SY+",dir:"y",campo:"YDirPlusE"},{nombre:"SY-",dir:"y",campo:"YDirMinusE"}]};
