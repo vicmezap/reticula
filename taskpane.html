@@ -6643,9 +6643,153 @@
     return h.cerrar(r);
   }
 
+  /* =====================================================================
+     FUERZAS_VIGAS, FUERZAS_COLUMNAS, FUERZAS_PLACAS y REACCIONES — las
+     fuerzas de diseno que devolvio ETABS, ordenadas por elemento (C3).
+     Son DATOS de ETABS armados por oviedo/fuerzas.js; lo unico que calcula
+     la hoja es el servicio de las reacciones.  Son la entrada del diseno con
+     la E.060.
+     ===================================================================== */
+  var F8 = [[3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9], [10, 10]];
+  var F2 = [[3, 4], [5, 10]];
+  var FMT7 = { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00", 7: "0.00" };
+  function sinResultados(que) {
+    return new Error("no hay " + que + " de ETABS: lleva el modelo con RETICULA.bat [1] y trae los resultados con [2]");
+  }
+  function guion(x) { return (x === null || x === undefined || (typeof x === "number" && !isFinite(x))) ? "—" : x; }
+  function cmTxt(p) {
+    function c(v) { return v == null ? "—" : Math.round(v * 100); }
+    return p.forma === "circular" ? "Ø " + c(p.D) : c(p.b) + " × " + c(p.h);
+  }
+  function nivelesDe(lista) {
+    var o = [];
+    lista.forEach(function (x) { if (o.indexOf(x.nivel) < 0) o.push(x.nivel); });
+    return o;
+  }
+  function pasoTxt(q) { return q.corto + (q.paso ? " " + q.paso : ""); }
+  function origenFuerzas(h, r, FZ, texto) {
+    var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = ["Left", "Center", "Left"];
+    r = h.seccion(r, "1. DE DÓNDE SALEN");
+    r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+    r = h.fila(r, LD, ["Modelo de ETABS", FZ.archivo || "-", "leídos el " + (FZ.leido || "-")], null, { alinear: IZQ3 });
+    r = h.fila(r, LD, ["¿Al día con el modelador?", FZ.alDia ? "SÍ" : "NO", FZ.alDia ? "mismos pisos, piezas y secciones"
+                       : "el modelo cambió: vuelve a llevarlo y a traer los resultados"], null, { alinear: IZQ3 });
+    r = h.fila(r, LD, ["Combinaciones", (FZ.combinaciones || []).length, (FZ.combinaciones || []).join(" · ")], null,
+               { alinear: IZQ3 });
+    r++;
+    return h.nota(r, texto);
+  }
+
+  function fuerzasVigas(P) {
+    var FZ = P && P.fuerzas;
+    if (!FZ || !FZ.vigas || !FZ.vigas.length) throw sinResultados("fuerzas de vigas");
+    var h = F.hoja("FUERZAS_VIGAS"), r = 6, sec = 2;
+    h.titulo("FUERZAS DE DISEÑO · VIGAS");
+    r = origenFuerzas(h, r, FZ, "Momentos en t·m y cortantes en t, de la " + (FZ.envolvente || "envolvente") + " en las "
+      + "caras de los apoyos. Mu⁻ tracciona arriba y Mu⁺ abajo, en valor absoluto. El centro es el mayor del tramo sin "
+      + "las caras, y su x es la del Mu⁺. Vu a d: la cortante a d = h − 6 cm de la cara (E.060 Art. 11.1.3.1). La x se "
+      + "mide desde el nudo inicial de la viga.");
+    var fmt = { 1: "0.000", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00" },
+        al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Left"] };
+    nivelesDe(FZ.vigas).forEach(function (nv) {
+      r = h.seccion(r, (sec++) + ". VIGAS DEL NIVEL " + (nv || "-"));
+      r = h.encabezado(r, F8, ["Viga · sección", "x (m)", "Mu⁻ (t·m)", "Mu⁺ (t·m)", "Vu (t)", "Vu a d (t)", "Tu (t·m)",
+                               "Eje · b × h (cm)"], 34.0);
+      FZ.vigas.filter(function (v) { return v.nivel === nv; }).forEach(function (v) {
+        r = h.fila(r, F8, [v.cod + " · cara izq.", v.izq.x, v.izq.Mneg, v.izq.Mpos, v.izq.V, guion(v.izq.Vd), guion(v.T),
+                           (v.eje ? v.eje + " · " : "") + cmTxt(v)], fmt, al);
+        r = h.fila(r, F8, [v.cod + " · centro", v.centro.x, v.centro.Mneg, v.centro.Mpos, "—", "—", "—",
+                           "ln = " + v.ln.toFixed(2) + " m"], fmt, al);
+        r = h.fila(r, F8, [v.cod + " · cara der.", v.der.x, v.der.Mneg, v.der.Mpos, v.der.V, guion(v.der.Vd), "—",
+                           v.d !== null ? "d = " + v.d.toFixed(2) + " m" : ""], fmt, al);
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
+  function fuerzasColumnas(P) {
+    var FZ = P && P.fuerzas;
+    if (!FZ || !FZ.columnas || !FZ.columnas.length) throw sinResultados("fuerzas de columnas");
+    var h = F.hoja("FUERZAS_COLUMNAS"), r = 6, sec = 2;
+    h.titulo("FUERZAS DE DISEÑO · COLUMNAS");
+    r = origenFuerzas(h, r, FZ, "Cada combinación de resistencia en el pie y en la cabeza. Pu en t, positiva en "
+      + "compresión; momentos en t·m. M3 y V2 van en la dirección X global y M2 y V3 en la Y (ejes locales de ETABS "
+      + "sin girar). |V2| y |V3|: la mayor del pie y la cabeza. En las combinaciones con sismo, máx y mín son los "
+      + "extremos de cada fuerza por separado: no ocurren a la vez.");
+    nivelesDe(FZ.columnas).forEach(function (nv) {
+      r = h.seccion(r, (sec++) + ". COLUMNAS DEL NIVEL " + (nv || "-"));
+      r = h.encabezado(r, F8, ["Columna · combinación", "Pu (t)", "M2 pie (t·m)", "M3 pie (t·m)", "M2 cabeza (t·m)",
+                               "M3 cabeza (t·m)", "|V2| (t)", "|V3| (t)"], 34.0);
+      FZ.columnas.filter(function (c) { return c.nivel === nv; }).forEach(function (c) {
+        r = h.fila(r, F2, [c.cod, (c.eje ? "eje " + c.eje + " · " : "") + cmTxt(c) + " cm"], null,
+                   { alinear: ["Left", "Left"] });
+        c.filas.forEach(function (q) {
+          r = h.fila(r, F8, ["   " + pasoTxt(q), guion(q.Pu), guion(q.pie.M2), guion(q.pie.M3), guion(q.cabeza.M2),
+                             guion(q.cabeza.M3), q.V2, q.V3], FMT7, { negrita: false });
+        });
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
+  function fuerzasPlacas(P) {
+    var FZ = P && P.fuerzas;
+    if (!FZ || !FZ.placas || !FZ.placas.length) throw sinResultados("fuerzas de muros");
+    var h = F.hoja("FUERZAS_PLACAS"), r = 6, sec = 2;
+    h.titulo("FUERZAS DE DISEÑO · PLACAS");
+    r = origenFuerzas(h, r, FZ, "Fuerzas de muro (Pier Forces) de cada combinación de resistencia, abajo -en la base del "
+      + "piso- y arriba. Pu en t, positiva en compresión; momentos en t·m. V2 y M3 son los del plano del muro; M2, fuera "
+      + "del plano.");
+    FZ.placas.forEach(function (mu) {
+      r = h.seccion(r, (sec++) + ". MURO " + mu.muro);
+      r = h.encabezado(r, F8, ["Piso · combinación", "Pu base (t)", "V2 base (t)", "M3 base (t·m)", "Pu arriba (t)",
+                               "V2 arriba (t)", "M3 arriba (t·m)", "M2 base (t·m)"], 34.0);
+      mu.pisos.slice().reverse().forEach(function (ps) {
+        r = h.fila(r, F2, [ps.piso, (ps.placas.length ? ps.placas.join(", ") : "sin placa del modelador") +
+                           (ps.t !== null ? " · t = " + Math.round(ps.t * 100) + " cm" : "")], null,
+                   { alinear: ["Left", "Left"] });
+        ps.filas.forEach(function (q) {
+          var b = q.base || {}, a = q.arriba || {};
+          r = h.fila(r, F8, ["   " + pasoTxt(q), guion(b.Pu), guion(b.V2), guion(b.M3), guion(a.Pu), guion(a.V2),
+                             guion(a.M3), guion(b.M2)], FMT7, { negrita: false });
+        });
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
+  function reacciones(P) {
+    var FZ = P && P.fuerzas;
+    if (!FZ || !FZ.reacciones || !FZ.reacciones.length) throw sinResultados("reacciones");
+    var h = F.hoja("REACCIONES"), r = 6, sec = 2;
+    h.titulo("REACCIONES EN LA BASE");
+    r = origenFuerzas(h, r, FZ, "Las reacciones de cada caso en cada apoyo, en t y t·m, en ejes globales. Servicio = "
+      + "Dead + CM + CV + CVT. En una placa se suman sus nudos llevando los momentos al centro del muro. SDX y SDY son "
+      + "envolventes sin signo -se aplican con ±- y no se pueden sumar entre nudos: el sismo de una placa se toma de "
+      + "FUERZAS_PLACAS, en la base del primer piso.");
+    [["FZ", "CARGA VERTICAL FZ (t)"], ["MX", "MOMENTO MX (t·m)"], ["MY", "MOMENTO MY (t·m)"]].forEach(function (cmp) {
+      r = h.seccion(r, (sec++) + ". " + cmp[1]);
+      r = h.encabezado(r, F8, ["Apoyo", "Dead", "CM", "CV", "CVT", "Servicio", "SDX", "SDY"], 22.0);
+      FZ.reacciones.forEach(function (a) {
+        function v(caso) { var q = a.casos[caso]; return q ? q[cmp[0]] : "—"; }
+        r = h.fila(r, F8, [a.pieza ? a.pieza + (a.nudos.length > 1 ? " (" + a.nudos.length + " nudos)" : "")
+                                   : "nudo " + a.nudos.join(", "),
+                           v("Dead"), v("CM"), v("CV"), v("CVT"), "=SUM(D" + r + ":G" + r + ")", v("SDX"), v("SDY")],
+                   FMT7, null);
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
   return { criteriosOviedo: criteriosOviedo, normaE020: normaE020,
            cuadrosE030: cuadrosE030, datos: datos, modelo: modelo,
-           analisisSismico: analisisSismico, verificacionSismica: verificacionSismica };
+           analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
+           fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
+           reacciones: reacciones };
 });
 </script>
 <script>
@@ -6658,7 +6802,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 /* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
    los pide para verificar la estructura y disenar. */
 var HOJA_RES = "RETICULA_RESULTADOS";
-var BUILD = "v145 · 13-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v147 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7025,7 +7169,11 @@ var REGISTRO = {
   "PRE_ZAPATA":         function(p){ return HOJAS_PRE.zapata(p); },
   "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); },
   "ANALISIS_SISMICO":   function(p){ return HOJAS.analisisSismico(p); },
-  "VERIFICACION_SISMICA": function(p){ return HOJAS.verificacionSismica(p); }
+  "VERIFICACION_SISMICA": function(p){ return HOJAS.verificacionSismica(p); },
+  "FUERZAS_VIGAS":      function(p){ return HOJAS.fuerzasVigas(p); },
+  "FUERZAS_COLUMNAS":   function(p){ return HOJAS.fuerzasColumnas(p); },
+  "FUERZAS_PLACAS":     function(p){ return HOJAS.fuerzasPlacas(p); },
+  "REACCIONES":         function(p){ return HOJAS.reacciones(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en

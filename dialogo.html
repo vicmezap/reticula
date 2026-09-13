@@ -373,6 +373,16 @@
 .vf-no{border-left-color:#c62828}.vf-no .vf-v{color:#c62828}
 .vf-rev{border-left-color:#b26a00}.vf-rev .vf-v{color:#b26a00}
 .vf-na .vf-v{color:var(--ink-3)}
+/* Resultados ETABS › Vigas, Columnas, Placas y Reacciones: las fuerzas */
+.fz-t th.fz-grupo{text-align:center;border-bottom:1px solid var(--line-soft)}
+.fz-t tr.fz-g td{background:var(--panel);color:var(--ink);font:600 11.5px "IBM Plex Sans",sans-serif;text-align:left;
+  padding-top:8px}
+.fz-t tr.fz-s td{color:var(--ink-2);font:600 11px "IBM Plex Sans",sans-serif;text-align:left}
+.fz-v td:nth-child(2),.fz-v td:nth-child(3),
+.fz-v thead tr:first-child th:nth-child(2),.fz-v thead tr:first-child th:nth-child(3){text-align:left}
+/* la segunda fila de encabezado no empieza en la primera columna: no va a la izquierda */
+.fz-t thead tr+tr th:first-child{text-align:right;color:var(--ink-3)}
+.fz-filtro .sis-sel{flex:0 0 220px}
 .sis-sub{font:600 11px "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ink-3);margin:10px 0 4px}
 .sis-ch{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
@@ -3930,6 +3940,256 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== fuerzas.js (inlinado) ===== */
+/* =====================================================================
+   fuerzas.js — LAS FUERZAS DE DISENO QUE DEVOLVIO ETABS, ordenadas por
+   elemento (parte C3).  Sin interfaz: lo usan las sub-pestanas Vigas,
+   Columnas, Placas y Reacciones de Resultados ETABS y las hojas
+   FUERZAS_VIGAS, FUERZAS_COLUMNAS, FUERZAS_PLACAS y REACCIONES.
+
+   Unidades t y t·m, las que pone el puente para leer.  Convenciones:
+     · Vigas: la envolvente ENVOLVENTE E060 en cada estacion, de cara a cara
+       (el puente pone desfases automaticos con RZ = 0).  Tres secciones:
+       las dos caras y el centro -el mayor del tramo sin las caras-.  Mu⁻ es
+       el que tracciona arriba (M3 < 0 en ETABS) y Mu⁺ el que tracciona
+       abajo (M3 > 0), los dos en valor absoluto.  Vu en las caras y a
+       d = h − 0,06 m de la cara (E.060 Art. 11.1.3.1), interpolando la
+       envolvente entre estaciones.
+     · Columnas: cada combinacion de resistencia en el pie y en la cabeza.
+       Pu positiva en compresion (en ETABS P < 0 es compresion).  M3 y V2 van
+       con el eje local 2, que en una columna sin girar es la X global; M2 y
+       V3, con la Y.  En las combinaciones con sismo ETABS da Max y Min de
+       cada fuerza por separado: no son simultaneas y van como dos filas.
+     · Placas: las fuerzas de muro (Pier Forces) abajo y arriba de cada
+       piso, con su signo.  V2 y M3 son los del plano del muro.
+     · Reacciones: por caso en cada apoyo.  Las de una placa se suman nudo a
+       nudo llevando los momentos al centro del muro.  Los casos espectrales
+       (SDX, SDY) son envolventes sin signo y no se pueden sumar entre
+       nudos: en una placa quedan vacios, y su sismo se toma de las fuerzas
+       de muro en la base.
+
+     node scripts/complemento/oviedo/probar_fuerzas.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.FUERZAS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var D_MENOS = 0.06;                          /* d = h − 6 cm */
+  var PASO = { valor: "", Max: "máx", Min: "mín" };
+  var CASOS = ["Dead", "CM", "CV", "CVT"], SISMOS = ["SDX", "SDY"];
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function abs(x) { var v = num(x); return v === null ? null : Math.abs(v); }
+  function neg(x) { var v = num(x); return v === null ? null : (v === 0 ? 0 : -v); }
+  function corto(combo) { return String(combo || "").split(" ")[0]; }
+
+  /* El nivel, la pieza y el eje de cada codigo, desde el modelo exportado */
+  function piezas(ex, ejes) {
+    var o = {};
+    ((ex && ex.niveles) || []).forEach(function (L, k) {
+      ["columnas", "vigas", "placas"].forEach(function (fam) {
+        (L[fam] || []).forEach(function (p) {
+          o[p.cod] = { fam: fam, nivel: L.nombre, orden: k, p: p, eje: (ejes && ejes[p.cod]) || "" };
+        });
+      });
+    });
+    return o;
+  }
+  /* las combinaciones en el orden del puente, y despues las que no conozca */
+  function ordenCombos(obj, combos) {
+    var ks = Object.keys(obj || {}), l = combos || [];
+    return l.filter(function (c) { return ks.indexOf(c) >= 0; })
+      .concat(ks.filter(function (c) { return l.indexOf(c) < 0; }));
+  }
+  function porNivel(a, b) {
+    var oa = a.orden == null ? 999 : a.orden, ob = b.orden == null ? 999 : b.orden;
+    return (oa - ob) || (a.cod < b.cod ? -1 : (a.cod > b.cod ? 1 : 0));
+  }
+
+  /* --- vigas ---------------------------------------------------------------- */
+  function vigas(R, ex, ejes) {
+    var pz = piezas(ex, ejes), out = [];
+    Object.keys((R && R.vigas) || {}).forEach(function (cod) {
+      var dat = R.vigas[cod] || {};
+      var est = (dat.estaciones || []).filter(function (e) { return e && num(e[0]) !== null; })
+        .slice().sort(function (a, b) { return a[0] - b[0]; });
+      if (!est.length) return;
+      var info = pz[cod] || {}, p = info.p || {}, h = num(p.h), a = est[0], b = est[est.length - 1];
+      function Mpos(e) { return Math.max(0, num(e[1]) || 0); }
+      function Mneg(e) { return Math.max(0, -(num(e[2]) || 0)); }
+      function Vabs(vmax, vmin) { return Math.max(Math.abs(num(vmax) || 0), Math.abs(num(vmin) || 0)); }
+      /* la envolvente de cortante en x: Vmax y Vmin se interpolan por separado */
+      function Ven(x) {
+        var i, t;
+        for (i = 1; i < est.length; i++) {
+          if (x <= est[i][0] + 1e-12) {
+            t = (x - est[i - 1][0]) / ((est[i][0] - est[i - 1][0]) || 1);
+            return Vabs(est[i - 1][3] + t * (est[i][3] - est[i - 1][3]),
+                        est[i - 1][4] + t * (est[i][4] - est[i - 1][4]));
+          }
+        }
+        return Vabs(b[3], b[4]);
+      }
+      var ln = b[0] - a[0], d = h !== null ? h - D_MENOS : null, cabe = d !== null && d > 0 && d < ln / 2;
+      var interior = est.length > 2 ? est.slice(1, -1) : est, cp = null, cn = null;
+      interior.forEach(function (e) {
+        if (!cp || Mpos(e) > cp.M) cp = { x: e[0], M: Mpos(e) };
+        if (!cn || Mneg(e) > cn.M) cn = { x: e[0], M: Mneg(e) };
+      });
+      out.push({ cod: cod, nivel: info.nivel || "", orden: info.orden, eje: info.eje || "", tipo: p.tipo || "",
+        b: num(p.b), h: h, sec: p.sec || "", ln: ln, d: d,
+        izq: { x: a[0], Mneg: Mneg(a), Mpos: Mpos(a), V: Vabs(a[3], a[4]),
+               xd: cabe ? a[0] + d : null, Vd: cabe ? Ven(a[0] + d) : null },
+        centro: { x: cp.x, Mpos: cp.M, xNeg: cn.x, Mneg: cn.M },
+        der: { x: b[0], Mneg: Mneg(b), Mpos: Mpos(b), V: Vabs(b[3], b[4]),
+               xd: cabe ? b[0] - d : null, Vd: cabe ? Ven(b[0] - d) : null },
+        T: abs(dat.T), estaciones: est.length });
+    });
+    return out.sort(porNivel);
+  }
+
+  /* --- columnas ------------------------------------------------------------- */
+  function columnas(R, ex, ejes) {
+    var pz = piezas(ex, ejes), out = [];
+    Object.keys((R && R.columnas) || {}).forEach(function (cod) {
+      var c = R.columnas[cod] || {}, info = pz[cod] || {}, p = info.p || {}, filas = [];
+      ordenCombos(c, R.combinaciones).forEach(function (cb) {
+        ["valor", "Max", "Min"].forEach(function (paso) {
+          var q = c[cb] && c[cb][paso];
+          if (!q || !q.pie || !q.cabeza) return;
+          filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso],
+            Pu: neg(q.pie[0]), PuCabeza: neg(q.cabeza[0]),
+            pie: { V2: num(q.pie[1]), V3: num(q.pie[2]), M2: num(q.pie[4]), M3: num(q.pie[5]) },
+            cabeza: { V2: num(q.cabeza[1]), V3: num(q.cabeza[2]), M2: num(q.cabeza[4]), M3: num(q.cabeza[5]) },
+            V2: Math.max(abs(q.pie[1]) || 0, abs(q.cabeza[1]) || 0),
+            V3: Math.max(abs(q.pie[2]) || 0, abs(q.cabeza[2]) || 0),
+            T: Math.max(abs(q.pie[3]) || 0, abs(q.cabeza[3]) || 0) });
+        });
+      });
+      if (!filas.length) return;
+      out.push({ cod: cod, nivel: info.nivel || "", orden: info.orden, eje: info.eje || "", forma: p.forma || "",
+                 b: num(p.b), h: num(p.h), D: num(p.D), sec: p.sec || "", filas: filas });
+    });
+    return out.sort(porNivel);
+  }
+
+  /* --- placas --------------------------------------------------------------- */
+  /* {codigo de placa: etiqueta de muro}.  Lo que trae ETABS si lo trae; si
+     no -resultados de antes-, la misma regla del puente (a_etabs.py,
+     etiquetas_de_muro): una etiqueta por linea, con el nombre de la placa del
+     piso mas bajo sin el nivel, y -2, -3... si ese nombre ya estaba. */
+  function muros(R, ex) {
+    if (R && R.muros && Object.keys(R.muros).length) return R.muros;
+    var por = {}, usadas = {}, asig = {};
+    function r2(v) { return Math.round((+v || 0) * 100) / 100; }
+    ((ex && ex.niveles) || []).forEach(function (L) {
+      (L.placas || []).forEach(function (p) {
+        var a = [r2(p.x1), r2(p.y1)], b = [r2(p.x2), r2(p.y2)];
+        var primero = (a[0] < b[0] || (a[0] === b[0] && a[1] <= b[1]));
+        var clave = (primero ? a.concat(b) : b.concat(a)).join("|");
+        if (!(clave in por)) {
+          var base = p.cod.indexOf("-") >= 0 ? p.cod.split("-").slice(1).join("-") : p.cod, nombre = base, k = 2;
+          while (usadas[nombre]) { nombre = base + "-" + k; k++; }
+          usadas[nombre] = true;
+          por[clave] = nombre;
+        }
+        asig[p.cod] = por[clave];
+      });
+    });
+    return asig;
+  }
+  function placas(R, ex) {
+    var asig = muros(R, ex), pz = piezas(ex), out = [], porMuro = {};
+    Object.keys(asig).forEach(function (cod) { (porMuro[asig[cod]] = porMuro[asig[cod]] || []).push(cod); });
+    function fuerzas(v) {
+      return v ? { Pu: neg(v[0]), V2: num(v[1]), V3: num(v[2]), T: num(v[3]), M2: num(v[4]), M3: num(v[5]) } : null;
+    }
+    Object.keys((R && R.placas) || {}).forEach(function (muro) {
+      var pisos = R.placas[muro] || {}, lista = [];
+      Object.keys(pisos).forEach(function (piso) {
+        var cods = (porMuro[muro] || []).filter(function (cod) { return pz[cod] && pz[cod].nivel === piso; });
+        var pp = cods.length ? pz[cods[0]] : null, filas = [];
+        ordenCombos(pisos[piso], R.combinaciones).forEach(function (cb) {
+          ["valor", "Max", "Min"].forEach(function (paso) {
+            var q = pisos[piso][cb] && pisos[piso][cb][paso];
+            if (!q || (!q.Bottom && !q.Top)) return;
+            filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso], base: fuerzas(q.Bottom), arriba: fuerzas(q.Top) });
+          });
+        });
+        lista.push({ piso: piso, orden: pp ? pp.orden : null, placas: cods, t: pp ? num(pp.p.t) : null,
+                     sec: pp ? (pp.p.sec || "") : "", filas: filas });
+      });
+      lista.sort(function (a, b) { return (a.orden == null ? 999 : a.orden) - (b.orden == null ? 999 : b.orden); });
+      out.push({ muro: muro, pisos: lista });
+    });
+    return out.sort(function (a, b) { return a.muro < b.muro ? -1 : (a.muro > b.muro ? 1 : 0); });
+  }
+
+  /* --- reacciones ----------------------------------------------------------- */
+  /* la suma de un caso en los nudos de un apoyo, con los momentos llevados al
+     centro (xc, yc): M = Σ M + r × F, con r = (dx, dy, 0) */
+  function suma(ns, caso, xc, yc) {
+    var o = { FX: 0, FY: 0, FZ: 0, MX: 0, MY: 0, MZ: 0 }, hay = false;
+    ns.forEach(function (n) {
+      var v = n.casos[caso];
+      if (!v) return;
+      hay = true;
+      var FX = num(v[0]) || 0, FY = num(v[1]) || 0, FZ = num(v[2]) || 0, dx = (+n.x || 0) - xc, dy = (+n.y || 0) - yc;
+      o.FX += FX; o.FY += FY; o.FZ += FZ;
+      o.MX += (num(v[3]) || 0) + dy * FZ;
+      o.MY += (num(v[4]) || 0) - dx * FZ;
+      o.MZ += (num(v[5]) || 0) + dx * FY - dy * FX;
+    });
+    return hay ? o : null;
+  }
+  function reacciones(R, ex) {
+    var pz = piezas(ex), grupos = {}, orden = [];
+    ((R && R.reacciones) || []).forEach(function (n) {
+      if (!n || !n.casos) return;
+      var clave = n.pieza || ("nudo " + n.nudo);
+      if (!grupos[clave]) { grupos[clave] = { pieza: n.pieza || null, nudos: [] }; orden.push(clave); }
+      grupos[clave].nudos.push(n);
+    });
+    var out = orden.map(function (k) {
+      var g = grupos[k], ns = g.nudos, xc = 0, yc = 0, info = g.pieza ? pz[g.pieza] : null, casos = {};
+      ns.forEach(function (n) { xc += (+n.x || 0) / ns.length; yc += (+n.y || 0) / ns.length; });
+      CASOS.forEach(function (c) { casos[c] = suma(ns, c, xc, yc); });
+      SISMOS.forEach(function (c) {
+        if (ns.length !== 1) { casos[c] = null; return; }
+        var clave = Object.keys(ns[0].casos).filter(function (x) { return x.split("|")[0] === c; })[0];
+        casos[c] = clave ? suma(ns, clave, xc, yc) : null;
+      });
+      var servicio = null;
+      CASOS.forEach(function (c) {
+        if (!casos[c]) return;
+        if (!servicio) servicio = { FX: 0, FY: 0, FZ: 0, MX: 0, MY: 0, MZ: 0 };
+        Object.keys(servicio).forEach(function (f) { servicio[f] += casos[c][f]; });
+      });
+      return { pieza: g.pieza, tipo: info ? (info.fam === "placas" ? "placa" : "columna") : "nudo",
+               orden: info ? info.orden : null, nudos: ns.map(function (n) { return n.nudo; }),
+               x: xc, y: yc, casos: casos, servicio: servicio };
+    });
+    var T = { columna: 0, placa: 1, nudo: 2 };
+    return out.sort(function (a, b) {
+      return (T[a.tipo] - T[b.tipo]) || (String(a.pieza || a.nudos[0]) < String(b.pieza || b.nudos[0]) ? -1 : 1);
+    });
+  }
+
+  /* Todo junto, como lo usan la pestana y las hojas */
+  function armar(R, ex, ejes) {
+    return { combinaciones: (R && R.combinaciones) || [], envolvente: (R && R.envolvente) || "",
+             niveles: ((ex && ex.niveles) || []).map(function (L) { return L.nombre; }),
+             vigas: vigas(R, ex, ejes), columnas: columnas(R, ex, ejes), placas: placas(R, ex),
+             reacciones: reacciones(R, ex) };
+  }
+
+  return { D_MENOS: D_MENOS, CASOS: CASOS, SISMOS: SISMOS, corto: corto, muros: muros,
+           vigas: vigas, columnas: columnas, placas: placas, reacciones: reacciones, armar: armar };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -4722,7 +4982,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v145 · 13-09-2026";
+  var BUILD="v147 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9070,26 +9330,118 @@ var TT={script:performance.now()};
       (R.reacciones||[]).length+' apoyos: cada familia en su sub-pestaña.</p></section>';
     return h;
   }
-  /* Resultados ETABS › Vigas, Columnas, Placas y Reacciones.  a_excel.py ya
-     las deja en el libro; aqui se dice que llegaron y que traen.  La tabla
-     para el diseno es la parte C3. */
+  /* C3 · LAS FUERZAS DE DISENO por elemento.  La cuenta vive en
+     oviedo/fuerzas.js; aqui se le dan los resultados y el modelo -con el eje
+     de cada pieza- y se ensenan en tablas, un nivel a la vez si se quiere.
+     Se arma una vez por dibujo: la piden la pestana, Hojas Excel y el paquete. */
+  var FZC={p:-1,v:null};
+  function fuerzasEtabs(){
+    if(FZC.p===PASADA)return FZC.v;
+    var r=resultadosEtabs(), v=null, ex=null;
+    if(r&&!r.error&&r.R){
+      try{ ex=exportaEtabs(); }catch(e){}
+      if(ex){
+        var ejes={};
+        S.niveles.forEach(function(m,k){var nm=nombres(k);
+          ["C","V","P"].forEach(function(t){for(var q in nm[t])ejes[nm[t][q].cod]=nm[t][q].eje;});});
+        v=FUERZAS.armar(r.R,ex,ejes);
+        v.alDia=r.alDia;
+        v.archivo=String((r.R.etabs&&r.R.etabs.archivo)||"").split(/[\\/]/).pop();
+        v.leido=String(r.R.leido||"").replace("T"," ").slice(0,16);
+      }
+    }
+    FZC.p=PASADA; FZC.v=v;
+    return v;
+  }
   function tarjetaFuerzas(sub){
-    var Q={
-      vigas:["Vigas","vigas","De cada viga, la envolvente ENVOLVENTE E060 en todas sus estaciones: el momento "+
-             "negativo en las dos caras, el positivo y dónde cae, la cortante en las caras y la torsión."],
-      columnas:["Columnas","columnas","De cada columna, en el pie y en la cabeza y para cada combinación de "+
-             "resistencia: carga axial, cortantes, torsión y momentos."],
-      placas:["Placas","muros","De cada muro, en cada piso, arriba y abajo y para cada combinación de "+
-             "resistencia: carga axial, cortantes, torsión y momentos."],
-      reacciones:["Reacciones","apoyos","De cada apoyo de la base, con la columna o placa que tiene encima: "+
-             "las reacciones de Dead, CM, CV, CVT, SDX y SDY."]
-    }[sub];
-    if(!Q)return "";
-    var r=resultadosEtabs(), h='<section class="pbox ancha"><h3>'+Q[0]+'</h3>'+estadoResultados(r);
+    var TIT={vigas:"Vigas",columnas:"Columnas",placas:"Placas",reacciones:"Reacciones"}[sub];
+    if(!TIT)return "";
+    var r=resultadosEtabs(), h='<section class="pbox sis-ancha"><h3>'+TIT+' · fuerzas de diseño</h3>'+estadoResultados(r);
     if(!r||r.error)return h+'</section>';
-    var R=r.R, n=(sub==="reacciones")?(R.reacciones||[]).length:Object.keys(R[sub]||{}).length;
-    return h+'<p class="nota">Llegaron <b>'+n+'</b> '+Q[1]+'. '+Q[2]+'</p>'+
-      '<p class="nota">La tabla para el diseño se arma en la parte C3.</p></section>';
+    var FZ=fuerzasEtabs();
+    if(!FZ)return h+'<p class="aviso">No se pudo preparar el modelo para cruzar los resultados con sus piezas.</p></section>';
+    function f(x,d){return (x==null||!isFinite(x))?"—":(+x).toFixed(d==null?2:d)}
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    function cm(v){return v==null?"—":Math.round(v*100)}
+    function secc(p){return p.forma==="circular"?("Ø "+cm(p.D)):(cm(p.b)+" × "+cm(p.h))}
+    function paso(q){return esc(q.corto)+(q.paso?" "+q.paso:"")}
+    var nivel=(S.resNivel&&FZ.niveles.indexOf(S.resNivel)>=0)?S.resNivel:"";
+    function filtro(){
+      return '<div class="sis-ct fz-filtro"><label class="sis-sel"><span>Nivel</span><select id="resNivel">'+
+        '<option value="">Todos</option>'+FZ.niveles.map(function(n){
+          return '<option value="'+esc(n)+'"'+(n===nivel?" selected":"")+'>'+esc(n)+'</option>'}).join("")+
+        '</select></label></div>';
+    }
+    function del(x){return !nivel||x.nivel===nivel}
+    var combos='<p class="nota">'+FZ.combinaciones.map(esc).join(" · ")+'.</p>';
+    function sinDatos(que,como){return h+'<p class="aviso">Los resultados no traen '+que+': '+como+'</p></section>'}
+    if(sub==="vigas"){
+      if(!FZ.vigas.length)return sinDatos("fuerzas de vigas","vuelve a traerlos con RETICULA.bat [2].");
+      var vs=FZ.vigas.filter(del);
+      return h+filtro()+'<div class="etb-scroll"><table class="sis-t fz-t fz-v"><thead>'+
+        '<tr><th rowspan="2">Viga</th><th rowspan="2">Eje</th><th rowspan="2">b × h (cm)</th>'+
+        '<th colspan="4" class="fz-grupo">Cara izquierda</th><th colspan="2" class="fz-grupo">Centro</th>'+
+        '<th colspan="4" class="fz-grupo">Cara derecha</th><th rowspan="2">Tu</th></tr>'+
+        '<tr><th>Mu⁻</th><th>Mu⁺</th><th>Vu</th><th>Vu a d</th><th>Mu⁺</th><th>Mu⁻</th>'+
+        '<th>Mu⁻</th><th>Mu⁺</th><th>Vu</th><th>Vu a d</th></tr></thead><tbody>'+
+        vs.map(function(v){return '<tr><td>'+esc(v.cod)+'</td><td>'+esc(v.eje)+'</td><td>'+secc(v)+'</td>'+
+          '<td>'+f(v.izq.Mneg)+'</td><td>'+f(v.izq.Mpos)+'</td><td>'+f(v.izq.V)+'</td><td>'+f(v.izq.Vd)+'</td>'+
+          '<td>'+f(v.centro.Mpos)+'</td><td>'+f(v.centro.Mneg)+'</td>'+
+          '<td>'+f(v.der.Mneg)+'</td><td>'+f(v.der.Mpos)+'</td><td>'+f(v.der.V)+'</td><td>'+f(v.der.Vd)+'</td>'+
+          '<td>'+f(v.T)+'</td></tr>'}).join("")+'</tbody></table></div>'+
+        '<p class="nota">'+vs.length+' de '+FZ.vigas.length+' vigas. Momentos en t·m y cortantes en t, de la '+
+        esc(FZ.envolvente)+' en las caras de los apoyos. Mu⁻ tracciona arriba y Mu⁺ abajo. El centro es el mayor del '+
+        'tramo sin las caras. Vu a d: a d = h − 6 cm de la cara (E.060 Art. 11.1.3.1). Tu: la mayor torsión del tramo.</p></section>';
+    }
+    if(sub==="columnas"){
+      if(!FZ.columnas.length)return sinDatos("fuerzas de columnas","vuelve a traerlos con RETICULA.bat [2].");
+      var cs=FZ.columnas.filter(del);
+      return h+filtro()+'<div class="etb-scroll"><table class="sis-t fz-t"><thead><tr><th>Combinación</th><th>Pu (t)</th>'+
+        '<th>M2 pie</th><th>M3 pie</th><th>M2 cabeza</th><th>M3 cabeza</th><th>|V2| (t)</th><th>|V3| (t)</th></tr></thead><tbody>'+
+        cs.map(function(c){return '<tr class="fz-g"><td colspan="8">'+esc(c.cod)+(c.eje?' · eje '+esc(c.eje):'')+' · '+
+          secc(c)+' cm</td></tr>'+c.filas.map(function(q){
+            return '<tr><td>'+paso(q)+'</td><td>'+f(q.Pu)+'</td><td>'+f(q.pie.M2)+'</td><td>'+f(q.pie.M3)+'</td><td>'+
+              f(q.cabeza.M2)+'</td><td>'+f(q.cabeza.M3)+'</td><td>'+f(q.V2)+'</td><td>'+f(q.V3)+'</td></tr>'}).join("")}).join("")+
+        '</tbody></table></div>'+
+        '<p class="nota">'+cs.length+' de '+FZ.columnas.length+' columnas. Pu positiva en compresión; momentos en t·m. M3 y V2 '+
+        'van en la dirección X global y M2 y V3 en la Y (ejes locales de ETABS sin girar). |V2| y |V3|: la mayor del pie y '+
+        'la cabeza. Con sismo, máx y mín son los extremos de cada fuerza por separado: no ocurren a la vez.</p>'+combos+'</section>';
+    }
+    if(sub==="placas"){
+      if(!FZ.placas.length)return sinDatos("fuerzas de muros","vuelve a llevar el modelo con RETICULA.bat [1] y a traer "+
+                                           "los resultados con [2].");
+      var cuerpo=FZ.placas.map(function(mu){
+        var pisos=mu.pisos.filter(function(ps){return !nivel||ps.piso===nivel}).slice().reverse();
+        if(!pisos.length)return "";
+        return '<tr class="fz-g"><td colspan="8">Muro '+esc(mu.muro)+'</td></tr>'+pisos.map(function(ps){
+          return '<tr class="fz-s"><td colspan="8">'+esc(ps.piso)+' · '+
+            (ps.placas.length?esc(ps.placas.join(", ")):'sin placa del modelador')+(ps.t!=null?' · t = '+cm(ps.t)+' cm':'')+
+            '</td></tr>'+ps.filas.map(function(q){var b=q.base||{},a=q.arriba||{};
+              return '<tr><td>'+paso(q)+'</td><td>'+f(b.Pu)+'</td><td>'+f(b.V2)+'</td><td>'+f(b.M3)+'</td><td>'+f(a.Pu)+
+                '</td><td>'+f(a.V2)+'</td><td>'+f(a.M3)+'</td><td>'+f(b.M2)+'</td></tr>'}).join("");
+        }).join("");
+      }).join("");
+      return h+filtro()+'<div class="etb-scroll"><table class="sis-t fz-t"><thead><tr><th>Piso · combinación</th>'+
+        '<th>Pu base (t)</th><th>V2 base (t)</th><th>M3 base</th><th>Pu arriba (t)</th><th>V2 arriba (t)</th>'+
+        '<th>M3 arriba</th><th>M2 base</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>'+
+        '<p class="nota">Fuerzas de muro (Pier Forces) abajo y arriba de cada piso. Pu positiva en compresión; momentos en '+
+        't·m. V2 y M3 son los del plano del muro; M2, fuera del plano.</p>'+combos+'</section>';
+    }
+    if(!FZ.reacciones.length)return sinDatos("reacciones","vuelve a traerlos con RETICULA.bat [2].");
+    function tabla(campo,tit){
+      return '<div class="sis-dir"><div class="sis-sub">'+tit+'</div><div class="etb-scroll"><table class="sis-t fz-t"><thead><tr>'+
+        '<th>Apoyo</th><th>Dead</th><th>CM</th><th>CV</th><th>CVT</th><th>Servicio</th><th>SDX</th><th>SDY</th></tr></thead><tbody>'+
+        FZ.reacciones.map(function(a){
+          function c(k){var q=a.casos[k];return q?f(q[campo]):"—"}
+          return '<tr><td>'+esc(a.pieza||("nudo "+a.nudos.join(", ")))+(a.nudos.length>1?' <small>'+a.nudos.length+' nudos</small>':'')+
+            '</td><td>'+c("Dead")+'</td><td>'+c("CM")+'</td><td>'+c("CV")+'</td><td>'+c("CVT")+'</td><td><b>'+
+            (a.servicio?f(a.servicio[campo]):"—")+'</b></td><td>'+c("SDX")+'</td><td>'+c("SDY")+'</td></tr>'}).join("")+
+        '</tbody></table></div></div>';
+    }
+    return h+tabla("FZ","Carga vertical FZ (t)")+tabla("MX","Momento MX (t·m)")+tabla("MY","Momento MY (t·m)")+
+      '<p class="nota">Reacciones de cada caso en ejes globales. Servicio = Dead + CM + CV + CVT. En una placa se suman sus '+
+      'nudos llevando los momentos al centro del muro. SDX y SDY son envolventes sin signo: se aplican con ± y no se suman '+
+      'entre nudos, así que el sismo de una placa se toma de sus fuerzas de muro en la base.</p></section>';
   }
   /* C2 · LA VERIFICACION SISMICA con lo que devolvio ETABS.  La norma vive
      en oviedo/verificacion.js; aqui se le dan los datos y se ensena. */
@@ -9280,6 +9632,8 @@ var TT={script:performance.now()};
     if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
     var bi=$("#btnIrrMed");
     if(bi)bi.onclick=function(){ marcarIrregularidadesMedidas(); };
+    var rn=$("#resNivel");
+    if(rn)rn.onchange=function(){ S.resNivel=this.value; render(); };
   }
 
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
@@ -9694,7 +10048,9 @@ var TT={script:performance.now()};
             /* el analisis sismico, para la hoja ANALISIS_SISMICO */
             sismo:calculoSismo(),
             /* C2: la verificacion con los resultados de ETABS, para VERIFICACION_SISMICA */
-            verificacion:verificacionSismica()};
+            verificacion:verificacionSismica(),
+            /* C3: las fuerzas de diseno por elemento, para las hojas FUERZAS_ y REACCIONES */
+            fuerzas:fuerzasEtabs()};
   }
 
   function tabla(){
@@ -10682,7 +11038,12 @@ var TT={script:performance.now()};
     {n:"ANALISIS_SISMICO",   tit:"Análisis sísmico",   t:"ele",
      q:function(c){return c.losa.aligerada+c.losa.maciza+c.losa.nervada}},
     /* C2: sale solo con resultados de ETABS en el libro */
-    {n:"VERIFICACION_SISMICA", tit:"Verificación sísmica", t:"res"}
+    {n:"VERIFICACION_SISMICA", tit:"Verificación sísmica", t:"res"},
+    /* C3: las fuerzas de diseno, tambien solo con resultados */
+    {n:"FUERZAS_VIGAS",        tit:"Fuerzas en vigas",     t:"res", fz:"vigas"},
+    {n:"FUERZAS_COLUMNAS",     tit:"Fuerzas en columnas",  t:"res", fz:"columnas"},
+    {n:"FUERZAS_PLACAS",       tit:"Fuerzas en placas",    t:"res", fz:"placas"},
+    {n:"REACCIONES",           tit:"Reacciones",           t:"res", fz:"reacciones"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -10692,7 +11053,7 @@ var TT={script:performance.now()};
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
-    VERIFICACION_SISMICA:true};
+    VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -10723,6 +11084,13 @@ var TT={script:performance.now()};
   function estadoHoja(h,c){
     if(!IMPLEMENTADAS[h.n]) return {ok:false,pie:"pendiente"};
     if(h.t==="ref") return {ok:true,pie:"referencia"};
+    if(h.t==="res"&&h.fz){
+      var fz=null; try{ fz=fuerzasEtabs(); }catch(e){}
+      var nfz=fz?fz[h.fz].length:0;
+      return nfz?{ok:true,pie:nfz+" "+({vigas:"viga(s)",columnas:"columna(s)",placas:"muro(s)",
+                                          reacciones:"apoyo(s)"})[h.fz]}
+                :{ok:false,pie:"sin resultados de ETABS"};
+    }
     if(h.t==="res"){
       var vs=null; try{ vs=verificacionSismica(); }catch(e){}
       return vs?{ok:true,pie:"resultados de "+(vs.archivo||"ETABS")}:{ok:false,pie:"sin resultados de ETABS"};
@@ -11020,7 +11388,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
