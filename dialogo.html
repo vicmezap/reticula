@@ -4288,7 +4288,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v139 · 13-09-2026";
+  var BUILD="v140 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8444,6 +8444,55 @@ var TT={script:performance.now()};
              {nombre:"SDY", dir:"y", principal:"E030 Y", perpendicular:"E030 X"}]};
     return out;
   }
+  /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
+     mas la carga muerta; CV, la viva de los pisos y la de la azotea.  CS es el
+     sismo dinamico SDX o SDY -que ETABS ya da con los dos signos- multiplicado
+     por el factor del Art. 44 de la E.030, que el puente calcula al analizar.
+     Sin sismo solo van las de gravedad.  La de servicio es para la cimentacion. */
+  function combinacionesE060(out){
+    var P=out.cargas.patrones, CM=[[P.pp,1],[P.cm,1]], CV=[[P.cv,1],[P.cvt,1]], L=[], n=1;
+    function por(lista,f){return lista.map(function(x){return [x[0],x[1]*f]})}
+    function u(texto,partes,sismo){L.push({nombre:"U"+(n++)+" "+texto, tipo:"ultima", partes:partes, sismo:sismo||null})}
+    u("1.4CM+1.7CV", por(CM,1.4).concat(por(CV,1.7)));
+    if(out.dinamico){
+      out.dinamico.casos.forEach(function(k){
+        u("1.25(CM+CV)+-"+k.nombre, por(CM,1.25).concat(por(CV,1.25)), {caso:k.nombre, dir:k.dir, signo:1, escala:true});
+      });
+      out.dinamico.casos.forEach(function(k){
+        u("0.9CM+-"+k.nombre, por(CM,0.9), {caso:k.nombre, dir:k.dir, signo:1, escala:true});
+      });
+    }
+    var ultimas=L.map(function(c){return c.nombre});
+    L.push({nombre:"S1 CM+CV", tipo:"servicio", partes:CM.concat(CV), sismo:null});
+    return {norma:"E.060 Art. 9.2", sismo:out.dinamico?"dinamico":null, lista:L,
+            envolvente:{nombre:"ENVOLVENTE E060", combos:ultimas}};
+  }
+  /* La tarjeta 8 de la pestana ETABS: las combinaciones de la E.060. */
+  function tarjetaCombinaciones(ex){
+    var CB=ex.combinaciones, h='<section class="pbox"><h3>8 · Combinaciones E.060</h3>';
+    if(!CB)return h+'<p class="nota">Sin cargas no hay combinaciones: marca la casilla de la tarjeta 7.</p></section>';
+    function suma(c){
+      var t=c.partes.map(function(p){return p[1]+" "+p[0]}).join(" + ");
+      if(c.sismo)t+=" ± "+c.sismo.caso+(c.sismo.escala?" × factor":"");
+      return t;
+    }
+    return h+'<div class="etb-scroll"><table class="etb-t etb-lee"><thead><tr><th>Combinación</th>'+
+      '<th>Qué suma</th></tr></thead><tbody>'+
+      CB.lista.map(function(c){
+        return '<tr><td>'+c.nombre+'<small>'+(c.tipo==="servicio"?"de servicio":"de resistencia")+'</small></td>'+
+          '<td>'+suma(c)+'</td></tr>';
+      }).join("")+
+      '<tr><td>'+CB.envolvente.nombre+'<small>envolvente</small></td><td>La mayor y la menor de '+
+        CB.envolvente.combos.join(", ")+'</td></tr></tbody></table></div>'+
+      '<p class="nota">E.060 Art. 9.2: U = 1,4 CM + 1,7 CV · U = 1,25 (CM + CV) ± CS · U = 0,9 CM ± CS. '+
+      'CM es el peso propio más la carga muerta; CV, la viva de los pisos y de la azotea. '+
+      (CB.sismo==="dinamico"
+        ?'CS es el sismo dinámico SDX o SDY, que ETABS ya da con los dos signos, multiplicado por el factor '+
+         'del Art. 44 de la E.030: el puente lo calcula al analizar —la cortante dinámica frente al '+
+         Math.round(ex.dinamico.minimo*100)+' % de la estática— y lo escribe en cada combinación.'
+        :'Sin sismo en la pestaña Sismo E.030 solo van las de gravedad.')+
+      ' La de servicio es para la cimentación.</p></section>';
+  }
   /* Lo que lleva el dinamico, para la tarjeta 7. */
   function tablaDinamico(DN){
     function r2(v){return String(Math.round(v*100)/100)}
@@ -8601,8 +8650,8 @@ var TT={script:performance.now()};
 
     var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
                         .replace('<div class="rule" style="margin:0 0 10px"></div>','');
-    h+=tarjetaCargasEtabs(ex,E)+
-      '<section class="pbox"><h3>8 · Envío a ETABS</h3>'+
+    h+=tarjetaCargasEtabs(ex,E)+tarjetaCombinaciones(ex)+
+      '<section class="pbox"><h3>9 · Envío a ETABS</h3>'+
       (ex.errores.length
         ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
           ex.errores.map(escE).join("<br>")+'</p>' : '')+
@@ -8758,6 +8807,7 @@ var TT={script:performance.now()};
     plantasQueSobresalen().forEach(function(p){ out.avisos.push("N"+p.nivel+": "+p.texto); });
     aplicaSeccionesEtabs(out);
     cargasSismoEtabs(out);
+    out.combinaciones=out.cargas?combinacionesE060(out):null;
     return out;
   }
 
