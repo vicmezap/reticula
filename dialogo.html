@@ -4288,7 +4288,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v140 · 13-09-2026";
+  var BUILD="v141 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8444,6 +8444,84 @@ var TT={script:performance.now()};
              {nombre:"SDY", dir:"y", principal:"E030 Y", perpendicular:"E030 X"}]};
     return out;
   }
+  /* =====================================================================
+     PARTE C · LOS RESULTADOS DE ETABS
+     scripts/etabs/a_excel.py los lee de ETABS y los deja en la hoja oculta
+     RETICULA_RESULTADOS; el panel se los pasa a la ventana, que los guarda en
+     «reticula_resultados».  Con ellos se verifica la estructura y se disena.
+     ===================================================================== */
+  /* La huella del modelo que se llevo a ETABS: cada piso con su cota y cada
+     pieza con su seccion, sumados con FNV-1a de 32 bits.  a_excel.py calcula
+     la misma sobre el mismo texto: si no coinciden, los resultados son de
+     otro modelo. */
+  function firmaModelo(ex){
+    var partes=[];
+    (ex||exportaEtabs()).niveles.forEach(function(L){
+      partes.push(L.nombre+"@"+L.z1);
+      ["columnas","vigas","losas","placas"].forEach(function(k){
+        L[k].forEach(function(x){partes.push(x.cod+"="+(x.sec||""))});
+      });
+    });
+    var s=unescape(encodeURIComponent(partes.join(";"))), h=0x811c9dc5, i;
+    for(i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;
+    return ("0000000"+h.toString(16)).slice(-8);
+  }
+  function resultadosEtabs(){
+    var t=null, R=null;
+    try{ t=localStorage.getItem("reticula_resultados"); }catch(e){}
+    if(!t)return null;
+    try{ R=JSON.parse(t); }catch(e){ return {error:"Los resultados del libro no se pueden leer"}; }
+    if(!R||R.v!==1)return {error:"Los resultados son de una versión que el complemento no conoce"};
+    return {R:R, alDia:!!(R.modelo&&R.modelo.firma===firmaModelo())};
+  }
+  /* La tarjeta 7 de Sismo E.030: lo que ETABS devolvio. */
+  function tarjetaResultados(c){
+    function f(v,d){return (v==null||!isFinite(v))?"—":(+v).toFixed(d==null?2:d)}
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    function estado(ok){return '<b class="'+(ok?"sis-ok":"sis-no")+'">'+(ok?"CUMPLE":"NO CUMPLE")+'</b>'}
+    function fila(etq,vx,vy,norma){
+      return '<tr><td>'+etq+'</td><td>'+vx+'</td><td>'+vy+'</td><td class="sis-n">'+(norma||"")+'</td></tr>';
+    }
+    var r=resultadosEtabs(), boton='<button type="button" class="mini" id="btnRes">Traer resultados del libro</button>',
+        h='<section class="pbox sis-ancha"><h3>7 · Resultados de ETABS</h3>';
+    if(!r)return h+'<p class="nota">Todavía no hay resultados de ETABS en el libro. Lleva el modelo con '+
+      '<code>a_etabs.bat</code>, déjalo abierto en ETABS ya analizado y ejecuta <code>a_excel.bat</code> → [1]. '+
+      'Después: '+boton+'</p></section>';
+    if(r.error)return h+'<p class="aviso">'+esc(r.error)+'. '+boton+'</p></section>';
+    var R=r.R, SS=R.sismo||{}, est={}, din={}, modal=SS.modal||[], ult=modal[modal.length-1]||{},
+        minimo=(c.Ia===1&&c.Ip===1)?0.80:0.90, escala=SS.escala||{};
+    (SS.estatico||[]).forEach(function(e){ if(!est[e.dir])est[e.dir]=e; });
+    (SS.dinamico||[]).forEach(function(d){ din[d.dir]=d; });
+    function fundamental(k){var m=null; modal.forEach(function(x){ if(!m||x[k]>m[k])m=x; }); return m}
+    var tx=fundamental("UX"), ty=fundamental("UY");
+    function razon(d){
+      var e=est[d], v=din[d]; if(!e||!v||!e.V)return "—";
+      return f(v.V/e.V*100,1)+" % "+estado(v.V>=minimo*e.V-1e-9);
+    }
+    var archivo=String((R.etabs&&R.etabs.archivo)||"").split(/[\\/]/).pop(),
+        leido=String(R.leido||"").replace("T"," ").slice(0,16);
+    h+='<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
+        ?'Al día con el modelo: leídos de <b>'+esc(archivo)+'</b> el '+esc(leido)+'. '
+        :'<b>Desactualizados:</b> el modelo cambió desde que se llevó a ETABS. Vuelve a llevarlo con '+
+         'a_etabs.bat, analízalo y ejecuta a_excel.bat. ')+boton+'</p>'+
+      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>Sismo en X</th><th>Sismo en Y</th>'+
+      '<th>Norma</th></tr></thead><tbody>'+
+      fila("T fundamental de ETABS",tx?f(tx.T,3)+" s · modo "+tx.modo:"—",ty?f(ty.T,3)+" s · modo "+ty.modo:"—","")+
+      fila("T estimado hn / CT",f(c.est.x.T,3)+" s",f(c.est.y.T,3)+" s","Art. 36")+
+      fila("Masa participante",f(ult.sumaUX*100,1)+" % "+estado(ult.sumaUX>=0.9),
+           f(ult.sumaUY*100,1)+" % "+estado(ult.sumaUY>=0.9),"Art. 40 · al menos 90 %")+
+      fila("V estática de ETABS",est.x?f(est.x.V)+" t":"—",est.y?f(est.y.V)+" t":"—","W de ETABS "+(est.x?f(est.x.W)+" t":"—"))+
+      fila("V dinámica de ETABS",din.x?f(din.x.V)+" t":"—",din.y?f(din.y.V)+" t":"—","")+
+      fila("V dinámica / V estática",razon("x"),razon("y"),"Art. 44 · al menos "+Math.round(minimo*100)+" %")+
+      fila("Factor de escala del sismo",escala.x?"× "+f(escala.x,3):"—",escala.y?"× "+f(escala.y,3):"—",
+           "en las combinaciones E.060")+
+      '</tbody></table></div>'+
+      '<p class="nota">Para el diseño quedan en el libro las fuerzas de '+Object.keys(R.vigas||{}).length+' vigas, '+
+      Object.keys(R.columnas||{}).length+' columnas y '+Object.keys(R.placas||{}).length+' muros, y las reacciones de '+
+      (R.reacciones||[]).length+' apoyos.</p></section>';
+    return h;
+  }
+
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
      mas la carga muerta; CV, la viva de los pisos y la de la azotea.  CS es el
      sismo dinamico SDX o SDY -que ETABS ya da con los dos signos- multiplicado
@@ -9510,6 +9588,7 @@ var TT={script:performance.now()};
       '<p class="nota">El espectro usa el C con el tramo de períodos cortos (T &lt; 0,2 TP) y no lleva el '+
       'mínimo de C/R, que es del estático. En ETABS se aplica al 100 % en una dirección y al 30 % en la '+
       'perpendicular, combinadas por raíz de la suma de cuadrados ('+A.dir+').</p></section>';
+    h+=tarjetaResultados(c);
     h+='</div>';
     el.innerHTML=h;
     eventos();
@@ -9526,6 +9605,8 @@ var TT={script:performance.now()};
           P[clave]=l; guardar(); render();
         };
       });
+      var br=$("#btnRes");
+      if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
       var cx=$("#sCTx"), cy=$("#sCTy");
       if(cx)cx.onchange=function(){P.ctX=+this.value; guardar(); render();};
       if(cy)cy.onchange=function(){P.ctY=+this.value; guardar(); render();};
@@ -10126,7 +10207,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
@@ -10159,6 +10240,7 @@ var TT={script:performance.now()};
   var partes={};                  /* lo que llega a medias, por clase */
   var ultimoEnviado=null;         /* para no repetir el mismo modelo */
   var pendiente=0, ESPERA=5000;
+  var pidioRes=false;             /* el usuario pidio los resultados: se le contesta en voz alta */
 
   function di(t){ try{ if(window.RET&&RET.toast)RET.toast(t); }catch(e){} }
 
@@ -10197,6 +10279,19 @@ var TT={script:performance.now()};
       if(window.RET&&RET.recargar)RET.recargar();
       var niv=0; try{ niv=(JSON.parse(s).n||[]).length; }catch(e){}
       di("Proyecto abierto desde el libro: "+niv+" nivel(es).");
+    }else if(m.a==="res"){
+      /* los resultados de ETABS que dejo a_excel.py en el libro.  Si el libro
+         no tiene, se borran los de antes: serian de otro libro. */
+      if(!m.n){ try{ localStorage.removeItem("reticula_resultados"); }catch(e){} }
+      else{
+        var r=junta(m); if(r===null)return;
+        try{ localStorage.setItem("reticula_resultados",r); }catch(e){}
+      }
+      if(window.RET&&RET.render)RET.render();
+      if(pidioRes){
+        pidioRes=false;
+        di(m.n?"Resultados de ETABS traídos del libro.":"El libro no tiene resultados de ETABS: ejecuta a_excel.bat.");
+      }
     }else if(m.a==="guardado"){
       di(m.ok?"Guardado en el libro.":("No se pudo guardar: "+(m.msg||"")));
     }else if(m.a==="etabsGuardado"){
@@ -10244,6 +10339,12 @@ var TT={script:performance.now()};
   }
   /* El boton Guardar llama a esto.  Devuelve si el mensaje salio; el "ya
      esta" de verdad lo dice el panel cuando lo ha escrito en la hoja. */
+  /* El boton «Traer resultados del libro» de la pestana Sismo E.030. */
+  window.PEDIR_RESULTADOS=function(){
+    if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return false; }
+    pidioRes=true;
+    return manda({a:"pideRes"});
+  };
   window.ENVIAR_MODELO=function(){
     if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return false; }
     return enviarModelo(true);
@@ -10267,6 +10368,8 @@ var TT={script:performance.now()};
       }catch(e){}
       /* se pide el modelo al libro: la ventana no puede leerlo por su cuenta */
       manda({a:"pide"});
+      /* y los resultados de ETABS, si a_excel.py ya los dejo */
+      manda({a:"pideRes"});
     });
   }
 

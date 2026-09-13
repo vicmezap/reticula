@@ -6413,7 +6413,10 @@ var HOJA_MODELO = "RETICULA_MODELO";
    el panel al guardar y lo lee scripts/etabs/a_etabs.py.  Hoja aparte y no
    dentro del modelo, para que un fallo al exportar no toque lo guardado. */
 var HOJA_ETABS = "RETICULA_ETABS";
-var BUILD = "v140 · 13-09-2026";                 /* lo sella gen_complemento.py */
+/* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
+   los pide para verificar la estructura y disenar. */
+var HOJA_RES = "RETICULA_RESULTADOS";
+var BUILD = "v141 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -6510,9 +6513,9 @@ function hojaModelo(context, crear, nombre){
   });
 }
 
-function leerModelo(){
+function leerModelo(nombre){
   return Excel.run(function(context){
-    return hojaModelo(context, false).then(function(ws){
+    return hojaModelo(context, false, nombre).then(function(ws){
       if(!ws) return null;
       var rg = ws.getRange("A1:A200");
       rg.load("values");
@@ -6685,6 +6688,15 @@ function alRecibir(arg){
       try{ localStorage.setItem("reticula", s); }catch(e){}
       respondeLargo("mod", s);
     }).catch(function(e){ responde({ a: "mod", n: 0 }); estado("Error: " + e.message, "err"); });
+    return;
+  }
+
+  /* la ventana pide los resultados de ETABS que dejo a_excel.py */
+  if(msg.a === "pideRes"){
+    leerModelo(HOJA_RES).then(function(s){
+      if(!s){ responde({ a: "res", n: 0 }); return; }
+      respondeLargo("res", s);
+    }).catch(function(e){ responde({ a: "res", n: 0 }); estado("Error: " + e.message, "err"); });
     return;
   }
 
