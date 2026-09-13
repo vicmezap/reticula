@@ -4192,16 +4192,75 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     });
   }
 
+  /* --- D0b: lo que decide el diseno ------------------------------------------ */
+  /* QUE PARTE DE LA CORTANTE BASAL TOMAN LOS MUROS, por direccion (E.060
+     Art. 21.1: dual tipo I del 60 % al 80 %, tipo II menos del 60 %).  Es la
+     V2 de cada muro abajo de su piso mas bajo con el sismo de esa direccion
+     -SDX o SDY-, sumada sobre los muros que van en esa direccion, entre la
+     cortante basal del mismo caso.  Las dos son envolventes espectrales: la
+     suma de los muros no es simultanea y queda del lado alto.  Un muro va en
+     la direccion de sus placas; si tiene placas en las dos, no se cuenta. */
+  function cortanteMuros(R, ex) {
+    var MS = R && R.murosSismo, din = (R && R.sismo && R.sismo.dinamico) || [];
+    if (!MS || !Object.keys(MS).length) return null;
+    var asig = muros(R, ex), pz = piezas(ex), dirMuro = {}, orden = {};
+    ((ex && ex.niveles) || []).forEach(function (L, k) { orden[L.nombre] = k; });
+    Object.keys(asig).forEach(function (cod) {
+      var info = pz[cod];
+      if (!info || info.fam !== "placas") return;
+      var p = info.p, d = Math.abs((+p.x2 || 0) - (+p.x1 || 0)) >= Math.abs((+p.y2 || 0) - (+p.y1 || 0)) ? "x" : "y";
+      dirMuro[asig[cod]] = (dirMuro[asig[cod]] && dirMuro[asig[cod]] !== d) ? "mixto" : d;
+    });
+    function ord(p) { return orden[p] == null ? 999 : orden[p]; }
+    var out = {};
+    ["x", "y"].forEach(function (dir) {
+      var caso = din.filter(function (c) { return c.dir === dir; })[0];
+      if (!caso) { out[dir] = null; return; }
+      var suma = 0, detalle = [], sinDireccion = [];
+      Object.keys(MS).sort().forEach(function (muro) {
+        var pisos = Object.keys(MS[muro] || {}).sort(function (a, b) { return ord(a) - ord(b); });
+        var base = pisos[0], q = base ? MS[muro][base][caso.caso] : null;
+        if (!q) return;
+        var d = dirMuro[muro] || null;
+        if (d !== "x" && d !== "y") { sinDireccion.push(muro); return; }
+        if (d !== dir) return;
+        var V = 0;
+        Object.keys(q).forEach(function (paso) {
+          var b = q[paso] && q[paso].Bottom;
+          if (b) V = Math.max(V, abs(b[1]) || 0);
+        });
+        suma += V;
+        detalle.push({ muro: muro, piso: base, V: V });
+      });
+      var total = num(caso.V);
+      out[dir] = { caso: caso.caso, muros: suma, total: total, pct: total > 0 ? suma / total : null,
+                   detalle: detalle, sinDireccion: sinDireccion };
+    });
+    return out;
+  }
+  /* las columnas con los ejes locales girados en ETABS: el puente no gira ninguna */
+  function ejesGirados(R) {
+    var E = (R && R.ejesLocales) || {};
+    return Object.keys(E).sort().filter(function (c) { var a = num(E[c]); return a !== null && Math.abs(a % 360) > 1e-6; })
+      .map(function (c) { return { cod: c, ang: num(E[c]) }; });
+  }
+
   /* Todo junto, como lo usan la pestana y las hojas */
   function armar(R, ex, ejes) {
     return { combinaciones: (R && R.combinaciones) || [], envolvente: (R && R.envolvente) || "",
              niveles: ((ex && ex.niveles) || []).map(function (L) { return L.nombre; }),
              vigas: vigas(R, ex, ejes), columnas: columnas(R, ex, ejes), placas: placas(R, ex),
-             reacciones: reacciones(R, ex) };
+             reacciones: reacciones(R, ex),
+             /* D0b: vigas con sus casos de gravedad, la cortante de los muros y
+                los ejes locales -null o 0 si los resultados son de antes- */
+             gravedad: Object.keys((R && R.vigasCasos) || {}).length,
+             murosSismo: cortanteMuros(R, ex), girados: ejesGirados(R),
+             ejesLeidos: (R && R.ejesLocales) ? Object.keys(R.ejesLocales).length : null };
   }
 
   return { D_MENOS: D_MENOS, CASOS: CASOS, SISMOS: SISMOS, corto: corto, muros: muros,
-           vigas: vigas, columnas: columnas, placas: placas, reacciones: reacciones, armar: armar };
+           vigas: vigas, columnas: columnas, placas: placas, reacciones: reacciones,
+           cortanteMuros: cortanteMuros, ejesGirados: ejesGirados, armar: armar };
 });
 </script>
 <script>
@@ -4510,15 +4569,20 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
      o: {resultados: hay resultados de ETABS, alDia: son de este modelo,
          n: {vigas, columnas, placas, reacciones} de C3,
          modelo: {columnas, vigas, placas, losas} del modelo exportado,
-         sigma: σs de Datos, dual: alguna direccion es dual}
-     Estado: «listo», «falta» -se puede conseguir ya-, «luego» -lo trae una
-     entrega siguiente de D- o «no aplica». */
+         sigma: σs de Datos, dual: alguna direccion es dual,
+         gravedad: vigas con sus casos de gravedad (D0b),
+         murosSismo: la cortante de los muros (FUERZAS.cortanteMuros) o null,
+         ejes: {leidos: columnas con sus ejes leidos o null, girados: [{cod, ang}]}}
+     Estado: «listo», «falta» -se puede conseguir ya-, «revisar» -hay algo
+     que corregir-, «luego» -lo trae una entrega siguiente de D- o «no aplica». */
   function datosParaDiseno(o) {
     o = o || {};
     var n = o.n || {}, m = o.modelo || {}, F = [];
+    var alDia = !!o.resultados && o.alDia !== false;
     var como = !o.resultados ? "Trae los resultados de ETABS con RETICULA.bat [2]."
       : (o.alDia === false ? "Los resultados son de otro modelo: vuelve a llevarlo con RETICULA.bat [1] y a traerlos con [2]."
         : null);
+    var viejos = "Los resultados son de una versión anterior que no lo leía: vuelve a traerlos con RETICULA.bat [2].";
     function fila(el, dato, estado, fuente, txt) {
       F.push({ elemento: el, dato: dato, estado: estado, fuente: fuente, como: txt || "" });
     }
@@ -4529,24 +4593,39 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     }
     if (m.vigas > 0) {
       c3("Vigas", "vigas", "Mu y Vu en las caras y el centro, de la envolvente", "Vigas");
-      fila("Vigas", "Cortante isostática de gravedad (casos CM y CV)", "luego", "ETABS",
-           "Para la cortante por capacidad (Art. 21.4 y 21.5) y las deflexiones. RETICULA.bat [2] la traerá en D0b.");
+      fila("Vigas", "Cortante isostática de gravedad (casos CM y CV)", alDia && o.gravedad > 0 ? "listo" : "falta",
+           "Resultados ETABS", alDia && o.gravedad > 0
+             ? o.gravedad + " vigas con sus casos de gravedad, para la cortante por capacidad (Art. 21.4 y 21.5) y las deflexiones"
+             : (como || viejos));
       var luces = o.resultados && o.alDia !== false && n.vigas > 0;
       fila("Vigas", "Luz libre, b y h", luces ? "listo" : "falta", "Resultados ETABS y modelo",
            luces ? "de cara a cara" : (como || "Sale con las fuerzas de vigas: vuelve a traerlas con RETICULA.bat [2]."));
     } else fila("Vigas", "El modelo no tiene vigas", "no aplica", "Modelo", "");
     if (m.columnas > 0) {
       c3("Columnas", "columnas", "Pu, M2 y M3 en pie y cabeza, por combinación", "Columnas");
-      fila("Columnas", "Orientación: b en X (eje local 2) y h en Y", "listo", "Modelador",
-           "El puente no gira columnas. Si alguien las gira a mano en ETABS, D0b lo detectará.");
+      var ejes = o.ejes || {}, gir = ejes.girados || [];
+      if (alDia && gir.length)
+        fila("Columnas", "Orientación: b en X (eje local 2) y h en Y", "revisar", "ETABS",
+             "Giradas en ETABS: " + gir.slice(0, 6).map(function (g) { return g.cod + " (" + g.ang + "°)"; }).join(", ") +
+             (gir.length > 6 ? " y " + (gir.length - 6) + " más" : "") + ". Sus M2/M3 y V2/V3 ya no van en X e Y: " +
+             "quita el giro en ETABS, analiza y vuelve a traer los resultados.");
+      else if (alDia && ejes.leidos > 0)
+        fila("Columnas", "Orientación: b en X (eje local 2) y h en Y", "listo", "ETABS",
+             "Comprobado en ETABS: ninguna de las " + ejes.leidos + " columnas está girada.");
+      else
+        fila("Columnas", "Orientación: b en X (eje local 2) y h en Y", "listo", "Modelador",
+             "El puente no gira columnas; se comprueba en ETABS al traer los resultados con RETICULA.bat [2].");
       fila("Columnas", "Vigas que llegan a cada nudo y altura libre", m.vigas > 0 ? "listo" : "no aplica", "Modelo", "");
     } else fila("Columnas", "El modelo no tiene columnas", "no aplica", "Modelo", "");
     if (m.placas > 0) {
       c3("Placas", "placas", "P, V2 y M3 de cada muro, piso a piso", "Placas");
       fila("Placas", "Largo, espesor y altura de cada muro", "listo", "Modelo", "");
-      fila("Placas", "Cortante de SDX y SDY en la base de cada muro", "luego", "ETABS",
-           "Decide si el dual es tipo I o II (Art. 21.1). RETICULA.bat [2] la traerá en D0b." +
-           (o.dual ? " Mientras tanto, elige el tipo en Criterios." : ""));
+      var MS = o.murosSismo;
+      function pc(d) { return d && d.pct !== null && d.pct !== undefined ? Math.round(d.pct * 100) + " %" : "—"; }
+      fila("Placas", "Cortante de SDX y SDY en la base de cada muro", alDia && MS ? "listo" : "falta", "Resultados ETABS",
+           alDia && MS ? "Los muros toman " + pc(MS.x) + " de la cortante basal en X y " + pc(MS.y) + " en Y: eso " +
+                         "decide si un dual es tipo I o II (Art. 21.1)."
+                       : (como || viejos) + (o.dual ? " Mientras tanto, elige el tipo de dual en Criterios." : ""));
       fila("Placas", "Desplazamiento del techo", "luego", "ETABS", "Para los elementos de borde (Art. 21.9.7). Se leerá en D5.");
     } else fila("Placas", "El modelo no tiene placas", "no aplica", "Modelo", "");
     if (m.columnas > 0 || m.placas > 0) {
@@ -5366,7 +5445,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v149 · 13-09-2026";
+  var BUILD="v150 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9796,7 +9875,10 @@ var TT={script:performance.now()};
         '</tbody></table></div>'+
         '<p class="nota">'+cs.length+' de '+FZ.columnas.length+' columnas. Pu positiva en compresión; momentos en t·m. M3 y V2 '+
         'van en la dirección X global y M2 y V3 en la Y (ejes locales de ETABS sin girar). |V2| y |V3|: la mayor del pie y '+
-        'la cabeza. Con sismo, máx y mín son los extremos de cada fuerza por separado: no ocurren a la vez.</p>'+combos+'</section>';
+        'la cabeza. Con sismo, máx y mín son los extremos de cada fuerza por separado: no ocurren a la vez.</p>'+
+        (FZ.girados&&FZ.girados.length?'<p class="aviso">Columnas con los ejes locales <b>girados en ETABS</b>: '+
+          FZ.girados.map(function(g){return esc(g.cod)+' ('+g.ang+'°)'}).join(", ")+'. En ellas M3 y V2 ya no van en X, '+
+          'ni M2 y V3 en Y.</p>':'')+combos+'</section>';
     }
     if(sub==="placas"){
       if(!FZ.placas.length)return sinDatos("fuerzas de muros","vuelve a llevar el modelo con RETICULA.bat [1] y a traer "+
@@ -10036,9 +10118,15 @@ var TT={script:performance.now()};
   var DZC={p:-1,v:null};
   function criteriosDiseno(){
     if(DZC.p===PASADA)return DZC.v;
-    var st=sitio(), P=S.proy;
+    var st=sitio(), P=S.proy, r=resultadosEtabs(), FZ=null, MS=null;
+    /* D0b: la cortante de los muros decide el tipo de dual, pero solo con
+       resultados de ESTE modelo */
+    if(r&&!r.error&&r.R&&r.alDia){ try{ FZ=fuerzasEtabs(); }catch(e){} }
+    if(FZ&&FZ.murosSismo)MS=FZ.murosSismo;
     var v=DISENO.criterios({fc:+S.fc||210, fy:+P.fy||4200, diseno:P.diseno,
-      sistemaX:P.sistemaX, sistemaY:P.sistemaY, catE030:st.catE030, zona:st.zona});
+      sistemaX:P.sistemaX, sistemaY:P.sistemaY, catE030:st.catE030, zona:st.zona,
+      pctMuros:MS?{x:MS.x?MS.x.pct:null, y:MS.y?MS.y.pct:null}:null});
+    v.murosSismo=MS;
     DZC.p=PASADA; DZC.v=v;
     return v;
   }
@@ -10056,7 +10144,9 @@ var TT={script:performance.now()};
     if(ex)ex.niveles.forEach(function(L){
       m.columnas+=L.columnas.length; m.vigas+=L.vigas.length; m.placas+=L.placas.length; m.losas+=L.losas.length; });
     return DISENO.datosParaDiseno({resultados:!!(r&&!r.error&&r.R), alDia:!!(r&&r.alDia), n:n, modelo:m,
-      sigma:+S.sigma||0, dual:P.sistemaX==="Dual"||P.sistemaY==="Dual"});
+      sigma:+S.sigma||0, dual:P.sistemaX==="Dual"||P.sistemaY==="Dual",
+      gravedad:FZ?FZ.gravedad:0, murosSismo:FZ?FZ.murosSismo:null,
+      ejes:{leidos:FZ?FZ.ejesLeidos:null, girados:FZ?FZ.girados:[]}});
   }
   function pintaDiseno(){
     var el=$("#panelDis"); if(!el)return;
@@ -10075,20 +10165,25 @@ var TT={script:performance.now()};
       usados.sort(function(a,b){return (+a.split(".")[1])-(+b.split(".")[1])});
       h+='<section class="pbox sis-ancha"><h3>Sistema estructural y Capítulo 21</h3>'+
         '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Dirección</th><th>Sistema (de Datos)</th>'+
-        '<th>Dual</th><th>Vigas</th><th>Columnas</th><th>Nudos</th><th>Muros</th></tr></thead><tbody>'+
-        ["x","y"].map(function(k){var g=K.regimen[k];
+        '<th>Dual</th><th>Muros toman</th><th>Vigas</th><th>Columnas</th><th>Nudos</th><th>Muros</th></tr></thead><tbody>'+
+        ["x","y"].map(function(k){var g=K.regimen[k], ms=K.murosSismo&&K.murosSismo[k];
           var dual=g.clase!=="dual"?"—":'<select id="dDual_'+k+'" data-dual="'+k+'" class="pfi dis-sel">'+
             opcion("auto","Con ETABS",K.tipoDual[k])+opcion("I","Tipo I",K.tipoDual[k])+
-            opcion("II","Tipo II",K.tipoDual[k])+'</select>';
-          return '<tr><td>'+k.toUpperCase()+'</td><td>'+esc(g.sistema||"—")+'</td><td>'+dual+'</td><td>'+art(g.vigas)+
-            '</td><td>'+art(g.columnas)+'</td><td>'+art(g.nudos)+'</td><td>'+art(g.muros)+'</td></tr>'}).join("")+
+            opcion("II","Tipo II",K.tipoDual[k])+'</select>'+
+            (K.tipoDual[k]==="auto"&&g.tipo?'<small> → tipo '+g.tipo+'</small>':'');
+          var toman=(ms&&ms.pct!=null)?Math.round(ms.pct*100)+' %<small> · '+ms.muros.toFixed(1)+' de '+
+            ms.total.toFixed(1)+' t ('+esc(ms.caso)+')</small>':'—';
+          return '<tr><td>'+k.toUpperCase()+'</td><td>'+esc(g.sistema||"—")+'</td><td>'+dual+'</td><td>'+toman+
+            '</td><td>'+art(g.vigas)+'</td><td>'+art(g.columnas)+'</td><td>'+art(g.nudos)+'</td><td>'+art(g.muros)+
+            '</td></tr>'}).join("")+
         '</tbody></table></div>'+
         avisos(/^Dirección|Art\. 21\.2\.11/)+
         '<p class="nota">'+(usados.length?usados.map(function(a){return '<b>Art. '+a+'</b>: '+esc(DISENO.CAP21[a])})
           .join(" · ")+'. ':'')+
         'Dual tipo I si los muros toman del 60 % al 80 % de la cortante en la base, y tipo II si toman menos del '+
-        '60 % (Art. 21.1). «Con ETABS» lo decidirá con la cortante de cada muro cuando RETICULA.bat [2] la traiga; '+
-        'mientras tanto, elígelo. El sistema se cambia en <b>Datos</b>.</p></section>';
+        '60 % (Art. 21.1). «Muros toman»: la cortante de SDX o SDY abajo de cada muro, sumada en su dirección, '+
+        'entre la cortante basal del mismo caso; son envolventes, así que queda del lado alto. «Con ETABS» decide '+
+        'el tipo con ese porcentaje; sin resultados, elígelo. El sistema se cambia en <b>Datos</b>.</p></section>';
 
       h+='<section class="pbox"><h3>Materiales</h3>'+
         fijo("f'c del concreto",K.fc,"kg/cm²","se cambia en Datos › Materiales")+
@@ -10144,14 +10239,14 @@ var TT={script:performance.now()};
         'elemento por elemento. Estribos: 8 mm hasta barras de 5/8", 3/8" hasta 1" y 1/2" para las mayores '+
         '(Art. 7.10.5.1); el de confinamiento no baja de 8 mm (Art. 21.1).</p></section>';
     }else{
-      var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,luego:0},
-          EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],luego:["Más adelante","dis-luego"],
-               "no aplica":["No aplica","dis-na"]};
+      var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,revisar:0,luego:0},
+          EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],revisar:["Revisar","dis-falta"],
+               luego:["Más adelante","dis-luego"],"no aplica":["No aplica","dis-na"]};
       F.forEach(function(x){ if(grupos.indexOf(x.elemento)<0)grupos.push(x.elemento);
                              if(cuenta[x.estado]!=null)cuenta[x.estado]++; });
       h+='<section class="pbox sis-ancha"><h3>Datos para diseñar cada elemento</h3>'+
-        '<p class="nota" style="margin:0 0 8px">'+cuenta.listo+' listos · '+cuenta.falta+' faltan · '+cuenta.luego+
-        ' llegan más adelante.</p>'+
+        '<p class="nota" style="margin:0 0 8px">'+cuenta.listo+' listos · '+cuenta.falta+' faltan · '+
+        (cuenta.revisar?cuenta.revisar+' por revisar · ':'')+cuenta.luego+' llegan más adelante.</p>'+
         '<div class="etb-scroll"><table class="sis-t dis-datos"><thead><tr><th>Dato</th><th>Estado</th>'+
         '<th>De dónde sale</th><th>Qué hacer</th></tr></thead><tbody>'+
         grupos.map(function(g){

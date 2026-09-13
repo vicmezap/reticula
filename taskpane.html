@@ -6868,11 +6868,12 @@
     r = h.seccion(r, "5. SISTEMA ESTRUCTURAL Y CAPÍTULO 21");
     var L6 = [[3, 3], [4, 5], [6, 6], [7, 7], [8, 8], [9, 10]];
     function art(a) { return a ? "Art. " + a : "—"; }
-    r = h.encabezado(r, L6, ["Dir.", "Sistema (E.030)", "Dual", "Vigas", "Columnas", "Nudos · muros"], 22.0);
+    r = h.encabezado(r, L6, ["Dir.", "Sistema (E.030)", "Dual · muros", "Vigas", "Columnas", "Nudos · muros"], 22.0);
     ["x", "y"].forEach(function (k) {
-      var g = K.regimen[k];
+      var g = K.regimen[k], ms = K.murosSismo && K.murosSismo[k];
       r = h.fila(r, L6, [k.toUpperCase(), g.sistema || "—",
-                         g.clase === "dual" ? (g.tipo ? "tipo " + g.tipo : "sin definir") : "—",
+                         (g.clase === "dual" ? (g.tipo ? "tipo " + g.tipo : "sin definir") : "—") +
+                           (ms && ms.pct !== null && ms.pct !== undefined ? " · " + Math.round(ms.pct * 100) + " %" : ""),
                          art(g.vigas), art(g.columnas),
                          [g.nudos ? "nudos " + art(g.nudos) : "", g.muros ? "muros " + art(g.muros) : ""]
                            .filter(function (t) { return t; }).join(" · ") || "—"], null,
@@ -6883,6 +6884,13 @@
       + "toman menos del 60 %. Art. 21.2.4: el 21.4 va en vigas y columnas de muros estructurales y dual tipo I. Art. "
       + "21.2.5: el 21.5, el 21.6 y el 21.7 van en vigas, columnas y nudos de pórticos y dual tipo II. Art. 21.2.7: el "
       + "21.9 va en los muros de pórticos, duales y muros estructurales.");
+    if (K.murosSismo)
+      r = h.nota(r, "Muros toman: la cortante de SDX o SDY abajo de cada muro, sumada en su dirección, entre la cortante "
+        + "basal del mismo caso (resultados de ETABS). " + ["x", "y"].map(function (k) {
+          var ms = K.murosSismo[k];
+          return ms && ms.pct !== null ? k.toUpperCase() + ": " + ms.muros.toFixed(2) + " t de " + ms.total.toFixed(2)
+            + " t con " + ms.caso + " = " + Math.round(ms.pct * 100) + " %" : null;
+        }).filter(function (t) { return t; }).join(" · ") + ". Son envolventes: la suma queda del lado alto.");
     (K.avisos || []).forEach(function (t) { r = h.nota(r, "AVISO · " + t); });
 
     r = h.seccion(r, "6. CONVENCIONES DEL DISEÑO");
@@ -6915,7 +6923,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 /* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
    los pide para verificar la estructura y disenar. */
 var HOJA_RES = "RETICULA_RESULTADOS";
-var BUILD = "v149 · 13-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v150 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
