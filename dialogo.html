@@ -357,6 +357,18 @@
 .sis-t td.sis-n{text-align:left;font:400 10.5px "IBM Plex Sans",sans-serif;color:var(--ink-3);white-space:normal}
 .sis-t tr.tot td{border-top:1px solid var(--line);font-weight:600;color:var(--ink)}
 .sis-t small{font:400 10px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+/* pestana DISENO E.060 (D0) */
+.sis-t td.dis-chips{white-space:normal;min-width:260px}
+.dis-chip{display:inline-flex;align-items:center;gap:4px;margin:1px 12px 1px 0;font:500 11.5px "IBM Plex Mono",monospace;
+  color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.pfi.dis-sel{width:auto;min-width:96px;text-align:left}
+.dis-mal{color:var(--trib)}
+/* las frases se leen en la de texto, no en la de numeros */
+.sis-t.dis-datos td:first-child{white-space:normal;min-width:230px;font-family:"IBM Plex Sans",sans-serif}
+.sis-t.dis-bar td:first-child{font-family:"IBM Plex Sans",sans-serif}
+.dis-est{display:inline-flex;align-items:center;gap:6px;font:600 11px "IBM Plex Sans",sans-serif;white-space:nowrap}
+.dis-est::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.dis-ok{color:#2e7d32}.dis-falta{color:#c62828}.dis-luego{color:#b26a00}.dis-na{color:var(--ink-3)}
 .sis-ok,.sis-no{font:700 11px "IBM Plex Sans",sans-serif}
 .sis-ok{color:#2e7d32}
 .sis-no{color:#c62828}
@@ -529,6 +541,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <button class="modo" data-modo="etabs" aria-pressed="false">ETABS</button></div></div>
     <div class="fase"><span class="fase-t">5 · Resultados</span><div class="fase-b">
       <button class="modo" data-modo="resultados" aria-pressed="false">Resultados ETABS</button></div></div>
+    <div class="fase"><span class="fase-t">6 · Diseño</span><div class="fase-b">
+      <button class="modo" data-modo="diseno" aria-pressed="false">Diseño E.060</button></div></div>
     <div class="fase"><span class="fase-t">Salida</span><div class="fase-b">
       <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button></div></div>
   </div>
@@ -646,6 +660,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="edif" id="panelEtabs" hidden></div>
       <div class="edif" id="panelSismo" hidden></div>
       <div class="edif" id="panelRes" hidden></div>
+      <div class="edif" id="panelDis" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
@@ -4190,6 +4205,375 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== diseno.js (inlinado) ===== */
+/* =====================================================================
+   diseno.js — LA BASE DEL DISENO CON LA E.060 (parte D0).  Sin interfaz:
+   la usan Diseño E.060 › Criterios y › Datos para diseño y la hoja
+   CRITERIOS_DISENO, y la usaran las partes de cada elemento (D1 a D7).
+
+   Unidades kg/cm² y cm, las de la practica peruana.  La E.060 esta en MPa
+   y se toma 1 MPa = 10 kg/cm²: 21 MPa son 210 kg/cm² y 420 MPa, 4200.
+
+   Cotejado con el texto de la E.060 el 13-09-2026:
+     φ ...................... Art. 9.3.2
+     recubrimientos ......... Art. 7.7.1
+     Es = 200 000 MPa ....... Art. 8.5.5
+     εcu = 0,003 ............ Art. 10.2.3
+     0,85 f'c y β1 .......... Art. 10.2.7.1 y 10.2.7.3
+     estribo minimo ......... Art. 7.10.5.1 (y 8 mm el de confinamiento, 21.1)
+     sistemas, dual I y II .. Art. 21.1
+     que parte del Cap. 21 .. Art. 21.2.4, 21.2.5, 21.2.7, 21.2.8 y 21.2.11
+     f'c y acero sismicos ... Art. 21.3.2 y 21.3.3
+     Vu a d ................. Art. 11.1.3.1
+
+     node scripts/complemento/oviedo/probar_diseno.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.DISENO = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var ART = {
+    phi: "Art. 9.3.2", recub: "Art. 7.7.1", Ec: "Art. 8.5", Es: "Art. 8.5.5", ecu: "Art. 10.2.3",
+    bloque: "Art. 10.2.7.1", beta1: "Art. 10.2.7.3", estribo: "Art. 7.10.5.1", sistemas: "Art. 21.1",
+    alcance: "Art. 21.2", noObligatorio: "Art. 21.2.11", fc: "Art. 21.3.2", acero: "Art. 21.3.3",
+    vuAd: "Art. 11.1.3.1"
+  };
+
+  /* el peralte efectivo de las vigas: el MISMO de C3 (fuerzas.js, D_MENOS),
+     con el que se calculo el Vu a d que ya esta en Resultados ETABS */
+  var D_MENOS = 0.06;
+
+  function copia(x) { return JSON.parse(JSON.stringify(x)); }
+
+  /* --- barras ---------------------------------------------------------------
+     Corrugadas NTP 341.031 / ASTM A615 que se venden en el Peru: designacion,
+     diametro (cm), area (cm²) y peso (kg/m).  Las mismas del motor
+     Diseño_ConcretoArmado (normas/e060.py, VARILLAS).  En orden de diametro. */
+  var BARRAS = [
+    { n: "6 mm", d: 0.600, a: 0.28, kg: 0.222 },
+    { n: "8 mm", d: 0.800, a: 0.50, kg: 0.395 },
+    { n: '3/8"', d: 0.953, a: 0.71, kg: 0.560 },
+    { n: "12 mm", d: 1.200, a: 1.13, kg: 0.888 },
+    { n: '1/2"', d: 1.270, a: 1.29, kg: 0.994 },
+    { n: '5/8"', d: 1.588, a: 1.99, kg: 1.552 },
+    { n: '3/4"', d: 1.905, a: 2.84, kg: 2.235 },
+    { n: '1"', d: 2.540, a: 5.10, kg: 3.973 },
+    { n: '1 3/8"', d: 3.493, a: 10.06, kg: 7.907 }
+  ];
+  function barra(n) {
+    for (var i = 0; i < BARRAS.length; i++) if (BARRAS[i].n === n) return BARRAS[i];
+    return null;
+  }
+  /* las que pueden ir de refuerzo longitudinal: las de 6 y 8 mm quedan para
+     estribos y temperatura */
+  var LONGITUDINALES = BARRAS.filter(function (b) { return b.n !== "6 mm" && b.n !== "8 mm"; })
+    .map(function (b) { return b.n; });
+  var ESTRIBOS = ["8 mm", '3/8"', '1/2"'];
+
+  /* Art. 7.10.5.1: estribos de 8 mm para barras de hasta 5/8", de 3/8" para
+     las de mas de 5/8" hasta 1" y de 1/2" para las mayores. */
+  function estriboMinimo(nLong) {
+    var b = barra(nLong);
+    if (!b) return null;
+    if (b.d <= barra('5/8"').d + 1e-9) return "8 mm";
+    if (b.d <= barra('1"').d + 1e-9) return '3/8"';
+    return '1/2"';
+  }
+
+  /* --- factores de reduccion (Art. 9.3.2) ---------------------------------- */
+  var PHI = [
+    { k: "flexion", n: "Flexión sin carga axial", v: 0.90, art: "Art. 9.3.2.1" },
+    { k: "traccion", n: "Tracción axial, con o sin flexión", v: 0.90, art: "Art. 9.3.2.2 (a)" },
+    { k: "compEspiral", n: "Compresión, con o sin flexión, con espiral", v: 0.75, art: "Art. 9.3.2.2 (b)" },
+    { k: "compEstribos", n: "Compresión, con o sin flexión, con estribos", v: 0.70, art: "Art. 9.3.2.2 (b)" },
+    { k: "cortante", n: "Cortante y torsión", v: 0.85, art: "Art. 9.3.2.3" },
+    { k: "aplastamiento", n: "Aplastamiento en el concreto", v: 0.70, art: "Art. 9.3.2.4" }
+  ];
+  var phi = {};
+  PHI.forEach(function (x) { phi[x.k] = x.v; });
+
+  /* Art. 9.3.2.2: en flexocompresion φ puede subir linealmente hasta 0,90 a
+     medida que Pn baja desde 0,1 f'c Ag o Pb -el que sea menor- hasta cero.
+     o: {Pn, fc, Ag, Pb, espiral}, en kg y cm². */
+  function phiFlexocompresion(o) {
+    var base = o.espiral ? phi.compEspiral : phi.compEstribos;
+    var lim = 0.1 * o.fc * o.Ag;
+    if (o.Pb != null && isFinite(o.Pb) && o.Pb > 0) lim = Math.min(lim, o.Pb);
+    if (!(o.Pn > 0)) return phi.flexion;
+    if (o.Pn >= lim) return base;
+    return base + (phi.flexion - base) * (1 - o.Pn / lim);
+  }
+
+  /* --- materiales ------------------------------------------------------------ */
+  var ES = 2000000;                            /* 200 000 MPa, Art. 8.5.5 */
+  var ECU = 0.003;                             /* Art. 10.2.3 */
+  var BLOQUE = 0.85;                           /* 0,85 f'c, Art. 10.2.7.1 */
+  var FC_MIN = 210, FC_MAX = 550;              /* 21 y 55 MPa, Art. 21.3.2 */
+  /* Art. 21.3.3: ASTM A615 grados 280 y 420 -en el Peru, grado 40 y 60- */
+  var FY = [{ v: 4200, n: "grado 60 (420 MPa)" }, { v: 2800, n: "grado 40 (280 MPa)" }];
+
+  /* Art. 10.2.7.3: 0,85 de 17 a 28 MPa, 0,65 desde 56 MPa y lineal entre */
+  function beta1(fc) {
+    if (fc <= 280) return 0.85;
+    if (fc >= 560) return 0.65;
+    return 0.85 - 0.20 * (fc - 280) / 280;
+  }
+  /* la misma que ensena Datos › Materiales */
+  function ec(fc) { return 15000 * Math.sqrt(fc); }
+
+  /* --- elementos y recubrimientos (Art. 7.7.1) -------------------------------
+     El minimo de cada elemento en su caso habitual, no expuesto.  Si va contra
+     el suelo o a la intemperie manda (a) o (b), y eso lo decide el proyectista. */
+  var ELEMENTOS = [
+    { k: "viga", n: "Vigas", recub: 4, caso: "(c) vigas y columnas no expuestas" },
+    { k: "columna", n: "Columnas", recub: 4, caso: "(c) vigas y columnas no expuestas" },
+    { k: "placa", n: "Placas", recub: 2, caso: "(c) muros no expuestos, barras hasta 1 3/8\"" },
+    { k: "losa", n: "Losas y viguetas", recub: 2, caso: "(c) losas y viguetas no expuestas, barras hasta 1 3/8\"" },
+    { k: "zapata", n: "Zapatas", recub: 7, caso: "(a) contra el suelo y expuesto permanentemente a él" }
+  ];
+  var RECUB_CASOS = [
+    ["(a) Colocado contra el suelo y expuesto permanentemente a él", 7.0],
+    ["(b) En contacto con el suelo o la intemperie, barras de 3/4\" y mayores", 5.0],
+    ["(b) En contacto con el suelo o la intemperie, barras de 5/8\" y menores", 4.0],
+    ["(c) No expuesto: losas, muros y viguetas, barras de 1 3/8\" y menores", 2.0],
+    ["(c) No expuesto: vigas y columnas, armadura principal, estribos y espirales", 4.0]
+  ];
+  var BARRAS_DEFECTO = {
+    viga: { long: ['1/2"', '5/8"', '3/4"', '1"'], estribo: '3/8"' },
+    columna: { long: ['5/8"', '3/4"', '1"'], estribo: '3/8"' },
+    placa: { long: ['3/8"', '1/2"', '5/8"', '3/4"', '1"'], estribo: '3/8"' },
+    losa: { long: ['3/8"', '1/2"', '5/8"'], estribo: null },
+    zapata: { long: ['1/2"', '5/8"', '3/4"'], estribo: null }
+  };
+
+  /* --- el sistema y el Capitulo 21 -------------------------------------------
+     Los nombres son los de la lista de Datos (e030.js).  Solo cuatro son de
+     concreto armado; los demas -acero, albanileria, madera- no tienen Cap. 21. */
+  function claseDe(sistema) {
+    var s = String(sistema || "");
+    if (s === "Pórticos") return "porticos";
+    if (s === "Dual") return "dual";
+    if (s === "Muros estructurales") return "muros";
+    if (s === "Muros de ductilidad limitada") return "emdl";
+    return "otro";
+  }
+  var CAP21 = {
+    "21.4": "vigas y columnas de edificios de muros estructurales o dual tipo I",
+    "21.5": "vigas de edificios de pórticos y duales tipo II",
+    "21.6": "columnas de edificios de pórticos y duales tipo II",
+    "21.7": "nudos de edificios de pórticos y duales tipo II",
+    "21.9": "muros estructurales de concreto reforzado",
+    "21.10": "edificaciones con muros de ductilidad limitada"
+  };
+
+  /* Que parte del Cap. 21 manda en una direccion.
+     o: {tipoDual: "auto"|"I"|"II", pctMuros: fraccion de la cortante en la
+     base que toman los muros (o null si no se sabe todavia)}.
+       Art. 21.1   dual tipo I: muros del 60 % al 80 %; tipo II: menos del 60 %;
+                   porticos: al menos 80 % en columnas; muros: al menos 80 %.
+       Art. 21.2.4 el 21.4 en vigas y columnas de muros y dual tipo I.
+       Art. 21.2.5 el 21.5, 21.6 y 21.7 en porticos y dual tipo II.
+       Art. 21.2.7 el 21.9 en los muros de porticos, duales y muros.
+       Art. 21.2.8 el 21.10 en muros de ductilidad limitada. */
+  function regimen(sistema, o) {
+    o = o || {};
+    var clase = claseDe(sistema);
+    var pct = (o.pctMuros !== null && o.pctMuros !== undefined && isFinite(o.pctMuros)) ? +o.pctMuros : null;
+    var r = { sistema: sistema || "", clase: clase, tipo: null, pctMuros: pct,
+              vigas: null, columnas: null, nudos: null, muros: null, falta: null, avisos: [] };
+    function pc(v) { return Math.round(v * 100) + " %"; }
+    if (clase === "dual") {
+      var elegido = (o.tipoDual === "I" || o.tipoDual === "II") ? o.tipoDual : null;
+      var medido = pct === null ? null : (pct > 0.80 ? "muros" : (pct >= 0.60 ? "I" : "II"));
+      if (medido === "muros")
+        r.avisos.push("Los muros toman el " + pc(pct) + " de la cortante en la base: con más del 80 % el sistema es " +
+                      "de muros estructurales, no dual (Art. 21.1).");
+      if (elegido && (medido === "I" || medido === "II") && medido !== elegido)
+        r.avisos.push("Elegiste dual tipo " + elegido + ", pero los muros toman el " + pc(pct) + " de la cortante en " +
+                      "la base: eso es dual tipo " + medido + " (Art. 21.1).");
+      r.tipo = elegido || (medido === "muros" ? "I" : medido);
+      if (!r.tipo)
+        r.falta = "Falta saber si es dual tipo I o II: sale de la cortante que toman los muros en la base " +
+                  "(Art. 21.1). Elígelo, o espera a que RETICULA.bat [2] traiga esa cortante.";
+    }
+    if (clase === "muros" || (clase === "dual" && r.tipo === "I")) { r.vigas = "21.4"; r.columnas = "21.4"; }
+    if (clase === "porticos" || (clase === "dual" && r.tipo === "II")) { r.vigas = "21.5"; r.columnas = "21.6"; r.nudos = "21.7"; }
+    if (clase === "porticos" || clase === "dual" || clase === "muros") r.muros = "21.9";
+    if (clase === "emdl") r.muros = "21.10";
+    if (clase === "otro")
+      r.avisos.push("«" + (sistema || "sin sistema") + "» no es un sistema de concreto armado: el Capítulo 21 de la " +
+                    "E.060 no se aplica.");
+    if (clase === "porticos" && pct !== null && pct > 0.20)
+      r.avisos.push("Los muros toman el " + pc(pct) + " de la cortante en la base: un sistema de pórticos pide al " +
+                    "menos el 80 % en las columnas (Art. 21.1).");
+    if (clase === "muros" && pct !== null && pct < 0.80)
+      r.avisos.push("Los muros toman solo el " + pc(pct) + " de la cortante en la base: un sistema de muros " +
+                    "estructurales pide al menos el 80 % (Art. 21.1).");
+    return r;
+  }
+  /* Art. 21.2.11: el Cap. 21 no es obligatorio en categoria C y D en zona 1 */
+  function obligatorio(catE030, zona) {
+    var c = String(catE030 || "").charAt(0);
+    return !((c === "C" || c === "D") && +zona === 1);
+  }
+
+  /* --- lo que el proyectista elige ------------------------------------------- */
+  function defecto() {
+    var d = { recub: {}, barras: copia(BARRAS_DEFECTO), tipoDual: { x: "auto", y: "auto" }, vuAd: true };
+    ELEMENTOS.forEach(function (e) { d.recub[e.k] = e.recub; });
+    return d;
+  }
+  /* Completa EN SU SITIO lo que le falte o no valga a un diseno guardado -uno
+     de una version anterior, o tocado a mano- y lo devuelve.  Sin nada,
+     devuelve uno nuevo. */
+  function completar(d) {
+    var D = defecto();
+    if (!d || typeof d !== "object" || Array.isArray(d)) return D;
+    if (!d.recub || typeof d.recub !== "object") d.recub = {};
+    if (!d.barras || typeof d.barras !== "object") d.barras = {};
+    if (!d.tipoDual || typeof d.tipoDual !== "object") d.tipoDual = {};
+    ELEMENTOS.forEach(function (e) {
+      var v = d.recub[e.k];
+      d.recub[e.k] = (v === "" || v === null || v === undefined || !isFinite(+v) || +v < 0 || +v > 20)
+        ? D.recub[e.k] : +v;
+      var b = d.barras[e.k];
+      if (!b || typeof b !== "object") b = d.barras[e.k] = copia(D.barras[e.k]);
+      var l = (Array.isArray(b.long) ? b.long : []).filter(function (n) { return LONGITUDINALES.indexOf(n) >= 0; });
+      l = l.filter(function (n, i) { return l.indexOf(n) === i; })
+        .sort(function (p, q) { return barra(p).d - barra(q).d; });
+      b.long = l.length ? l : D.barras[e.k].long.slice();
+      if (D.barras[e.k].estribo) { if (ESTRIBOS.indexOf(b.estribo) < 0) b.estribo = D.barras[e.k].estribo; }
+      else b.estribo = null;
+    });
+    ["x", "y"].forEach(function (k) {
+      if (["auto", "I", "II"].indexOf(d.tipoDual[k]) < 0) d.tipoDual[k] = "auto";
+    });
+    if (typeof d.vuAd !== "boolean") d.vuAd = true;
+    return d;
+  }
+
+  /* LOS CRITERIOS DEL PROYECTO, resueltos y comprobados.
+     o: {fc, fy, diseno (lo guardado, puede faltar), sistemaX, sistemaY,
+         catE030, zona, pctMuros: {x, y} o null}.  No toca o.diseno. */
+  function criterios(o) {
+    o = o || {};
+    var d = completar(o.diseno ? copia(o.diseno) : null);
+    var fc = +o.fc || 210, fy = +o.fy || 4200, av = [];
+    if (fc < FC_MIN)
+      av.push("f'c = " + fc + " kg/cm² es menor que el mínimo de 210 kg/cm² en elementos sismorresistentes (Art. 21.3.2.1).");
+    if (fc > FC_MAX)
+      av.push("f'c = " + fc + " kg/cm² es mayor que el máximo de 550 kg/cm² en elementos sismorresistentes (Art. 21.3.2.2).");
+    if (!FY.some(function (x) { return x.v === fy; }))
+      av.push("fy = " + fy + " kg/cm² no es un grado de ASTM A615 admitido en elementos sismorresistentes: 2800 o " +
+              "4200 kg/cm² (Art. 21.3.3).");
+    var recub = {}, barras = {};
+    ELEMENTOS.forEach(function (e) {
+      var v = d.recub[e.k];
+      recub[e.k] = { n: e.n, cm: v, min: e.recub, caso: e.caso, ok: v >= e.recub - 1e-9 };
+      if (!recub[e.k].ok)
+        av.push(e.n + ": recubrimiento de " + v + " cm, menor que el mínimo de " + e.recub + " cm (Art. 7.7.1 " +
+                e.caso.split(" ")[0] + ").");
+      var b = d.barras[e.k], mayor = b.long[b.long.length - 1];
+      var emin = b.estribo ? estriboMinimo(mayor) : null;
+      var eok = !b.estribo || barra(b.estribo).d >= barra(emin).d - 1e-9;
+      barras[e.k] = { n: e.n, long: b.long.slice(), mayor: mayor, estribo: b.estribo, estriboMin: emin, estriboOk: eok };
+      if (!eok)
+        av.push(e.n + ": con barras de " + mayor + " el estribo debe ser de " + emin + " como mínimo, no de " +
+                b.estribo + " (Art. 7.10.5.1).");
+    });
+    var reg = {};
+    [["x", o.sistemaX], ["y", o.sistemaY]].forEach(function (p) {
+      var g = regimen(p[1], { tipoDual: d.tipoDual[p[0]], pctMuros: o.pctMuros ? o.pctMuros[p[0]] : null });
+      reg[p[0]] = g;
+      g.avisos.forEach(function (t) { av.push("Dirección " + p[0].toUpperCase() + ": " + t); });
+      if (g.falta) av.push("Dirección " + p[0].toUpperCase() + ": " + g.falta);
+    });
+    var oblig = obligatorio(o.catE030, o.zona);
+    if (!oblig && (reg.x.clase !== "otro" || reg.y.clase !== "otro"))
+      av.push("Categoría " + String(o.catE030).charAt(0) + " en zona 1: el Capítulo 21 no es obligatorio (Art. " +
+              "21.2.11). Retícula lo aplica igual, del lado seguro.");
+    return {
+      fc: fc, fy: fy, Ec: ec(fc), Es: ES, ecu: ECU, ey: fy / ES, beta1: beta1(fc), bloque: BLOQUE,
+      phi: copia(phi), phiTabla: copia(PHI),
+      recub: recub, recubCasos: copia(RECUB_CASOS),
+      barras: barras, barrasTabla: copia(BARRAS),
+      regimen: reg, tipoDual: copia(d.tipoDual), obligatorio: oblig,
+      convenciones: { dMenos: D_MENOS, vuAd: d.vuAd, maxMin: "separados", armado: "propuesto" },
+      orden: ELEMENTOS.map(function (e) { return e.k; }),
+      diseno: d, avisos: av
+    };
+  }
+
+  /* LO QUE HAY Y LO QUE FALTA para diseñar cada elemento.
+     o: {resultados: hay resultados de ETABS, alDia: son de este modelo,
+         n: {vigas, columnas, placas, reacciones} de C3,
+         modelo: {columnas, vigas, placas, losas} del modelo exportado,
+         sigma: σs de Datos, dual: alguna direccion es dual}
+     Estado: «listo», «falta» -se puede conseguir ya-, «luego» -lo trae una
+     entrega siguiente de D- o «no aplica». */
+  function datosParaDiseno(o) {
+    o = o || {};
+    var n = o.n || {}, m = o.modelo || {}, F = [];
+    var como = !o.resultados ? "Trae los resultados de ETABS con RETICULA.bat [2]."
+      : (o.alDia === false ? "Los resultados son de otro modelo: vuelve a llevarlo con RETICULA.bat [1] y a traerlos con [2]."
+        : null);
+    function fila(el, dato, estado, fuente, txt) {
+      F.push({ elemento: el, dato: dato, estado: estado, fuente: fuente, como: txt || "" });
+    }
+    function c3(el, k, dato, sub) {
+      var hay = o.resultados && o.alDia !== false && n[k] > 0;
+      fila(el, dato, hay ? "listo" : "falta", "Resultados ETABS › " + sub,
+           hay ? n[k] + " en los resultados" : (como || "Los resultados no traen " + sub.toLowerCase() + ": vuelve a traerlos con RETICULA.bat [2]."));
+    }
+    if (m.vigas > 0) {
+      c3("Vigas", "vigas", "Mu y Vu en las caras y el centro, de la envolvente", "Vigas");
+      fila("Vigas", "Cortante isostática de gravedad (casos CM y CV)", "luego", "ETABS",
+           "Para la cortante por capacidad (Art. 21.4 y 21.5) y las deflexiones. RETICULA.bat [2] la traerá en D0b.");
+      var luces = o.resultados && o.alDia !== false && n.vigas > 0;
+      fila("Vigas", "Luz libre, b y h", luces ? "listo" : "falta", "Resultados ETABS y modelo",
+           luces ? "de cara a cara" : (como || "Sale con las fuerzas de vigas: vuelve a traerlas con RETICULA.bat [2]."));
+    } else fila("Vigas", "El modelo no tiene vigas", "no aplica", "Modelo", "");
+    if (m.columnas > 0) {
+      c3("Columnas", "columnas", "Pu, M2 y M3 en pie y cabeza, por combinación", "Columnas");
+      fila("Columnas", "Orientación: b en X (eje local 2) y h en Y", "listo", "Modelador",
+           "El puente no gira columnas. Si alguien las gira a mano en ETABS, D0b lo detectará.");
+      fila("Columnas", "Vigas que llegan a cada nudo y altura libre", m.vigas > 0 ? "listo" : "no aplica", "Modelo", "");
+    } else fila("Columnas", "El modelo no tiene columnas", "no aplica", "Modelo", "");
+    if (m.placas > 0) {
+      c3("Placas", "placas", "P, V2 y M3 de cada muro, piso a piso", "Placas");
+      fila("Placas", "Largo, espesor y altura de cada muro", "listo", "Modelo", "");
+      fila("Placas", "Cortante de SDX y SDY en la base de cada muro", "luego", "ETABS",
+           "Decide si el dual es tipo I o II (Art. 21.1). RETICULA.bat [2] la traerá en D0b." +
+           (o.dual ? " Mientras tanto, elige el tipo en Criterios." : ""));
+      fila("Placas", "Desplazamiento del techo", "luego", "ETABS", "Para los elementos de borde (Art. 21.9.7). Se leerá en D5.");
+    } else fila("Placas", "El modelo no tiene placas", "no aplica", "Modelo", "");
+    if (m.columnas > 0 || m.placas > 0) {
+      c3("Zapatas", "reacciones", "Reacciones de cada caso en cada apoyo", "Reacciones");
+      fila("Zapatas", "σs capacidad portante", o.sigma > 0 ? "listo" : "falta", "Datos › Materiales",
+           o.sigma > 0 ? o.sigma + " kg/cm²" : "Complétala en Datos › Materiales.");
+      fila("Zapatas", "Profundidad de desplante y peso del relleno", "luego", "Criterios", "Se pedirán en D6.");
+    }
+    if (m.losas > 0) {
+      fila("Losas", "Cargas de cada paño", "listo", "Cargas", "");
+      fila("Losas", "Momentos: coeficientes de la E.060 o de ETABS", "luego", "—", "Se decide en D1.");
+    } else fila("Losas", "El modelo no tiene losas", "no aplica", "Modelo", "");
+    return F;
+  }
+
+  return {
+    ART: ART, D_MENOS: D_MENOS,
+    BARRAS: BARRAS, LONGITUDINALES: LONGITUDINALES, ESTRIBOS: ESTRIBOS, barra: barra, estriboMinimo: estriboMinimo,
+    PHI: PHI, phi: phi, phiFlexocompresion: phiFlexocompresion,
+    ES: ES, ECU: ECU, BLOQUE: BLOQUE, FC_MIN: FC_MIN, FC_MAX: FC_MAX, FY: FY, beta1: beta1, ec: ec,
+    ELEMENTOS: ELEMENTOS, RECUB_CASOS: RECUB_CASOS, BARRAS_DEFECTO: BARRAS_DEFECTO,
+    claseDe: claseDe, CAP21: CAP21, regimen: regimen, obligatorio: obligatorio,
+    defecto: defecto, completar: completar, criterios: criterios, datosParaDiseno: datosParaDiseno
+  };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -4982,7 +5366,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v147 · 13-09-2026";
+  var BUILD="v149 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -5052,7 +5436,12 @@ var TT={script:performance.now()};
              /* SISMO E.030: Vs opcional (interpola S2 y S3), CT por direccion
                 -vacio es el que corresponde al sistema- y las irregularidades
                 marcadas, que valen para el edificio entero (Art. 24) */
-             vs:"", ctX:"", ctY:"", irrAltura:[], irrPlanta:[]},
+             vs:"", ctX:"", ctY:"", irrAltura:[], irrPlanta:[],
+             /* D0 · DISENO E.060: el acero y los criterios que elige el
+                proyectista -recubrimientos, barras, tipo de dual, Vu a d-.
+                null hasta que se toca algo: oviedo/diseno.js pone los de
+                la norma.  Viajan con el modelo. */
+             fy:4200, diseno:null},
        tipoViga:"principal",tipoLosa:"aligerada",formaCol:"rect",vista:"plano",
        /* categoria de la edificacion: gobierna el % de placas (pag. 165) */
        categoria:"comun"};
@@ -5071,6 +5460,8 @@ var TT={script:performance.now()};
            ["combinaciones","Combinaciones"],["envio","Envío"]],
     resultados:[["verificacion","Verificación sísmica"],["vigas","Vigas"],["columnas","Columnas"],
                 ["placas","Placas"],["reacciones","Reacciones"]],
+    /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
+    diseno:[["criterios","Criterios"],["datos","Datos para diseño"]],
     hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
            ["resultados","Resultados y diseño"]]
   };
@@ -8072,7 +8463,7 @@ var TT={script:performance.now()};
   function sinPlano(){
     return S.modo==="hojas" || S.modo==="proyecto" ||
            S.modo==="comprobacion" || S.modo==="etabs" || S.modo==="sismo" ||
-           S.modo==="resultados" ||
+           S.modo==="resultados" || S.modo==="diseno" ||
            /* el cuadro de Decisiones es de todo el edificio: va a todo el ancho */
            (S.modo==="decisiones" && subDe("decisiones")==="cuadro");
   }
@@ -9636,6 +10027,166 @@ var TT={script:performance.now()};
     if(rn)rn.onchange=function(){ S.resNivel=this.value; render(); };
   }
 
+  /* =====================================================================
+     D0 · DISENO E.060 · LA BASE COMUN.  La norma vive en oviedo/diseno.js;
+     aqui se le dan los datos del proyecto, se ensena y se editan los
+     criterios.  Lo elegido va en S.proy.diseno y fy en S.proy.fy: viaja con
+     el modelo y llega a la hoja CRITERIOS_DISENO por el paquete.
+     ===================================================================== */
+  var DZC={p:-1,v:null};
+  function criteriosDiseno(){
+    if(DZC.p===PASADA)return DZC.v;
+    var st=sitio(), P=S.proy;
+    var v=DISENO.criterios({fc:+S.fc||210, fy:+P.fy||4200, diseno:P.diseno,
+      sistemaX:P.sistemaX, sistemaY:P.sistemaY, catE030:st.catE030, zona:st.zona});
+    DZC.p=PASADA; DZC.v=v;
+    return v;
+  }
+  /* lo guardado, completado, para escribir en el */
+  function disenoProy(){
+    S.proy.diseno=DISENO.completar(S.proy.diseno);
+    return S.proy.diseno;
+  }
+  /* que hay y que falta para diseñar: de los resultados (C3) y del modelo */
+  function datosDiseno(){
+    var r=resultadosEtabs(), FZ=null, ex=null, n={}, m={columnas:0,vigas:0,placas:0,losas:0}, P=S.proy;
+    try{ FZ=fuerzasEtabs(); }catch(e){}
+    try{ ex=exportaEtabs(); }catch(e){}
+    if(FZ)["vigas","columnas","placas","reacciones"].forEach(function(k){ n[k]=(FZ[k]||[]).length; });
+    if(ex)ex.niveles.forEach(function(L){
+      m.columnas+=L.columnas.length; m.vigas+=L.vigas.length; m.placas+=L.placas.length; m.losas+=L.losas.length; });
+    return DISENO.datosParaDiseno({resultados:!!(r&&!r.error&&r.R), alDia:!!(r&&r.alDia), n:n, modelo:m,
+      sigma:+S.sigma||0, dual:P.sistemaX==="Dual"||P.sistemaY==="Dual"});
+  }
+  function pintaDiseno(){
+    var el=$("#panelDis"); if(!el)return;
+    var sub=subDe("diseno"), K=criteriosDiseno(), A=DISENO.ART, h='<div class="pgrid sis">';
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function avisos(re){
+      var l=K.avisos.filter(function(t){return re.test(t)});
+      return l.length?'<p class="aviso">'+l.map(esc).join("<br>")+'</p>':'';
+    }
+    function opcion(v,txt,sel){return '<option value="'+esc(v)+'"'+(v===sel?" selected":"")+'>'+esc(txt)+'</option>'}
+    function art(a){return a?"Art. "+a:"—"}
+    if(sub==="criterios"){
+      var usados=[];
+      ["x","y"].forEach(function(k){var g=K.regimen[k];
+        [g.vigas,g.columnas,g.nudos,g.muros].forEach(function(a){ if(a&&usados.indexOf(a)<0)usados.push(a); });});
+      usados.sort(function(a,b){return (+a.split(".")[1])-(+b.split(".")[1])});
+      h+='<section class="pbox sis-ancha"><h3>Sistema estructural y Capítulo 21</h3>'+
+        '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Dirección</th><th>Sistema (de Datos)</th>'+
+        '<th>Dual</th><th>Vigas</th><th>Columnas</th><th>Nudos</th><th>Muros</th></tr></thead><tbody>'+
+        ["x","y"].map(function(k){var g=K.regimen[k];
+          var dual=g.clase!=="dual"?"—":'<select id="dDual_'+k+'" data-dual="'+k+'" class="pfi dis-sel">'+
+            opcion("auto","Con ETABS",K.tipoDual[k])+opcion("I","Tipo I",K.tipoDual[k])+
+            opcion("II","Tipo II",K.tipoDual[k])+'</select>';
+          return '<tr><td>'+k.toUpperCase()+'</td><td>'+esc(g.sistema||"—")+'</td><td>'+dual+'</td><td>'+art(g.vigas)+
+            '</td><td>'+art(g.columnas)+'</td><td>'+art(g.nudos)+'</td><td>'+art(g.muros)+'</td></tr>'}).join("")+
+        '</tbody></table></div>'+
+        avisos(/^Dirección|Art\. 21\.2\.11/)+
+        '<p class="nota">'+(usados.length?usados.map(function(a){return '<b>Art. '+a+'</b>: '+esc(DISENO.CAP21[a])})
+          .join(" · ")+'. ':'')+
+        'Dual tipo I si los muros toman del 60 % al 80 % de la cortante en la base, y tipo II si toman menos del '+
+        '60 % (Art. 21.1). «Con ETABS» lo decidirá con la cortante de cada muro cuando RETICULA.bat [2] la traiga; '+
+        'mientras tanto, elígelo. El sistema se cambia en <b>Datos</b>.</p></section>';
+
+      h+='<section class="pbox"><h3>Materiales</h3>'+
+        fijo("f'c del concreto",K.fc,"kg/cm²","se cambia en Datos › Materiales")+
+        '<label class="pf"><span class="pfe">fy del acero</span><select id="dFy" class="pfi">'+
+        DISENO.FY.map(function(o){return opcion(o.v,o.v,K.fy)}).join("")+'</select><span class="pfu">kg/cm²</span>'+
+        '<span class="pfn">ASTM A615 '+esc((DISENO.FY.filter(function(o){return o.v===K.fy})[0]||{n:"—"}).n)+
+        ' · E.060 '+A.acero+'</span></label>'+
+        fijo("Ec = 15000·√f'c",Math.round(K.Ec).toLocaleString("es-PE"),"kg/cm²","E.060 "+A.Ec)+
+        fijo("Es",K.Es.toLocaleString("es-PE"),"kg/cm²","E.060 "+A.Es+": 200 000 MPa")+
+        fijo("εcu",K.ecu.toFixed(3),"","E.060 "+A.ecu)+
+        fijo("εy = fy / Es",K.ey.toFixed(5),"","")+
+        fijo("β1",K.beta1.toFixed(3),"","E.060 "+A.beta1)+
+        avisos(/Art\. 21\.3\./)+
+        '<p class="nota">La E.060 está en MPa; aquí se trabaja en kg/cm² con 1 MPa = 10 kg/cm².</p></section>';
+
+      h+='<section class="pbox"><h3>Recubrimientos · E.060 '+A.recub+'</h3>'+
+        K.orden.map(function(k){var x=K.recub[k];
+          return '<label class="pf"><span class="pfe">'+esc(x.n)+'</span><input id="dRec_'+k+'" data-rec="'+k+
+            '" class="pfi" type="number" min="0" max="20" step="0.5" value="'+x.cm+'"><span class="pfu">cm</span>'+
+            '<span class="pfn">'+(x.ok?'':'<b class="dis-mal">')+'mín. '+x.min+' cm'+(x.ok?'':'</b>')+' · '+
+            esc(x.caso)+'</span></label>'}).join("")+
+        avisos(/Art\. 7\.7\.1/)+
+        '<p class="nota">Libre, hasta el refuerzo más cercano a la cara. Contra el suelo el mínimo es 7 cm; en contacto '+
+        'con el suelo o la intemperie, 5 cm con barras de 3/4" o mayores y 4 cm con las de 5/8" o menores.</p></section>';
+
+      h+='<section class="pbox"><h3>Factores φ · E.060 '+A.phi+'</h3>'+
+        K.phiTabla.map(function(x){return fijo(esc(x.n),x.v.toFixed(2),"",x.art)}).join("")+
+        '<p class="nota">En flexocompresión φ puede subir linealmente hasta 0,90 cuando Pn baja desde 0,1 f&#39;c Ag '+
+        'o Pb —el menor— hasta cero (Art. 9.3.2.2).</p></section>';
+
+      h+='<section class="pbox"><h3>Convenciones del diseño</h3>'+
+        fijo("Peralte efectivo de vigas","h − "+Math.round(K.convenciones.dMenos*100),"cm","el mismo de Resultados ETABS")+
+        '<label class="etb-ch"><input id="dVuAd" type="checkbox"'+(K.convenciones.vuAd?" checked":"")+'><span>Diseñar '+
+        'la cortante con Vu a d de la cara del apoyo (E.060 '+A.vuAd+')</span></label>'+
+        '<p class="nota">Con sismo, el máximo y el mínimo de cada fuerza van por separado: ETABS los da así y no '+
+        'ocurren a la vez. El armado lo propone el complemento con las barras de abajo, y tú lo puedes cambiar.</p></section>';
+
+      h+='<section class="pbox sis-ancha"><h3>Barras de cada elemento</h3>'+
+        '<div class="etb-scroll"><table class="sis-t dis-bar"><thead><tr><th>Elemento</th><th>Longitudinales que se pueden usar</th>'+
+        '<th>Estribo</th><th>Estribo mínimo · '+A.estribo+'</th></tr></thead><tbody>'+
+        K.orden.map(function(k){var x=K.barras[k];
+          return '<tr><td>'+esc(x.n)+'</td><td class="dis-chips">'+DISENO.LONGITUDINALES.map(function(n){
+              return '<label class="dis-chip"><input type="checkbox" id="dBar_'+k+'_'+n.replace(/[^0-9a-z]/gi,"")+'" '+
+                'data-bar="'+k+'" data-n="'+esc(n)+'"'+(x.long.indexOf(n)>=0?" checked":"")+'><span>'+esc(n)+
+                '</span></label>'}).join("")+
+            '</td><td>'+(x.estribo===null?'—':'<select id="dEst_'+k+'" data-est="'+k+'" class="pfi dis-sel">'+
+              DISENO.ESTRIBOS.map(function(n){return opcion(n,n,x.estribo)}).join("")+'</select>')+
+            '</td><td>'+(x.estribo===null?'—':(x.estriboOk?'':'<b class="dis-mal">')+esc(x.estriboMin)+' con barras de '+
+              esc(x.mayor)+(x.estriboOk?'':'</b>'))+'</td></tr>'}).join("")+
+        '</tbody></table></div>'+
+        avisos(/Art\. 7\.10\.5\.1/)+
+        '<p class="nota">Con estas barras el complemento propondrá el armado de cada elemento, y lo podrás cambiar '+
+        'elemento por elemento. Estribos: 8 mm hasta barras de 5/8", 3/8" hasta 1" y 1/2" para las mayores '+
+        '(Art. 7.10.5.1); el de confinamiento no baja de 8 mm (Art. 21.1).</p></section>';
+    }else{
+      var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,luego:0},
+          EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],luego:["Más adelante","dis-luego"],
+               "no aplica":["No aplica","dis-na"]};
+      F.forEach(function(x){ if(grupos.indexOf(x.elemento)<0)grupos.push(x.elemento);
+                             if(cuenta[x.estado]!=null)cuenta[x.estado]++; });
+      h+='<section class="pbox sis-ancha"><h3>Datos para diseñar cada elemento</h3>'+
+        '<p class="nota" style="margin:0 0 8px">'+cuenta.listo+' listos · '+cuenta.falta+' faltan · '+cuenta.luego+
+        ' llegan más adelante.</p>'+
+        '<div class="etb-scroll"><table class="sis-t dis-datos"><thead><tr><th>Dato</th><th>Estado</th>'+
+        '<th>De dónde sale</th><th>Qué hacer</th></tr></thead><tbody>'+
+        grupos.map(function(g){
+          return '<tr class="fz-g"><td colspan="4">'+esc(g)+'</td></tr>'+
+            F.filter(function(x){return x.elemento===g}).map(function(x){
+              var e=EST[x.estado]||[x.estado,""];
+              return '<tr><td>'+esc(x.dato)+'</td><td><span class="dis-est '+e[1]+'">'+e[0]+'</span></td>'+
+                '<td class="sis-n">'+esc(x.fuente)+'</td><td class="sis-n">'+esc(x.como)+'</td></tr>'}).join("")}).join("")+
+        '</tbody></table></div>'+
+        '<p class="nota">«Falta» se puede conseguir ya, con lo que dice la última columna. «Más adelante» lo trae '+
+        'una entrega siguiente de D: la lectura nueva de ETABS (D0b) o la parte de cada elemento.</p></section>';
+    }
+    el.innerHTML=h+'</div>';
+    function al(sel,fn){
+      try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis "+sel),function(x){ x.onchange=fn; }); }
+      catch(e){}
+    }
+    al("#dFy",function(){ S.proy.fy=(+this.value===2800)?2800:4200; guardar(); render(); });
+    al("input[data-rec]",function(){
+      var d=disenoProy(), k=this.dataset.rec, v=+this.value;
+      d.recub[k]=(this.value!==""&&isFinite(v)&&v>=0&&v<=20)?v:DISENO.defecto().recub[k];
+      guardar(); render(); });
+    al("input[data-bar]",function(){
+      var d=disenoProy(), b=d.barras[this.dataset.bar], n=this.dataset.n, i=b.long.indexOf(n);
+      if(this.checked){ if(i<0)b.long.push(n); }
+      else if(i>=0){
+        if(b.long.length===1){ this.checked=true; toast("Deja al menos una barra longitudinal."); return; }
+        b.long.splice(i,1);
+      }
+      DISENO.completar(d); guardar(); render(); });
+    al("select[data-est]",function(){ disenoProy().barras[this.dataset.est].estribo=this.value; guardar(); render(); });
+    al("select[data-dual]",function(){ disenoProy().tipoDual[this.dataset.dual]=this.value; guardar(); render(); });
+    al("#dVuAd",function(){ disenoProy().vuAd=!!this.checked; guardar(); render(); });
+  }
+
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
      mas la carga muerta; CV, la viva de los pisos y la de la azotea.  CS es el
      sismo dinamico SDX o SDY -que ETABS ya da con los dos signos- multiplicado
@@ -10050,7 +10601,9 @@ var TT={script:performance.now()};
             /* C2: la verificacion con los resultados de ETABS, para VERIFICACION_SISMICA */
             verificacion:verificacionSismica(),
             /* C3: las fuerzas de diseno por elemento, para las hojas FUERZAS_ y REACCIONES */
-            fuerzas:fuerzasEtabs()};
+            fuerzas:fuerzasEtabs(),
+            /* D0: los criterios de diseño resueltos, para CRITERIOS_DISENO */
+            diseno:criteriosDiseno()};
   }
 
   function tabla(){
@@ -11043,7 +11596,9 @@ var TT={script:performance.now()};
     {n:"FUERZAS_VIGAS",        tit:"Fuerzas en vigas",     t:"res", fz:"vigas"},
     {n:"FUERZAS_COLUMNAS",     tit:"Fuerzas en columnas",  t:"res", fz:"columnas"},
     {n:"FUERZAS_PLACAS",       tit:"Fuerzas en placas",    t:"res", fz:"placas"},
-    {n:"REACCIONES",           tit:"Reacciones",           t:"res", fz:"reacciones"}
+    {n:"REACCIONES",           tit:"Reacciones",           t:"res", fz:"reacciones"},
+    /* D0: la base del diseño E.060; sale siempre, con los criterios del proyecto */
+    {n:"CRITERIOS_DISENO",     tit:"Criterios de diseño",  t:"dis"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -11053,7 +11608,8 @@ var TT={script:performance.now()};
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
-    VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true};
+    VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true,
+    CRITERIOS_DISENO:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -11084,6 +11640,7 @@ var TT={script:performance.now()};
   function estadoHoja(h,c){
     if(!IMPLEMENTADAS[h.n]) return {ok:false,pie:"pendiente"};
     if(h.t==="ref") return {ok:true,pie:"referencia"};
+    if(h.t==="dis") return {ok:true,pie:"criterios del proyecto"};
     if(h.t==="res"&&h.fz){
       var fz=null; try{ fz=fuerzasEtabs(); }catch(e){}
       var nfz=fz?fz[h.fz].length:0;
@@ -11153,7 +11710,7 @@ var TT={script:performance.now()};
   /* la sub-pestana de Hojas Excel donde sale cada hoja */
   function grupoHoja(h){
     if(h.t==="ref")return "normas";
-    if(h.t==="res")return "resultados";
+    if(h.t==="res"||h.t==="dis")return "resultados";
     return (h.n==="METRADO_CARGAS"||h.n==="ANALISIS_SISMICO")?"cargas":"predim";
   }
   function pintaHojas(){
@@ -11333,7 +11890,8 @@ var TT={script:performance.now()};
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
     var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto"),
         deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion"),
-        etab=(S.modo==="etabs"), sism=(S.modo==="sismo"), res=(S.modo==="resultados");
+        etab=(S.modo==="etabs"), sism=(S.modo==="sismo"), res=(S.modo==="resultados"),
+        dise=(S.modo==="diseno");
     var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
     /* DECISIONES es la planta de solo lectura: sus filtros donde van las
@@ -11351,6 +11909,7 @@ var TT={script:performance.now()};
     ver("#panelEtabs",etab);
     ver("#panelSismo",sism);
     ver("#panelRes",res);
+    ver("#panelDis",dise);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
@@ -11374,6 +11933,7 @@ var TT={script:performance.now()};
     else if(etab){pintaEtabs();}
     else if(sism){pintaSismo();}
     else if(res){pintaResultados();}
+    else if(dise){pintaDiseno();}
     else if(deci&&solo){pintaCuadroDecisiones();}
     else if(!esPlano){pintaEdificio(); if(deci)pintaDecisiones();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
@@ -11388,7 +11948,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 

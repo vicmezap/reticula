@@ -6785,11 +6785,124 @@
     return h.cerrar(r);
   }
 
+  /* =====================================================================
+     CRITERIOS_DISENO — la base comun del diseño con la E.060 (parte D0):
+     materiales, φ, recubrimientos, barras, que parte del Capitulo 21 manda
+     en cada direccion y las convenciones.  Todo llega resuelto en el
+     paquete del modelador (oviedo/diseno.js); aqui solo se escribe.  Ec, εy,
+     β1 y el bloque van con FORMULA sobre las celdas de f'c y fy, y cada
+     recubrimiento comprueba su minimo con otra: si se cambia un valor en la
+     hoja, se rehace.
+     ===================================================================== */
+  function criteriosDiseno(P) {
+    var K = P && P.diseno;
+    if (!K || !K.recub || !K.regimen)
+      throw new Error("faltan los criterios de diseño: abre Diseño E.060 en la ventana y vuelve a generar");
+    var h = F.hoja("CRITERIOS_DISENO"), r = 6;
+    h.titulo("CRITERIOS DE DISEÑO · E.060");
+    var L4 = [[3, 5], [6, 7], [8, 8], [9, 10]], AL4 = { alinear: ["Left", "Center", "Center", "Left"] };
+
+    r = h.seccion(r, "1. MATERIALES");
+    r = h.encabezado(r, L4, ["Dato", "Valor", "Unidad", "E.060"], 22.0);
+    var rFc = r;
+    r = h.fila(r, L4, ["f'c del concreto", K.fc, "kg/cm²", "Art. 21.3.2: de 210 a 550 kg/cm²"], { 1: "0" }, AL4);
+    var rFy = r;
+    r = h.fila(r, L4, ["fy del acero", K.fy, "kg/cm²", "Art. 21.3.3: ASTM A615 grado 40 o 60"], { 1: "0" }, AL4);
+    r = h.fila(r, L4, ["Ec = 15000·√f'c", "=15000*SQRT(F" + rFc + ")", "kg/cm²", "Art. 8.5"], { 1: "#,##0" }, AL4);
+    var rEs = r;
+    r = h.fila(r, L4, ["Es", K.Es, "kg/cm²", "Art. 8.5.5: 200 000 MPa"], { 1: "#,##0" }, AL4);
+    r = h.fila(r, L4, ["εcu", K.ecu, "", "Art. 10.2.3"], { 1: "0.000" }, AL4);
+    r = h.fila(r, L4, ["εy = fy / Es", "=F" + rFy + "/F" + rEs, "", ""], { 1: "0.00000" }, AL4);
+    r = h.fila(r, L4, ["β1", "=IF(F" + rFc + "<=280,0.85,IF(F" + rFc + ">=560,0.65,0.85-0.2*(F" + rFc + "-280)/280))",
+                       "", "Art. 10.2.7.3"], { 1: "0.000" }, AL4);
+    r = h.fila(r, L4, ["Esfuerzo del bloque equivalente", "=0.85*F" + rFc, "kg/cm²", "Art. 10.2.7.1: 0,85 f'c"],
+               { 1: "0.0" }, AL4);
+    r++;
+    r = h.nota(r, "La E.060 está en MPa; aquí se trabaja en kg/cm² con 1 MPa = 10 kg/cm². Ec, εy, β1 y el bloque son "
+      + "fórmulas: si cambias f'c o fy en esta hoja, se rehacen.");
+
+    r = h.seccion(r, "2. FACTORES DE REDUCCIÓN DE RESISTENCIA φ");
+    var L3F = [[3, 7], [8, 8], [9, 10]];
+    r = h.encabezado(r, L3F, ["Solicitación", "φ", "E.060"], 22.0);
+    K.phiTabla.forEach(function (x) {
+      r = h.fila(r, L3F, [x.n, x.v, x.art], { 1: "0.00" }, { alinear: ["Left", "Center", "Left"] });
+    });
+    r++;
+    r = h.nota(r, "Art. 9.3.2.2: en flexocompresión φ puede subir linealmente hasta 0,90 cuando Pn baja desde 0,1 f'c Ag "
+      + "o Pb —el que sea menor— hasta cero.");
+
+    r = h.seccion(r, "3. RECUBRIMIENTOS");
+    var L5R = [[3, 4], [5, 5], [6, 6], [7, 9], [10, 10]];
+    r = h.encabezado(r, L5R, ["Elemento", "Adoptado (cm)", "Mínimo (cm)", "Caso del Art. 7.7.1", "¿Cumple?"], 34.0);
+    K.orden.forEach(function (k) {
+      var x = K.recub[k];
+      r = h.fila(r, L5R, [x.n, x.cm, x.min, x.caso, '=IF(E' + r + '>=F' + r + ',"SÍ","NO")'], { 1: "0.0", 2: "0.0" },
+                 { alinear: ["Left", "Center", "Center", "Left", "Center"], alto: 30 });
+    });
+    r++;
+    r = h.subtitulo(r, "Mínimos del Art. 7.7.1 según la exposición");
+    r = h.tabla(r, [[3, 8], [9, 10]], ["Caso", "Mínimo (cm)"], K.recubCasos, { 1: "0.0" }, 22.0,
+                { alinear: ["Left", "Center"] });
+    r = h.nota(r, "Recubrimiento libre, hasta el refuerzo más cercano a la cara. Si un elemento va contra el suelo o a la "
+      + "intemperie, su mínimo es el de (a) o (b).");
+
+    r = h.seccion(r, "4. BARRAS");
+    r = h.subtitulo(r, "4.1   Barras corrugadas ASTM A615 / NTP 341.031");
+    r = h.tabla(r, [[3, 4], [5, 6], [7, 8], [9, 10]], ["Barra", "Ø (cm)", "Área (cm²)", "Peso (kg/m)"],
+                K.barrasTabla.map(function (b) { return [b.n, b.d, b.a, b.kg]; }), { 1: "0.00", 2: "0.00", 3: "0.000" },
+                22.0, { alinear: ["Center", "Center", "Center", "Center"] });
+    r = h.subtitulo(r, "4.2   Barras de cada elemento y estribo mínimo (Art. 7.10.5.1)");
+    var LB = [[3, 4], [5, 7], [8, 8], [9, 9], [10, 10]];
+    r = h.encabezado(r, LB, ["Elemento", "Longitudinales", "Estribo", "Estribo mínimo", "¿Cumple?"], 34.0);
+    K.orden.forEach(function (k) {
+      var x = K.barras[k];
+      r = h.fila(r, LB, [x.n, x.long.join(" · "), x.estribo || "—", x.estriboMin || "—",
+                         x.estribo ? (x.estriboOk ? "SÍ" : "NO") : "—"], null,
+                 { alinear: ["Left", "Left", "Center", "Center", "Center"] });
+    });
+    r++;
+    r = h.nota(r, "Art. 7.10.5.1: estribos de 8 mm para barras de hasta 5/8\", de 3/8\" para las de más de 5/8\" hasta "
+      + "1\" y de 1/2\" para las mayores. El estribo de confinamiento no baja de 8 mm (Art. 21.1). Con estas barras el "
+      + "complemento propone el armado de cada elemento, y se puede cambiar.");
+
+    r = h.seccion(r, "5. SISTEMA ESTRUCTURAL Y CAPÍTULO 21");
+    var L6 = [[3, 3], [4, 5], [6, 6], [7, 7], [8, 8], [9, 10]];
+    function art(a) { return a ? "Art. " + a : "—"; }
+    r = h.encabezado(r, L6, ["Dir.", "Sistema (E.030)", "Dual", "Vigas", "Columnas", "Nudos · muros"], 22.0);
+    ["x", "y"].forEach(function (k) {
+      var g = K.regimen[k];
+      r = h.fila(r, L6, [k.toUpperCase(), g.sistema || "—",
+                         g.clase === "dual" ? (g.tipo ? "tipo " + g.tipo : "sin definir") : "—",
+                         art(g.vigas), art(g.columnas),
+                         [g.nudos ? "nudos " + art(g.nudos) : "", g.muros ? "muros " + art(g.muros) : ""]
+                           .filter(function (t) { return t; }).join(" · ") || "—"], null,
+                 { alinear: ["Center", "Left", "Center", "Center", "Center", "Left"] });
+    });
+    r++;
+    r = h.nota(r, "Art. 21.1: dual tipo I si los muros toman del 60 % al 80 % de la cortante en la base, y tipo II si "
+      + "toman menos del 60 %. Art. 21.2.4: el 21.4 va en vigas y columnas de muros estructurales y dual tipo I. Art. "
+      + "21.2.5: el 21.5, el 21.6 y el 21.7 van en vigas, columnas y nudos de pórticos y dual tipo II. Art. 21.2.7: el "
+      + "21.9 va en los muros de pórticos, duales y muros estructurales.");
+    (K.avisos || []).forEach(function (t) { r = h.nota(r, "AVISO · " + t); });
+
+    r = h.seccion(r, "6. CONVENCIONES DEL DISEÑO");
+    var LC = [[3, 5], [6, 10]];
+    r = h.encabezado(r, LC, ["Criterio", "Cómo se aplica"], 22.0);
+    [["Peralte efectivo de vigas", "d = h − " + Math.round(K.convenciones.dMenos * 100) + " cm, el mismo de FUERZAS_VIGAS"],
+     ["Cortante cerca del apoyo", K.convenciones.vuAd ? "Vu a d de la cara del apoyo (Art. 11.1.3.1)"
+                                                     : "Vu en la cara del apoyo"],
+     ["Máximos y mínimos con sismo", "Por separado: ETABS los da para cada fuerza y no ocurren a la vez"],
+     ["Armado", "Lo propone el complemento con las barras de la sección 4, y se puede cambiar"],
+     ["Unidades", "kg/cm², cm, t y t·m; 1 MPa = 10 kg/cm²"]
+    ].forEach(function (f) { r = h.fila(r, LC, f, null, { alinear: ["Left", "Left"] }); });
+    return h.cerrar(r);
+  }
+
   return { criteriosOviedo: criteriosOviedo, normaE020: normaE020,
            cuadrosE030: cuadrosE030, datos: datos, modelo: modelo,
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
-           reacciones: reacciones };
+           reacciones: reacciones, criteriosDiseno: criteriosDiseno };
 });
 </script>
 <script>
@@ -6802,7 +6915,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 /* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
    los pide para verificar la estructura y disenar. */
 var HOJA_RES = "RETICULA_RESULTADOS";
-var BUILD = "v147 · 13-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v149 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7173,7 +7286,8 @@ var REGISTRO = {
   "FUERZAS_VIGAS":      function(p){ return HOJAS.fuerzasVigas(p); },
   "FUERZAS_COLUMNAS":   function(p){ return HOJAS.fuerzasColumnas(p); },
   "FUERZAS_PLACAS":     function(p){ return HOJAS.fuerzasPlacas(p); },
-  "REACCIONES":         function(p){ return HOJAS.reacciones(p); }
+  "REACCIONES":         function(p){ return HOJAS.reacciones(p); },
+  "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
