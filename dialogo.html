@@ -360,6 +360,19 @@
 .sis-ok,.sis-no{font:700 11px "IBM Plex Sans",sans-serif}
 .sis-ok{color:#2e7d32}
 .sis-no{color:#c62828}
+.sis-na{font:600 11px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+/* Resultados ETABS › Verificacion sismica: el resumen.  Cada cosa lleva su
+   estado ESCRITO, no solo el color del borde */
+.vf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:10px;margin:8px 0}
+.vf{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--panel);padding:8px 10px;
+  display:flex;flex-direction:column;gap:2px;min-width:0}
+.vf-t{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.vf-v{font:700 14px "IBM Plex Sans",sans-serif;color:var(--ink)}
+.vf-d{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-2)}
+.vf-ok{border-left-color:#2e7d32}.vf-ok .vf-v{color:#2e7d32}
+.vf-no{border-left-color:#c62828}.vf-no .vf-v{color:#c62828}
+.vf-rev{border-left-color:#b26a00}.vf-rev .vf-v{color:#b26a00}
+.vf-na .vf-v{color:var(--ink-3)}
 .sis-sub{font:600 11px "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ink-3);margin:10px 0 4px}
 .sis-ch{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
@@ -3345,7 +3358,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   var NORMA = "E.030 (texto modificado por la RM 183-2026-VIVIENDA)";
   var ART = {
     zona: "Tabla N.º 1", vs: "Tabla N.º 3", S: "Tabla N.º 4", TP: "Tabla N.º 5",
-    C: "Art. 18, Tabla N.º 6", U: "Art. 19", R0: "Tabla N.º 10", R: "Art. 22",
+    C: "Art. 18, Tabla N.º 6", U: "Art. 19", R0: "Tabla N.º 10", R: "Art. 26",
     irreg: "Art. 24, Tablas N.º 11 y 12", peso: "Art. 31", V: "Art. 34",
     F: "Art. 35", T: "Art. 36", e: "Art. 37", Sa: "Art. 41", dir: "Art. 43",
     Vmin: "Art. 44", deriva: "Arts. 50 y 51"
@@ -3535,6 +3548,385 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
            factorIrregularidad: factorIrregularidad, pctCargaViva: pctCargaViva,
            pesoLosa: pesoLosa, estatico: estatico, periodosEspectro: periodosEspectro,
            espectro: espectro };
+});
+</script>
+<script>
+/* ===== verificacion.js (inlinado) ===== */
+/* =====================================================================
+   verificacion.js — LA VERIFICACION SISMICA DEL EDIFICIO CON LOS
+   RESULTADOS DE ETABS (parte C2), segun la E.030 vigente: el texto
+   modificado por la RM 183-2026-VIVIENDA, cotejado el 13-09-2026.
+
+   Lo que se comprueba y como:
+     · Derivas · Arts. 50 y 51, Tabla N.º 14.  Δ/h inelastica = f · R · Δ/h
+       elastica, con f = 0,75 si la estructura es regular y 0,85 si no.
+       Manda el analisis dinamico; el estatico va de referencia y sin el
+       minimo de C/R (Art. 50.3).  Direccion k: R y correccion de k.
+     · Piso blando y rigidez extrema · Tabla N.º 11.  k = V / Δ en el centro
+       de masas, cada patron estatico por separado ("la misma condicion de
+       carga"): menor que el 70 % del entrepiso de arriba o que el 80 % del
+       promedio de los tres de arriba; extrema, 60 % y 70 %.
+     · Masa · Tabla N.º 11: el peso de un piso mayor que 1,5 veces el de un
+       piso adyacente.  "No se aplica en azoteas": la azotea ni se juzga ni
+       sirve de comparacion.
+     · Torsion · Tabla N.º 12: Δmax > 1,3 Δprom (extrema 1,5), con
+       excentricidad accidental, con diafragma rigido y solo si la deriva
+       pasa el 50 % de la permisible.  Se mira con los patrones estaticos,
+       que llevan el ±5 % del Art. 37, y con los casos dinamicos, que llevan
+       el del Art. 45, y manda el peor: la norma no dice cual, y una
+       comprobacion no se aprueba eligiendo el analisis favorable.
+     · Restricciones · Art. 25, Tabla N.º 13.
+     · Masa participante (Art. 40) y cortante minima (Art. 44).
+   El resto de irregularidades no sale de un analisis elastico -la de
+   resistencia pide la resistencia del entrepiso- o es de configuracion:
+   se siguen marcando a mano en Sismo E.030.
+
+   EL R CON QUE SE ANALIZO.  Las derivas se multiplican por el R que ETABS
+   uso, no por el que haya ahora en Sismo E.030: si marcas una irregularidad
+   despues de analizar, cambia el R pero no los resultados.  Se deduce del C
+   de los patrones de ETABS (Cb = Z·U·S·C/R); si C/R quedo en el minimo de
+   0,11 no se puede deducir y se usa el de ahora, y se dice.
+
+     node scripts/complemento/oviedo/probar_verificacion.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports)
+    module.exports = definir(require("./sismo.js"));
+  else raiz.VERIF = definir(raiz.SISMO);
+})(typeof self !== "undefined" ? self : this, function (SISMO) {
+  "use strict";
+
+  var ART = {
+    deriva: "Art. 50", limite: "Art. 51, Tabla N.º 14", altura: "Tabla N.º 11",
+    planta: "Tabla N.º 12", restricciones: "Art. 25, Tabla N.º 13", R: "Art. 26",
+    modos: "Art. 40", Vmin: "Art. 44", minCR: "Art. 50.3"
+  };
+  var G = 9.80665;
+  var DIRS = ["x", "y"];
+
+  /* Las cinco que se miden, con el nombre exacto de las tablas de sismo.js */
+  var N = {
+    blando: SISMO.IRREG_ALTURA[0].n,
+    rigidezExtrema: SISMO.IRREG_ALTURA[2].n,
+    masa: SISMO.IRREG_ALTURA[4].n,
+    torsional: SISMO.IRREG_PLANTA[0].n,
+    torsionalExtrema: SISMO.IRREG_PLANTA[1].n
+  };
+  var MEDIBLES_ALTURA = [N.blando, N.rigidezExtrema, N.masa];
+  var MEDIBLES_PLANTA = [N.torsional, N.torsionalExtrema];
+  var FACTOR = {};
+  MEDIBLES_ALTURA.forEach(function (n) { FACTOR[n] = SISMO.IRREG_ALTURA.filter(function (x) { return x.n === n; })[0].f; });
+  MEDIBLES_PLANTA.forEach(function (n) { FACTOR[n] = SISMO.IRREG_PLANTA.filter(function (x) { return x.n === n; })[0].f; });
+
+  /* Tabla N.º 14.  El complemento modela concreto; los demas por si el
+     sistema elegido es otro. */
+  var LIMITES = [
+    { re: /ductilidad limitada/i, v: 0.004, n: "Edificios de muros de ductilidad limitada" },
+    { re: /albañiler/i, v: 0.005, n: "Albañilería" },
+    { re: /madera/i, v: 0.010, n: "Madera" },
+    { re: /resistentes a momentos|arriostrad/i, v: 0.010, n: "Acero" }
+  ];
+  function limite(sistema) {
+    var s = String(sistema || ""), k;
+    for (k = 0; k < LIMITES.length; k++)
+      if (LIMITES[k].re.test(s)) return { v: LIMITES[k].v, n: LIMITES[k].n };
+    return { v: 0.007, n: "Concreto armado" };
+  }
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function redondeo3(x) { return Math.round(x * 1000) / 1000; }
+  function factorDe(tabla, nombre) {
+    var k;
+    for (k = 0; k < tabla.length; k++) if (tabla[k].n === nombre) return tabla[k].f;
+    return 1;
+  }
+
+  /* Los pisos de ETABS, de abajo arriba, sin la base */
+  function pisosDe(sis) {
+    return (sis.pisos || []).filter(function (p) { return p && p.piso !== "Base" && num(p.h) > 0; })
+      .map(function (p) { return { piso: p.piso, cota: +p.cota, h: +p.h }; })
+      .sort(function (a, b) { return a.cota - b.cota; });
+  }
+
+  /* El R de cada direccion con que ETABS analizo */
+  function rDelAnalisis(sis, d) {
+    var out = {}, ZUS = (num(d.Z) || 0) * (num(d.U) || 0) * (num(d.S) || 0);
+    DIRS.forEach(function (k) {
+      var actual = (num(d["R0" + k]) || 0) * (num(d.Ia) || 1) * (num(d.Ip) || 1);
+      var e = (sis.estatico || []).filter(function (x) { return x.dir === k && num(x.C) > 0; })[0];
+      var C = d.C ? num(d.C[k]) : null;
+      var o = { actual: actual, R: actual, deducido: false, Cetabs: e ? +e.C : null };
+      if (e && ZUS > 0 && C > 0 && e.C / ZUS > 0.11 * 1.0001) {
+        o.R = redondeo3(ZUS * C / e.C);
+        o.deducido = true;
+      }
+      out[k] = o;
+    });
+    return out;
+  }
+
+  /* El mayor valor de una tabla de ETABS para un piso, unos casos y una direccion */
+  function mayor(filas, piso, casos, dir, campo) {
+    var m = null, caso = null;
+    (filas || []).forEach(function (f) {
+      var v = num(f[campo]);
+      if (f.piso === piso && f.dir === dir && casos.indexOf(f.caso) >= 0 && v !== null && (m === null || v > m)) {
+        m = v; caso = f.caso;
+      }
+    });
+    return { v: m, caso: caso };
+  }
+
+  /* Las irregularidades que quedan marcadas si se adopta lo que mide ETABS:
+     las que no se miden se conservan, y de las que se miden quedan las que
+     salieron.  Si una no se pudo medir (null: los resultados no traen su
+     tabla), se respeta lo que hubiera marcado. */
+  function aplicarMedidas(altura, planta, medidas) {
+    function una(lista, medibles) {
+      var l = Array.isArray(lista) ? lista : [];
+      var quedan = l.filter(function (n) { return medibles.indexOf(n) < 0 || medidas[n] === null || medidas[n] === undefined; });
+      medibles.forEach(function (n) { if (medidas[n] === true && quedan.indexOf(n) < 0) quedan.push(n); });
+      return quedan;
+    }
+    return { altura: una(altura, MEDIBLES_ALTURA), planta: una(planta, MEDIBLES_PLANTA) };
+  }
+
+  /* Art. 25, Tabla N.º 13.  La norma no nombra la categoria D: se toma como
+     la C, igual que para el peso sismico en sismo.js. */
+  function restriccion(cat, zona, nPisos, hn, altura, planta) {
+    var c = String(cat || "").charAt(0), z = +zona, tipo;
+    if (c === "A") tipo = z >= 2 ? "ninguna" : "extremas";
+    else if (c === "B") tipo = z >= 2 ? "extremas" : "sin";
+    else if (z >= 3) tipo = "extremas";
+    else if (z === 2) tipo = (nPisos <= 2 || hn <= 8 + 1e-9) ? "sin" : "extremas";
+    else tipo = "sin";
+    var todas = (altura || []).concat(planta || []);
+    var extremas = todas.filter(function (n) { return /extrema/i.test(n); });
+    var incumplen = tipo === "ninguna" ? todas : (tipo === "extremas" ? extremas : []);
+    var texto = tipo === "ninguna" ? "No se permiten irregularidades"
+              : tipo === "extremas" ? "No se permiten irregularidades extremas" : "Sin restricciones";
+    if (c !== "A" && c !== "B" && z === 2 && tipo === "sin")
+      texto = "Sin restricciones: edificio de hasta 2 pisos u 8 m de altura total";
+    return { categoria: cat || "", zona: z, tipo: tipo, texto: texto,
+             cumple: incumplen.length === 0, incumplen: incumplen };
+  }
+
+  /* ------------------------------------------------------------------------
+     sis: lo que trae a_excel.py en «sismo» (estatico, dinamico, escala,
+          modal, derivas, torsion, rigidez, masa, pisos)
+     d:   Z, U, S, R0x, R0y, Ia, Ip, C {x, y} (C estatico del complemento),
+          sistemaX, sistemaY, irrAltura, irrPlanta, categoria, zona,
+          nPisos, hn
+     ------------------------------------------------------------------------ */
+  function verificar(sis, d) {
+    sis = sis || {}; d = d || {};
+    var pisos = pisosDe(sis), est = sis.estatico || [], din = sis.dinamico || [], avisos = [];
+    var Ran = rDelAnalisis(sis, d);
+    var deducidas = DIRS.filter(function (k) { return Ran[k].deducido; });
+    var regular = deducidas.length
+      ? deducidas.every(function (k) { return Math.abs(Ran[k].R - d["R0" + k]) <= 0.005 * d["R0" + k]; })
+      : (d.Ia === 1 && d.Ip === 1);
+    var f = regular ? 0.75 : 0.85;
+    var lim = { x: limite(d.sistemaX), y: limite(d.sistemaY) };
+    var corr = {}, CR = {};
+    DIRS.forEach(function (k) {
+      var C = d.C ? num(d.C[k]) : null;
+      CR[k] = (C !== null && Ran[k].R > 0) ? C / Ran[k].R : null;
+      corr[k] = (CR[k] !== null && CR[k] < 0.11) ? CR[k] / 0.11 : 1;
+      if (Ran[k].deducido && Math.abs(Ran[k].R - Ran[k].actual) > 0.005 * Ran[k].actual)
+        avisos.push("ETABS se analizó con R = " + Ran[k].R.toFixed(2) + " en " + k.toUpperCase() +
+                    " y Sismo E.030 da ahora R = " + Ran[k].actual.toFixed(2) + ". La verificación va con el R " +
+                    "del análisis; para verificar el de ahora, vuelve a llevar el modelo y a traer los resultados.");
+      if (!Ran[k].deducido && Ran[k].Cetabs !== null)
+        avisos.push("En " + k.toUpperCase() + " el coeficiente de ETABS quedó en el mínimo de C/R = 0,11: no se " +
+                    "puede saber con qué R se analizó y se usa el de Sismo E.030.");
+    });
+    var casosEst = est.map(function (p) { return p.patron; });
+    var casosDin = din.map(function (c) { return c.caso; });
+    var hayDin = casosDin.length > 0;
+    if (!hayDin) avisos.push("Los resultados no traen casos dinámicos: las derivas salen del análisis estático.");
+    if (!(sis.derivas || []).length)
+      avisos.push("Los resultados no traen derivas: vuelve a traerlos con RETICULA.bat [2].");
+
+    /* --- derivas -------------------------------------------------------- */
+    var derivas = pisos.map(function (p) {
+      var o = { piso: p.piso, h: p.h };
+      DIRS.forEach(function (k) {
+        var dd = mayor(sis.derivas, p.piso, casosDin, k, "deriva"),
+            de = mayor(sis.derivas, p.piso, casosEst, k, "deriva");
+        var q = { din: dd.v, casoDin: dd.caso, est: de.v, casoEst: de.caso,
+                  dinInel: dd.v === null ? null : dd.v * f * Ran[k].R,
+                  estInel: de.v === null ? null : de.v * f * Ran[k].R * corr[k] };
+        q.inelastica = hayDin ? q.dinInel : q.estInel;
+        q.caso = hayDin ? q.casoDin : q.casoEst;
+        q.cumple = q.inelastica === null ? null : q.inelastica <= lim[k].v + 1e-12;
+        o[k] = q;
+      });
+      return o;
+    });
+    var derivaMax = {};
+    DIRS.forEach(function (k) {
+      var m = null;
+      derivas.forEach(function (p) {
+        if (p[k].inelastica !== null && (!m || p[k].inelastica > m.inelastica))
+          m = { inelastica: p[k].inelastica, piso: p.piso, caso: p[k].caso };
+      });
+      if (m) m.cumple = m.inelastica <= lim[k].v + 1e-12;
+      derivaMax[k] = m;
+    });
+
+    /* --- rigidez: piso blando y extrema --------------------------------- */
+    var rigidez = {};
+    DIRS.forEach(function (k) {
+      var tablas = est.filter(function (p) { return p.dir === k; }).map(function (p) {
+        var filas = pisos.map(function (ps) {
+          var f0 = (sis.rigidez || []).filter(function (x) { return x.piso === ps.piso && x.caso === p.patron; })[0] || {};
+          var V = num(f0["V" + k]), dl = num(f0["d" + k]);
+          return { piso: ps.piso, V: V, delta: dl, K: (V !== null && dl > 0) ? V / dl : null };
+        });
+        filas.forEach(function (q, i) {
+          var s1 = filas[i + 1], tres = filas.slice(i + 1, i + 4);
+          q.r1 = (q.K !== null && s1 && s1.K > 0) ? q.K / s1.K : null;
+          q.r3 = (q.K !== null && tres.length === 3 && tres.every(function (t) { return t.K > 0; }))
+            ? q.K / ((tres[0].K + tres[1].K + tres[2].K) / 3) : null;
+          q.extrema = (q.r1 !== null && q.r1 < 0.60) || (q.r3 !== null && q.r3 < 0.70);
+          q.blando = q.extrema || (q.r1 !== null && q.r1 < 0.70) || (q.r3 !== null && q.r3 < 0.80);
+          q.estado = (q.r1 === null && q.r3 === null) ? "—" : (q.extrema ? "EXTREMA" : (q.blando ? "PISO BLANDO" : "REGULAR"));
+        });
+        return { patron: p.patron, filas: filas };
+      }).filter(function (t) { return t.filas.some(function (q) { return q.K !== null; }); });
+      var filas = pisos.map(function (ps, i) {
+        var peor = null;
+        tablas.forEach(function (t) {
+          var q = t.filas[i], clave;
+          if (q.K === null) return;
+          clave = Math.min(q.r1 === null ? 9 : q.r1 / 0.70, q.r3 === null ? 9 : q.r3 / 0.80);
+          if (!peor || clave < peor.clave) peor = { clave: clave, q: q, patron: t.patron };
+        });
+        if (!peor) return { piso: ps.piso, K: null, r1: null, r3: null, patron: null, blando: false, extrema: false, estado: "—" };
+        var b = tablas.some(function (t) { return t.filas[i].blando; }),
+            e = tablas.some(function (t) { return t.filas[i].extrema; });
+        return { piso: ps.piso, K: peor.q.K, r1: peor.q.r1, r3: peor.q.r3, patron: peor.patron, blando: b, extrema: e,
+                 estado: e ? "EXTREMA" : (b ? "PISO BLANDO" : peor.q.estado) };
+      });
+      rigidez[k] = { tablas: tablas, filas: filas };
+    });
+
+    /* --- masa ------------------------------------------------------------ */
+    var masa = pisos.map(function (ps) {
+      var f0 = (sis.masa || []).filter(function (x) { return x.piso === ps.piso; })[0] || {};
+      var m = num(f0.masa), P = num(f0.peso);
+      if (P === null && m !== null) P = m * G;
+      return { piso: ps.piso, masa: m, P: P };
+    });
+    var azotea = masa.length - 1;
+    masa.forEach(function (q, i) {
+      q.azotea = (i === azotea);
+      q.abajo = (!q.azotea && i > 0 && q.P !== null && masa[i - 1].P > 0) ? q.P / masa[i - 1].P : null;
+      q.arriba = (!q.azotea && i + 1 < azotea && q.P !== null && masa[i + 1].P > 0) ? q.P / masa[i + 1].P : null;
+      q.razon = (q.abajo === null && q.arriba === null) ? null
+              : Math.max(q.abajo === null ? 0 : q.abajo, q.arriba === null ? 0 : q.arriba);
+      q.irregular = q.razon !== null && q.razon > 1.5;
+      q.estado = q.azotea ? "NO SE APLICA" : (q.razon === null ? "—" : (q.irregular ? "IRREGULAR" : "REGULAR"));
+    });
+
+    /* --- torsion --------------------------------------------------------- */
+    var torsion = {};
+    DIRS.forEach(function (k) {
+      var casos = est.filter(function (p) { return p.dir === k; }).map(function (p) { return { caso: p.patron, tipo: "estatico" }; })
+        .concat(din.filter(function (c) { return c.dir === k; }).map(function (c) { return { caso: c.caso, tipo: "dinamico" }; }));
+      var detalle = [];
+      pisos.forEach(function (ps) {
+        casos.forEach(function (ck) {
+          var f0 = (sis.torsion || []).filter(function (x) { return x.piso === ps.piso && x.caso === ck.caso && x.dir === k; })[0];
+          if (!f0 || !(num(f0.max) > 0) || !(num(f0.prom) > 0)) return;
+          var factor = f * Ran[k].R * (ck.tipo === "estatico" ? corr[k] : 1);
+          var q = { piso: ps.piso, h: ps.h, caso: ck.caso, tipo: ck.tipo, max: +f0.max, prom: +f0.prom,
+                    razon: f0.max / f0.prom, factor: factor };
+          q.inelastica = q.max / ps.h * factor;
+          q.aplica = q.inelastica > 0.5 * lim[k].v;
+          q.extrema = q.aplica && q.razon > 1.5;
+          q.torsional = q.aplica && q.razon > 1.3;
+          q.estado = !q.aplica ? "NO APLICA" : (q.extrema ? "EXTREMA" : (q.torsional ? "IRREGULAR" : "REGULAR"));
+          detalle.push(q);
+        });
+      });
+      var filas = pisos.map(function (ps) {
+        var qs = detalle.filter(function (q) { return q.piso === ps.piso; });
+        var ap = qs.filter(function (q) { return q.aplica; }), peor = null;
+        (ap.length ? ap : qs).forEach(function (q) { if (!peor || q.razon > peor.razon) peor = q; });
+        if (!peor) return { piso: ps.piso, razon: null, caso: null, inelastica: null, aplica: false,
+                            torsional: false, extrema: false, estado: "—" };
+        var t = qs.some(function (q) { return q.torsional; }), e = qs.some(function (q) { return q.extrema; });
+        return { piso: ps.piso, razon: peor.razon, caso: peor.caso, inelastica: peor.inelastica, aplica: ap.length > 0,
+                 torsional: t, extrema: e, estado: e ? "EXTREMA" : (t ? "IRREGULAR" : (ap.length ? "REGULAR" : "NO APLICA")) };
+      });
+      torsion[k] = { filas: filas, detalle: detalle };
+    });
+
+    /* --- lo medido, R y restricciones ------------------------------------ */
+    function hay(obj) { return DIRS.some(function (k) { return obj[k].filas.some(function (q) { return q.estado !== "—"; }); }); }
+    function alguna(obj, campo) { return DIRS.some(function (k) { return obj[k].filas.some(function (q) { return q[campo]; }); }); }
+    var conRigidez = hay(rigidez), conTorsion = hay(torsion), conMasa = masa.some(function (q) { return q.estado !== "—" && !q.azotea; });
+    var medidas = {};
+    medidas[N.blando] = conRigidez ? alguna(rigidez, "blando") : null;
+    medidas[N.rigidezExtrema] = conRigidez ? alguna(rigidez, "extrema") : null;
+    medidas[N.masa] = conMasa ? masa.some(function (q) { return q.irregular; }) : null;
+    medidas[N.torsional] = conTorsion ? alguna(torsion, "torsional") : null;
+    medidas[N.torsionalExtrema] = conTorsion ? alguna(torsion, "extrema") : null;
+    var nuevas = aplicarMedidas(d.irrAltura, d.irrPlanta, medidas);
+    var IaMed = SISMO.factorIrregularidad(SISMO.IRREG_ALTURA, nuevas.altura),
+        IpMed = SISMO.factorIrregularidad(SISMO.IRREG_PLANTA, nuevas.planta);
+    /* lo que no sale de la medicion, para la hoja: el factor y las extremas */
+    var fijasAltura = nuevas.altura.filter(function (n) { return medidas[n] !== true; }),
+        fijasPlanta = nuevas.planta.filter(function (n) { return medidas[n] !== true; });
+    var Rmed = { x: (num(d.R0x) || 0) * IaMed * IpMed, y: (num(d.R0y) || 0) * IaMed * IpMed };
+    var cambiaR = DIRS.some(function (k) { return Math.abs(Rmed[k] - Ran[k].R) > 0.005 * (Ran[k].R || 1); });
+    var hn = num(d.hn) !== null ? +d.hn : (pisos.length ? pisos[pisos.length - 1].cota : 0);
+    var rest = restriccion(d.categoria, d.zona, num(d.nPisos) || pisos.length, hn, nuevas.altura, nuevas.planta);
+
+    /* --- modos y cortante ------------------------------------------------ */
+    var modal = sis.modal || [], ult = modal[modal.length - 1] || {};
+    function fundamental(campo) {
+      var m = null;
+      modal.forEach(function (x) { if (num(x[campo]) !== null && (!m || x[campo] > m[campo])) m = x; });
+      return m ? { T: num(m.T), modo: m.modo } : null;
+    }
+    var modos = { x: fundamental("UX"), y: fundamental("UY"), sumaX: num(ult.sumaUX), sumaY: num(ult.sumaUY) };
+    modos.cumple = modos.sumaX !== null && modos.sumaY !== null && modos.sumaX >= 0.9 - 1e-9 && modos.sumaY >= 0.9 - 1e-9;
+    var minimo = regular ? 0.80 : 0.90, cortante = {};
+    DIRS.forEach(function (k) {
+      var e = est.filter(function (x) { return x.dir === k; })[0], v = din.filter(function (x) { return x.dir === k; })[0];
+      var q = { est: e ? num(e.V) : null, din: v ? num(v.V) : null, escala: num((sis.escala || {})[k]), minimo: minimo };
+      q.razon = (q.est > 0 && q.din !== null) ? q.din / q.est : null;
+      q.cumple = q.razon !== null && q.razon >= minimo - 1e-9;
+      /* el factor lo calculo el puente con las cortantes sin redondear, y
+         ETABS las da con cuatro decimales: 0,05 % de holgura */
+      q.cumpleEscalada = q.razon !== null && q.razon * Math.max(1, q.escala || 1) >= minimo - 5e-4;
+      cortante[k] = q;
+    });
+
+    var cumpleDerivas = DIRS.every(function (k) { return derivaMax[k] && derivaMax[k].cumple; });
+    return {
+      norma: SISMO.NORMA, art: ART, N: N, factores: FACTOR,
+      regular: regular, f: f, R: Ran, CR: CR, correccion: corr, limite: lim,
+      R0: { x: num(d.R0x), y: num(d.R0y) }, C: { x: d.C ? num(d.C.x) : null, y: d.C ? num(d.C.y) : null },
+      analisis: hayDin ? "dinamico" : "estatico", pisos: pisos,
+      derivas: derivas, derivaMax: derivaMax, rigidez: rigidez, masa: masa, torsion: torsion,
+      medidas: medidas, altura: nuevas.altura, planta: nuevas.planta, IaMed: IaMed, IpMed: IpMed,
+      factorFijoAltura: SISMO.factorIrregularidad(SISMO.IRREG_ALTURA, fijasAltura),
+      factorFijoPlanta: SISMO.factorIrregularidad(SISMO.IRREG_PLANTA, fijasPlanta),
+      extremasFijas: fijasAltura.concat(fijasPlanta).filter(function (n) { return /extrema/i.test(n); }).length,
+      Rmed: Rmed, cambiaR: cambiaR, restriccion: rest, modos: modos, cortante: cortante,
+      avisos: avisos,
+      cumple: cumpleDerivas && modos.cumple && !cambiaR && rest.cumple &&
+              DIRS.every(function (k) { return !hayDin || cortante[k].cumpleEscalada; })
+    };
+  }
+
+  return { ART: ART, N: N, MEDIBLES_ALTURA: MEDIBLES_ALTURA, MEDIBLES_PLANTA: MEDIBLES_PLANTA,
+           LIMITES: LIMITES, limite: limite, factorDe: factorDe, aplicarMedidas: aplicarMedidas,
+           restriccion: restriccion, verificar: verificar };
 });
 </script>
 <script>
@@ -4330,7 +4722,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v143 · 13-09-2026";
+  var BUILD="v145 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4419,7 +4811,8 @@ var TT={script:performance.now()};
            ["combinaciones","Combinaciones"],["envio","Envío"]],
     resultados:[["verificacion","Verificación sísmica"],["vigas","Vigas"],["columnas","Columnas"],
                 ["placas","Placas"],["reacciones","Reacciones"]],
-    hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"]]
+    hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
+           ["resultados","Resultados y diseño"]]
   };
   S.sub={};
   try{ var subGuardadas=JSON.parse(localStorage.getItem("reticula_sub")||"null");
@@ -8640,14 +9033,15 @@ var TT={script:performance.now()};
          'RETICULA.bat [1], analízalo y trae los resultados con RETICULA.bat [2]. ')+boton+'</p>';
   }
   /* Resultados ETABS › Verificacion sismica: lo que ETABS devolvio. */
-  function tarjetaResultados(c){
+  function tarjetaResultados(c,sinEstado){
     function f(v,d){return (v==null||!isFinite(v))?"—":(+v).toFixed(d==null?2:d)}
     function estado(ok){return '<b class="'+(ok?"sis-ok":"sis-no")+'">'+(ok?"CUMPLE":"NO CUMPLE")+'</b>'}
     function fila(etq,vx,vy,norma){
       return '<tr><td>'+etq+'</td><td>'+vx+'</td><td>'+vy+'</td><td class="sis-n">'+(norma||"")+'</td></tr>';
     }
     var r=resultadosEtabs(),
-        h='<section class="pbox sis-ancha"><h3>Período, masa y cortante de ETABS</h3>'+estadoResultados(r);
+        h='<section class="pbox sis-ancha"><h3>Período, masa y cortante de ETABS</h3>'+
+          ((sinEstado&&r&&!r.error)?'':estadoResultados(r));
     if(!r||r.error)return h+'</section>';
     var R=r.R, SS=R.sismo||{}, est={}, din={}, modal=SS.modal||[], ult=modal[modal.length-1]||{},
         minimo=(c.Ia===1&&c.Ip===1)?0.80:0.90, escala=SS.escala||{};
@@ -8697,6 +9091,176 @@ var TT={script:performance.now()};
     return h+'<p class="nota">Llegaron <b>'+n+'</b> '+Q[1]+'. '+Q[2]+'</p>'+
       '<p class="nota">La tabla para el diseño se arma en la parte C3.</p></section>';
   }
+  /* C2 · LA VERIFICACION SISMICA con lo que devolvio ETABS.  La norma vive
+     en oviedo/verificacion.js; aqui se le dan los datos y se ensena. */
+  function verificacionSismica(){
+    var r=resultadosEtabs(); if(!r||r.error||!r.R||!r.R.sismo)return null;
+    var c=calculoSismo(); if(c.faltan.length||!c.est)return null;
+    var P=S.proy, st=c.sitio;
+    return {v:VERIF.verificar(r.R.sismo,{Z:st.Z,U:st.U,S:st.S,R0x:st.R0x,R0y:st.R0y,Ia:c.Ia,Ip:c.Ip,
+              C:{x:c.est.x.C,y:c.est.y.C},sistemaX:P.sistemaX,sistemaY:P.sistemaY,
+              irrAltura:P.irrAltura,irrPlanta:P.irrPlanta,categoria:st.catE030,zona:st.zona,
+              nPisos:c.niveles.length,hn:c.est.hn}),
+            alDia:r.alDia,
+            archivo:String((r.R.etabs&&r.R.etabs.archivo)||"").split(/[\\/]/).pop(),
+            leido:String(r.R.leido||"").replace("T"," ").slice(0,16)};
+  }
+  /* El boton: marca en Sismo E.030 las cinco que se miden tal como salieron.
+     Las demas se quedan como las marcaste. */
+  function marcarIrregularidadesMedidas(){
+    var VS=verificacionSismica(); if(!VS)return false;
+    var n=VERIF.aplicarMedidas(S.proy.irrAltura,S.proy.irrPlanta,VS.v.medidas);
+    S.proy.irrAltura=n.altura; S.proy.irrPlanta=n.planta;
+    guardar(); render();
+    toast("Marcadas en Sismo E.030. Vuelve a llevar el modelo con RETICULA.bat [1] y a traer los resultados con [2].");
+    return true;
+  }
+  function tarjetasVerificacion(c){
+    var VS=verificacionSismica();
+    if(!VS)return tarjetaResultados(c);            /* sin resultados: dice como traerlos */
+    var v=VS.v, P=S.proy, din=(v.analisis==="dinamico"), h='', items=[];
+    function f(x,d){return (x==null||!isFinite(x))?"—":(+x).toFixed(d==null?2:d)}
+    function pct(x){return (x==null||!isFinite(x))?"—":(x*100).toFixed(1)+" %"}
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    function estado(t){
+      var cls=/^(CUMPLE|REGULAR)$/.test(t)?"sis-ok":(/^(NO CUMPLE|IRREGULAR|EXTREMA|PISO BLANDO)$/.test(t)?"sis-no":"sis-na");
+      return '<b class="'+cls+'">'+t+'</b>';
+    }
+    function D(k){return k.toUpperCase()}
+    function item(tit,val,tipo,det){
+      items.push('<div class="vf vf-'+tipo+'"><span class="vf-t">'+tit+'</span><b class="vf-v">'+val+
+                 '</b><span class="vf-d">'+det+'</span></div>');
+    }
+    var marcadas=(P.irrAltura||[]).concat(P.irrPlanta||[]), MED=VERIF.MEDIBLES_ALTURA.concat(VERIF.MEDIBLES_PLANTA);
+
+    /* --- el resumen --- */
+    ["x","y"].forEach(function(k){
+      var q=v.derivaMax[k];
+      if(!q)item("Deriva en "+D(k),"SIN DATOS","na","los resultados no traen derivas");
+      else item("Deriva en "+D(k),q.cumple?"CUMPLE":"NO CUMPLE",q.cumple?"ok":"no",
+        f(q.inelastica,4)+" en "+esc(q.piso)+" con "+esc(q.caso)+" · límite "+f(v.limite[k].v,3));
+    });
+    item("Masa participante",v.modos.cumple?"CUMPLE":"NO CUMPLE",v.modos.cumple?"ok":"no",
+      "X "+pct(v.modos.sumaX)+" · Y "+pct(v.modos.sumaY)+" · al menos 90 % ("+v.art.modos+")");
+    if(din){
+      var cx=v.cortante.x, cy=v.cortante.y, sin=cx.cumple&&cy.cumple, con=cx.cumpleEscalada&&cy.cumpleEscalada;
+      item("Cortante dinámica",sin?"CUMPLE":(con?"CUMPLE ESCALADA":"NO CUMPLE"),con?"ok":"no",
+        "X "+pct(cx.razon)+(cx.escala>1?" × "+f(cx.escala,3):"")+" · Y "+pct(cy.razon)+(cy.escala>1?" × "+f(cy.escala,3):"")+
+        " · mínimo "+Math.round(cx.minimo*100)+" % ("+v.art.Vmin+")");
+    }
+    var medidas=MED.filter(function(n){return v.medidas[n]===true});
+    var reanalizar=["x","y"].some(function(k){return v.R[k].deducido&&Math.abs(v.R[k].R-v.R[k].actual)>0.005*v.R[k].actual});
+    item("Irregularidades y R",reanalizar?"VOLVER A ANALIZAR":(v.cambiaR?"CAMBIA R":"COINCIDEN"),(reanalizar||v.cambiaR)?"rev":"ok",
+      (medidas.length?"ETABS mide: "+medidas.map(esc).join(", "):"ETABS no mide ninguna")+
+      " · R "+f(v.R.x.R)+" / "+f(v.R.y.R)+(v.cambiaR?" → "+f(v.Rmed.x)+" / "+f(v.Rmed.y):""));
+    item("Restricciones",v.restriccion.cumple?"CUMPLE":"NO CUMPLE",v.restriccion.cumple?"ok":"no",
+      esc(v.restriccion.texto)+" · categoría "+esc(String(v.restriccion.categoria).split("_")[0])+", zona "+v.restriccion.zona);
+    h+='<section class="pbox sis-ancha"><h3>Verificación sísmica · E.030</h3>'+estadoResultados(resultadosEtabs())+
+      '<div class="vf-grid">'+items.join("")+'</div>'+
+      (v.avisos.length?'<p class="aviso">'+v.avisos.map(esc).join("<br>")+'</p>':'')+
+      '<p class="nota">'+esc(v.norma)+'. El puente lleva un diafragma rígido en cada losa, así que la irregularidad '+
+      'torsional sí se aplica.</p></section>';
+
+    h+=tarjetaResultados(c,true);
+
+    /* --- derivas --- */
+    function tablaDerivas(k){
+      return '<div class="sis-dir"><div class="sis-sub">Sismo en '+D(k)+' · R = '+f(v.R[k].R)+' · f = '+f(v.f)+
+        ' · límite '+f(v.limite[k].v,3)+' ('+esc(v.limite[k].n)+')</div><div class="etb-scroll"><table class="sis-t"><thead><tr>'+
+        '<th>Nivel</th><th>hᵢ (m)</th><th>Δ/h elástica</th><th>Δ/h = f · R · Δ/h</th>'+(din?'<th>Estático (referencia)</th>':'')+
+        '<th>Estado</th></tr></thead><tbody>'+
+        v.derivas.slice().reverse().map(function(p){var q=p[k];
+          return '<tr><td>'+esc(p.piso)+'</td><td>'+f(p.h)+'</td><td>'+f(din?q.din:q.est,5)+
+            (q.caso?' <small>'+esc(q.caso)+'</small>':'')+'</td><td><b>'+f(q.inelastica,4)+'</b></td>'+
+            (din?'<td>'+f(q.estInel,4)+(q.casoEst?' <small>'+esc(q.casoEst)+'</small>':'')+'</td>':'')+
+            '<td>'+estado(q.cumple===null?"—":(q.cumple?"CUMPLE":"NO CUMPLE"))+'</td></tr>';
+        }).join("")+'</tbody></table></div></div>';
+    }
+    h+='<section class="pbox sis-ancha"><h3>Derivas · Arts. 50 y 51, Tabla N.º 14</h3>'+tablaDerivas("x")+tablaDerivas("y")+
+      '<p class="nota">ETABS da la deriva elástica, con las fuerzas reducidas por R: se multiplica por f · R, con f = 0,75 '+
+      'si la estructura es regular y 0,85 si no, y con el R del análisis. Manda el '+
+      (din?'análisis dinámico; el estático va de referencia, ':'análisis estático, ')+'sin el mínimo de C/R ('+v.art.minCR+').</p></section>';
+
+    /* --- lo medido y R --- */
+    function donde(n){
+      var t=[], campo;
+      if(n===VERIF.N.blando||n===VERIF.N.rigidezExtrema){
+        campo=(n===VERIF.N.blando)?"blando":"extrema";
+        ["x","y"].forEach(function(k){v.rigidez[k].filas.forEach(function(q){
+          if(q[campo])t.push(q.piso+" en "+D(k)+": "+f(q.r1,2)+(q.r3!=null?" y "+f(q.r3,2):"")+" con "+q.patron);});});
+      }else if(n===VERIF.N.masa){
+        v.masa.forEach(function(q){ if(q.irregular)t.push(q.piso+": "+f(q.razon,2)+" veces"); });
+      }else{
+        campo=(n===VERIF.N.torsional)?"torsional":"extrema";
+        ["x","y"].forEach(function(k){v.torsion[k].filas.forEach(function(q){
+          if(q[campo])t.push(q.piso+" en "+D(k)+": "+f(q.razon,3)+" con "+q.caso);});});
+      }
+      return t.map(esc).join(" · ");
+    }
+    var aMano=marcadas.filter(function(n){return MED.indexOf(n)<0});
+    var nuevas=VERIF.aplicarMedidas(P.irrAltura,P.irrPlanta,v.medidas);
+    function mismas(a,b){return (a||[]).slice().sort().join("|")===(b||[]).slice().sort().join("|")}
+    var difiere=!mismas(nuevas.altura,P.irrAltura)||!mismas(nuevas.planta,P.irrPlanta);
+    h+='<section class="pbox sis-ancha"><h3>Irregularidades que se miden y R · Tablas N.º 11 y 12, Art. 26</h3>'+
+      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Irregularidad</th><th>Marcada</th><th>Medida con ETABS</th>'+
+      '<th>Factor</th><th>Dónde</th></tr></thead><tbody>'+
+      MED.map(function(n){var m=v.medidas[n];
+        return '<tr><td>'+esc(n)+'</td><td>'+(marcadas.indexOf(n)>=0?"sí":"no")+'</td><td>'+
+          (m===null?estado("SIN DATOS"):(m?'<b class="sis-no">SÍ</b>':'no'))+'</td><td>'+f(v.factores[n])+
+          '</td><td class="sis-n">'+donde(n)+'</td></tr>';}).join("")+
+      '</tbody></table></div>'+
+      '<p class="nota">'+(aMano.length?'Marcadas a mano, que un análisis elástico no mide: '+aMano.map(esc).join(", ")+'.'
+                       :'Las demás irregularidades no se miden con el análisis: se marcan a mano en Sismo E.030.')+'</p>'+
+      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>X</th><th>Y</th><th></th></tr></thead><tbody>'+
+      '<tr><td>R del análisis</td><td>'+f(v.R.x.R)+'</td><td>'+f(v.R.y.R)+'</td><td class="sis-n">'+
+        (v.R.x.deducido?'deducido del C que tiene ETABS':'el de Sismo E.030')+'</td></tr>'+
+      '<tr><td>R con lo medido</td><td><b>'+f(v.Rmed.x)+'</b></td><td><b>'+f(v.Rmed.y)+'</b></td><td class="sis-n">Ia '+
+        f(v.IaMed)+' · Ip '+f(v.IpMed)+'</td></tr>'+
+      '<tr><td>Restricciones</td><td colspan="2">'+estado(v.restriccion.cumple?"CUMPLE":"NO CUMPLE")+'</td><td class="sis-n">'+
+        esc(v.restriccion.texto)+(v.restriccion.incumplen.length?': '+v.restriccion.incumplen.map(esc).join(", "):'')+
+        ' · '+v.art.restricciones+'</td></tr>'+
+      '</tbody></table></div>'+
+      (difiere?'<p class="nota"><button type="button" class="btn" id="btnIrrMed">Marcar en Sismo E.030 lo que mide ETABS</button> '+
+        'Cambia solo las cinco que se miden. Después vuelve a llevar el modelo con RETICULA.bat [1] y a traer los resultados con [2].</p>'
+       :'<p class="nota">Lo marcado en Sismo E.030 coincide con lo que mide ETABS.</p>')+'</section>';
+
+    /* --- rigidez --- */
+    function tablaRig(k){
+      var fs=v.rigidez[k].filas; if(!fs.some(function(q){return q.K!==null}))return '';
+      return '<div class="sis-dir"><div class="sis-sub">Sismo en '+D(k)+' · el peor de '+
+        v.rigidez[k].tablas.map(function(t){return t.patron}).join(" y ")+'</div><div class="etb-scroll"><table class="sis-t"><thead><tr>'+
+        '<th>Nivel</th><th>k = V / Δ (t/m)</th><th>k / k de arriba</th><th>k / prom. 3 de arriba</th><th>Estado</th></tr></thead><tbody>'+
+        fs.slice().reverse().map(function(q){return '<tr><td>'+esc(q.piso)+'</td><td>'+f(q.K,0)+'</td><td>'+f(q.r1,3)+
+          '</td><td>'+f(q.r3,3)+'</td><td>'+estado(q.estado)+'</td></tr>'}).join("")+'</tbody></table></div></div>';
+    }
+    h+='<section class="pbox sis-ancha"><h3>Rigidez lateral · piso blando · '+v.art.altura+'</h3>'+tablaRig("x")+tablaRig("y")+
+      '<p class="nota">k es la cortante del entrepiso entre su desplazamiento relativo en el centro de masas, con cada patrón '+
+      'estático por separado. Piso blando: k menor que el 70 % del de arriba o que el 80 % del promedio de los tres de arriba. '+
+      'Extrema: 60 % y 70 %.</p></section>';
+
+    /* --- masa --- */
+    h+='<section class="pbox sis-ancha"><h3>Masa o peso · '+v.art.altura+'</h3><div class="etb-scroll"><table class="sis-t"><thead><tr>'+
+      '<th>Nivel</th><th>P (t)</th><th>P / P de abajo</th><th>P / P de arriba</th><th>Estado</th></tr></thead><tbody>'+
+      v.masa.slice().reverse().map(function(q){return '<tr><td>'+esc(q.piso)+(q.azotea?' <small>azotea</small>':'')+'</td><td>'+
+        f(q.P)+'</td><td>'+f(q.abajo,3)+'</td><td>'+f(q.arriba,3)+'</td><td>'+estado(q.estado)+'</td></tr>'}).join("")+
+      '</tbody></table></div><p class="nota">Irregular si el peso de un piso pasa 1,5 veces el de un piso adyacente. No se '+
+      'aplica en la azotea, que tampoco sirve de comparación. El peso es el de la fuente de masa de ETABS.</p></section>';
+
+    /* --- torsion --- */
+    function tablaTor(k){
+      var fs=v.torsion[k].filas; if(!fs.some(function(q){return q.razon!==null}))return '';
+      return '<div class="sis-dir"><div class="sis-sub">Sismo en '+D(k)+' · 50 % del límite: '+f(v.limite[k].v*0.5,4)+
+        '</div><div class="etb-scroll"><table class="sis-t"><thead><tr><th>Nivel</th><th>Δmax / Δprom</th><th>Caso</th>'+
+        '<th>Δ/h inelástica</th><th>Estado</th></tr></thead><tbody>'+
+        fs.slice().reverse().map(function(q){return '<tr><td>'+esc(q.piso)+'</td><td>'+f(q.razon,3)+'</td><td>'+esc(q.caso||"")+
+          '</td><td>'+f(q.inelastica,4)+'</td><td>'+estado(q.estado)+'</td></tr>'}).join("")+'</tbody></table></div></div>';
+    }
+    h+='<section class="pbox sis-ancha"><h3>Irregularidad torsional · '+v.art.planta+'</h3>'+tablaTor("x")+tablaTor("y")+
+      '<p class="nota">Δmax es el desplazamiento relativo del extremo más desplazado y Δprom el promedio de los dos extremos, '+
+      'con excentricidad accidental. Irregular si Δmax pasa 1,3 Δprom; extrema, 1,5. Solo cuenta si la deriva pasa el 50 % '+
+      'del límite. Se mira con los patrones estáticos (±5 %, Art. 37) y con los casos dinámicos (Art. 45), y manda el peor.</p></section>';
+    return h;
+  }
   /* ---------- pestana RESULTADOS ETABS ----------
      Lo que a_excel.py deja en el libro.  La verificacion sismica era la
      tarjeta 7 de Sismo E.030: se muda aqui porque es un resultado, no un dato. */
@@ -8709,11 +9273,13 @@ var TT={script:performance.now()};
         ? '<section class="pbox sis-ancha"><h3>No se puede verificar todavía</h3><p class="aviso">A Sismo '+
           'E.030 le falta '+c.faltan.join(", ").replace(/&/g,"&amp;").replace(/</g,"&lt;")+
           '. Complétalo en <b>Datos</b>.</p></section>'
-        : tarjetaResultados(c);
+        : tarjetasVerificacion(c);
     }else h+=tarjetaFuerzas(sub);
     el.innerHTML=h+'</div>';
     var br=$("#btnRes");
     if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
+    var bi=$("#btnIrrMed");
+    if(bi)bi.onclick=function(){ marcarIrregularidadesMedidas(); };
   }
 
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
@@ -9126,7 +9692,9 @@ var TT={script:performance.now()};
             /* lo que la E.030 deduce, listo para las hojas de la fase 5 */
             e030:sitio(),
             /* el analisis sismico, para la hoja ANALISIS_SISMICO */
-            sismo:calculoSismo()};
+            sismo:calculoSismo(),
+            /* C2: la verificacion con los resultados de ETABS, para VERIFICACION_SISMICA */
+            verificacion:verificacionSismica()};
   }
 
   function tabla(){
@@ -10112,7 +10680,9 @@ var TT={script:performance.now()};
     {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}},
     {n:"ANALISIS_SISMICO",   tit:"Análisis sísmico",   t:"ele",
-     q:function(c){return c.losa.aligerada+c.losa.maciza+c.losa.nervada}}
+     q:function(c){return c.losa.aligerada+c.losa.maciza+c.losa.nervada}},
+    /* C2: sale solo con resultados de ETABS en el libro */
+    {n:"VERIFICACION_SISMICA", tit:"Verificación sísmica", t:"res"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -10121,7 +10691,8 @@ var TT={script:performance.now()};
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_COLUMNA_CIRCULAR:true,
-    PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true};
+    PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
+    VERIFICACION_SISMICA:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -10152,6 +10723,10 @@ var TT={script:performance.now()};
   function estadoHoja(h,c){
     if(!IMPLEMENTADAS[h.n]) return {ok:false,pie:"pendiente"};
     if(h.t==="ref") return {ok:true,pie:"referencia"};
+    if(h.t==="res"){
+      var vs=null; try{ vs=verificacionSismica(); }catch(e){}
+      return vs?{ok:true,pie:"resultados de "+(vs.archivo||"ETABS")}:{ok:false,pie:"sin resultados de ETABS"};
+    }
     var q=h.q(c);
     if(!q) return {ok:false,pie:h.t==="met"?"sin usos asignados":"sin elementos"};
     return {ok:true,pie:q+(h.t==="met"?" paño(s) con uso":" elemento(s)")};
@@ -10210,6 +10785,7 @@ var TT={script:performance.now()};
   /* la sub-pestana de Hojas Excel donde sale cada hoja */
   function grupoHoja(h){
     if(h.t==="ref")return "normas";
+    if(h.t==="res")return "resultados";
     return (h.n==="METRADO_CARGAS"||h.n==="ANALISIS_SISMICO")?"cargas":"predim";
   }
   function pintaHojas(){
@@ -10444,7 +11020,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
