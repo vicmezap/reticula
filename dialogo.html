@@ -4330,7 +4330,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v142 · 13-09-2026";
+  var BUILD="v143 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8629,7 +8629,7 @@ var TT={script:performance.now()};
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
     var boton='<button type="button" class="mini" id="btnRes">Traer resultados del libro</button>';
     if(!r)return '<p class="nota">Todavía no hay resultados de ETABS en el libro. Lleva el modelo con '+
-      '<code>a_etabs.bat</code>, déjalo abierto en ETABS ya analizado y ejecuta <code>a_excel.bat</code> → [1]. '+
+      '<code>RETICULA.bat</code> [1], déjalo abierto en ETABS ya analizado y vuelve a <code>RETICULA.bat</code> [2]. '+
       'Después: '+boton+'</p>';
     if(r.error)return '<p class="aviso">'+esc(r.error)+'. '+boton+'</p>';
     var R=r.R, archivo=String((R.etabs&&R.etabs.archivo)||"").split(/[\\/]/).pop(),
@@ -8637,7 +8637,7 @@ var TT={script:performance.now()};
     return '<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
         ?'Al día con el modelo: leídos de <b>'+esc(archivo)+'</b> el '+esc(leido)+'. '
         :'<b>Desactualizados:</b> el modelo cambió desde que se llevó a ETABS. Vuelve a llevarlo con '+
-         'a_etabs.bat, analízalo y ejecuta a_excel.bat. ')+boton+'</p>';
+         'RETICULA.bat [1], analízalo y trae los resultados con RETICULA.bat [2]. ')+boton+'</p>';
   }
   /* Resultados ETABS › Verificacion sismica: lo que ETABS devolvio. */
   function tarjetaResultados(c){
@@ -9798,7 +9798,7 @@ var TT={script:performance.now()};
       h+='<section class="pbox ancha"><h3>Análisis modal espectral en ETABS</h3>'+
         (exD&&exD.dinamico
           ? tablaDinamico(exD.dinamico)+
-            '<p class="nota">Es lo que lleva <code>a_etabs.bat</code>. Se decide en <b>ETABS › Cargas y sismo</b>.</p>'
+            '<p class="nota">Es lo que lleva <code>RETICULA.bat</code> [1]. Se decide en <b>ETABS › Cargas y sismo</b>.</p>'
           : '<p class="nota">No va a ETABS: en <b>ETABS › Cargas y sismo</b> está desmarcado llevar las cargas '+
             'y el sismo.</p>')+
         '</section>';
@@ -10196,7 +10196,8 @@ var TT={script:performance.now()};
       ex.ejes.length+'</b> ejes.</p>'+
       '<p class="nota">'+llego+'</p>'+
       '<p class="nota">Para llevarla: dale a <b>Guardar proyecto</b> y ejecuta '+
-      '<code>scripts/etabs/a_etabs.bat</code>. No hace falta abrir ETABS: el puente arranca '+
+      '<code>RETICULA.bat</code>, en la carpeta del proyecto, con la opción [1]. No hace falta abrir '+
+      'ETABS: el puente arranca '+
       'uno propio y oculto -el que tengas abierto no se toca-, construye con sus cargas, masa y '+
       'sismo estático, guarda en '+
       '<code>Documentos/Reticula_ETABS</code>, comprueba pieza a pieza, corre el análisis para '+
