@@ -6417,6 +6417,10 @@
       throw new Error("no hay resultados de ETABS: lleva el modelo con RETICULA.bat [1] y trae los resultados con [2]");
     var h = F.hoja("VERIFICACION_SISMICA"), r = 6, sec = 1, fil = {};
     h.titulo("VERIFICACIÓN SÍSMICA · E.030");
+    /* lo primero que hay que saber, antes que las tablas */
+    if (VS.veredicto)
+      r = h.nota(r, "VEREDICTO · " + VS.veredicto.titulo + (VS.veredicto.motivos.length ? ": " +
+        VS.veredicto.motivos.join(" ") : ".") + (VS.alDia ? "" : " OJO: los resultados son de un modelo anterior."));
     var LD = [[3, 5], [6, 7], [8, 10]], LXY = [[3, 5], [6, 6], [7, 7], [8, 10]],
         L8S = [[3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9], [10, 10]],
         LR = [[3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 10]],
@@ -6923,7 +6927,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 /* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
    los pide para verificar la estructura y disenar. */
 var HOJA_RES = "RETICULA_RESULTADOS";
-var BUILD = "v150 · 13-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v152 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

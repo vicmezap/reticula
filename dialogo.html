@@ -357,6 +357,8 @@
 .sis-t td.sis-n{text-align:left;font:400 10.5px "IBM Plex Sans",sans-serif;color:var(--ink-3);white-space:normal}
 .sis-t tr.tot td{border-top:1px solid var(--line);font-weight:600;color:var(--ink)}
 .sis-t small{font:400 10px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+/* en un subtitulo en mayusculas, el factor f pasaba a «F»: una letra que no es la del Art. 50 */
+.sis-sub .sis-min{text-transform:none}
 /* pestana DISENO E.060 (D0) */
 .sis-t td.dis-chips{white-space:normal;min-width:260px}
 .dis-chip{display:inline-flex;align-items:center;gap:4px;margin:1px 12px 1px 0;font:500 11.5px "IBM Plex Mono",monospace;
@@ -385,6 +387,15 @@
 .vf-no{border-left-color:#c62828}.vf-no .vf-v{color:#c62828}
 .vf-rev{border-left-color:#b26a00}.vf-rev .vf-v{color:#b26a00}
 .vf-na .vf-v{color:var(--ink-3)}
+/* el veredicto de la verificacion sismica, arriba de Resultados ETABS y de Diseño E.060 */
+.vd{border:1px solid var(--line);border-left:4px solid var(--line);background:var(--sheet);padding:10px 14px;
+  font:400 12.5px/1.5 "IBM Plex Sans",sans-serif;color:var(--ink)}
+.vd>b:first-child{font-size:13.5px}
+.vd ul{margin:6px 0 6px 18px;padding:0}
+.vd li{margin:2px 0}
+.vd-no{border-left-color:#c62828}.vd-no>b:first-child{color:#c62828}
+.vd-ok{border-left-color:#2e7d32}.vd-ok>b:first-child{color:#2e7d32}
+.vd-rev{border-left-color:#b26a00}.vd-rev>b:first-child{color:#b26a00}
 /* Resultados ETABS › Vigas, Columnas, Placas y Reacciones: las fuerzas */
 .fz-t th.fz-grupo{text-align:center;border-bottom:1px solid var(--line-soft)}
 .fz-t tr.fz-g td{background:var(--panel);color:var(--ink);font:600 11.5px "IBM Plex Sans",sans-serif;text-align:left;
@@ -3944,14 +3955,71 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       extremasFijas: fijasAltura.concat(fijasPlanta).filter(function (n) { return /extrema/i.test(n); }).length,
       Rmed: Rmed, cambiaR: cambiaR, restriccion: rest, modos: modos, cortante: cortante,
       avisos: avisos,
+      /* lo marcado en Sismo E.030: el veredicto dice si R cambia por algo sin marcar o por algo de mas */
+      marcadas: (d.irrAltura || []).concat(d.irrPlanta || []),
       cumple: cumpleDerivas && modos.cumple && !cambiaR && rest.cumple &&
               DIRS.every(function (k) { return !hayDin || cortante[k].cumpleEscalada; })
     };
   }
 
+  /* EL VEREDICTO: lo primero que hay que saber, antes que las tablas y antes
+     de diseñar.  Cumple si cumple todo lo que verificar() comprueba y ETABS se
+     analizo con el R de ahora; si no, cada motivo en una frase, con su numero
+     y su articulo.  Lo usan Resultados ETABS, Diseño E.060 y la hoja. */
+  function veredicto(v) {
+    if (!v) return null;
+    var M = [], marcadas = v.marcadas || [];
+    function f(x, d) { return (+x).toFixed(d); }
+    function D(k) { return k.toUpperCase(); }
+    function lista(l) { return l.length === 1 ? l[0] : l.slice(0, -1).join(", ") + " y " + l[l.length - 1]; }
+    DIRS.forEach(function (k) {
+      var q = v.derivaMax[k], L = v.limite[k].v;
+      if (!q) M.push("Los resultados no traen derivas en " + D(k) + ": vuelve a traerlos con RETICULA.bat [2].");
+      else if (!q.cumple)
+        M.push("La deriva en " + D(k) + " es " + f(q.inelastica, 4) + " en " + q.piso + " con " + q.caso + ": " +
+               f(q.inelastica / L, 1) + " veces el límite de " + f(L, 3) + " (" + ART.limite + ").");
+    });
+    if (!v.modos.cumple)
+      M.push("La masa participante no llega al 90 % en las dos direcciones: faltan modos (" + ART.modos + ").");
+    if (v.analisis === "dinamico")
+      DIRS.forEach(function (k) {
+        var c = v.cortante[k];
+        if (!c.cumpleEscalada)
+          M.push("La cortante dinámica en " + D(k) + " no llega al " + Math.round(c.minimo * 100) + " % de la estática " +
+                 "ni con el factor de escala (" + ART.Vmin + ").");
+      });
+    var reanalizar = DIRS.filter(function (k) {
+      var R = v.R[k];
+      return R.deducido && R.actual > 0 && Math.abs(R.R - R.actual) > 0.005 * R.actual;
+    });
+    if (v.cambiaR) {
+      var Rs = f(v.R.x.R, 2) + " / " + f(v.R.y.R, 2), Rm = f(v.Rmed.x, 2) + " / " + f(v.Rmed.y, 2);
+      var sinMarcar = Object.keys(v.medidas).filter(function (n) { return v.medidas[n] === true && marcadas.indexOf(n) < 0; });
+      var sobran = Object.keys(v.medidas).filter(function (n) { return v.medidas[n] === false && marcadas.indexOf(n) >= 0; });
+      if (sinMarcar.length)
+        M.push("ETABS mide " + lista(sinMarcar) + (sinMarcar.length === 1 ? ", que no está marcada" : ", que no están marcadas") +
+               " en Sismo E.030: con lo medido R pasa de " + Rs + " a " + Rm + ". Márcala" + (sinMarcar.length === 1 ? "" : "s") +
+               " y vuelve a analizar (" + ART.R + ").");
+      else if (sobran.length)
+        M.push("En Sismo E.030 " + (sobran.length === 1 ? "está marcada " : "están marcadas ") + lista(sobran) +
+               ", que ETABS no mide: sin " + (sobran.length === 1 ? "ella" : "ellas") + " R sería " + Rm + " y no " + Rs +
+               ". Revísalo y vuelve a analizar (" + ART.R + ").");
+      else if (!reanalizar.length)
+        M.push("Con lo que mide ETABS, R sería " + Rm + " y no " + Rs + ": vuelve a analizar (" + ART.R + ").");
+    }
+    if (!v.restriccion.cumple)
+      M.push("Tiene irregularidades que la norma no permite en esta categoría y zona (" + ART.restricciones + ").");
+    reanalizar.forEach(function (k) {
+      M.push("ETABS se analizó con R = " + f(v.R[k].R, 2) + " en " + D(k) + " y Sismo E.030 da ahora " +
+             f(v.R[k].actual, 2) + ": vuelve a llevar el modelo con RETICULA.bat [1] y a traer los resultados con [2].");
+    });
+    return { cumple: M.length === 0, motivos: M,
+             titulo: M.length ? "La estructura NO cumple la E.030" : "La estructura cumple la E.030 en lo que se verifica con ETABS" };
+  }
+
   return { ART: ART, N: N, MEDIBLES_ALTURA: MEDIBLES_ALTURA, MEDIBLES_PLANTA: MEDIBLES_PLANTA,
            LIMITES: LIMITES, limite: limite, factorDe: factorDe, aplicarMedidas: aplicarMedidas,
-           restriccion: restriccion, verificar: verificar };
+           restriccion: restriccion, verificar: verificar, veredicto: veredicto };
 });
 </script>
 <script>
@@ -5445,7 +5513,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v150 · 13-09-2026";
+  var BUILD="v152 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9916,19 +9984,46 @@ var TT={script:performance.now()};
       'nudos llevando los momentos al centro del muro. SDX y SDY son envolventes sin signo: se aplican con ± y no se suman '+
       'entre nudos, así que el sismo de una placa se toma de sus fuerzas de muro en la base.</p></section>';
   }
+  /* EL VEREDICTO, arriba de todo.  Cada comprobacion tenia su tarjeta, pero
+     ninguna decia lo primero que hay que saber: si la estructura cumple o no,
+     por que y que hacer.  Sale en Resultados ETABS y en Diseño E.060; en
+     Diseño dice ademas que no se diseñe sobre una estructura que no pasa. */
+  function avisoVeredicto(VS,donde){
+    if(!VS||!VS.veredicto)return "";
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    var V=VS.veredicto, dis=(donde==="diseno");
+    if(!VS.alDia)
+      return '<section class="sis-ancha vd vd-rev" role="status"><b>Resultados desactualizados.</b> La verificación '+
+        'sísmica es de un modelo anterior: vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2]'+
+        (dis?' antes de diseñar.':'.')+'</section>';
+    if(V.cumple)
+      return '<section class="sis-ancha vd vd-ok" role="status"><b>'+esc(V.titulo)+'.</b> Derivas, masa participante, '+
+        'cortante mínima, irregularidades que se miden y restricciones. Las irregularidades que no se miden se marcan a '+
+        'mano en Sismo E.030'+(dis?'; aquí se verifica la resistencia de cada elemento.'
+                                  :'; la resistencia de cada elemento se verifica en Diseño E.060.')+'</section>';
+    return '<section class="sis-ancha vd vd-no" role="alert"><b>'+esc(V.titulo)+'.</b><ul>'+
+      V.motivos.map(function(m){return '<li>'+esc(m)+'</li>'}).join("")+'</ul>'+
+      (dis?'<b>No la diseñes todavía:</b> al corregirla cambian las secciones y todas las fuerzas, y el diseño habría '+
+           'que rehacerlo. Corrígela en el modelador, llévala con RETICULA.bat [1], trae los resultados con [2] y '+
+           'vuelve cuando cumpla.'
+          :'Hay que corregirla antes de diseñar: cámbiala en el modelador, llévala con RETICULA.bat [1] y trae los '+
+           'resultados con [2].')+'</section>';
+  }
   /* C2 · LA VERIFICACION SISMICA con lo que devolvio ETABS.  La norma vive
      en oviedo/verificacion.js; aqui se le dan los datos y se ensena. */
   function verificacionSismica(){
     var r=resultadosEtabs(); if(!r||r.error||!r.R||!r.R.sismo)return null;
     var c=calculoSismo(); if(c.faltan.length||!c.est)return null;
     var P=S.proy, st=c.sitio;
-    return {v:VERIF.verificar(r.R.sismo,{Z:st.Z,U:st.U,S:st.S,R0x:st.R0x,R0y:st.R0y,Ia:c.Ia,Ip:c.Ip,
+    var VS={v:VERIF.verificar(r.R.sismo,{Z:st.Z,U:st.U,S:st.S,R0x:st.R0x,R0y:st.R0y,Ia:c.Ia,Ip:c.Ip,
               C:{x:c.est.x.C,y:c.est.y.C},sistemaX:P.sistemaX,sistemaY:P.sistemaY,
               irrAltura:P.irrAltura,irrPlanta:P.irrPlanta,categoria:st.catE030,zona:st.zona,
               nPisos:c.niveles.length,hn:c.est.hn}),
             alDia:r.alDia,
             archivo:String((r.R.etabs&&r.R.etabs.archivo)||"").split(/[\\/]/).pop(),
             leido:String(r.R.leido||"").replace("T"," ").slice(0,16)};
+    VS.veredicto=VERIF.veredicto(VS.v);
+    return VS;
   }
   /* El boton: marca en Sismo E.030 las cinco que se miden tal como salieron.
      Las demas se quedan como las marcaste. */
@@ -9990,7 +10085,7 @@ var TT={script:performance.now()};
 
     /* --- derivas --- */
     function tablaDerivas(k){
-      return '<div class="sis-dir"><div class="sis-sub">Sismo en '+D(k)+' · R = '+f(v.R[k].R)+' · f = '+f(v.f)+
+      return '<div class="sis-dir"><div class="sis-sub">Sismo en '+D(k)+' · R = '+f(v.R[k].R)+' · <span class="sis-min">f</span> = '+f(v.f)+
         ' · límite '+f(v.limite[k].v,3)+' ('+esc(v.limite[k].n)+')</div><div class="etb-scroll"><table class="sis-t"><thead><tr>'+
         '<th>Nivel</th><th>hᵢ (m)</th><th>Δ/h elástica</th><th>Δ/h = f · R · Δ/h</th>'+(din?'<th>Estático (referencia)</th>':'')+
         '<th>Estado</th></tr></thead><tbody>'+
@@ -10091,7 +10186,7 @@ var TT={script:performance.now()};
      tarjeta 7 de Sismo E.030: se muda aqui porque es un resultado, no un dato. */
   function pintaResultados(){
     var el=$("#panelRes"); if(!el)return;
-    var sub=subDe("resultados"), h='<div class="pgrid sis">';
+    var sub=subDe("resultados"), h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"resultados");
     if(sub==="verificacion"){
       var c=calculoSismo();
       h+=c.faltan.length
@@ -10150,7 +10245,8 @@ var TT={script:performance.now()};
   }
   function pintaDiseno(){
     var el=$("#panelDis"); if(!el)return;
-    var sub=subDe("diseno"), K=criteriosDiseno(), A=DISENO.ART, h='<div class="pgrid sis">';
+    var sub=subDe("diseno"), K=criteriosDiseno(), A=DISENO.ART,
+        h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"diseno");
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
     function avisos(re){
       var l=K.avisos.filter(function(t){return re.test(t)});
