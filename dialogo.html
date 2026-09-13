@@ -4288,7 +4288,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v137 · 13-09-2026";
+  var BUILD="v139 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8391,7 +8391,7 @@ var TT={script:performance.now()};
     function r4(v){return Math.round(v*10000)/10000+0}
     var E=etabsCfg(), cp=cargasPermanentes(), gamma=(+(S.proy&&S.proy.concreto)||2400),
         acab=(+cp.piso||0)+(+cp.cielo||0)+(+cp.tabiq||0), n=out.niveles.length;
-    out.cargas=null; out.sismo=null; out.analizar=(E.analizar!==false);
+    out.cargas=null; out.sismo=null; out.dinamico=null; out.analizar=(E.analizar!==false);
     if(E.cargas===false||!n)return out;
     var st=sitio();
     out.niveles.forEach(function(L,k){
@@ -8425,16 +8425,49 @@ var TT={script:performance.now()};
       x:dir(c.est.x), y:dir(c.est.y),
       patrones:[{nombre:"SX+",dir:"x",campo:"XDirPlusE"},{nombre:"SX-",dir:"x",campo:"XDirMinusE"},
                 {nombre:"SY+",dir:"y",campo:"YDirPlusE"},{nombre:"SY-",dir:"y",campo:"YDirMinusE"}]};
+    /* PARTE B2 · EL DINAMICO MODAL ESPECTRAL (Arts. 40 a 45).  Un espectro por
+       direccion, Sa/g con su R -la misma tabla T-Sa/g de la hoja ANALISIS_
+       SISMICO-, y un caso por direccion con el 100 % de su espectro y el 30 %
+       del de la otra, combinados por raiz de la suma de cuadrados (Art. 43).
+       Los modos, por combinacion cuadratica completa con 5 % de amortiguamiento
+       (Art. 42), y la excentricidad accidental del 5 % (Art. 45).  La cortante
+       del dinamico no puede bajar del 80 % de la estatica en una estructura
+       regular ni del 90 % en una irregular (Art. 44). */
+    function puntos(esp){
+      return (esp||[]).map(function(p){return [Math.round(p.T*10000)/10000, Math.round(p.SaG*1e6)/1e6]});
+    }
+    out.dinamico={norma:c.norma, g:9.80665, amortiguamiento:0.05, ecc:0.05, perpendicular:0.30,
+      modos:Math.max(12,3*n), minimo:(c.Ia===1&&c.Ip===1)?0.80:0.90,
+      funciones:[{nombre:"E030 X", dir:"x", R:c.est.x.R, puntos:puntos(c.espectroX)},
+                 {nombre:"E030 Y", dir:"y", R:c.est.y.R, puntos:puntos(c.espectroY)}],
+      casos:[{nombre:"SDX", dir:"x", principal:"E030 X", perpendicular:"E030 Y"},
+             {nombre:"SDY", dir:"y", principal:"E030 Y", perpendicular:"E030 X"}]};
     return out;
+  }
+  /* Lo que lleva el dinamico, para la tarjeta 7. */
+  function tablaDinamico(DN){
+    function r2(v){return String(Math.round(v*100)/100)}
+    return '<div class="etb-scroll"><table class="etb-t etb-lee"><thead><tr><th>Caso dinámico</th>'+
+      '<th>Espectro × factor</th><th>Qué lleva</th></tr></thead><tbody>'+
+      DN.casos.map(function(k){
+        return '<tr><td>'+k.nombre+'</td><td>'+k.principal+' × g<br>'+k.perpendicular+' × 0,30 g</td>'+
+          '<td>100 % en '+k.dir.toUpperCase()+' y 30 % en la perpendicular, por raíz de la suma de '+
+          'cuadrados (Art. 43) · modos por CQC con 5 % de amortiguamiento (Art. 42) · excentricidad '+
+          'accidental 5 % (Art. 45)</td></tr>';
+      }).join("")+'</tbody></table></div>'+
+      fijo("R del espectro E030 X",r2(DN.funciones[0].R),"","Art. 41")+
+      fijo("R del espectro E030 Y",r2(DN.funciones[1].R),"","Art. 41")+
+      fijo("Modos del caso Modal",DN.modos,"máx.","Art. 40")+
+      fijo("Cortante dinámica mínima",Math.round(DN.minimo*100),"% V est.","Art. 44");
   }
   /* La tarjeta 7 de la pestana ETABS: lo que el puente va a escribir. */
   function tarjetaCargasEtabs(ex,E){
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
     function n3(v){return (+v||0).toFixed(3)}
     var CG=ex.cargas, SS=ex.sismo,
-        h='<section class="pbox"><h3>7 · Cargas, masa y sismo estático</h3>'+
+        h='<section class="pbox"><h3>7 · Cargas, masa y sismo</h3>'+
           '<label class="etb-ch"><input id="eCargas" type="checkbox"'+(E.cargas!==false?" checked":"")+
-          '><span>Llevar a ETABS las cargas de las losas, la fuente de masa y el sismo estático</span></label>';
+          '><span>Llevar a ETABS las cargas de las losas, la fuente de masa y el sismo estático y dinámico</span></label>';
     if(!CG)return h+'<p class="nota">Desmarcado: el puente lleva solo la geometría y las secciones.</p></section>';
     var PT=CG.patrones, A=CG.acabados, MF={};
     CG.masa.forEach(function(x){MF[x[0]]=x[1]});
@@ -8478,9 +8511,10 @@ var TT={script:performance.now()};
          }).join("")+'</tbody></table></div>'+
          fijo("Pisos con fuerza","de "+esc(SS.top)+" a Base","","")+
          fijo("Peso sísmico P",SS.P.toFixed(2),"t","Sismo E.030")+
+         (ex.dinamico?tablaDinamico(ex.dinamico):'')+
          '<label class="etb-ch"><input id="eAnaliza" type="checkbox"'+(E.analizar!==false?" checked":"")+
-         '><span>Correr el análisis en ETABS y comparar su cortante basal y su peso con los de '+
-         'Sismo E.030</span></label>';
+         '><span>Correr el análisis en ETABS y comparar su cortante basal —la estática y la dinámica— '+
+         'y su peso con los de Sismo E.030</span></label>';
     }else{
       h+='<p class="nota">Sin sismo estático: a la pestaña <b>Sismo E.030</b> le faltan datos. '+
          'Van las cargas y la masa.</p>';
