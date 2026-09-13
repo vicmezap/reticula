@@ -397,6 +397,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   color:var(--ink-3);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
 .etb-t td{padding:5px 6px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-soft);
   color:var(--ink-2);white-space:nowrap}
+/* las tablas que explican con frases: si no parten linea, «Qué lleva» se cortaba */
+.etb-t.etb-lee td{white-space:normal}
 .etb-t td small{display:block;font:400 10px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin-top:2px}
 .etb-t input{background:var(--sheet);color:var(--ink);border:1px solid var(--line);border-radius:2px;
   font:500 12px "IBM Plex Mono",monospace;padding:3px 5px}
@@ -4286,7 +4288,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v134 · 12-09-2026";
+  var BUILD="v136 · 12-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8364,6 +8366,126 @@ var TT={script:performance.now()};
     return out;
   }
 
+  /* =====================================================================
+     PARTE B1 · CARGAS, MASA Y SISMO ESTATICO PARA ETABS
+
+     ETABS saca W de SU fuente de masa y la cortante estatica es V = C·W: un
+     modelo sin cargas pesa solo su concreto y da una V corta.  Asi que se le
+     dan las mismas cargas con las que pesoSismico arma el P de la pestana
+     Sismo E.030 -acabados, tabiqueria, el peso de la losa de la E.020 y la
+     S/C de cada paño-, los factores de masa del Art. 31 y el Cb y k de cada
+     direccion.  El puente solo los escribe.
+     ===================================================================== */
+  var PAT_ETABS={pp:"Dead",cm:"CM",cv:"CV",cvt:"CVT"};
+  /* Lo que ETABS ya pesa de una losa con el peso propio: la maciza entera, y
+     la nervada como su losa de arriba mas las viguetas repartidas en su
+     separacion -con los mismos valores por defecto que usa el puente-.  El
+     aligerado de la E.020 pesa ademas el ladrillo: esa diferencia va en CM. */
+  function concretoLosaEtabs(l,gamma){
+    var e=+l.e||0;
+    if(l.tipo==="maciza")return gamma*e;
+    var hf=+l.hf||0.05, b=+l.vigueta||0.10, s=+l.s||0.40;
+    return gamma*(hf+b*Math.max(e-hf,0)/s);
+  }
+  function cargasSismoEtabs(out){
+    function r4(v){return Math.round(v*10000)/10000+0}
+    var E=etabsCfg(), cp=cargasPermanentes(), gamma=(+(S.proy&&S.proy.concreto)||2400),
+        acab=(+cp.piso||0)+(+cp.cielo||0)+(+cp.tabiq||0), n=out.niveles.length;
+    out.cargas=null; out.sismo=null; out.analizar=(E.analizar!==false);
+    if(E.cargas===false||!n)return out;
+    var st=sitio();
+    out.niveles.forEach(function(L,k){
+      L.losas.forEach(function(l){
+        if(l.e===null)return;
+        var e020=SISMO.pesoLosa(l.tipo||"aligerada",l.e*100,gamma),
+            extra=Math.max(e020-concretoLosaEtabs(l,gamma),0);
+        l.cm=r4((acab+extra)/1000); l.ladrillo=r4(extra/1000);
+        /* el ultimo nivel es la azotea, igual que en el peso sismico */
+        l.patCV=(k===n-1)?PAT_ETABS.cvt:PAT_ETABS.cv;
+      });
+    });
+    out.cargas={patrones:PAT_ETABS,
+      acabados:{piso:cp.piso,cielo:cp.cielo,tabiq:cp.tabiq},
+      masa:[[PAT_ETABS.pp,1],[PAT_ETABS.cm,1],
+            [PAT_ETABS.cv,SISMO.pctCargaViva(st.catE030,false)],
+            [PAT_ETABS.cvt,SISMO.pctCargaViva(st.catE030,true)]]};
+    var c=calculoSismo();
+    if(!c.est){
+      out.avisos.push("Sismo estático: falta "+c.faltan.join(", ")+
+                      ". Van las cargas y la masa, sin los patrones SX y SY.");
+      return out;
+    }
+    function dir(q){return {Cb:q.Cb,k:q.k,T:q.T,C:q.C,R:q.R,V:q.V}}
+    out.sismo={norma:c.norma, ecc:0.05, top:out.niveles[n-1].nombre, P:c.est.P,
+      x:dir(c.est.x), y:dir(c.est.y),
+      patrones:[{nombre:"SX+",dir:"x",campo:"XDirPlusE"},{nombre:"SX-",dir:"x",campo:"XDirMinusE"},
+                {nombre:"SY+",dir:"y",campo:"YDirPlusE"},{nombre:"SY-",dir:"y",campo:"YDirMinusE"}]};
+    return out;
+  }
+  /* La tarjeta 7 de la pestana ETABS: lo que el puente va a escribir. */
+  function tarjetaCargasEtabs(ex,E){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    function n3(v){return (+v||0).toFixed(3)}
+    var CG=ex.cargas, SS=ex.sismo,
+        h='<section class="pbox"><h3>7 · Cargas, masa y sismo estático</h3>'+
+          '<label class="etb-ch"><input id="eCargas" type="checkbox"'+(E.cargas!==false?" checked":"")+
+          '><span>Llevar a ETABS las cargas de las losas, la fuente de masa y el sismo estático</span></label>';
+    if(!CG)return h+'<p class="nota">Desmarcado: el puente lleva solo la geometría y las secciones.</p></section>';
+    var PT=CG.patrones, A=CG.acabados, MF={};
+    CG.masa.forEach(function(x){MF[x[0]]=x[1]});
+    function masa(p){return (p in MF)?'× '+MF[p]:'—'}
+    h+='<div class="etb-scroll"><table class="etb-t etb-lee"><thead><tr><th>Patrón</th><th>Tipo en ETABS</th>'+
+       '<th>Qué lleva</th><th>Fuente de masa · Art. 31</th></tr></thead><tbody>'+
+       '<tr><td>'+PT.pp+'</td><td>Dead · peso propio × 1</td><td>El concreto de columnas, vigas, losas y placas</td><td>'+masa(PT.pp)+'</td></tr>'+
+       '<tr><td>'+PT.cm+'</td><td>Super Dead</td><td>Piso terminado '+A.piso+' + cielo raso '+A.cielo+
+         ' + tabiquería '+A.tabiq+' kg/m²; en aligeradas y nervadas, también lo que su peso de la E.020 '+
+         'pasa del concreto que ETABS ya pesa (el ladrillo)</td><td>'+masa(PT.cm)+'</td></tr>'+
+       '<tr><td>'+PT.cv+'</td><td>Live</td><td>La S/C de cada losa según el uso de sus paños</td><td>'+masa(PT.cv)+'</td></tr>'+
+       '<tr><td>'+PT.cvt+'</td><td>Roof Live</td><td>La S/C de las losas del último nivel</td><td>'+masa(PT.cvt)+'</td></tr>'+
+       (SS?'<tr><td>SX+ · SX- · SY+ · SY-</td><td>Seismic · User Coefficient</td>'+
+           '<td>C = Cb y K = k de Sismo E.030, excentricidad ± 5 %</td><td>—</td></tr>':'')+
+       '</tbody></table></div>';
+    var G={}, orden=[];
+    ex.niveles.forEach(function(L){ L.losas.forEach(function(l){
+      if(l.e===null)return;
+      var k=[l.sec,l.cm,l.cv,l.patCV].join("|"), g=G[k];
+      if(!g){g=G[k]={sec:l.sec,cm:l.cm,lad:l.ladrillo,cv:l.cv,pat:l.patCV,n:0,niv:[]};orden.push(g);}
+      g.n++; if(g.niv.indexOf(L.nombre)<0)g.niv.push(L.nombre);
+    });});
+    /* primero las de CV y luego las de la azotea, y dentro por nombre */
+    orden.sort(function(p,q){
+      return (p.pat<q.pat?-1:(p.pat>q.pat?1:0))||(p.sec<q.sec?-1:(p.sec>q.sec?1:0))||(p.cv-q.cv)||(p.cm-q.cm);
+    });
+    if(orden.length)
+      h+='<div class="etb-scroll"><table class="etb-t"><thead><tr><th>Losa</th><th>CM (t/m²)</th>'+
+         '<th>CV (t/m²)</th><th>Piezas</th></tr></thead><tbody>'+
+         orden.map(function(g){
+           return '<tr><td>'+esc(g.sec)+'</td><td>'+n3(g.cm)+(g.lad>0?'<small>ladrillo '+n3(g.lad)+'</small>':'')+
+             '</td><td>'+n3(g.cv)+'<small>'+g.pat+'</small></td><td>'+g.n+'<small>'+esc(g.niv.join(", "))+
+             '</small></td></tr>';
+         }).join("")+'</tbody></table></div>';
+    if(SS){
+      h+='<div class="etb-scroll"><table class="etb-t"><thead><tr><th>Sismo</th><th>C = Cb</th><th>K = k</th>'+
+         '<th>T (s)</th><th>V (t)</th></tr></thead><tbody>'+
+         [["X","x"],["Y","y"]].map(function(d){var q=SS[d[1]];
+           return '<tr><td>S'+d[0]+'+ · S'+d[0]+'-</td><td>'+q.Cb.toFixed(4)+'</td><td>'+q.k.toFixed(3)+
+             '</td><td>'+q.T.toFixed(3)+'</td><td>'+q.V.toFixed(2)+'</td></tr>';
+         }).join("")+'</tbody></table></div>'+
+         fijo("Pisos con fuerza","de "+esc(SS.top)+" a Base","","")+
+         fijo("Peso sísmico P",SS.P.toFixed(2),"t","Sismo E.030")+
+         '<label class="etb-ch"><input id="eAnaliza" type="checkbox"'+(E.analizar!==false?" checked":"")+
+         '><span>Correr el análisis en ETABS y comparar su cortante basal y su peso con los de '+
+         'Sismo E.030</span></label>';
+    }else{
+      h+='<p class="nota">Sin sismo estático: a la pestaña <b>Sismo E.030</b> le faltan datos. '+
+         'Van las cargas y la masa.</p>';
+    }
+    return h+'<p class="nota">El diafragma rígido D1 va en cada losa y la base queda empotrada. ETABS '+
+      'saca W de su fuente de masa: no cuenta la masa que cae en la base y pesa el concreto con sus '+
+      'cruces, así que su W no es exactamente el P del complemento. El puente te dice cuánto difieren.</p>'+
+      '</section>';
+  }
+
   function pintaEtabs(){
     var P=$("#panelEtabs"); if(!P)return;
     function escE(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")
@@ -8440,7 +8562,8 @@ var TT={script:performance.now()};
 
     var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
                         .replace('<div class="rule" style="margin:0 0 10px"></div>','');
-    h+='<section class="pbox"><h3>7 · Envío a ETABS</h3>'+
+    h+=tarjetaCargasEtabs(ex,E)+
+      '<section class="pbox"><h3>8 · Envío a ETABS</h3>'+
       (ex.errores.length
         ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
           ex.errores.map(escE).join("<br>")+'</p>' : '')+
@@ -8454,6 +8577,10 @@ var TT={script:performance.now()};
     if(eM)eM.onchange=function(){ E.mat=nombreEtabs(this.value); guardar(); render(); };
     var eL=$("#eLimp");
     if(eL)eL.onchange=function(){ E.limpiar=!!this.checked; guardar(); render(); };
+    var eC=$("#eCargas");
+    if(eC)eC.onchange=function(){ E.cargas=!!this.checked; guardar(); render(); };
+    var eA=$("#eAnaliza");
+    if(eA)eA.onchange=function(){ E.analizar=!!this.checked; guardar(); render(); };
     P.querySelectorAll("input[data-piso]").forEach(function(inp){
       inp.onchange=function(){
         E.pisos[+this.dataset.piso]=nombreEtabs(this.value); guardar(); render(); };
@@ -8582,12 +8709,16 @@ var TT={script:performance.now()};
           e:(e===null?null:r4(e/100)),
           vigueta:(isFinite(pl.b)?r4(pl.b):null),
           s:(isFinite(pl.sMax)?r4(pl.sMax):null),
-          hf:(isFinite(pl.hfMin)?r4(pl.hfMin):null)});
+          hf:(isFinite(pl.hfMin)?r4(pl.hfMin):null),
+          /* la S/C para la carga viva de ETABS, en t/m²: la mayor de sus
+             paños si es una losa unida, como en el predimensionamiento */
+          cv:r4(scTramoLosa(i,j,m)/1000)});
       }
       out.niveles.push(L);
     });
     plantasQueSobresalen().forEach(function(p){ out.avisos.push("N"+p.nivel+": "+p.texto); });
     aplicaSeccionesEtabs(out);
+    cargasSismoEtabs(out);
     return out;
   }
 
@@ -9672,8 +9803,10 @@ var TT={script:performance.now()};
       '<p class="nota">'+llego+'</p>'+
       '<p class="nota">Para llevarla: dale a <b>Guardar proyecto</b> y ejecuta '+
       '<code>scripts/etabs/a_etabs.bat</code>. No hace falta abrir ETABS: el puente arranca '+
-      'uno propio y oculto -el que tengas abierto no se toca-, construye, guarda en '+
-      '<code>Documentos/Reticula_ETABS</code>, comprueba pieza a pieza y te abre el modelo.</p>'+
+      'uno propio y oculto -el que tengas abierto no se toca-, construye con sus cargas, masa y '+
+      'sismo estático, guarda en '+
+      '<code>Documentos/Reticula_ETABS</code>, comprueba pieza a pieza, corre el análisis para '+
+      'comparar la cortante basal con la de Sismo E.030 y te abre el modelo.</p>'+
       (ex.avisos.length
         ? '<p class="nota" style="color:#c62828">'+ex.avisos.join('<br>')+'</p>' : '')+
       '</div>';
