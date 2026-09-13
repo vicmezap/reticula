@@ -6241,8 +6241,169 @@
     return plan;
   }
 
+  /* =====================================================================
+     ANALISIS_SISMICO — analisis estatico y espectro de la E.030 vigente
+     (texto modificado por la RM 183-2026-VIVIENDA).
+
+     El modelador ya lo calculo con oviedo/sismo.js y lo ensena en la pestana
+     SISMO E.030.  Aqui se escribe con FORMULAS vivas: los DATOS son lo que
+     el modelo sabe -el peso de cada nivel, las alturas, los factores de la
+     norma- y todo lo demas -R, T, C, k, C/R, Cb, V, las fuerzas, la torsion
+     y el espectro- se calcula en la hoja, para poder auditarlo y tocarlo.
+     Las formulas repiten las de sismo.js; probar_extremo.js las revisa.
+     ===================================================================== */
+  function analisisSismico(P) {
+    var sis = P && P.sismo;
+    if (!sis || !sis.niveles || !sis.niveles.length)
+      throw new Error("no hay niveles con losas: no hay peso que analizar");
+    if (sis.faltan && sis.faltan.length)
+      throw new Error("falta " + sis.faltan.join(", "));
+    var st = sis.sitio || {}, pr = (P && P.proy) || {}, niv = sis.niveles, n = niv.length;
+    var h = F.hoja("ANALISIS_SISMICO"), r = 6;
+    h.titulo("ANÁLISIS SÍSMICO · E.030");
+    var LD = [[3, 5], [6, 7], [8, 10]], LXY = [[3, 5], [6, 6], [7, 7], [8, 10]],
+        L8S = [[3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9], [10, 10]],
+        LE = [[3, 4], [5, 6], [7, 8], [9, 10]],
+        IZQ3 = ["Left", "Center", "Left"], IZQ4 = ["Left", "Center", "Center", "Left"];
+    function abs(col, fila) { return "$" + "ABCDEFGHIJKLMNOP".charAt(col - 1) + "$" + fila; }
+    function nombres(l) { return (Array.isArray(l) && l.length) ? l.join(" · ") : ""; }
+
+    /* --- 1. parametros ---------------------------------------------------- */
+    r = h.seccion(r, "1. PARÁMETROS DEL SITIO Y DE LA EDIFICACIÓN");
+    r = h.encabezado(r, LD, ["Parámetro", "Valor", "De dónde sale"], 22.0);
+    r = h.fila(r, LD, ["Distrito", pr.distrito || "-", "Zona sísmica " + (st.zona || "-") + " · Anexo II"],
+               null, { alinear: IZQ3 });
+    var fZ = r;  r = h.fila(r, LD, ["Z", st.Z, "Tabla N.º 1"], { 1: "0.00" }, { alinear: IZQ3 });
+    var fU = r;  r = h.fila(r, LD, ["U", st.U, (pr.uso || "-") + " · " + (st.catE030 || "") + " · Art. 19"],
+                            { 1: "0.00" }, { alinear: IZQ3 });
+    r = h.fila(r, LD, ["Perfil de suelo", pr.suelo || "-", st.interpolado
+                       ? ("Vs30 = " + st.vs + " m/s: S, TP y TL interpolados (Tablas N.º 3 a 5)")
+                       : "Tabla N.º 3 · sin Vs"], null, { alinear: IZQ3 });
+    var fS = r;  r = h.fila(r, LD, ["S", st.S, "Tabla N.º 4"], { 1: "0.000" }, { alinear: IZQ3 });
+    var fTP = r; r = h.fila(r, LD, ["TP (s)", st.Tp, "Tabla N.º 5"], { 1: "0.000" }, { alinear: IZQ3 });
+    var fTL = r; r = h.fila(r, LD, ["TL (s)", st.Tl, "Tabla N.º 5"], { 1: "0.000" }, { alinear: IZQ3 });
+    var fIa = r; r = h.fila(r, LD, ["Ia", sis.Ia, nombres(pr.irrAltura) || "Regular en altura"],
+                            { 1: "0.00" }, { alinear: IZQ3 });
+    var fIp = r; r = h.fila(r, LD, ["Ip", sis.Ip, nombres(pr.irrPlanta) || "Regular en planta"],
+                            { 1: "0.00" }, { alinear: IZQ3 });
+    r++;
+    r = h.nota(r, "Ia e Ip son el MENOR factor de las irregularidades del edificio en las dos "
+      + "direcciones (Art. 24). Estos datos se cambian en el modelador, en Datos y en Sismo E.030; "
+      + "esta hoja se reescribe entera cada vez que se genera.");
+
+    /* --- 2. peso por nivel ------------------------------------------------- */
+    r = h.seccion(r, "2. PESO SÍSMICO POR NIVEL · Art. 31");
+    r = h.encabezado(r, L8S, ["Nivel", "h (m)", "Losa (t)", "Acabados y tabiquería (t)",
+                              "Vigas, columnas y placas (t)", "CV (t)", "% de CV", "P (t)"], 42.0);
+    var p0 = r;
+    niv.forEach(function (x) {
+      r = h.fila(r, L8S, [x.nombre + (x.azotea ? " (azotea)" : ""), x.h, x.losa, x.otras, x.estructura,
+                          x.CV, x.pct, "=E" + r + "+F" + r + "+G" + r + "+I" + r + "*H" + r],
+                 { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0%", 7: "0.00" },
+                 { alinear: ["Left"] });
+    });
+    var p1 = r - 1, fTot = r;
+    r = h.fila(r, L8S, ["Total", "=SUM(D" + p0 + ":D" + p1 + ")", "=SUM(E" + p0 + ":E" + p1 + ")",
+                        "=SUM(F" + p0 + ":F" + p1 + ")", "=SUM(G" + p0 + ":G" + p1 + ")",
+                        "=SUM(H" + p0 + ":H" + p1 + ")", "", "=SUM(J" + p0 + ":J" + p1 + ")"],
+               { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 7: "0.00" }, { alinear: ["Left"] });
+    r++;
+    r = h.nota(r, "P = losa + acabados y tabiquería + vigas, columnas y placas + % × CV, SIN el factor U: "
+      + "U entra en la cortante. La losa va con el peso de la E.020 Anexo 1 y el espesor decidido de cada "
+      + "paño; la CV, con el uso de cada paño. % de CV: 50 % en categorías A y B, 25 % en C y 25 % en "
+      + "azoteas y techos.");
+
+    /* --- 3. por direccion --------------------------------------------------- */
+    r = h.seccion(r, "3. PERÍODO, FACTOR C, COEFICIENTE Y CORTANTE BASAL");
+    r = h.encabezado(r, LXY, ["Concepto", "Sismo en X", "Sismo en Y", "Norma"], 22.0);
+    var fil = {};
+    function dos(clave, etq, vx, vy, formato, norma, alto) {
+      fil[clave] = r;
+      r = h.fila(r, LXY, [etq, vx, vy, norma || ""], formato ? { 1: formato, 2: formato } : null,
+                 { alinear: IZQ4, alto: alto });
+    }
+    var Z = abs(6, fZ), U = abs(6, fU), S = abs(6, fS), TP = abs(6, fTP), TL = abs(6, fTL);
+    dos("sis", "Sistema estructural", pr.sistemaX || "-", pr.sistemaY || "-", null, "Tabla N.º 10");
+    dos("r0", "R₀", st.R0x, st.R0y, "0.0", "Tabla N.º 10");
+    dos("R", "R = R₀ · Ia · Ip", "=F" + fil.r0 + "*" + abs(6, fIa) + "*" + abs(6, fIp),
+        "=G" + fil.r0 + "*" + abs(6, fIa) + "*" + abs(6, fIp), "0.00", "Art. 22");
+    dos("ct", "CT", sis.CTx, sis.CTy, "0", "Art. 36");
+    dos("hn", "hn (m)", "=" + abs(4, fTot), "=" + abs(4, fTot), "0.00", "altura total");
+    dos("T", "T = hn / CT (s)", "=F" + fil.hn + "/F" + fil.ct, "=G" + fil.hn + "/G" + fil.ct, "0.000",
+        "Art. 36 · estimado");
+    function cEstatico(col) {
+      var T = col + fil.T;
+      return "=IF(" + T + "<=" + TP + ",2.5,IF(" + T + "<=" + TL + ",2.5*" + TP + "/" + T + ",2.5*" + TP
+             + "*" + TL + "/" + T + "^2))";
+    }
+    dos("C", "C (estático)", cEstatico("F"), cEstatico("G"), "0.000", "Arts. 18 y 34.1: 2,5 si T ≤ TP");
+    dos("k", "k", "=IF(F" + fil.T + "<=0.5,1,MIN(0.75+0.5*F" + fil.T + ",2))",
+        "=IF(G" + fil.T + "<=0.5,1,MIN(0.75+0.5*G" + fil.T + ",2))", "0.000", "Art. 35");
+    dos("CR", "C / R", "=F" + fil.C + "/F" + fil.R, "=G" + fil.C + "/G" + fil.R, "0.0000", "Art. 34.2");
+    dos("ok", "¿C / R ≥ 0,11?", '=IF(F' + fil.CR + '>=0.11,"CUMPLE","NO CUMPLE: se usa 0,11")',
+        '=IF(G' + fil.CR + '>=0.11,"CUMPLE","NO CUMPLE: se usa 0,11")', null, "Art. 34.2", 32);
+    dos("Cb", "Cb = Z · U · C · S / R", "=" + Z + "*" + U + "*MAX(F" + fil.CR + ",0.11)*" + S,
+        "=" + Z + "*" + U + "*MAX(G" + fil.CR + ",0.11)*" + S, "0.0000", "coeficiente para ETABS");
+    dos("P", "P (t)", "=" + abs(10, fTot), "=" + abs(10, fTot), "0.00", "Art. 31");
+    dos("V", "V = Cb · P (t)", "=F" + fil.Cb + "*F" + fil.P, "=G" + fil.Cb + "*G" + fil.P, "0.00",
+        "Art. 34.1");
+    r++;
+    r = h.nota(r, "El análisis estático vale como único análisis en estructuras regulares de hasta 30 m "
+      + "en zonas 2 a 4 (Art. 33). Si no, es la referencia del análisis dinámico: su cortante no puede "
+      + "ser menor que el 80 % de V en estructuras regulares ni que el 90 % en irregulares (Art. 44).");
+
+    /* --- 4 y 5. fuerzas por piso ------------------------------------------- */
+    function fuerzas(num, eje, col, dim) {
+      r = h.seccion(r, num + ". FUERZAS POR PISO · SISMO EN " + eje + " · Arts. 35 y 37");
+      r = h.encabezado(r, L8S, ["Nivel", "hᵢ (m)", "Pᵢ (t)", "Pᵢ · hᵢᵏ", "αᵢ", "Fᵢ (t)", "Vᵢ (t)",
+                                "Mtᵢ (t·m)"], 28.05);
+      var f0 = r, f1 = r + n - 1, q;
+      for (q = n - 1; q >= 0; q--) {                       /* de arriba abajo */
+        var x = niv[q], fp = p0 + q;
+        r = h.fila(r, L8S, [x.nombre,
+          "=SUM($D$" + p0 + ":$D$" + fp + ")",
+          "=$J$" + fp,
+          "=E" + r + "*D" + r + "^$" + col + "$" + fil.k,
+          "=F" + r + "/SUM($F$" + f0 + ":$F$" + f1 + ")",
+          "=G" + r + "*$" + col + "$" + fil.V,
+          "=SUM($H$" + f0 + ":H" + r + ")",
+          "=H" + r + "*0.05*" + (+x[dim] || 0).toFixed(3)],
+          { 1: "0.00", 2: "0.00", 3: "0.0", 4: "0.000", 5: "0.00", 6: "0.00", 7: "0.00" },
+          { alinear: ["Left"] });
+      }
+      r++;
+      r = h.nota(r, "hᵢ: altura del nivel desde la base · αᵢ = Pᵢ·hᵢᵏ / Σ Pⱼ·hⱼᵏ · Fᵢ = αᵢ · V · Vᵢ: "
+        + "cortante del entrepiso, la suma de las fuerzas de ese nivel hacia arriba · Mtᵢ = Fᵢ × 0,05 × "
+        + (eje === "X" ? "la dimensión en Y" : "la dimensión en X") + " del nivel, con el signo más "
+        + "desfavorable.");
+    }
+    fuerzas("4", "X", "F", "dimY");
+    fuerzas("5", "Y", "G", "dimX");
+
+    /* --- 6. espectro -------------------------------------------------------- */
+    r = h.seccion(r, "6. ESPECTRO DE DISEÑO · Art. 41");
+    r = h.encabezado(r, LE, ["T (s)", "C", "Sa/g en X", "Sa/g en Y"], 22.0);
+    (sis.espectroX || []).forEach(function (pto) {
+      var T = "C" + r;
+      r = h.fila(r, LE, [pto.T,
+        "=IF(" + T + "<0.2*" + TP + ",1+7.5*" + T + "/" + TP + ",IF(" + T + "<=" + TP + ",2.5,IF(" + T
+          + "<=" + TL + ",2.5*" + TP + "/" + T + ",2.5*" + TP + "*" + TL + "/" + T + "^2)))",
+        "=" + Z + "*" + U + "*E" + r + "*" + S + "/$F$" + fil.R,
+        "=" + Z + "*" + U + "*E" + r + "*" + S + "/$G$" + fil.R],
+        { 0: "0.00", 1: "0.000", 2: "0.0000", 3: "0.0000" }, { alinear: ["Center"] });
+    });
+    r++;
+    r = h.nota(r, "Para ETABS: T y Sa/g van a la función espectral, con factor de escala g = 9,81 m/s². "
+      + "El espectro usa el C con el tramo de períodos cortos (T < 0,2 TP) y no lleva el mínimo de C/R. "
+      + "Se aplica al 100 % en una dirección y al 30 % en la perpendicular, combinadas por raíz de la "
+      + "suma de cuadrados (Art. 43). Los desplazamientos se multiplican por 0,75 R en estructuras "
+      + "regulares y 0,85 R en irregulares (Art. 50).");
+    return h.cerrar(r);
+  }
+
   return { criteriosOviedo: criteriosOviedo, normaE020: normaE020,
-           cuadrosE030: cuadrosE030, datos: datos, modelo: modelo };
+           cuadrosE030: cuadrosE030, datos: datos, modelo: modelo,
+           analisisSismico: analisisSismico };
 });
 </script>
 <script>
@@ -6252,7 +6413,7 @@ var HOJA_MODELO = "RETICULA_MODELO";
    el panel al guardar y lo lee scripts/etabs/a_etabs.py.  Hoja aparte y no
    dentro del modelo, para que un fallo al exportar no toque lo guardado. */
 var HOJA_ETABS = "RETICULA_ETABS";
-var BUILD = "v131 · 12-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v134 · 12-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -6608,7 +6769,8 @@ var REGISTRO = {
   "PRE_COLUMNA_CIRCULAR": function(p){ return HOJAS_PRE.columnaCircular(p); },
   "PRE_PLACA":          function(p){ return HOJAS_PRE.placa(p); },
   "PRE_ZAPATA":         function(p){ return HOJAS_PRE.zapata(p); },
-  "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); }
+  "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); },
+  "ANALISIS_SISMICO":   function(p){ return HOJAS.analisisSismico(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
