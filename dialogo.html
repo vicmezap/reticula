@@ -80,13 +80,31 @@
      .cintra y .zoom son display:flex, asi que sin esta linea el hidden del
      JavaScript no ocultaba nada.  Vale para todo el documento. */
   [hidden]{display:none!important}
-  .modos{display:flex;gap:0;margin:0 0 10px}
+  /* LAS PESTANAS VAN POR FASES, en el orden en que se trabaja: los datos, el
+     modelo, el predimensionamiento, el analisis y los resultados; las hojas
+     de Excel son la salida.  Cada grupo lleva su fase escrita encima. */
+  .modos{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-end;margin:0 0 10px}
+  .fase{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .fase-t{font:600 10px "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;
+          color:var(--ink-3);padding:0 2px;white-space:nowrap}
+  .fase-b{display:flex}
   .modo{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:13px;letter-spacing:.06em;
         text-transform:uppercase;padding:7px 15px;border:1px solid var(--line);background:var(--panel);
         color:var(--ink-3);cursor:pointer}
   .modo+.modo{border-left:none}
   .modo[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:#fff}
   .modo:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  /* LA SUB-PESTANA parte una pestana que hace cosas distintas.  Va debajo y
+     mas ligera, para que se lea como parte de la de arriba y no como otra
+     fila de pestanas. */
+  .subm{display:flex;flex-wrap:wrap;gap:0 2px;margin:-4px 0 10px;border-bottom:1px solid var(--line)}
+  .smodo{font:500 12px "IBM Plex Sans",sans-serif;color:var(--ink-3);background:none;border:none;
+         border-bottom:2px solid transparent;margin-bottom:-1px;padding:6px 12px 5px;cursor:pointer}
+  .smodo:hover{color:var(--ink)}
+  .smodo[aria-pressed="true"]{color:var(--acc-ink);border-bottom-color:var(--acc);font-weight:600}
+  .smodo:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .smodo .cuenta{display:inline-block;margin-left:6px;padding:0 5px;border-radius:8px;color:#fff;
+         background:var(--mal,#c62828);font:500 10.5px "IBM Plex Mono",monospace;vertical-align:1px}
   .nivu{display:flex;flex-direction:column;gap:2px;padding:5px 6px;border:1px solid transparent;
         border-radius:3px;background:none;cursor:pointer;width:100%;text-align:left;font:inherit}
   .nivu:hover{background:var(--sheet)}
@@ -308,7 +326,12 @@
 
 /* ---- pestana Proyecto: especificaciones ---- */
 #panelProy{overflow:auto;padding:18px 20px}
-.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px;align-items:start}
+/* auto-fill y no auto-fit: con sub-pestanas quedan dos tarjetas donde antes
+   habia cinco, y con auto-fit cada una se estiraba a media pantalla, con la
+   etiqueta a un lado y el valor al otro */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px;align-items:start}
+/* la tarjeta que va sola en su sub-pestana y lleva tablas con frases */
+.pgrid>.ancha{grid-column:1/-1;max-width:1080px}
 .pbox{border:1px solid var(--line);background:var(--sheet);padding:12px 14px}
 .pbox h3{font:600 12px "Barlow Condensed",sans-serif;letter-spacing:.08em;
   text-transform:uppercase;color:var(--acc-ink);margin:0 0 10px}
@@ -320,7 +343,7 @@
   text-align:right;width:100%}
 .pf select.pfi{text-align:left}
 /* pestana SISMO E.030 */
-.sis{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}
+.sis{grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr))}
 .sis .sis-ancha{grid-column:1/-1}
 .sis-t{width:100%;min-width:0;border-collapse:collapse;font:400 11.5px "IBM Plex Mono",monospace;
   font-variant-numeric:tabular-nums}
@@ -385,10 +408,19 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 .deci-ok{color:#2e7d32}
 .deci-no{color:#c62828}
 .deci-ok small,.deci-no small{font-weight:400;color:var(--ink-3)}
+/* DECISIONES › CUADRO: una tabla por familia, de todo el edificio */
+#panelDeci{overflow:auto;padding:18px 20px}
+.cdr{margin:0 0 18px;max-width:760px;overflow-x:auto}
+.cdr tr[data-ir]{cursor:pointer}
+.cdr tr[data-ir]:hover td,.cdr tr[data-ir]:focus td{background:var(--acc-soft)}
+.cdr tr[data-ir]:focus{outline:none}
+.cdr tr.mal td:first-child{box-shadow:inset 3px 0 0 #c62828}
+.cdr td small{font:400 10.5px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+.cdr .deci-ok,.cdr .deci-no{font-size:11px;margin:0}
 /* pestana ETABS: las tarjetas de Datos, con tablas de secciones dentro */
 /* 460 y no los 310 de Datos: una fila lleva nombre, calculada, dos medidas y
    piezas, y a 360 se cortaban la segunda medida y las piezas */
-.etb{grid-template-columns:repeat(auto-fit,minmax(min(460px,100%),1fr))}
+.etb{grid-template-columns:repeat(auto-fill,minmax(min(460px,100%),1fr))}
 .etb-scroll{overflow-x:auto}
 /* min-width:0 anula el table{min-width:600px} global: con el, cada tabla median 600
    aunque la tarjeta midiera 559, y se cortaban las medidas */
@@ -458,17 +490,26 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   <div class="modos" role="group" aria-label="Modo de trabajo">
     <!-- El data-modo es la identidad; el texto es solo lo que se lee.  No se
          renombran: render() y pintaNiveles() comparan estas cadenas tal cual.
-         El orden SI cambia: se abre por las decisiones, que es lo que se
-         entrega, y los datos van al final porque se tocan una vez. -->
-    <button class="modo" data-modo="decisiones" aria-pressed="false">Decisiones</button>
-    <button class="modo" data-modo="modelo" aria-pressed="true">Planta</button>
-    <button class="modo" data-modo="usos" aria-pressed="false">Cargas</button>
-    <button class="modo" data-modo="comprobacion" aria-pressed="false">Comprobación</button>
-    <button class="modo" data-modo="proyecto" aria-pressed="false">Datos</button>
-    <button class="modo" data-modo="sismo" aria-pressed="false">Sismo E.030</button>
-    <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button>
-    <button class="modo" data-modo="etabs" aria-pressed="false">ETABS</button>
+         EL ORDEN ES EL DEL TRABAJO, por fases: se empieza por los datos del
+         proyecto y se acaba en lo que devuelve ETABS; las hojas de Excel son
+         la salida y van aparte.  Las sub-pestanas de cada una, en SUBMODOS. -->
+    <div class="fase"><span class="fase-t">1 · Proyecto</span><div class="fase-b">
+      <button class="modo" data-modo="proyecto" aria-pressed="false">Datos</button></div></div>
+    <div class="fase"><span class="fase-t">2 · Modelo</span><div class="fase-b">
+      <button class="modo" data-modo="modelo" aria-pressed="true">Planta</button>
+      <button class="modo" data-modo="usos" aria-pressed="false">Cargas</button>
+      <button class="modo" data-modo="comprobacion" aria-pressed="false">Comprobación</button></div></div>
+    <div class="fase"><span class="fase-t">3 · Predimensionamiento</span><div class="fase-b">
+      <button class="modo" data-modo="decisiones" aria-pressed="false">Decisiones</button></div></div>
+    <div class="fase"><span class="fase-t">4 · Análisis</span><div class="fase-b">
+      <button class="modo" data-modo="sismo" aria-pressed="false">Sismo E.030</button>
+      <button class="modo" data-modo="etabs" aria-pressed="false">ETABS</button></div></div>
+    <div class="fase"><span class="fase-t">5 · Resultados</span><div class="fase-b">
+      <button class="modo" data-modo="resultados" aria-pressed="false">Resultados ETABS</button></div></div>
+    <div class="fase"><span class="fase-t">Salida</span><div class="fase-b">
+      <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button></div></div>
   </div>
+  <div class="subm" id="subModos" role="group" aria-label="Sub-pestañas" hidden></div>
 
   <div class="niv" id="niveles"></div>
 
@@ -581,6 +622,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="edif" id="panelComp" hidden></div>
       <div class="edif" id="panelEtabs" hidden></div>
       <div class="edif" id="panelSismo" hidden></div>
+      <div class="edif" id="panelRes" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
@@ -4288,7 +4330,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v141 · 13-09-2026";
+  var BUILD="v142 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -4364,6 +4406,24 @@ var TT={script:performance.now()};
        categoria:"comun"};
   /* lo que se ve en la planta de DECISIONES: no es del modelo, no se guarda */
   S.verDeci={col:true,viga:true,losa:true,placa:true,zapata:true};
+  /* LAS SUB-PESTANAS.  Solo las tienen las pestanas que hacen cosas distintas;
+     Planta, Cargas y Comprobacion hacen una sola y se quedan enteras.  La
+     primera de cada lista es la que se abre la primera vez; despues cada
+     pestana recuerda la ultima.  Tampoco es del modelo: se guarda aparte, en
+     «reticula_sub», y no viaja al libro. */
+  var SUBMODOS={
+    proyecto:[["sitio","Proyecto y sitio"],["materiales","Materiales"],["permanentes","Cargas permanentes"]],
+    decisiones:[["plano","Plano"],["cuadro","Cuadro"]],
+    sismo:[["parametros","Parámetros"],["estatico","Estático"],["dinamico","Dinámico"]],
+    etabs:[["pisos","Material y pisos"],["secciones","Secciones"],["cargas","Cargas y sismo"],
+           ["combinaciones","Combinaciones"],["envio","Envío"]],
+    resultados:[["verificacion","Verificación sísmica"],["vigas","Vigas"],["columnas","Columnas"],
+                ["placas","Placas"],["reacciones","Reacciones"]],
+    hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"]]
+  };
+  S.sub={};
+  try{ var subGuardadas=JSON.parse(localStorage.getItem("reticula_sub")||"null");
+       if(subGuardadas&&typeof subGuardadas==="object")S.sub=subGuardadas; }catch(e){}
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
   function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
@@ -5392,16 +5452,19 @@ var TT={script:performance.now()};
     PASADA++;
     return {ok:true};
   }
-  /* lo decidido y lo que no cumple de un nivel: la lista de la izquierda */
-  function decisionesDelNivel(niv){
+  /* lo decidido y lo que no cumple de un nivel: la lista de la izquierda.
+     Con «todas», cada elemento y con su seccion calculada: el cuadro. */
+  function decisionesDelNivel(niv,todas){
     var m=S.niveles[niv], nmx=nombres(niv), out=[], nX=m.dx.length+1, nY=m.dy.length+1, i, j, k;
-    function mete(t,e,cod,txt,propia,cumple){
-      if(propia||!cumple)out.push({t:t,e:e,cod:cod,txt:txt,propia:!!propia,cumple:!!cumple});
+    function mete(t,e,cod,txt,propia,cumple,calc){
+      if(todas||propia||!cumple)
+        out.push({t:t,e:e,cod:cod,txt:txt,propia:!!propia,cumple:!!cumple,calc:calc});
     }
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]){
       var sc=seccionCol(i,j,m,niv);
       mete("col",{t:"col",i:i,j:j},nmx.C[key(i,j)].cod,
-           sc.forma==="circular"?("Ø"+sc.D):(sc.b+"×"+sc.h),sc.propia,sc.cumple&&sc.anchoOk);
+           sc.forma==="circular"?("Ø"+sc.D):(sc.b+"×"+sc.h),sc.propia,sc.cumple&&sc.anchoOk,
+           sc.forma==="circular"?("Ø"+sc.circular):(sc.cuadrada+"×"+sc.cuadrada));
     }
     ["h","v"].forEach(function(o){
       var iM=(o==="h")?nX-1:nX, jM=(o==="h")?nY:nY-1, a, b;
@@ -5410,26 +5473,69 @@ var TT={script:performance.now()};
         if(m.vigas[kk]&&tramoViga(o,a,b,m).dueno){
           var pv=predimViga(o,a,b,m);
           mete("viga",{t:"viga",o:o,i:a,j:b},nmx.V[kk].cod,
-               Math.round(pv.b*100)+"×"+Math.round(pv.h*100),pv.propia,pv.cumple!==false);
+               Math.round(pv.b*100)+"×"+Math.round(pv.h*100),pv.propia,pv.cumple!==false,
+               Math.round(pv.bCalc*100)+"×"+Math.round(pv.hCalc*100));
         }
         if(m.placas[kk]){
           var pp=predimPlaca(o,a,b,m);
           mete("placa",{t:"viga",o:o,i:a,j:b},nmx.P[kk].cod,"t "+Math.round(pp.t*100),
-               pp.propia,pp.cumple!==false);
+               pp.propia,pp.cumple!==false,"t "+Math.round(pp.tCalc*100));
         }
       }
     });
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){
       if(!tramoLosa(dirLosa(m.losas[key(i,j)]),i,j,m).dueno)continue;
       var pl=predimLosa(i,j,m);
-      mete("losa",{t:"losa",i:i,j:j},nmx.L[key(i,j)].cod,"e "+pl.e,pl.propia,pl.cumple!==false);
+      mete("losa",{t:"losa",i:i,j:j},nmx.L[key(i,j)].cod,"e "+pl.e,pl.propia,pl.cumple!==false,
+           "e "+pl.eCalc);
     }
     if(niv===0&&m.zapatas)for(k in m.zapatas){
       var p2=k.split(":"), z=m.cols[k]?predimZapata(+p2[0],+p2[1]):null;
       if(z)mete("zapata",{t:"col",i:+p2[0],j:+p2[1]},nmx.C[k].cod.replace("-C-","-Z-"),
-                z.menor.toFixed(2)+"×"+z.mayor.toFixed(2),z.propia,z.cumple!==false);
+                z.menor.toFixed(2)+"×"+z.mayor.toFixed(2),z.propia,z.cumple!==false,
+                z.menorCalc.toFixed(2)+"×"+z.mayorCalc.toFixed(2));
     }
     return out;
+  }
+  /* DECISIONES › CUADRO.  Todas las secciones del edificio, la calculada y la
+     adoptada, en una tabla por familia.  Un clic -o Enter- en la fila lleva al
+     elemento, en su nivel, en el plano de Decisiones. */
+  function pintaCuadroDecisiones(){
+    var P=$("#panelDeci"); if(!P)return;
+    var FAM=[["col","Columnas","cm"],["viga","Vigas","cm"],["placa","Placas","cm"],
+             ["losa","Losas","cm"],["zapata","Zapatas","m"]],
+        filas={}, lista=[], nd=0, nc=0;
+    FAM.forEach(function(f){filas[f[0]]=[]});
+    S.niveles.forEach(function(m,niv){
+      decisionesDelNivel(niv,true).forEach(function(x){
+        var k=lista.length; lista.push({niv:niv,x:x});
+        if(x.propia)nd++; if(!x.cumple)nc++;
+        (filas[x.t]||[]).push('<tr data-ir="'+k+'" tabindex="0"'+(x.cumple?'':' class="mal"')+'>'+
+          '<td>'+x.cod+'</td><td>'+x.calc+'</td>'+
+          '<td>'+(x.propia?'<b>'+x.txt+'</b>':'<small>la calculada</small>')+'</td>'+
+          '<td>'+(x.cumple?'<span class="deci-ok">CUMPLE</span>':'<span class="deci-no">NO CUMPLE</span>')+
+          '</td></tr>');
+      });
+    });
+    var h='<h3>Cuadro de secciones · '+S.niveles.length+' nivel(es)</h3>'+
+      '<p class="nota" style="margin:0 0 14px">'+lista.length+' elementos · <b>'+nd+'</b> con sección decidida · '+
+      '<b style="color:'+(nc?"#c62828":"inherit")+'">'+nc+'</b> no cumple(n). Clic en una fila para ir al '+
+      'elemento en el plano.</p>';
+    FAM.forEach(function(f){
+      if(!filas[f[0]].length)return;
+      h+='<div class="cdr"><h3>'+f[1]+' · '+filas[f[0]].length+'</h3><table><thead><tr><th>Código</th>'+
+         '<th>Calculada ('+f[2]+')</th><th>Adoptada ('+f[2]+')</th><th>Estado</th></tr></thead><tbody>'+
+         filas[f[0]].join("")+'</tbody></table></div>';
+    });
+    P.innerHTML=h;
+    P.querySelectorAll("tr[data-ir]").forEach(function(tr){
+      function ir(){
+        var q=lista[+tr.dataset.ir]; if(!q)return;
+        S.act=q.niv; elegirSub("decisiones","plano",true); S.sel=q.x.e; render();
+      }
+      tr.onclick=ir;
+      tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); ir(); } };
+    });
   }
   function pintaDecisiones(){
     var P=$("#inspDeci"); if(!P)return;
@@ -7312,7 +7418,50 @@ var TT={script:performance.now()};
      sentido hablar de la planta- tenia que escribir su propia copia. */
   function sinPlano(){
     return S.modo==="hojas" || S.modo==="proyecto" ||
-           S.modo==="comprobacion" || S.modo==="etabs" || S.modo==="sismo";
+           S.modo==="comprobacion" || S.modo==="etabs" || S.modo==="sismo" ||
+           S.modo==="resultados" ||
+           /* el cuadro de Decisiones es de todo el edificio: va a todo el ancho */
+           (S.modo==="decisiones" && subDe("decisiones")==="cuadro");
+  }
+  /* La sub-pestana abierta de una pestana, o "" si no tiene.  Una guardada
+     que ya no existe -se renombro o se quito- vuelve a la primera. */
+  function subDe(md){
+    var l=SUBMODOS[md], s=S.sub&&S.sub[md], k;
+    if(!l)return "";
+    for(k=0;k<l.length;k++)if(l[k][0]===s)return s;
+    return l[0][0];
+  }
+  function elegirSub(md,sub,sinPintar){
+    if(!S.sub||typeof S.sub!=="object")S.sub={};
+    S.sub[md]=sub; S.sel=null;
+    if(md==="decisiones")S.vista="plano";
+    try{ localStorage.setItem("reticula_sub",JSON.stringify(S.sub)); }catch(e){}
+    if(!sinPintar)render();
+  }
+  /* La barra de sub-pestanas.  Se rehace solo si cambia: rehacerla en cada
+     render le quitaria el foco al boton que se acaba de pulsar.  «cuentas»
+     pone un numero en rojo en la sub-pestana que tiene algo que impide
+     seguir -los errores del envio a ETABS-. */
+  function pintaSubmodos(cuentas){
+    var e=$("#subModos"); if(!e)return;
+    var l=SUBMODOS[S.modo];
+    if(!l){ ver(e,false); return; }
+    var act=subDe(S.modo), clave;
+    cuentas=cuentas||{};
+    clave=S.modo+"|"+act+"|"+JSON.stringify(cuentas);
+    ver(e,true);
+    if(e.dataset&&e.dataset.clave===clave)return;
+    var ae=document.activeElement,
+        foco=(ae&&ae.classList&&ae.classList.contains&&ae.classList.contains("smodo"))?ae.dataset.sub:null;
+    e.innerHTML=l.map(function(x){
+      return '<button type="button" class="smodo" data-sub="'+x[0]+'" aria-pressed="'+(x[0]===act)+'">'+x[1]+
+        (cuentas[x[0]]?'<span class="cuenta">'+cuentas[x[0]]+'</span>':'')+'</button>';
+    }).join("");
+    if(e.dataset)e.dataset.clave=clave;
+    e.querySelectorAll("button[data-sub]").forEach(function(b){
+      b.onclick=function(){ elegirSub(S.modo,this.dataset.sub); };
+      if(foco&&b.dataset.sub===foco&&b.focus)b.focus();
+    });
   }
 
   function avisaIrregular(){
@@ -8474,20 +8623,32 @@ var TT={script:performance.now()};
     if(!R||R.v!==1)return {error:"Los resultados son de una versión que el complemento no conoce"};
     return {R:R, alDia:!!(R.modelo&&R.modelo.firma===firmaModelo())};
   }
-  /* La tarjeta 7 de Sismo E.030: lo que ETABS devolvio. */
+  /* De donde vienen los resultados y si siguen valiendo, con el boton para
+     traerlos: la primera linea de cada sub-pestana de Resultados ETABS. */
+  function estadoResultados(r){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    var boton='<button type="button" class="mini" id="btnRes">Traer resultados del libro</button>';
+    if(!r)return '<p class="nota">Todavía no hay resultados de ETABS en el libro. Lleva el modelo con '+
+      '<code>a_etabs.bat</code>, déjalo abierto en ETABS ya analizado y ejecuta <code>a_excel.bat</code> → [1]. '+
+      'Después: '+boton+'</p>';
+    if(r.error)return '<p class="aviso">'+esc(r.error)+'. '+boton+'</p>';
+    var R=r.R, archivo=String((R.etabs&&R.etabs.archivo)||"").split(/[\\/]/).pop(),
+        leido=String(R.leido||"").replace("T"," ").slice(0,16);
+    return '<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
+        ?'Al día con el modelo: leídos de <b>'+esc(archivo)+'</b> el '+esc(leido)+'. '
+        :'<b>Desactualizados:</b> el modelo cambió desde que se llevó a ETABS. Vuelve a llevarlo con '+
+         'a_etabs.bat, analízalo y ejecuta a_excel.bat. ')+boton+'</p>';
+  }
+  /* Resultados ETABS › Verificacion sismica: lo que ETABS devolvio. */
   function tarjetaResultados(c){
     function f(v,d){return (v==null||!isFinite(v))?"—":(+v).toFixed(d==null?2:d)}
-    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
     function estado(ok){return '<b class="'+(ok?"sis-ok":"sis-no")+'">'+(ok?"CUMPLE":"NO CUMPLE")+'</b>'}
     function fila(etq,vx,vy,norma){
       return '<tr><td>'+etq+'</td><td>'+vx+'</td><td>'+vy+'</td><td class="sis-n">'+(norma||"")+'</td></tr>';
     }
-    var r=resultadosEtabs(), boton='<button type="button" class="mini" id="btnRes">Traer resultados del libro</button>',
-        h='<section class="pbox sis-ancha"><h3>7 · Resultados de ETABS</h3>';
-    if(!r)return h+'<p class="nota">Todavía no hay resultados de ETABS en el libro. Lleva el modelo con '+
-      '<code>a_etabs.bat</code>, déjalo abierto en ETABS ya analizado y ejecuta <code>a_excel.bat</code> → [1]. '+
-      'Después: '+boton+'</p></section>';
-    if(r.error)return h+'<p class="aviso">'+esc(r.error)+'. '+boton+'</p></section>';
+    var r=resultadosEtabs(),
+        h='<section class="pbox sis-ancha"><h3>Período, masa y cortante de ETABS</h3>'+estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
     var R=r.R, SS=R.sismo||{}, est={}, din={}, modal=SS.modal||[], ult=modal[modal.length-1]||{},
         minimo=(c.Ia===1&&c.Ip===1)?0.80:0.90, escala=SS.escala||{};
     (SS.estatico||[]).forEach(function(e){ if(!est[e.dir])est[e.dir]=e; });
@@ -8498,13 +8659,7 @@ var TT={script:performance.now()};
       var e=est[d], v=din[d]; if(!e||!v||!e.V)return "—";
       return f(v.V/e.V*100,1)+" % "+estado(v.V>=minimo*e.V-1e-9);
     }
-    var archivo=String((R.etabs&&R.etabs.archivo)||"").split(/[\\/]/).pop(),
-        leido=String(R.leido||"").replace("T"," ").slice(0,16);
-    h+='<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
-        ?'Al día con el modelo: leídos de <b>'+esc(archivo)+'</b> el '+esc(leido)+'. '
-        :'<b>Desactualizados:</b> el modelo cambió desde que se llevó a ETABS. Vuelve a llevarlo con '+
-         'a_etabs.bat, analízalo y ejecuta a_excel.bat. ')+boton+'</p>'+
-      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>Sismo en X</th><th>Sismo en Y</th>'+
+    h+='<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>Sismo en X</th><th>Sismo en Y</th>'+
       '<th>Norma</th></tr></thead><tbody>'+
       fila("T fundamental de ETABS",tx?f(tx.T,3)+" s · modo "+tx.modo:"—",ty?f(ty.T,3)+" s · modo "+ty.modo:"—","")+
       fila("T estimado hn / CT",f(c.est.x.T,3)+" s",f(c.est.y.T,3)+" s","Art. 36")+
@@ -8518,8 +8673,47 @@ var TT={script:performance.now()};
       '</tbody></table></div>'+
       '<p class="nota">Para el diseño quedan en el libro las fuerzas de '+Object.keys(R.vigas||{}).length+' vigas, '+
       Object.keys(R.columnas||{}).length+' columnas y '+Object.keys(R.placas||{}).length+' muros, y las reacciones de '+
-      (R.reacciones||[]).length+' apoyos.</p></section>';
+      (R.reacciones||[]).length+' apoyos: cada familia en su sub-pestaña.</p></section>';
     return h;
+  }
+  /* Resultados ETABS › Vigas, Columnas, Placas y Reacciones.  a_excel.py ya
+     las deja en el libro; aqui se dice que llegaron y que traen.  La tabla
+     para el diseno es la parte C3. */
+  function tarjetaFuerzas(sub){
+    var Q={
+      vigas:["Vigas","vigas","De cada viga, la envolvente ENVOLVENTE E060 en todas sus estaciones: el momento "+
+             "negativo en las dos caras, el positivo y dónde cae, la cortante en las caras y la torsión."],
+      columnas:["Columnas","columnas","De cada columna, en el pie y en la cabeza y para cada combinación de "+
+             "resistencia: carga axial, cortantes, torsión y momentos."],
+      placas:["Placas","muros","De cada muro, en cada piso, arriba y abajo y para cada combinación de "+
+             "resistencia: carga axial, cortantes, torsión y momentos."],
+      reacciones:["Reacciones","apoyos","De cada apoyo de la base, con la columna o placa que tiene encima: "+
+             "las reacciones de Dead, CM, CV, CVT, SDX y SDY."]
+    }[sub];
+    if(!Q)return "";
+    var r=resultadosEtabs(), h='<section class="pbox ancha"><h3>'+Q[0]+'</h3>'+estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
+    var R=r.R, n=(sub==="reacciones")?(R.reacciones||[]).length:Object.keys(R[sub]||{}).length;
+    return h+'<p class="nota">Llegaron <b>'+n+'</b> '+Q[1]+'. '+Q[2]+'</p>'+
+      '<p class="nota">La tabla para el diseño se arma en la parte C3.</p></section>';
+  }
+  /* ---------- pestana RESULTADOS ETABS ----------
+     Lo que a_excel.py deja en el libro.  La verificacion sismica era la
+     tarjeta 7 de Sismo E.030: se muda aqui porque es un resultado, no un dato. */
+  function pintaResultados(){
+    var el=$("#panelRes"); if(!el)return;
+    var sub=subDe("resultados"), h='<div class="pgrid sis">';
+    if(sub==="verificacion"){
+      var c=calculoSismo();
+      h+=c.faltan.length
+        ? '<section class="pbox sis-ancha"><h3>No se puede verificar todavía</h3><p class="aviso">A Sismo '+
+          'E.030 le falta '+c.faltan.join(", ").replace(/&/g,"&amp;").replace(/</g,"&lt;")+
+          '. Complétalo en <b>Datos</b>.</p></section>'
+        : tarjetaResultados(c);
+    }else h+=tarjetaFuerzas(sub);
+    el.innerHTML=h+'</div>';
+    var br=$("#btnRes");
+    if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
   }
 
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
@@ -8545,10 +8739,11 @@ var TT={script:performance.now()};
     return {norma:"E.060 Art. 9.2", sismo:out.dinamico?"dinamico":null, lista:L,
             envolvente:{nombre:"ENVOLVENTE E060", combos:ultimas}};
   }
-  /* La tarjeta 8 de la pestana ETABS: las combinaciones de la E.060. */
+  /* ETABS › Combinaciones: las de la E.060. */
   function tarjetaCombinaciones(ex){
-    var CB=ex.combinaciones, h='<section class="pbox"><h3>8 · Combinaciones E.060</h3>';
-    if(!CB)return h+'<p class="nota">Sin cargas no hay combinaciones: marca la casilla de la tarjeta 7.</p></section>';
+    var CB=ex.combinaciones, h='<section class="pbox ancha"><h3>Combinaciones E.060</h3>';
+    if(!CB)return h+'<p class="nota">Sin cargas no hay combinaciones: marca la casilla de '+
+      '<b>Cargas y sismo</b>.</p></section>';
     function suma(c){
       var t=c.partes.map(function(p){return p[1]+" "+p[0]}).join(" + ");
       if(c.sismo)t+=" ± "+c.sismo.caso+(c.sismo.escala?" × factor":"");
@@ -8571,7 +8766,7 @@ var TT={script:performance.now()};
         :'Sin sismo en la pestaña Sismo E.030 solo van las de gravedad.')+
       ' La de servicio es para la cimentación.</p></section>';
   }
-  /* Lo que lleva el dinamico, para la tarjeta 7. */
+  /* Lo que lleva el dinamico, para ETABS › Cargas y sismo y Sismo E.030 › Dinamico. */
   function tablaDinamico(DN){
     function r2(v){return String(Math.round(v*100)/100)}
     return '<div class="etb-scroll"><table class="etb-t etb-lee"><thead><tr><th>Caso dinámico</th>'+
@@ -8587,12 +8782,12 @@ var TT={script:performance.now()};
       fijo("Modos del caso Modal",DN.modos,"máx.","Art. 40")+
       fijo("Cortante dinámica mínima",Math.round(DN.minimo*100),"% V est.","Art. 44");
   }
-  /* La tarjeta 7 de la pestana ETABS: lo que el puente va a escribir. */
+  /* ETABS › Cargas y sismo: lo que el puente va a escribir. */
   function tarjetaCargasEtabs(ex,E){
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
     function n3(v){return (+v||0).toFixed(3)}
     var CG=ex.cargas, SS=ex.sismo,
-        h='<section class="pbox"><h3>7 · Cargas, masa y sismo</h3>'+
+        h='<section class="pbox ancha"><h3>Cargas, masa y sismo</h3>'+
           '<label class="etb-ch"><input id="eCargas" type="checkbox"'+(E.cargas!==false?" checked":"")+
           '><span>Llevar a ETABS las cargas de las losas, la fuente de masa y el sismo estático y dinámico</span></label>';
     if(!CG)return h+'<p class="nota">Desmarcado: el puente lleva solo la geometría y las secciones.</p></section>';
@@ -8658,11 +8853,13 @@ var TT={script:performance.now()};
                                                 .replace(/"/g,"&quot;")}
     var ex=null, err="";
     try{ex=exportaEtabs();}catch(e){err=(e&&e.message)||String(e);}
+    /* los errores cuentan en la sub-pestana Envio, se este donde se este */
+    pintaSubmodos(ex&&ex.errores.length?{envio:ex.errores.length}:null);
     if(!ex){P.innerHTML='<p class="aviso">No se pudo preparar el modelo para ETABS: '+
                         escE(err)+'</p>';return}
-    var E=etabsCfg(), h='<div class="pgrid etb">';
+    var E=etabsCfg(), sub=subDe("etabs"), h='<div class="pgrid etb">';
 
-    h+='<section class="pbox"><h3>1 · Material</h3>'+
+    if(sub==="pisos")h+='<section class="pbox"><h3>Material</h3>'+
       campo("eMat","Nombre en ETABS",ex.material.nombre)+
       fijo("Tipo","Concreto","","")+
       fijo("f'c",ex.material.fc,"kg/cm²","de Datos")+
@@ -8671,15 +8868,17 @@ var TT={script:performance.now()};
       '<p class="nota">f&#39;c y el peso se cambian en <b>Datos</b>; aquí va el nombre con el '+
       'que ETABS lo muestra. Columnas, vigas, losas y placas usan este material.</p></section>';
 
-    h+='<section class="pbox"><h3>2 · Pisos</h3>';
-    ex.niveles.forEach(function(L,k){
-      h+='<label class="pf"><span class="pfe">Nivel '+(k+1)+' · h '+nm(L.h)+
-         ' m · cota '+nm(L.z1)+' m</span><input class="pfi" type="text" data-piso="'+k+
-         '" value="'+escE(L.nombre)+'" aria-label="Nombre del nivel '+(k+1)+' en ETABS">'+
-         '<span class="pfu"></span></label>';
-    });
-    h+='<p class="nota">El nombre de cada piso en ETABS. La altura se cambia en <b>Planta</b>.</p>'+
-       '</section>';
+    if(sub==="pisos"){
+      h+='<section class="pbox"><h3>Pisos</h3>';
+      ex.niveles.forEach(function(L,k){
+        h+='<label class="pf"><span class="pfe">Nivel '+(k+1)+' · h '+nm(L.h)+
+           ' m · cota '+nm(L.z1)+' m</span><input class="pfi" type="text" data-piso="'+k+
+           '" value="'+escE(L.nombre)+'" aria-label="Nombre del nivel '+(k+1)+' en ETABS">'+
+           '<span class="pfu"></span></label>';
+      });
+      h+='<p class="nota">El nombre de cada piso en ETABS. La altura se cambia en <b>Planta</b>.</p>'+
+         '</section>';
+    }
 
     function filaSec(s){
       var k=escE(s.clave), p=s.predim, f=s.etabs, pre, med, tipo;
@@ -8709,33 +8908,37 @@ var TT={script:performance.now()};
           '" title="Volver a la medida calculada">↺</button>':'')+'</td>'+
         '<td>'+s.piezas+'<small>'+escE(s.niveles.join(", "))+'</small></td></tr>';
     }
-    function tarjeta(num,fam,tit,nota){
+    function tarjeta(fam,tit,nota){
       var gs=ex.secciones.filter(function(s){return s.fam===fam});
-      var t='<section class="pbox"><h3>'+num+' · '+tit+'</h3>';
+      var t='<section class="pbox"><h3>'+tit+'</h3>';
       if(!gs.length)return t+'<p class="nota">No hay '+tit.toLowerCase()+' en la planta.</p></section>';
       return t+'<div class="etb-scroll"><table class="etb-t"><thead><tr><th>Nombre</th>'+
         '<th>Predim. (cm)</th><th>En ETABS (cm)</th><th>Piezas</th></tr></thead><tbody>'+
         gs.map(filaSec).join("")+'</tbody></table></div>'+
         (nota?'<p class="nota">'+nota+'</p>':'')+'</section>';
     }
-    h+=tarjeta(3,"col","Columnas","Una fila por cada sección distinta del predimensionamiento. "+
-      "El nombre y las medidas son <b>solo para ETABS</b>: las hojas siguen con las calculadas. "+
-      "Una fila marcada va a ETABS con otra medida; ↺ la devuelve a la calculada.");
-    h+=tarjeta(4,"viga","Vigas","");
-    h+=tarjeta(5,"losa","Losas","Aligeradas y nervadas van a ETABS como losa nervada en una "+
-      "dirección, con sus viguetas.");
-    h+=tarjeta(6,"placa","Placas","");
-
-    var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
-                        .replace('<div class="rule" style="margin:0 0 10px"></div>','');
-    h+=tarjetaCargasEtabs(ex,E)+tarjetaCombinaciones(ex)+
-      '<section class="pbox"><h3>9 · Envío a ETABS</h3>'+
-      (ex.errores.length
-        ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
-          ex.errores.map(escE).join("<br>")+'</p>' : '')+
-      '<label class="etb-ch"><input id="eLimp" type="checkbox"'+(E.limpiar!==false?" checked":"")+
-      '><span>Quitar de ETABS las secciones que trae por defecto y no se usan (perfiles W, '+
-      'A-GravBm, ConcBm, Slab1, Deck1…)</span></label>'+nota+'</section>';
+    if(sub==="secciones"){
+      h+=tarjeta("col","Columnas","Una fila por cada sección distinta del predimensionamiento. "+
+        "El nombre y las medidas son <b>solo para ETABS</b>: las hojas siguen con las calculadas. "+
+        "Una fila marcada va a ETABS con otra medida; ↺ la devuelve a la calculada.");
+      h+=tarjeta("viga","Vigas","");
+      h+=tarjeta("losa","Losas","Aligeradas y nervadas van a ETABS como losa nervada en una "+
+        "dirección, con sus viguetas.");
+      h+=tarjeta("placa","Placas","");
+    }
+    if(sub==="cargas")h+=tarjetaCargasEtabs(ex,E);
+    if(sub==="combinaciones")h+=tarjetaCombinaciones(ex);
+    if(sub==="envio"){
+      var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
+                          .replace('<div class="rule" style="margin:0 0 10px"></div>','');
+      h+='<section class="pbox ancha"><h3>Envío a ETABS</h3>'+
+        (ex.errores.length
+          ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
+            ex.errores.map(escE).join("<br>")+'</p>' : '')+
+        '<label class="etb-ch"><input id="eLimp" type="checkbox"'+(E.limpiar!==false?" checked":"")+
+        '><span>Quitar de ETABS las secciones que trae por defecto y no se usan (perfiles W, '+
+        'A-GravBm, ConcBm, Slab1, Deck1…)</span></label>'+nota+'</section>';
+    }
     h+='</div>';
     P.innerHTML=h;
 
@@ -9476,9 +9679,9 @@ var TT={script:performance.now()};
     function f(v,d){return (v==null||!isFinite(v))?"—":(+v).toFixed(d==null?2:d)}
     function escS(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
     function estado(ok){return '<b class="'+(ok?"sis-ok":"sis-no")+'">'+(ok?"CUMPLE":"NO CUMPLE")+'</b>'}
-    var h='<div class="pgrid sis">';
+    var sub=subDe("sismo"), h='<div class="pgrid sis">';
 
-    h+='<section class="pbox"><h3>1 · Sitio y edificación</h3>'+
+    if(sub==="parametros")h+='<section class="pbox"><h3>Sitio y edificación</h3>'+
       fijo("Zona sísmica",st.zona||"—","",escS(P.distrito||""))+
       fijo("Z",f(st.Z),"",A.zona)+
       fijo("Perfil de suelo",escS(P.suelo||"—"),"",st.interpolado?("Vs = "+st.vs+" m/s"):A.vs)+
@@ -9499,21 +9702,22 @@ var TT={script:performance.now()};
                (on?" checked":"")+'><span>'+escS(x.n)+'</span><b>'+x.f.toFixed(2)+'</b></label>';
       }).join("");
     }
-    h+='<section class="pbox"><h3>2 · Irregularidades</h3>'+
+    if(sub==="parametros")h+='<section class="pbox"><h3>Irregularidades</h3>'+
       '<p class="nota" style="margin:0 0 4px">Marca las que tenga el edificio en cualquiera de las dos '+
       'direcciones. Sin marcar, es regular. '+A.irreg+': vale el menor factor.</p>'+
       '<div class="sis-sub">En altura</div>'+lista(SISMO.IRREG_ALTURA,P.irrAltura,"a")+
       fijo("Ia",f(c.Ia),"","el menor")+
       '<div class="sis-sub">En planta</div>'+lista(SISMO.IRREG_PLANTA,P.irrPlanta,"p")+
       fijo("Ip",f(c.Ip),"","el menor")+
-      '<p class="nota">Por ahora las eliges tú. Cuando ETABS devuelva derivas, rigideces y masas, el '+
-      'complemento comprobará las que se pueden medir.</p></section>';
+      '<p class="nota">Por ahora las eliges tú. Con las derivas, rigideces y masas de ETABS, las que se '+
+      'pueden medir se comprobarán en <b>Resultados ETABS</b>.</p></section>';
 
     if(c.faltan.length){
       h+='<section class="pbox sis-ancha"><h3>No se puede calcular todavía</h3><p class="aviso">Falta '+
          c.faltan.map(escS).join(", ")+'. Complétalo en <b>Datos</b>.</p></section></div>';
       el.innerHTML=h; eventos(); return;
     }
+    if(sub==="parametros"){ el.innerHTML=h+'</div>'; eventos(); return; }
     var ex=c.est.x, ey=c.est.y;
     function selCT(id,val,eje){
       return '<label class="sis-sel"><span>CT en '+eje+' · '+A.T+'</span><select id="'+id+'">'+
@@ -9523,7 +9727,7 @@ var TT={script:performance.now()};
     function fila(etq,vx,vy,uni,nota){
       return '<tr><td>'+etq+'</td><td>'+vx+'</td><td>'+vy+'</td><td>'+(uni||"")+'</td><td class="sis-n">'+(nota||"")+'</td></tr>';
     }
-    h+='<section class="pbox sis-ancha"><h3>3 · Período, factor C y coeficiente sísmico</h3>'+
+    if(sub==="estatico")h+='<section class="pbox sis-ancha"><h3>Período, factor C y coeficiente sísmico</h3>'+
       '<div class="sis-ct">'+selCT("sCTx",c.CTx,"X")+selCT("sCTy",c.CTy,"Y")+'</div>'+
       '<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>Sismo en X</th><th>Sismo en Y</th>'+
       '<th></th><th>Norma</th></tr></thead><tbody>'+
@@ -9546,7 +9750,7 @@ var TT={script:performance.now()};
         '</td><td>'+f(n.otras)+'</td><td>'+f(n.estructura)+'</td><td>'+f(n.CM)+'</td><td>'+f(n.CV)+'</td><td>'+
         Math.round(n.pct*100)+' %</td><td><b>'+f(n.P)+'</b></td></tr>';
     }).join("");
-    h+='<section class="pbox sis-ancha"><h3>4 · Peso sísmico · '+A.peso+'</h3>'+
+    if(sub==="estatico")h+='<section class="pbox sis-ancha"><h3>Peso sísmico · '+A.peso+'</h3>'+
       '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Nivel</th><th>Área (m²)</th><th>Losa (t)</th>'+
       '<th>Acabados y tabiquería (t)</th><th>Vigas, columnas y placas (t)</th><th>CM (t)</th><th>CV (t)</th>'+
       '<th>% de CV</th><th>P (t)</th></tr></thead><tbody>'+filasP+
@@ -9568,7 +9772,7 @@ var TT={script:performance.now()};
             f(r.alfa,3)+'</td><td>'+f(r.F)+'</td><td>'+f(r.V)+'</td><td>'+f(r.e)+'</td><td>'+f(r.Mt)+'</td></tr>';
         }).join("")+'</tbody></table></div></div>';
     }
-    h+='<section class="pbox sis-ancha"><h3>5 · Cortante basal y fuerzas por piso · '+A.V+', '+A.F+' y '+A.e+'</h3>'+
+    if(sub==="estatico")h+='<section class="pbox sis-ancha"><h3>Cortante basal y fuerzas por piso · '+A.V+', '+A.F+' y '+A.e+'</h3>'+
       '<div class="sis-kpi"><div><span>V en X</span><b>'+f(ex.V)+' t</b><small>'+f(ex.V/c.est.P*100,1)+
       ' % de P</small></div><div><span>V en Y</span><b>'+f(ey.V)+' t</b><small>'+f(ey.V/c.est.P*100,1)+
       ' % de P</small></div><div><span>Peso P</span><b>'+f(c.est.P)+' t</b><small>'+c.niveles.length+
@@ -9578,17 +9782,27 @@ var TT={script:performance.now()};
       'más desfavorable. El análisis estático vale solo en estructuras regulares de hasta 30 m en zonas 2 a 4 '+
       '(Art. 33); si no, es la referencia del 80 % o 90 % del análisis dinámico ('+A.Vmin+').</p></section>';
 
-    G=grafEspectro(c);
-    h+='<section class="pbox sis-ancha"><h3>6 · Espectro de diseño · '+A.Sa+'</h3>'+G.html+
-      '<details class="sis-tabla"><summary>Ver la tabla T – Sa/g ('+c.espectroX.length+' puntos, hasta 10 s)</summary>'+
-      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>T (s)</th><th>C</th><th>Sa/g en X</th>'+
-      '<th>Sa/g en Y</th></tr></thead><tbody>'+
-      c.espectroX.map(function(p,i){return '<tr><td>'+f(p.T,2)+'</td><td>'+f(p.C,3)+'</td><td>'+f(p.SaG,4)+
-        '</td><td>'+f(c.espectroY[i].SaG,4)+'</td></tr>'}).join("")+'</tbody></table></div></details>'+
-      '<p class="nota">El espectro usa el C con el tramo de períodos cortos (T &lt; 0,2 TP) y no lleva el '+
-      'mínimo de C/R, que es del estático. En ETABS se aplica al 100 % en una dirección y al 30 % en la '+
-      'perpendicular, combinadas por raíz de la suma de cuadrados ('+A.dir+').</p></section>';
-    h+=tarjetaResultados(c);
+    if(sub==="dinamico"){
+      G=grafEspectro(c);
+      h+='<section class="pbox sis-ancha"><h3>Espectro de diseño · '+A.Sa+'</h3>'+G.html+
+        '<details class="sis-tabla"><summary>Ver la tabla T – Sa/g ('+c.espectroX.length+' puntos, hasta 10 s)</summary>'+
+        '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>T (s)</th><th>C</th><th>Sa/g en X</th>'+
+        '<th>Sa/g en Y</th></tr></thead><tbody>'+
+        c.espectroX.map(function(p,i){return '<tr><td>'+f(p.T,2)+'</td><td>'+f(p.C,3)+'</td><td>'+f(p.SaG,4)+
+          '</td><td>'+f(c.espectroY[i].SaG,4)+'</td></tr>'}).join("")+'</tbody></table></div></details>'+
+        '<p class="nota">El espectro usa el C con el tramo de períodos cortos (T &lt; 0,2 TP) y no lleva el '+
+        'mínimo de C/R, que es del estático. En ETABS se aplica al 100 % en una dirección y al 30 % en la '+
+        'perpendicular, combinadas por raíz de la suma de cuadrados ('+A.dir+').</p></section>';
+      /* los casos SDX y SDY tal como los lleva el puente */
+      var exD=null; try{ exD=exportaEtabs(); }catch(e){}
+      h+='<section class="pbox ancha"><h3>Análisis modal espectral en ETABS</h3>'+
+        (exD&&exD.dinamico
+          ? tablaDinamico(exD.dinamico)+
+            '<p class="nota">Es lo que lleva <code>a_etabs.bat</code>. Se decide en <b>ETABS › Cargas y sismo</b>.</p>'
+          : '<p class="nota">No va a ETABS: en <b>ETABS › Cargas y sismo</b> está desmarcado llevar las cargas '+
+            'y el sismo.</p>')+
+        '</section>';
+    }
     h+='</div>';
     el.innerHTML=h;
     eventos();
@@ -9605,8 +9819,6 @@ var TT={script:performance.now()};
           P[clave]=l; guardar(); render();
         };
       });
-      var br=$("#btnRes");
-      if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
       var cx=$("#sCTx"), cy=$("#sCTy");
       if(cx)cx.onchange=function(){P.ctX=+this.value; guardar(); render();};
       if(cy)cy.onchange=function(){P.ctY=+this.value; guardar(); render();};
@@ -9690,9 +9902,9 @@ var TT={script:performance.now()};
     var tot=0,i; S.niveles.forEach(function(m){tot+=areaNivel(m)});
     var hTot=0; S.niveles.forEach(function(m){hTot+=(m.h||2.8)});
 
-    var h='<div class="pgrid">';
+    var sub=subDe("proyecto"), h='<div class="pgrid">';
 
-    h+='<section class="pbox"><h3>1 · Identificación</h3>'+
+    if(sub==="sitio")h+='<section class="pbox"><h3>Identificación</h3>'+
       campo("pNom","Nombre del proyecto",P.nombre||"")+
       campo("pUbi","Ubicación",P.ubicacion||"")+
       campo("pIng","Proyectista",P.proyectista||"")+
@@ -9707,7 +9919,7 @@ var TT={script:performance.now()};
                (sel===v?" selected":"")+'>'+v+'</option>'}).join("")+'</select>';
     }
 
-    h+='<section class="pbox"><h3>2 · Edificación y materiales</h3>'+
+    if(sub==="sitio")h+='<section class="pbox"><h3>Edificación</h3>'+
       '<label class="pf"><span class="pfe">Uso de la estructura</span>'+
       opts("pUso",E030.usos(),P.uso)+'<span class="pfu">E.030</span></label>'+
       fijo("Categoría",st.catE030||"—","","de la E.030")+
@@ -9715,29 +9927,28 @@ var TT={script:performance.now()};
       fijo("Peso / m² de la categoría",C.peso,"kg/m²","Oviedo")+
       fijo("% de sobrecarga",(C.pctSC*100).toFixed(0)+" %","","")+
       fijo("% de placas",(C.pctPlaca*100).toFixed(2)+" %","","del área techada")+
+      '<p class="nota">El <b>uso</b> manda: de él salen la categoría y el factor U, y de la '+
+      'categoría el peso/m², el % de sobrecarga y el % de placas. Antes la categoría se '+
+      'elegía a mano y podía no corresponderse con el uso real.</p>'+
+      '</section>';
+
+    if(sub==="materiales")h+='<section class="pbox"><h3>Concreto</h3>'+
       campo("pFc","f'c del concreto",(+S.fc||210),"kg/cm²","number",
             'min="210" max="550" step="10"')+
       campo("pCon","Peso del concreto armado",(+P.concreto||2400),"kg/m³","number",
             'min="2000" max="2600" step="50"')+
-      campo("pSig","σs capacidad portante",(+S.sigma||3.0),"kg/cm²","number",
-            'min="0.5" max="10" step="0.1"')+
-      '<label class="pf"><span class="pfe">Sobrecarga por defecto</span>'+
-      '<select id="pSc" class="pfi">'+
-      [200,250,300,400,500].map(function(v){
-        return '<option value="'+v+'"'+(+$("#sc").value===v?" selected":"")+'>'+
-               v+'</option>'}).join("")+
-      '</select><span class="pfu">kg/m²</span></label>'+
       fijo("Ec = 15000·√f'c",Math.round(15000*Math.sqrt(+S.fc||210)).toLocaleString("es-PE"),
            "kg/cm²","E.060 Art. 8.5")+
-      '<p class="nota">El <b>uso</b> manda: de él salen la categoría y el factor U, y de la '+
-      'categoría el peso/m², el % de sobrecarga y el % de placas. Antes la categoría se '+
-      'elegía a mano y podía no corresponderse con el uso real.</p>'+
-      '<p class="nota">f&#39;c manda el área de las columnas · σs manda el área de las zapatas · '+
-      'la sobrecarga por defecto solo se aplica a los paños que no tienen uso asignado.</p>'+
+      '<p class="nota">f&#39;c manda el área de las columnas y es el del material que va a ETABS.</p>'+
+      '</section>'+
+      '<section class="pbox"><h3>Suelo</h3>'+
+      campo("pSig","σs capacidad portante",(+S.sigma||3.0),"kg/cm²","number",
+            'min="0.5" max="10" step="0.1"')+
+      '<p class="nota">σs manda el área de las zapatas. Sale del estudio de suelos.</p>'+
       '</section>';
 
     /* --- E.030: sitio y sistema ------------------------------------- */
-    h+='<section class="pbox"><h3>3 · Sitio y sismo (E.030)</h3>'+
+    if(sub==="sitio")h+='<section class="pbox"><h3>Sitio y sismo (E.030)</h3>'+
       '<label class="pf"><span class="pfe">Distrito</span>'+
       opts("pDis",E030.distritos(),P.distrito)+
       '<span class="pfu">Anexo II</span></label>'+
@@ -9765,7 +9976,7 @@ var TT={script:performance.now()};
       'da la zona, y la zona con el perfil dan S, TP y TL. Nada de esto se escribe a mano.</p>'+
       '</section>';
 
-    h+='<section class="pbox"><h3>4 · Cargas permanentes</h3>'+
+    if(sub==="permanentes")h+='<section class="pbox"><h3>Cargas permanentes</h3>'+
       campo("pMor","Peso del mortero",(+P.morteroPeso||2000),"kg/m³","number",
             'min="1500" max="2400" step="50"')+
       campo("pPis","Espesor del piso terminado",(+P.pisoEsp||5),"cm","number",
@@ -9790,7 +10001,18 @@ var TT={script:performance.now()};
       fijo("→ TOTAL otras cargas",cp.total,"kg/m²","va a METRADO_CARGAS")+
       '</section>';
 
-    h+='<section class="pbox"><h3>5 · Lo que sabe el modelo</h3>'+
+    if(sub==="permanentes")h+='<section class="pbox"><h3>Sobrecarga por defecto</h3>'+
+      '<label class="pf"><span class="pfe">Sobrecarga por defecto</span>'+
+      '<select id="pSc" class="pfi">'+
+      [200,250,300,400,500].map(function(v){
+        return '<option value="'+v+'"'+(+$("#sc").value===v?" selected":"")+'>'+
+               v+'</option>'}).join("")+
+      '</select><span class="pfu">kg/m²</span></label>'+
+      '<p class="nota">Solo se aplica a los paños que no tienen uso asignado. El uso de cada paño '+
+      'se asigna en <b>Cargas</b>.</p>'+
+      '</section>';
+
+    if(sub==="sitio")h+='<section class="pbox"><h3>Lo que sabe el modelo</h3>'+
       fijo("Niveles",S.niveles.length,"","")+
       fijo("Área techada total",tot.toFixed(2),"m²","")+
       fijo("Altura total",hTot.toFixed(2),"m","")+
@@ -9824,24 +10046,26 @@ var TT={script:performance.now()};
     numCampo("pTab","tabiqueria",0,400,100);
     /* La categoria ya no se elige: la fija el uso.  Cambiar el uso arrastra
        categoria, U, peso/m2, % de sobrecarga y % de placas de una vez. */
-    $("#pUso").onchange=function(){
-      S.proy.uso=this.value; sincronizaCategoria(); guardar(); render(); };
-    $("#pDis").onchange=function(){ S.proy.distrito=this.value; guardar(); render(); };
-    $("#pSue").onchange=function(){ S.proy.suelo=this.value; guardar(); render(); };
-    var eVs=$("#pVs");
-    if(eVs)eVs.onchange=function(){
-      var v=+this.value; S.proy.vs=(this.value===""||!(v>0))?"":v; guardar(); render(); };
-    $("#pSisX").onchange=function(){ S.proy.sistemaX=this.value; guardar(); render(); };
-    $("#pSisY").onchange=function(){ S.proy.sistemaY=this.value; guardar(); render(); };
-    $("#pFc").onchange=function(){
-      var v=+this.value; S.fc=(v>=210&&v<=550)?v:210; guardar(); render(); };
-    $("#pSig").onchange=function(){
-      var v=+this.value; S.sigma=(v>=0.5&&v<=10)?v:3.0; guardar(); render(); };
+    /* cada sub-pestana pinta solo sus campos: los de las otras no existen, y
+       un $("#pUso").onchange sin comprobar reventaba el resto del render */
+    function al(id,fn){ var e=$("#"+id); if(e)e.onchange=fn; }
+    al("pUso",function(){
+      S.proy.uso=this.value; sincronizaCategoria(); guardar(); render(); });
+    al("pDis",function(){ S.proy.distrito=this.value; guardar(); render(); });
+    al("pSue",function(){ S.proy.suelo=this.value; guardar(); render(); });
+    al("pVs",function(){
+      var v=+this.value; S.proy.vs=(this.value===""||!(v>0))?"":v; guardar(); render(); });
+    al("pSisX",function(){ S.proy.sistemaX=this.value; guardar(); render(); });
+    al("pSisY",function(){ S.proy.sistemaY=this.value; guardar(); render(); });
+    al("pFc",function(){
+      var v=+this.value; S.fc=(v>=210&&v<=550)?v:210; guardar(); render(); });
+    al("pSig",function(){
+      var v=+this.value; S.sigma=(v>=0.5&&v<=10)?v:3.0; guardar(); render(); });
     /* Escribe en el mismo select de la cintra: un solo sitio donde vive el dato,
        dos sitios desde donde se toca. */
-    $("#pSc").onchange=function(){ $("#sc").value=this.value; guardar(); render(); };
-    $("#pEst").onchange=function(){
-      S.proy.estructuraAuto=(this.value==="1"); guardar(); render(); };
+    al("pSc",function(){ $("#sc").value=this.value; guardar(); render(); });
+    al("pEst",function(){
+      S.proy.estructuraAuto=(this.value==="1"); guardar(); render(); });
   }
 
   /* ---------- pestana HOJAS EXCEL ----------
@@ -9982,15 +10206,23 @@ var TT={script:performance.now()};
       '</div>';
   }
 
+  /* la sub-pestana de Hojas Excel donde sale cada hoja */
+  function grupoHoja(h){
+    if(h.t==="ref")return "normas";
+    return (h.n==="METRADO_CARGAS"||h.n==="ANALISIS_SISMICO")?"cargas":"predim";
+  }
   function pintaHojas(){
-    var c=inventario();
+    var c=inventario(), sub=subDe("hojas");
     if(!S.hojasSel)S.hojasSel={};
     var seleccion=[];
+    /* la seleccion es de todas, aunque solo se vean las de la sub-pestana:
+       «Generar» manda todas las marcadas */
     var tarjetas=CATALOGO.map(function(h){
       var e=estadoHoja(h,c);
       if(e.ok&&S.hojasSel[h.n]===undefined)S.hojasSel[h.n]=true;
       var marcada=e.ok&&!!S.hojasSel[h.n];
       if(marcada)seleccion.push(h.n);
+      if(grupoHoja(h)!==sub)return "";
       return '<div class="hoja-card'+(marcada?" sel":"")+(e.ok?"":" no")+'" data-h="'+h.n+'">'+
         '<div class="hnom">'+h.tit+'</div>'+
         '<div class="hpag">'+miniatura(h.t)+'</div>'+
@@ -10063,7 +10295,7 @@ var TT={script:performance.now()};
       '<div class="hg-cab">'+
       '<button id="btnHojas" class="pri"'+(seleccion.length?"":" disabled")+'>'+
       'Generar '+seleccion.length+' hoja'+(seleccion.length===1?"":"s")+'</button>'+
-      '<span class="cuenta">'+seleccion.length+' de '+CATALOGO.length+' seleccionadas</span>'+
+      '<span class="cuenta">'+seleccion.length+' de '+CATALOGO.length+' seleccionadas en total</span>'+
       ctrl+
       '<span class="lbl">El complemento no necesita un libro preparado: lo produce. '+
       'Abre un Excel en blanco y genera.</span></div>'+
@@ -10156,7 +10388,7 @@ var TT={script:performance.now()};
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
     var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto"),
         deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion"),
-        etab=(S.modo==="etabs"), sism=(S.modo==="sismo");
+        etab=(S.modo==="etabs"), sism=(S.modo==="sismo"), res=(S.modo==="resultados");
     var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
     /* DECISIONES es la planta de solo lectura: sus filtros donde van las
@@ -10169,10 +10401,11 @@ var TT={script:performance.now()};
     ver("#inspDeci",deci&&!solo);
     ver("#panelHojas",hojas);
     ver("#panelProy",proy);
-    ver("#panelDeci",false);
+    ver("#panelDeci",deci&&solo);          /* Decisiones › Cuadro */
     ver("#panelComp",comp);
     ver("#panelEtabs",etab);
     ver("#panelSismo",sism);
+    ver("#panelRes",res);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
@@ -10188,12 +10421,15 @@ var TT={script:performance.now()};
     ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
     pintaNiveles();
+    if(!etab)pintaSubmodos();             /* ETABS la pinta con sus errores */
     marcaAvisos();
     if(comp){pintaComprobacion();}
     else if(proy){pintaProyecto();}
     else if(hojas){pintaHojas();}
     else if(etab){pintaEtabs();}
     else if(sism){pintaSismo();}
+    else if(res){pintaResultados();}
+    else if(deci&&solo){pintaCuadroDecisiones();}
     else if(!esPlano){pintaEdificio(); if(deci)pintaDecisiones();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else if(deci){draw();pintaDecisiones();}
@@ -10207,7 +10443,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
