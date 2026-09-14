@@ -396,6 +396,24 @@
 .vd-no{border-left-color:#c62828}.vd-no>b:first-child{color:#c62828}
 .vd-ok{border-left-color:#2e7d32}.vd-ok>b:first-child{color:#2e7d32}
 .vd-rev{border-left-color:#b26a00}.vd-rev>b:first-child{color:#b26a00}
+/* Resultados ETABS › Tablas del .bat: como en la consola, pero en tablas */
+.tb-op{margin:0 0 16px}
+.tb-tit{font:600 11.5px "IBM Plex Mono",monospace;color:var(--ink);margin:10px 0 4px}
+.tb-pre{font:400 11px/1.5 "IBM Plex Mono",monospace;color:var(--ink-2);white-space:pre-wrap;margin:4px 0 8px}
+.sis-t.tb-t th.tb-izq,.sis-t.tb-t td.tb-izq{text-align:left}
+/* INICIO: donde va el proyecto, un paso por fila */
+.ini-l{display:grid;border-top:1px solid var(--line-soft)}
+.ini-p{display:grid;grid-template-columns:minmax(160px,210px) 104px 1fr;gap:4px 14px;align-items:baseline;
+  padding:9px 2px;border-bottom:1px solid var(--line-soft)}
+.ini-ir{font:600 12.5px "IBM Plex Sans",sans-serif;color:var(--ink);background:none;border:0;padding:0;
+  text-align:left;cursor:pointer}
+.ini-ir:hover,.ini-ir:focus-visible{color:var(--acc-ink);text-decoration:underline}
+.ini-e{font:700 11px "IBM Plex Sans",sans-serif;white-space:nowrap}
+.ini-ok .ini-e{color:#2e7d32}.ini-no .ini-e{color:#c62828}
+.ini-rev .ini-e,.ini-falta .ini-e{color:#b26a00}.ini-espera .ini-e{color:var(--ink-3)}
+.ini-d{font:400 12px/1.45 "IBM Plex Sans",sans-serif;color:var(--ink-2)}
+.ini-d small{display:block;color:var(--ink);font-size:11.5px;margin-top:2px}
+@media (max-width:640px){.ini-p{grid-template-columns:1fr auto}.ini-d{grid-column:1/-1}}
 /* Resultados ETABS › Vigas, Columnas, Placas y Reacciones: las fuerzas */
 .fz-t th.fz-grupo{text-align:center;border-bottom:1px solid var(--line-soft)}
 .fz-t tr.fz-g td{background:var(--panel);color:var(--ink);font:600 11.5px "IBM Plex Sans",sans-serif;text-align:left;
@@ -534,25 +552,30 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   </header>
 
   <div class="modos" role="group" aria-label="Modo de trabajo">
-    <!-- El data-modo es la identidad; el texto es solo lo que se lee.  No se
-         renombran: render() y pintaNiveles() comparan estas cadenas tal cual.
-         EL ORDEN ES EL DEL TRABAJO, por fases: se empieza por los datos del
-         proyecto y se acaba en lo que devuelve ETABS; las hojas de Excel son
-         la salida y van aparte.  Las sub-pestanas de cada una, en SUBMODOS. -->
-    <div class="fase"><span class="fase-t">1 · Proyecto</span><div class="fase-b">
+    <!-- El data-modo es la identidad; el texto es solo lo que se lee.
+         UN PASO POR BOTON, EN EL ORDEN DEL TRABAJO (13-09-2026): Inicio dice
+         donde va el proyecto; despues datos, modelo, predimensionamiento,
+         sismo, ETABS (llevar y traer), si la estructura cumple, las fuerzas,
+         el diseño y, aparte, las hojas.  Las sub-pestanas, en SUBMODOS. -->
+    <div class="fase"><span class="fase-t">Estado</span><div class="fase-b">
+      <button class="modo" data-modo="inicio" aria-pressed="false">Inicio</button></div></div>
+    <div class="fase"><span class="fase-t">Paso 1</span><div class="fase-b">
       <button class="modo" data-modo="proyecto" aria-pressed="false">Datos</button></div></div>
-    <div class="fase"><span class="fase-t">2 · Modelo</span><div class="fase-b">
+    <div class="fase"><span class="fase-t">Paso 2 · Modelo</span><div class="fase-b">
       <button class="modo" data-modo="modelo" aria-pressed="true">Planta</button>
       <button class="modo" data-modo="usos" aria-pressed="false">Cargas</button>
       <button class="modo" data-modo="comprobacion" aria-pressed="false">Comprobación</button></div></div>
-    <div class="fase"><span class="fase-t">3 · Predimensionamiento</span><div class="fase-b">
-      <button class="modo" data-modo="decisiones" aria-pressed="false">Decisiones</button></div></div>
-    <div class="fase"><span class="fase-t">4 · Análisis</span><div class="fase-b">
-      <button class="modo" data-modo="sismo" aria-pressed="false">Sismo E.030</button>
+    <div class="fase"><span class="fase-t">Paso 3</span><div class="fase-b">
+      <button class="modo" data-modo="decisiones" aria-pressed="false">Predimensionamiento</button></div></div>
+    <div class="fase"><span class="fase-t">Paso 4</span><div class="fase-b">
+      <button class="modo" data-modo="sismo" aria-pressed="false">Sismo E.030</button></div></div>
+    <div class="fase"><span class="fase-t">Paso 5</span><div class="fase-b">
       <button class="modo" data-modo="etabs" aria-pressed="false">ETABS</button></div></div>
-    <div class="fase"><span class="fase-t">5 · Resultados</span><div class="fase-b">
-      <button class="modo" data-modo="resultados" aria-pressed="false">Resultados ETABS</button></div></div>
-    <div class="fase"><span class="fase-t">6 · Diseño</span><div class="fase-b">
+    <div class="fase"><span class="fase-t">Paso 6</span><div class="fase-b">
+      <button class="modo" data-modo="verificacion" aria-pressed="false">Verificación E.030</button></div></div>
+    <div class="fase"><span class="fase-t">Paso 7</span><div class="fase-b">
+      <button class="modo" data-modo="fuerzas" aria-pressed="false">Fuerzas</button></div></div>
+    <div class="fase"><span class="fase-t">Paso 8</span><div class="fase-b">
       <button class="modo" data-modo="diseno" aria-pressed="false">Diseño E.060</button></div></div>
     <div class="fase"><span class="fase-t">Salida</span><div class="fase-b">
       <button class="modo" data-modo="hojas" aria-pressed="false">Hojas Excel</button></div></div>
@@ -664,6 +687,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
       <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
       <div class="edif" id="edificio" hidden></div>
+      <div class="edif" id="panelInicio" hidden></div>
       <div class="edif" id="panelHojas" hidden></div>
       <div class="edif" id="panelProy" hidden></div>
       <div class="edif" id="panelDeci" hidden></div>
@@ -4656,17 +4680,17 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     }
     function c3(el, k, dato, sub) {
       var hay = o.resultados && o.alDia !== false && n[k] > 0;
-      fila(el, dato, hay ? "listo" : "falta", "Resultados ETABS › " + sub,
+      fila(el, dato, hay ? "listo" : "falta", "Fuerzas › " + sub,
            hay ? n[k] + " en los resultados" : (como || "Los resultados no traen " + sub.toLowerCase() + ": vuelve a traerlos con RETICULA.bat [2]."));
     }
     if (m.vigas > 0) {
       c3("Vigas", "vigas", "Mu y Vu en las caras y el centro, de la envolvente", "Vigas");
       fila("Vigas", "Cortante isostática de gravedad (casos CM y CV)", alDia && o.gravedad > 0 ? "listo" : "falta",
-           "Resultados ETABS", alDia && o.gravedad > 0
+           "Resultados de ETABS", alDia && o.gravedad > 0
              ? o.gravedad + " vigas con sus casos de gravedad, para la cortante por capacidad (Art. 21.4 y 21.5) y las deflexiones"
              : (como || viejos));
       var luces = o.resultados && o.alDia !== false && n.vigas > 0;
-      fila("Vigas", "Luz libre, b y h", luces ? "listo" : "falta", "Resultados ETABS y modelo",
+      fila("Vigas", "Luz libre, b y h", luces ? "listo" : "falta", "Fuerzas y modelo",
            luces ? "de cara a cara" : (como || "Sale con las fuerzas de vigas: vuelve a traerlas con RETICULA.bat [2]."));
     } else fila("Vigas", "El modelo no tiene vigas", "no aplica", "Modelo", "");
     if (m.columnas > 0) {
@@ -4690,7 +4714,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       fila("Placas", "Largo, espesor y altura de cada muro", "listo", "Modelo", "");
       var MS = o.murosSismo;
       function pc(d) { return d && d.pct !== null && d.pct !== undefined ? Math.round(d.pct * 100) + " %" : "—"; }
-      fila("Placas", "Cortante de SDX y SDY en la base de cada muro", alDia && MS ? "listo" : "falta", "Resultados ETABS",
+      fila("Placas", "Cortante de SDX y SDY en la base de cada muro", alDia && MS ? "listo" : "falta", "Resultados de ETABS",
            alDia && MS ? "Los muros toman " + pc(MS.x) + " de la cortante basal en X y " + pc(MS.y) + " en Y: eso " +
                          "decide si un dual es tipo I o II (Art. 21.1)."
                        : (como || viejos) + (o.dual ? " Mientras tanto, elige el tipo de dual en Criterios." : ""));
@@ -4718,6 +4742,377 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     claseDe: claseDe, CAP21: CAP21, regimen: regimen, obligatorio: obligatorio,
     defecto: defecto, completar: completar, criterios: criterios, datosParaDiseno: datosParaDiseno
   };
+});
+</script>
+<script>
+/* ===== tablas_bat.js (inlinado) ===== */
+/* =====================================================================
+   tablas_bat.js — LAS TABLAS DE RETICULA.bat [3], iguales en el complemento
+   (Resultados ETABS › Tablas del .bat).
+
+   Cada funcion repite la de scripts/etabs/ver_tablas.py que imprime esa
+   tabla: el mismo titulo, las mismas columnas, el mismo formato de numeros
+   y las mismas notas.  Solo cambia de donde salen los datos: el .bat los lee
+   de ETABS en el momento y aqui salen de lo que trajo RETICULA.bat [2].  El
+   .bat sigue igual -y ademas abre cada tabla dentro de ETABS-; si cambia una
+   tabla alli, tiene que cambiar aqui.
+
+   S es lo mismo con lo que compara ver_tablas: el «sismo» del modelo
+   exportado (exportaEtabs), con su «dinamico» en S._dinamico.
+
+     node scripts/complemento/oviedo/probar_tablas_bat.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.TABLASBAT = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var G = 9.80665, LIMITE_DERIVA = 0.007;
+  var VIEJOS = "Estos resultados son de una versión anterior que no traía esta tabla: vuelve a traerlos con RETICULA.bat [2].";
+  var SIN_ANALIZAR = "El modelo no esta analizado: dale F5 (Run Analysis) en ETABS y vuelve a elegir. Este programa no " +
+                     "analiza: solo lee.";
+  var SIN_ESPECTRO = "Todavia no hay casos de espectro de respuesta en el modelo: llegan con la parte B2.";
+  /* la nota que el .bat pone bajo las derivas estaticas */
+  var NOTA_EST = "OJO: son de REFERENCIA. Con analisis dinamico se verifica con el dinamico -[2] ZUCS DINAMICO > Derivas " +
+                 "del dinamico-, que es lo que ensena el\n  complemento en Paso 6 Verificacion E.030; sus desplazamientos no se " +
+                 "escalan a la cortante minima (Art. 44.2).";
+
+  /* --- el formato de Python ------------------------------------------------- */
+  /* "%.Nf": redondea el valor binario exacto -como toFixed-, y solo en un
+     empate EXACTO en binario -0,125 con dos decimales- va al par, donde
+     toFixed iria hacia arriba.  Un empate exacto es (2n + 1) / (2 · 10^N)
+     representable: (2n + 1) tiene que ser multiplo de 5^N.  4,78005 NO lo es
+     -en binario queda un poco por encima- y Python lo sube a 4.7801; tomarlo
+     por empate lo bajaba a 4.7800 (probado contra la consola del .bat). */
+  function fijo(x, dec) {
+    var p = Math.pow(10, dec), s = x * p, n = Math.floor(s), m = 2 * n + 1, q = Math.pow(5, dec);
+    if (s - n === 0.5 && m % q === 0 && (m / q) / Math.pow(2, dec + 1) === x)
+      return ((n % 2 === 0 ? n : n + 1) / p).toFixed(dec);
+    return x.toFixed(dec);
+  }
+  /* num() de ver_tablas: "-" si no hay dato; el texto tal cual si no es numero */
+  function num(v, dec) {
+    if (dec === undefined) dec = 3;
+    if (v === null || v === undefined || v === "") return "-";
+    var x = Number(v);
+    return (typeof v !== "boolean" && isFinite(x)) ? fijo(x, dec) : String(v);
+  }
+  /* pct() de ver_tablas: "%+.1f %%" */
+  function pct(a, b) {
+    if (a === null || a === undefined || b === null || b === undefined) return "-";
+    var x = Number(a), y = Number(b);
+    if (!isFinite(x) || !isFinite(y) || y === 0) return "-";
+    var d = (x - y) / y * 100;
+    return (d >= 0 ? "+" : "") + fijo(d, 1) + " %";
+  }
+  /* "%g" con seis cifras */
+  function g6(v) { return String(Number(Number(v).toPrecision(6))); }
+
+  function tabla(titulo, encab, filas, der) {
+    return { titulo: titulo, encab: encab, filas: filas, der: der === undefined ? null : der, notas: [] };
+  }
+  function soloNota(texto) { return { notas: [texto] }; }
+  function estaticos(R) { return (R && R.sismo && R.sismo.estatico) || []; }
+  function leidas(R) { return R && R.tablas; }
+
+  /* --- [1] ZUCS ESTATICO ---------------------------------------------------- */
+  /* ver_resumen */
+  function resumen(R, S) {
+    var est = estaticos(R), B = [];
+    B.push(tabla("ZUCS ESTATICO · lo que uso ETABS", ["Patron", "Dir", "Excentr.", "C", "K", "W (t)", "V (t)", "V/W"],
+      est.map(function (f) {
+        var vw = (f.W && f.V && Number(f.W)) ? num(f.V / f.W, 4) : "-";
+        return [f.patron, String(f.dir).toUpperCase(), num(f.exc, 2), num(f.C, 4), num(f.K, 3), num(f.W, 2), num(f.V, 2), vw];
+      })));
+    if (!S) { B.push(soloNota("(sin el complemento no hay con que comparar)")); return B; }
+    var coef = [], peso = [];
+    ["x", "y"].forEach(function (eje) {
+      var f = est.filter(function (q) { return q.dir === eje; })[0];
+      if (!f || !S[eje]) return;
+      var c = Number(f.C || 0);
+      coef.push([eje.toUpperCase(), num(S[eje].Cb, 4), num(c, 4), num(S[eje].k, 3), num(f.K, 3),
+                 Math.abs(c - S[eje].Cb) <= 1e-5 ? "si" : "NO"]);
+      if (f.W)
+        peso.push([eje.toUpperCase(), num(S.P, 2), num(f.W, 2), pct(f.W, S.P), num(S[eje].V, 2), num(f.V, 2), pct(f.V, S[eje].V)]);
+    });
+    B.push(tabla("FRENTE A SISMO E.030 · coeficientes", ["Dir", "Cb complemento", "C ETABS", "k complemento", "K ETABS", "Iguales"],
+                 coef));
+    if (peso.length) {
+      var t = tabla("FRENTE A SISMO E.030 · peso y cortante",
+                    ["Dir", "P complemento (t)", "W ETABS (t)", "dif", "V complemento (t)", "V ETABS (t)", "dif"], peso);
+      t.notas = ["W de ETABS no cuenta la masa que cae en la base y pesa los cruces de vigas y columnas",
+                 "con la losa: por eso no es exactamente el P del complemento."];
+      B.push(t);
+    }
+    return B;
+  }
+
+  /* ver_reacciones */
+  function reacciones(R) {
+    var T = leidas(R);
+    if (!T || !T.reacciones) return null;
+    var filas = T.reacciones;
+    var t = tabla("REACCIONES EN LA BASE (t, t·m)", ["Caso", "Tipo", "FX", "FY", "FZ", "MX", "MY", "MZ"],
+      filas.map(function (f) {
+        return [f.caso, f.tipo, num(f.FX, 2), num(f.FY, 2), num(f.FZ, 2), num(f.MX, 2), num(f.MY, 2), num(f.MZ, 2)];
+      }));
+    var fm = T.fuenteMasa;
+    if (fm && fm.cargas) {
+      var fz = {};
+      filas.forEach(function (f) { fz[f.caso] = Number(f.FZ || 0); });
+      var partes = (fm.partes || []).filter(function (p) { return p[0] in fz; });
+      if (partes.length) {
+        var w = 0, base = 0;
+        partes.forEach(function (p) { w += p[1] * fz[p[0]]; });
+        ((R.sismo && R.sismo.masa) || []).forEach(function (m) { if (m.piso === "Base") base += Number(m.masa || 0); });
+        base *= G;
+        t.notas = ["Peso con la fuente de masa: " + partes.map(function (p) { return g6(p[1]) + " x FZ " + p[0]; }).join(" + ") +
+                   " = " + fijo(w, 2) + " t",
+                   "menos la masa que cae en la base (" + fijo(base, 2) + " t) = " + fijo(w - base, 2) +
+                   " t, que es el W del sismo estatico"];
+      }
+    }
+    return [t];
+  }
+
+  /* ver_fuerzas */
+  function fuerzas(R, S) {
+    var T = leidas(R);
+    if (!T || !T.fuerzas) return null;
+    var B = [];
+    ["x", "y"].forEach(function (eje) {
+      var q = T.fuerzas[eje];
+      if (!q || !q.patron) return;
+      var pisos = q.pisos || [];
+      var V = pisos.map(function (p) { return Math.abs(Number(p.V || 0)); });            /* de arriba abajo */
+      var F = V.map(function (v, k) { return v - (k ? V[k - 1] : 0); });
+      var comp = ((S && S[eje] && S[eje].filas) || []).slice()
+        .sort(function (a, b) { return Number(b.hi || 0) - Number(a.hi || 0); });
+      var con = comp.length > 0 && comp.length === pisos.length;
+      B.push(tabla("FUERZAS POR PISO · " + q.patron + " (V es la cortante del entrepiso, bajo cada piso)",
+        ["Piso", "F (t)", "V entrepiso (t)"].concat(con ? ["Nivel", "F complemento", "V complemento", "dif V"] : []),
+        pisos.map(function (p, k) {
+          var fila = [p.piso, num(F[k], 2), num(V[k], 2)];
+          if (con) fila = fila.concat([comp[k].nombre, num(comp[k].F, 2), num(comp[k].V, 2), pct(V[k], comp[k].V)]);
+          return fila;
+        })));
+    });
+    return B;
+  }
+
+  /* ver_masa */
+  function masa(R, S) {
+    var filas = (R && R.sismo && R.sismo.masa) || [];
+    var pisos = filas.filter(function (f) { return f.piso !== "Base"; });            /* de arriba abajo */
+    var comp = ((S && S.pisos) || []).slice().reverse();
+    var con = comp.length > 0 && comp.length === pisos.length, tot = 0, base = 0;
+    var t = tabla("MASA Y PESO POR PISO (con la fuente de masa de ETABS)",
+      ["Piso", "Masa (t·s²/m)", "Peso (t)"].concat(con ? ["Nivel", "P complemento (t)", "dif"] : []),
+      pisos.map(function (f, k) {
+        var w = Number(f.masa || 0) * G;
+        tot += w;
+        var fila = [f.piso, num(f.masa, 4), num(w, 2)];
+        if (con) fila = fila.concat([comp[k].nombre, num(comp[k].P, 2), pct(w, comp[k].P)]);
+        return fila;
+      }));
+    filas.forEach(function (f) { if (f.piso === "Base") base += Number(f.masa || 0); });
+    base *= G;
+    t.notas = ["En los pisos: " + fijo(tot, 2) + " t" +
+               (S ? " · P del complemento " + fijo(Number(S.P), 2) + " t (" + pct(tot, S.P) + ")" : ""),
+               "En la base, que no entra al sismo: " + fijo(base, 2) + " t"];
+    return [t];
+  }
+
+  /* ver_derivas: casosDir [[caso, "x"|"y"]] */
+  function derivas(R, S, casosDir, titulo, notaExtra) {
+    var eje = {}, peor = {}, orden = [];
+    casosDir.forEach(function (c) { eje[c[0]] = c[1]; });
+    ((R && R.sismo && R.sismo.derivas) || []).forEach(function (f) {
+      var e = eje[f.caso];
+      if (!e || String(f.dir || "").toLowerCase() !== e) return;
+      var k = f.piso + " " + f.caso;
+      if (!(k in peor)) { orden.push(k); peor[k] = f; }
+      else if (Number(f.deriva || 0) > Number(peor[k].deriva || 0)) peor[k] = f;
+    });
+    var regular = (S && S.regular !== undefined) ? S.regular : true;
+    var fr = regular ? 0.75 : 0.85, malas = 0;
+    var t = tabla(titulo, ["Piso", "Caso", "Deriva elastica", "Factor", "Deriva inelastica", "Limite", ""],
+      orden.map(function (k) {
+        var f = peor[k], e = eje[f.caso], d = Number(f.deriva || 0), Rv = (S && S[e]) ? S[e].R : null;
+        if (!Rv) return [f.piso, f.caso, fijo(d, 5), "-", "-", fijo(LIMITE_DERIVA, 3), "sin R"];
+        var di = d * fr * Rv, ok = di <= LIMITE_DERIVA;
+        if (!ok) malas++;
+        return [f.piso, f.caso, fijo(d, 5), "x " + fijo(fr * Rv, 2), fijo(di, 5), fijo(LIMITE_DERIVA, 3), ok ? "CUMPLE" : "NO CUMPLE"];
+      }));
+    t.notas = S ? ["Factor = " + fijo(fr, 2) + " R (" + (regular ? "regular" : "irregular") + ", Art. 50) · limite 0,007 de " +
+                   "concreto armado (Tabla N.º 14)", !malas ? "Todas cumplen." : malas + " fila(s) NO CUMPLEN."]
+                : ["Sin el complemento no se sabe R: se muestra solo la deriva elastica."];
+    if (notaExtra) t.notas.push(notaExtra);
+    return [t];
+  }
+
+  /* --- [2] ZUCS DINAMICO ---------------------------------------------------- */
+  /* ver_modal */
+  function modal(R, S) {
+    var filas = (R && R.sismo && R.sismo.modal) || [];
+    if (!filas.length) return [soloNota("No hay caso modal analizado. " + SIN_ANALIZAR)];
+    var casos = [];
+    filas.forEach(function (f) { var c = f.caso || "Modal"; if (casos.indexOf(c) < 0) casos.push(c); });
+    function p(v) { return fijo(Number(v || 0) * 100, 1) + " %"; }
+    var t = tabla("PERIODOS Y MASA PARTICIPANTE (" + casos.join(", ") + ")",
+      ["Caso", "Modo", "T (s)", "UX", "UY", "RZ", "Suma UX", "Suma UY"],
+      filas.map(function (f) {
+        return [f.caso || "Modal", String(f.modo), num(f.T, 3), p(f.UX), p(f.UY), p(f.RZ), p(f.sumaUX), p(f.sumaUY)];
+      }));
+    [["X", "UX"], ["Y", "UY"]].forEach(function (par) {
+      var m = null, e = par[0].toLowerCase();
+      filas.forEach(function (f) { if (!m || Number(f[par[1]] || 0) > Number(m[par[1]] || 0)) m = f; });
+      var est = (S && S[e]) ? S[e].T : null;
+      t.notas.push("Modo fundamental en " + par[0] + ": modo " + m.modo + ", T = " + fijo(Number(m.T || 0), 3) + " s (" +
+                   p(m[par[1]]) + " de la masa)" + (est ? " · el complemento estima hn/CT = " + fijo(Number(est), 3) + " s" : ""));
+    });
+    var u = filas[filas.length - 1], sx = Number(u.sumaUX || 0), sy = Number(u.sumaUY || 0);
+    t.notas.push("Masa acumulada con " + u.modo + " modos: X " + p(sx) + " · Y " + p(sy) + " -> " +
+                 (sx >= 0.9 && sy >= 0.9 ? "CUMPLE" : "NO CUMPLE: faltan modos") + " (Art. 40: al menos 90 %)");
+    return [t];
+  }
+
+  /* ver_cortante_dinamica */
+  function cortanteDinamica(R, S) {
+    var din = (R && R.sismo && R.sismo.dinamico) || [];
+    if (!din.length) return [soloNota(SIN_ESPECTRO)];
+    var Vest = {};
+    estaticos(R).forEach(function (f) { if (f.V && !(f.dir in Vest)) Vest[f.dir] = Number(f.V); });
+    var regular = (S && S.regular !== undefined) ? S.regular : true, minimo = regular ? 0.80 : 0.90;
+    var t = tabla("CORTANTE DINAMICA FRENTE A LA ESTATICA (Art. 44)",
+      ["Caso", "Dir", "V dinamica (t)", "V estatica (t)", Math.round(minimo * 100) + " % V est.", "V din / V est", "Llega",
+       "Factor de escala"],
+      din.map(function (c) {
+        var V = Number(c.V || 0), ve = Vest[c.dir];
+        if (!ve) return [c.caso, String(c.dir).toUpperCase(), num(V, 2), "-", "-", "-", "-", "-"];
+        var pedido = minimo * ve;
+        return [c.caso, String(c.dir).toUpperCase(), num(V, 2), num(ve, 2), num(pedido, 2), fijo(V / ve * 100, 1) + " %",
+                V >= pedido ? "si" : "NO", num(V ? Math.max(1, pedido / V) : 0, 3)];
+      }));
+    t.notas = ["Minimo del " + Math.round(minimo * 100) + " % porque la estructura es " + (regular ? "regular" : "irregular") +
+               ". Si no llega, las fuerzas del dinamico se", "escalan por el factor (los desplazamientos no)."];
+    return [t];
+  }
+
+  /* ver_espectro */
+  var MARCAS = [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 8.0, 10.0];
+  function espectro(R, S) {
+    var T = leidas(R);
+    if (!T || !T.espectro) return null;
+    var nombres = Object.keys(T.espectro).filter(function (x) { return x && x.indexOf("E030") === 0; });
+    if (!nombres.length) return [soloNota("El modelo no tiene las funciones E030 X y E030 Y: llegan con RETICULA.bat [1] (parte B2).")];
+    var valores = {}, Ts = [];
+    nombres.forEach(function (x) {
+      valores[x] = {};
+      T.espectro[x].forEach(function (p) {
+        var tt = Math.round(Number(p[0] || 0) * 1e4) / 1e4;
+        valores[x][tt] = Number(p[1] || 0);
+        if (MARCAS.indexOf(tt) >= 0 && Ts.indexOf(tt) < 0) Ts.push(tt);
+      });
+    });
+    Ts.sort(function (a, b) { return a - b; });
+    var t = tabla("ESPECTRO DE DISEÑO EN ETABS · Sa/g, que los casos SDX y SDY multiplican por g", ["T (s)"].concat(nombres),
+      Ts.map(function (tt) { return [num(tt, 2)].concat(nombres.map(function (x) { return num(valores[x][tt], 4); })); }));
+    var comp = {};
+    (((S && S._dinamico) || {}).funciones || []).forEach(function (fn) { comp[fn.nombre] = fn.puntos; });
+    nombres.forEach(function (x) {
+      var a = T.espectro[x], b = comp[x];
+      if (!b) { t.notas.push(x + ": " + a.length + " puntos (sin el complemento no hay con que compararlo)"); return; }
+      if (a.length !== b.length) {
+        t.notas.push(x + ": " + a.length + " puntos en ETABS y " + b.length + " en Sismo E.030: NO es el mismo espectro");
+        return;
+      }
+      var dif = 0;
+      a.forEach(function (p, i) { dif = Math.max(dif, Math.abs(Number(p[1]) - Number(b[i][1]))); });
+      t.notas.push(x + ": " + a.length + " puntos · " + (dif <= 2e-6 ? "igual al de Sismo E.030" : "DISTINTO del de Sismo E.030") +
+                   " (diferencia maxima " + fijo(dif, 6) + ")");
+    });
+    return [t];
+  }
+
+  /* --- [3] COMBINACIONES E.060 ------------------------------------------------ */
+  /* ver_combinaciones */
+  function combinaciones(R) {
+    var T = leidas(R);
+    if (!T || !T.combos) return null;
+    function suma(partes) {
+      var s = "";
+      partes.forEach(function (p, i) {
+        var sf = Number(p[1] || 0), signo = sf < 0 ? "-" : (i ? "+" : "");
+        s += (signo + " " + g6(Math.abs(sf)) + " " + p[0]).trim() + " ";
+      });
+      return s.trim();
+    }
+    var t = tabla("COMBINACIONES DE CARGA EN ETABS", ["Combinacion", "Tipo", "Que suma"],
+                  T.combos.map(function (c) { return [c.nombre, c.tipo, suma(c.partes || [])]; }), []);
+    t.notas = ["E.060 Art. 9.2. Los casos espectrales SDX y SDY dan los dos signos: cada combinacion",
+               "con sismo sale con su maximo y su minimo. El factor que multiplica a SDX y SDY es el",
+               "del Art. 44 de la E.030, que RETICULA.bat [1] escribe al analizar."];
+    return [t];
+  }
+
+  /* ver_reacciones_combos */
+  function reaccionesCombos(R) {
+    var T = leidas(R);
+    if (!T || !T.reaccionesCombos) return null;
+    return [tabla("REACCIONES EN LA BASE POR COMBINACION (t, t·m)", ["Combinacion", "Paso", "FX", "FY", "FZ", "MX", "MY", "MZ"],
+      T.reaccionesCombos.map(function (f) {
+        return [f.combo, f.paso || "", num(f.FX, 2), num(f.FY, 2), num(f.FZ, 2), num(f.MX, 2), num(f.MY, 2), num(f.MZ, 2)];
+      }))];
+  }
+
+  /* --- el menu, como el del .bat -------------------------------------------------
+     [{titulo, falta, opciones: [{opcion, falta, bloques: [{titulo, encab, filas, der, notas}]}]}] */
+  function armar(R, S) {
+    var err = (R && R.tablas && R.tablas.errores) || {};
+    function op(texto, clave, fn) {
+      if (clave && err[clave]) return { opcion: texto, falta: "No pude leer esa tabla: " + err[clave], bloques: [] };
+      var b;
+      try { b = fn(); } catch (e) { return { opcion: texto, falta: "No pude armar esa tabla: " + e.message, bloques: [] }; }
+      return b === null ? { opcion: texto, falta: VIEJOS, bloques: [] } : { opcion: texto, falta: null, bloques: b };
+    }
+    var est = estaticos(R);
+    var casosEst = est.map(function (f) { return [f.patron, f.dir]; });
+    var casosDin = ((R && R.sismo && R.sismo.dinamico) || []).map(function (c) { return [c.caso, c.dir]; });
+    var res = op("[1] Resumen: C, K, W y V de ETABS frente a Sismo E.030", null, function () { return resumen(R, S); });
+    if (!res.falta && est.length && est[0].exc === undefined)
+      res.falta = "Estos resultados no traen la excentricidad de cada patrón: vuelve a traerlos con RETICULA.bat [2].";
+    return [
+      { titulo: "[1] ZUCS ESTATICO",
+        falta: est.length ? null : "Este modelo no tiene sismo estatico por coeficiente de usuario: llevalo con RETICULA.bat [1] (parte B1).",
+        opciones: est.length ? [
+          res,
+          op("[2] Reacciones en la base (Dead, CM, CV, CVT, SX, SY)", "reacciones", function () { return reacciones(R); }),
+          op("[3] Fuerzas y cortantes por piso", "fuerzas", function () { return fuerzas(R, S); }),
+          op("[4] Masa y peso por piso", null, function () { return masa(R, S); }),
+          op("[5] Derivas del sismo estatico", null, function () {
+            return derivas(R, S, casosEst, "DERIVAS DEL SISMO ESTATICO (maximo de cada piso)", NOTA_EST); })
+        ] : [] },
+      { titulo: "[2] ZUCS DINAMICO", falta: null, opciones: [
+          op("[1] Periodos y masa participante", null, function () { return modal(R, S); }),
+          op("[2] Cortante dinamica frente a la estatica (Art. 44)", null, function () { return cortanteDinamica(R, S); }),
+          op("[3] Derivas del dinamico", null, function () {
+            return casosDin.length ? derivas(R, S, casosDin, "DERIVAS DEL DINAMICO (maximo de cada piso)") : [soloNota(SIN_ESPECTRO)]; }),
+          op("[4] Espectro de diseño que tiene ETABS", "espectro", function () { return espectro(R, S); })
+        ] },
+      { titulo: "[3] COMBINACIONES E.060", falta: null, opciones: [
+          op("[1] Combinaciones y sus factores", "combos", function () { return combinaciones(R); }),
+          op("[2] Reacciones en la base por combinacion", "reaccionesCombos", function () { return reaccionesCombos(R); })
+        ] }
+    ];
+  }
+
+  return { G: G, LIMITE_DERIVA: LIMITE_DERIVA, NOTA_EST: NOTA_EST, VIEJOS: VIEJOS,
+           fijo: fijo, num: num, pct: pct, g6: g6,
+           resumen: resumen, reacciones: reacciones, fuerzas: fuerzas, masa: masa, derivas: derivas,
+           modal: modal, cortanteDinamica: cortanteDinamica, espectro: espectro,
+           combinaciones: combinaciones, reaccionesCombos: reaccionesCombos, armar: armar };
 });
 </script>
 <script>
@@ -5513,7 +5908,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v152 · 13-09-2026";
+  var BUILD="v155 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -5604,9 +5999,9 @@ var TT={script:performance.now()};
     decisiones:[["plano","Plano"],["cuadro","Cuadro"]],
     sismo:[["parametros","Parámetros"],["estatico","Estático"],["dinamico","Dinámico"]],
     etabs:[["pisos","Material y pisos"],["secciones","Secciones"],["cargas","Cargas y sismo"],
-           ["combinaciones","Combinaciones"],["envio","Envío"]],
-    resultados:[["verificacion","Verificación sísmica"],["vigas","Vigas"],["columnas","Columnas"],
-                ["placas","Placas"],["reacciones","Reacciones"]],
+           ["combinaciones","Combinaciones"],["envio","Llevar y traer"],["tablas","Tablas del .bat"]],
+    /* Paso 6, Verificacion E.030, va entera; Paso 7, Fuerzas, por familia */
+    fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
     diseno:[["criterios","Criterios"],["datos","Datos para diseño"]],
     hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
@@ -8610,7 +9005,7 @@ var TT={script:performance.now()};
   function sinPlano(){
     return S.modo==="hojas" || S.modo==="proyecto" ||
            S.modo==="comprobacion" || S.modo==="etabs" || S.modo==="sismo" ||
-           S.modo==="resultados" || S.modo==="diseno" ||
+           S.modo==="verificacion" || S.modo==="fuerzas" || S.modo==="diseno" || S.modo==="inicio" ||
            /* el cuadro de Decisiones es de todo el edificio: va a todo el ancho */
            (S.modo==="decisiones" && subDe("decisiones")==="cuadro");
   }
@@ -9865,7 +10260,7 @@ var TT={script:performance.now()};
       '</tbody></table></div>'+
       '<p class="nota">Para el diseño quedan en el libro las fuerzas de '+Object.keys(R.vigas||{}).length+' vigas, '+
       Object.keys(R.columnas||{}).length+' columnas y '+Object.keys(R.placas||{}).length+' muros, y las reacciones de '+
-      (R.reacciones||[]).length+' apoyos: cada familia en su sub-pestaña.</p></section>';
+      (R.reacciones||[]).length+' apoyos: cada familia en <b>Paso 7 · Fuerzas</b>.</p></section>';
     return h;
   }
   /* C3 · LAS FUERZAS DE DISENO por elemento.  La cuenta vive en
@@ -9983,6 +10378,160 @@ var TT={script:performance.now()};
       '<p class="nota">Reacciones de cada caso en ejes globales. Servicio = Dead + CM + CV + CVT. En una placa se suman sus '+
       'nudos llevando los momentos al centro del muro. SDX y SDY son envolventes sin signo: se aplican con ± y no se suman '+
       'entre nudos, así que el sismo de una placa se toma de sus fuerzas de muro en la base.</p></section>';
+  }
+  /* =====================================================================
+     INICIO · DONDE VA EL PROYECTO.  Un paso por fila, en el orden de la
+     barra, con su estado y lo que falta; con un clic se va a ese paso, y
+     arriba, lo siguiente que hay que hacer.  No calcula nada nuevo: pregunta
+     a las mismas funciones que pintan cada pestana.
+     ===================================================================== */
+  function pintaInicio(){
+    var el=$("#panelInicio"); if(!el)return;
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function f1(v){return (v==null||!isFinite(v))?"—":(+v).toFixed(1)}
+    var P=S.proy, st=sitio(), c=calculoSismo(), inv=inventario(), pasos=[];
+    function paso(n,tit,md,sub,estado,detalle,accion){
+      pasos.push({n:n,tit:tit,md:md,sub:sub||"",estado:estado,detalle:detalle,accion:accion||""});
+    }
+    var sinSismo=!!(c.faltan.length||!c.est);
+
+    paso("1","Datos","proyecto","sitio",c.faltan.length?"falta":"ok",
+      c.faltan.length?"Falta "+c.faltan.join(", ")+".":
+        (P.uso||"—")+" · zona "+(st.zona||"—")+" · suelo "+(P.suelo||"—")+" · f'c "+(+S.fc||210)+" kg/cm² · σs "+
+        (+S.sigma||3)+" kg/cm²",
+      c.faltan.length?"Complétalo en Datos.":"");
+
+    var ab=[]; try{ ab=avisosAbiertos(); }catch(e){}
+    var graves=ab.filter(function(a){return a.gravedad==="grave"}).length;
+    var nVig=inv.viga.principal+inv.viga.chata, nLos=inv.losa.aligerada+inv.losa.maciza+inv.losa.nervada,
+        vacio=!inv.col&&!nLos;
+    paso("2","Modelo",graves?"comprobacion":"modelo","",vacio?"falta":(graves?"rev":"ok"),
+      S.niveles.length+" nivel(es) · "+nLos+" paños · "+nVig+" vigas · "+inv.col+" columnas · "+inv.placa+" placas"+
+      (ab.length?" · "+ab.length+" aviso(s) en Comprobación"+(graves?", "+graves+" grave(s)":""):""),
+      vacio?"Dibuja la planta.":(graves?"Revisa los avisos graves en Comprobación.":""));
+
+    paso("3","Predimensionamiento","decisiones","cuadro",vacio?"espera":"ok",
+      vacio?"Sale del modelo.":"Secciones de "+inv.col+" columnas, "+nVig+" vigas, "+nLos+" losas, "+inv.placa+
+        " placas y "+inv.zapata+" zapatas","");
+
+    paso("4","Sismo E.030","sismo","",sinSismo?"falta":"ok",
+      sinSismo?"Necesita los datos del paso 1.":
+        "V estática X "+f1(c.est.x.V)+" t · Y "+f1(c.est.y.V)+" t · R "+f1(c.est.x.R)+" / "+f1(c.est.y.R),
+      sinSismo?"Completa Datos.":"");
+
+    var ex=null, exErr=""; try{ ex=exportaEtabs(); }catch(e){ exErr=(e&&e.message)||String(e); }
+    var r=resultadosEtabs(), eEst="ok", eDet, eAcc="";
+    if(!ex){ eEst="falta"; eDet="No se pudo preparar el modelo para ETABS: "+exErr; eAcc="Revisa el modelo."; }
+    else if(ex.errores.length){ eEst="falta"; eDet="Así no se puede llevar: "+ex.errores[0];
+      eAcc="Corrígelo: está en ETABS › Llevar y traer."; }
+    else if(!r){ eEst="falta"; eDet="Todavía no hay resultados de ETABS en el libro.";
+      eAcc="Guarda el proyecto, llévalo con RETICULA.bat [1] y trae los resultados con [2]."; }
+    else if(r.error){ eEst="rev"; eDet=r.error; eAcc="Vuelve a traerlos con RETICULA.bat [2]."; }
+    else if(!r.alDia){ eEst="rev"; eDet="Resultados desactualizados: el modelo cambió desde que se llevó a ETABS.";
+      eAcc="Vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2]."; }
+    else eDet="Resultados de "+String((r.R.etabs&&r.R.etabs.archivo)||"").split(/[\\/]/).pop()+" · leídos el "+
+      String(r.R.leido||"").replace("T"," ").slice(0,16)+" · al día con el modelo";
+    paso("5","ETABS","etabs","envio",eEst,eDet,eAcc);
+
+    var hayRes=!!(r&&!r.error), VS=null, FZ=null;
+    if(hayRes){ try{ VS=verificacionSismica(); }catch(e){} try{ FZ=fuerzasEtabs(); }catch(e){} }
+    var V=VS&&VS.veredicto, noCumple=!!(V&&!V.cumple), viejo=!!(VS&&!VS.alDia);
+    if(!hayRes)paso("6","Verificación E.030","verificacion","","espera","Llega con los resultados de ETABS.","");
+    else if(!VS)paso("6","Verificación E.030","verificacion","","falta","A Sismo E.030 le faltan datos para verificar.",
+                     "Completa Datos.");
+    else if(viejo)paso("6","Verificación E.030","verificacion","","rev","La verificación es de un modelo anterior.",
+                       "Vuelve a llevar el modelo con RETICULA.bat [1] y a traer los resultados con [2].");
+    else if(V.cumple)paso("6","Verificación E.030","verificacion","","ok","Cumple lo que se verifica con ETABS: derivas, "+
+                          "masa participante, cortante mínima, irregularidades que se miden y restricciones.","");
+    else paso("6","Verificación E.030","verificacion","","no",
+              V.motivos[0]+(V.motivos.length>1?" Y "+(V.motivos.length-1)+" motivo(s) más.":""),
+              "Corrige la estructura en el modelador, llévala con RETICULA.bat [1] y trae los resultados con [2].");
+
+    var nF=FZ?FZ.vigas.length+" vigas · "+FZ.columnas.length+" columnas · "+FZ.placas.length+" muros · "+
+              FZ.reacciones.length+" apoyos":"";
+    if(!FZ)paso("7","Fuerzas","fuerzas","","espera","Llegan con los resultados de ETABS.","");
+    else if(noCumple||viejo)paso("7","Fuerzas","fuerzas","","espera",nF+
+      ". Están, pero no sirven para diseñar hasta que la estructura cumpla.","");
+    else paso("7","Fuerzas","fuerzas","","ok",nF,"");
+
+    if(noCumple)paso("8","Diseño E.060","diseno","","espera",
+      "Espera a que la estructura cumpla la E.030: al corregirla cambian las secciones y las fuerzas.","");
+    else if(!V||viejo)paso("8","Diseño E.060","diseno","","espera","Llega después de verificar la estructura con ETABS.","");
+    else{
+      var K=criteriosDiseno();
+      paso("8","Diseño E.060","diseno","criterios",K.avisos.length?"rev":"ok",
+        "Criterios de diseño"+(K.avisos.length?": "+K.avisos.length+" aviso(s)":" listos")+
+        ". El diseño de cada elemento llega con las siguientes partes.",
+        K.avisos.length?"Revisa los avisos en Diseño E.060 › Criterios.":"");
+    }
+
+    var nOk=CATALOGO.filter(function(hj){ try{ return estadoHoja(hj,inv).ok; }catch(e){ return false; } }).length;
+    paso("","Hojas Excel","hojas","","ok",nOk+" de "+CATALOGO.length+" hojas se pueden generar ahora.","");
+
+    var EST={ok:["✓","Listo"],no:["✗","No cumple"],rev:["!","Revisar"],falta:["!","Falta"],espera:["…","Espera"]};
+    var sig=pasos.filter(function(p){return p.estado==="falta"||p.estado==="no"||p.estado==="rev"})[0];
+    var h='<div class="pgrid sis">'+
+      (sig?'<section class="sis-ancha vd '+(sig.estado==="no"?"vd-no":"vd-rev")+'" role="status"><b>Lo siguiente · '+
+             (sig.n?"Paso "+sig.n+" · ":"")+esc(sig.tit)+'.</b> '+esc(sig.accion||sig.detalle)+'</section>'
+          :'<section class="sis-ancha vd vd-ok" role="status"><b>Todo al día.</b> Cada paso tiene lo que necesita.</section>')+
+      '<section class="pbox sis-ancha"><h3>Dónde va el proyecto</h3><div class="ini-l">'+
+      pasos.map(function(p){var e=EST[p.estado];
+        return '<div class="ini-p ini-'+p.estado+'"><button type="button" class="ini-ir" data-ir="'+p.md+'" data-sub="'+
+          esc(p.sub)+'">'+(p.n?p.n+" · ":"")+esc(p.tit)+'</button><span class="ini-e">'+e[0]+' '+e[1]+'</span>'+
+          '<span class="ini-d">'+esc(p.detalle)+(p.accion?'<small>'+esc(p.accion)+'</small>':'')+'</span></div>'}).join("")+
+      '</div><p class="nota">Con un clic en el nombre vas a ese paso. El orden es el de la barra de arriba.</p></section>';
+    el.innerHTML=h+'</div>';
+    el.querySelectorAll("[data-ir]").forEach(function(b){
+      b.onclick=function(){
+        var md=this.dataset.ir, sb=this.dataset.sub;
+        if(sb){
+          if(!S.sub||typeof S.sub!=="object")S.sub={};
+          S.sub[md]=sb;
+          try{ localStorage.setItem("reticula_sub",JSON.stringify(S.sub)); }catch(e){}
+        }
+        elegirModo(md);
+      };
+    });
+  }
+  /* LAS TABLAS DEL .bat: las mismas que imprime RETICULA.bat [3], con los
+     resultados que trajo [2].  Las arma oviedo/tablas_bat.js, que repite
+     ver_tablas.py; aqui solo se pintan, en el orden del menu del .bat. */
+  function tarjetaTablasBat(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+    var r=resultadosEtabs(), h='<section class="pbox sis-ancha"><h3>Tablas del .bat · las de RETICULA.bat [3]</h3>'+
+      estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
+    var ex=null, S=null;
+    try{ ex=exportaEtabs(); }catch(e){}
+    if(ex&&ex.sismo){ S=JSON.parse(JSON.stringify(ex.sismo)); S._dinamico=ex.dinamico; }
+    h+='<p class="nota">Las mismas tablas que imprime <code>RETICULA.bat</code> [3] —títulos, columnas, números y notas—, '+
+      'con los resultados que trajo [2]'+(S?' y comparadas con Sismo E.030 de este modelo':', sin Sismo E.030 con qué '+
+      'compararlas')+'. El .bat sigue igual, y además abre cada tabla dentro de ETABS.</p></section>';
+    function bloque(b){
+      var t='';
+      if(b.filas){
+        var der=function(i){return b.der===null?i>0:b.der.indexOf(i)>=0};
+        t+='<div class="tb-tit">'+esc(b.titulo)+'</div>';
+        t+=b.filas.length
+          ?'<div class="etb-scroll"><table class="sis-t tb-t"><thead><tr>'+b.encab.map(function(e,i){
+              return '<th'+(der(i)?'':' class="tb-izq"')+'>'+esc(e)+'</th>'}).join("")+'</tr></thead><tbody>'+
+            b.filas.map(function(f){return '<tr>'+f.map(function(c,i){
+              return '<td'+(der(i)?'':' class="tb-izq"')+'>'+esc(c)+'</td>'}).join("")+'</tr>'}).join("")+
+            '</tbody></table></div>'
+          :'<pre class="tb-pre">(sin filas)</pre>';
+      }
+      if(b.notas&&b.notas.length)t+='<pre class="tb-pre">'+b.notas.map(esc).join("\n")+'</pre>';
+      return t;
+    }
+    TABLASBAT.armar(r.R,S).forEach(function(g){
+      h+='<section class="pbox sis-ancha"><h3>'+esc(g.titulo)+'</h3>'+
+        (g.falta?'<p class="aviso">'+esc(g.falta)+'</p>':'')+
+        g.opciones.map(function(o){
+          return '<div class="tb-op"><div class="sis-sub">'+esc(o.opcion)+'</div>'+
+            (o.falta?'<p class="aviso">'+esc(o.falta)+'</p>':'')+o.bloques.map(bloque).join("")+'</div>';
+        }).join("")+'</section>';
+    });
+    return h;
   }
   /* EL VEREDICTO, arriba de todo.  Cada comprobacion tenia su tarjeta, pero
      ninguna decia lo primero que hay que saber: si la estructura cumple o no,
@@ -10181,20 +10730,20 @@ var TT={script:performance.now()};
       'del límite. Se mira con los patrones estáticos (±5 %, Art. 37) y con los casos dinámicos (Art. 45), y manda el peor.</p></section>';
     return h;
   }
-  /* ---------- pestana RESULTADOS ETABS ----------
-     Lo que a_excel.py deja en el libro.  La verificacion sismica era la
-     tarjeta 7 de Sismo E.030: se muda aqui porque es un resultado, no un dato. */
+  /* ---------- PASO 6 · VERIFICACION E.030 y PASO 7 · FUERZAS ----------
+     Lo que a_excel.py deja en el libro, en dos pestanas: si la estructura
+     cumple, y las fuerzas de cada elemento.  Las dos pintan en #panelRes. */
   function pintaResultados(){
     var el=$("#panelRes"); if(!el)return;
-    var sub=subDe("resultados"), h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"resultados");
-    if(sub==="verificacion"){
+    var h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"resultados");
+    if(S.modo==="verificacion"){
       var c=calculoSismo();
       h+=c.faltan.length
         ? '<section class="pbox sis-ancha"><h3>No se puede verificar todavía</h3><p class="aviso">A Sismo '+
           'E.030 le falta '+c.faltan.join(", ").replace(/&/g,"&amp;").replace(/</g,"&lt;")+
           '. Complétalo en <b>Datos</b>.</p></section>'
         : tarjetasVerificacion(c);
-    }else h+=tarjetaFuerzas(sub);
+    }else h+=tarjetaFuerzas(subDe("fuerzas"));
     el.innerHTML=h+'</div>';
     var br=$("#btnRes");
     if(br)br.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
@@ -10311,7 +10860,7 @@ var TT={script:performance.now()};
         'o Pb —el menor— hasta cero (Art. 9.3.2.2).</p></section>';
 
       h+='<section class="pbox"><h3>Convenciones del diseño</h3>'+
-        fijo("Peralte efectivo de vigas","h − "+Math.round(K.convenciones.dMenos*100),"cm","el mismo de Resultados ETABS")+
+        fijo("Peralte efectivo de vigas","h − "+Math.round(K.convenciones.dMenos*100),"cm","el mismo de Fuerzas")+
         '<label class="etb-ch"><input id="dVuAd" type="checkbox"'+(K.convenciones.vuAd?" checked":"")+'><span>Diseñar '+
         'la cortante con Vu a d de la cara del apoyo (E.060 '+A.vuAd+')</span></label>'+
         '<p class="nota">Con sismo, el máximo y el mínimo de cada fuerza van por separado: ETABS los da así y no '+
@@ -10519,7 +11068,7 @@ var TT={script:performance.now()};
     pintaSubmodos(ex&&ex.errores.length?{envio:ex.errores.length}:null);
     if(!ex){P.innerHTML='<p class="aviso">No se pudo preparar el modelo para ETABS: '+
                         escE(err)+'</p>';return}
-    var E=etabsCfg(), sub=subDe("etabs"), h='<div class="pgrid etb">';
+    var E=etabsCfg(), sub=subDe("etabs"), h='<div class="pgrid etb'+(sub==="tablas"?' sis':'')+'">';
 
     if(sub==="pisos")h+='<section class="pbox"><h3>Material</h3>'+
       campo("eMat","Nombre en ETABS",ex.material.nombre)+
@@ -10593,17 +11142,29 @@ var TT={script:performance.now()};
     if(sub==="envio"){
       var nota=notaEtabs().replace('<h3>Modelo para ETABS</h3>','')
                           .replace('<div class="rule" style="margin:0 0 10px"></div>','');
-      h+='<section class="pbox ancha"><h3>Envío a ETABS</h3>'+
+      h+='<section class="pbox ancha"><h3>1 · Llevar a ETABS · RETICULA.bat [1]</h3>'+
         (ex.errores.length
           ? '<p class="aviso etb-mal"><b>Así no se puede llevar a ETABS:</b><br>'+
             ex.errores.map(escE).join("<br>")+'</p>' : '')+
         '<label class="etb-ch"><input id="eLimp" type="checkbox"'+(E.limpiar!==false?" checked":"")+
         '><span>Quitar de ETABS las secciones que trae por defecto y no se usan (perfiles W, '+
         'A-GravBm, ConcBm, Slab1, Deck1…)</span></label>'+nota+'</section>';
+      /* traer los resultados: el mismo estado que ven Verificacion y Fuerzas */
+      var rE=resultadosEtabs(), VSe=null;
+      try{ VSe=verificacionSismica(); }catch(e){}
+      h+='<section class="pbox ancha"><h3>2 · Traer los resultados · RETICULA.bat [2]</h3>'+estadoResultados(rE)+
+        '<p class="nota">Con ETABS abierto y el modelo analizado, <code>RETICULA.bat</code> [2] deja los resultados en el '+
+        'libro. Con ellos: <b>Paso 6 · Verificación E.030</b> dice si la estructura cumple'+
+        ((rE&&!rE.error&&VSe&&VSe.veredicto)?' —ahora <b>'+(VSe.veredicto.cumple?'cumple':'no cumple')+'</b>—':'')+
+        ', <b>Paso 7 · Fuerzas</b> tiene las de cada elemento para diseñar y <b>Tablas del .bat</b>, las mismas '+
+        'tablas que imprime RETICULA.bat [3].</p></section>';
     }
+    if(sub==="tablas")h+=tarjetaTablasBat();
     h+='</div>';
     P.innerHTML=h;
 
+    var bR=$("#btnRes");
+    if(bR)bR.onclick=function(){ if(window.PEDIR_RESULTADOS)window.PEDIR_RESULTADOS(); };
     var eM=$("#eMat");
     if(eM)eM.onchange=function(){ E.mat=nombreEtabs(this.value); guardar(); render(); };
     var eL=$("#eLimp");
@@ -11378,7 +11939,7 @@ var TT={script:performance.now()};
       '<div class="sis-sub">En planta</div>'+lista(SISMO.IRREG_PLANTA,P.irrPlanta,"p")+
       fijo("Ip",f(c.Ip),"","el menor")+
       '<p class="nota">Por ahora las eliges tú. Con las derivas, rigideces y masas de ETABS, las que se '+
-      'pueden medir se comprobarán en <b>Resultados ETABS</b>.</p></section>';
+      'pueden medir se comprueban en <b>Paso 6 · Verificación E.030</b>.</p></section>';
 
     if(c.faltan.length){
       h+='<section class="pbox sis-ancha"><h3>No se puede calcular todavía</h3><p class="aviso">Falta '+
@@ -12081,8 +12642,9 @@ var TT={script:performance.now()};
     $("#undo").disabled=!UNDO.length; $("#redo").disabled=!REDO.length;
     var usos=(S.modo==="usos"), hojas=(S.modo==="hojas"), proy=(S.modo==="proyecto"),
         deci=(S.modo==="decisiones"), comp=(S.modo==="comprobacion"),
-        etab=(S.modo==="etabs"), sism=(S.modo==="sismo"), res=(S.modo==="resultados"),
-        dise=(S.modo==="diseno");
+        etab=(S.modo==="etabs"), sism=(S.modo==="sismo"),
+        res=(S.modo==="verificacion"||S.modo==="fuerzas"),
+        dise=(S.modo==="diseno"), ini=(S.modo==="inicio");
     var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
     /* DECISIONES es la planta de solo lectura: sus filtros donde van las
@@ -12100,6 +12662,7 @@ var TT={script:performance.now()};
     ver("#panelEtabs",etab);
     ver("#panelSismo",sism);
     ver("#panelRes",res);
+    ver("#panelInicio",ini);
     ver("#panelDis",dise);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
@@ -12124,6 +12687,7 @@ var TT={script:performance.now()};
     else if(etab){pintaEtabs();}
     else if(sism){pintaSismo();}
     else if(res){pintaResultados();}
+    else if(ini){pintaInicio();}
     else if(dise){pintaDiseno();}
     else if(deci&&solo){pintaCuadroDecisiones();}
     else if(!esPlano){pintaEdificio(); if(deci)pintaDecisiones();}
@@ -12233,7 +12797,7 @@ var TT={script:performance.now()};
       try{ localStorage.setItem("reticula_etabs_libro",
              JSON.stringify({ok:!!m.ok, cuando:Date.now(), msg:m.msg||""})); }catch(e){}
       if(!m.ok)di("No se pudo guardar el modelo para ETABS: "+(m.msg||""));
-      if(window.RET&&RET.estado&&(RET.estado().modo==="hojas"||RET.estado().modo==="etabs")&&RET.render)RET.render();
+      if(window.RET&&RET.estado&&(RET.estado().modo==="hojas"||RET.estado().modo==="etabs"||RET.estado().modo==="inicio")&&RET.render)RET.render();
     }else if(m.a==="hojas"){
       var b=document.getElementById("btnHojas");
       if(b){ b.disabled=false; b.textContent=b.dataset.txt||"Generar hojas"; }
