@@ -399,6 +399,8 @@
 .dis-cort .kv{max-width:560px}
 .dis-figw{margin:2px 0 10px}
 .dis-figw svg{display:block;max-width:none}
+.ejes-acc{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+#ejesPonEje.on,#calcoPonEje.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .calco-capas{max-height:190px;overflow:auto;margin:4px 2px 0;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
 .calco-capa{display:grid;grid-template-columns:auto 12px minmax(0,1fr) auto;gap:6px;align-items:center;
   padding:2px 6px;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-2);cursor:pointer}
@@ -737,6 +739,10 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
           title="Clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto">1 · Anclar en A-1</button>
+        <button class="btn" id="calcoAdopta" hidden style="margin:4px 2px 0"
+          title="Compara los ejes del AutoCAD con los del modelo y los adopta: mover, crear o dejar, eje por eje">Adoptar ejes del plano</button>
+        <button class="btn" id="calcoPonEje" style="margin:4px 2px 0"
+          title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
         <button class="btn" id="marcarEjes" style="margin:4px 2px 0">2 · Marcar ejes sobre el plano</button>
         <div id="marcaCtl" hidden style="margin:4px 2px 0;padding:6px;border:1px solid var(--acc);border-radius:6px;background:var(--acc-soft)">
           <div class="lbl" id="marcaTit" style="padding:0 0 2px"></div>
@@ -824,6 +830,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <h2 id="inspTitle">Elemento</h2>
       <div id="inspBody"><p class="empty">Selecciona un elemento de la planta.</p></div>
       <div class="rule"></div>
+      <div class="ejes-acc">
+        <button class="btn" id="ejesPonEje"
+          title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
+        <button class="btn" id="ejesAdopta" hidden
+          title="Compara los ejes del AutoCAD de fondo con los del modelo y los adopta, eje por eje">Adoptar ejes del plano</button>
+      </div>
       <h2>Ejes ↔</h2>
       <div class="ejes" id="ejesX"></div>
       <h2>Ejes ↕</h2>
@@ -8284,7 +8296,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v192 · 14-09-2026";
+  var BUILD="v194 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9046,6 +9058,8 @@ var TT={script:performance.now()};
   document.addEventListener("keydown",function(e){
     /* Esc termina la cadena de Unir */
     if(e.key==="Escape"&&UNIR&&!MARCA){e.preventDefault();UNIR=null;UNIR_CONFIRMA=null;S.sel=null;render();toast("Listo.");return}
+    /* Esc termina de crear ejes */
+    if(e.key==="Escape"&&PONEJE){e.preventDefault();alternaPonerEje();return}
     if(!(e.ctrlKey||e.metaKey))return;
     var k=e.key.toLowerCase();
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
@@ -11329,6 +11343,298 @@ var TT={script:performance.now()};
     guardarCalco(S.act,c);
     return s;
   }
+  /* =====================================================================
+     EJES DESDE EL PLANO.  Con el AutoCAD de fondo, los ejes del modelo ya no
+     se teclean vano por vano: se ADOPTAN los del plano -comparando antes con
+     los que ya hay, sin mover columnas ni vigas de su cruce- y los que falten
+     se CREAN con un clic, pegados a lo que hay debajo: el centro de una
+     columna, un eje del plano, el centro entre dos lineas paralelas -una
+     viga- o una linea.  La tabla de ejes sigue igual.  Se mide en el borde de
+     referencia: el de arriba para los ejes X y el izquierdo para los Y.
+     ===================================================================== */
+  var ADOPTA=null, PONEJE=null, SEGC={cad:null,clave:"",v:[],h:[]};
+
+  /* UN EJE EN SU SITIO EXACTO.  partir() lo pone a la mitad del vano; aqui va a pos metros del primer eje.
+     Dentro del modelo parte el vano con el mismo remap que partir -vigas y losas siguen en sus dos tramos-;
+     despues del ultimo o antes del primero añade un tramo, que es de borde y por eso principal.  Si el nuevo
+     va antes del primero, el origen del modelo se corre y el plano de fondo se corre con el. */
+  function insertarEjeEn(ejeX,pos,prima){
+    var m=N(), arr=ejeX?m.dx:m.dy, op=ejeX?m.dx2:m.dy2, n=arr.length, tot=acum(arr,n), p=primas(ejeX,m), k, cum=0;
+    if(n>=MAX_EJES-1)return {ok:false,msg:"Máximo "+MAX_EJES+" ejes por dirección."};
+    pos=Math.round(pos*10000)/10000;
+    for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-pos)<0.005)return {ok:false,msg:"Ya hay un eje ahí: el "+nomEje(ejeX,k,m)+"."};
+    if(pos>tot){
+      var dF=+(pos-tot).toFixed(4); arr.push(dF); if(op)op.push(dF); p.push(false);
+      return {ok:true,idx:n+1,borde:true};
+    }
+    if(pos<0){
+      var d0=+(-pos).toFixed(4); arr.unshift(d0); if(op)op.unshift(d0); p.splice(0,0,false);
+      remap(ejeX,function(kk){return kk+1},-1);
+      var c=calco(); if(c){ if(ejeX)c.dx=+(c.dx+d0).toFixed(4); else c.dy=+(c.dy+d0).toFixed(4); guardarCalco(S.act,c); }
+      return {ok:true,idx:0,borde:true,corrido:d0};
+    }
+    for(k=0;k<n;k++){ cum=acum(arr,k); if(pos<cum+arr[k])break; }
+    var a=+(pos-cum).toFixed(4), b=+(arr[k]-a).toFixed(4);
+    if(op){ var a2=+(op[k]*a/arr[k]).toFixed(4); op.splice(k,1,a2,+(op[k]-a2).toFixed(4)); }
+    arr.splice(k,1,a,b);
+    p.splice(k+1,0,!!prima);
+    remap(ejeX,function(kk){return kk>k?kk+1:kk},k);
+    return {ok:true,idx:k+1};
+  }
+
+  /* LOS EJES DEL PLANO FRENTE A LOS DEL MODELO: para cada eje del AutoCAD ya anclado, el del modelo mas cercano,
+     la diferencia y lo que se propone.  Nada si coinciden; mover el del modelo si se llama igual y cabe entre sus
+     vecinos; crear uno nuevo -prima dentro, principal en el borde- si no. */
+  function compararEjesCad(){
+    var c=calco(); if(!c||c.tipo!=="cad")return null;
+    if(!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
+    var m=N(), filas=[];
+    c.cad.ejes.slice().sort(function(a,b){return a.dir===b.dir?a.pos-b.pos:(a.dir==="v"?-1:1)}).forEach(function(e){
+      var ejeX=e.dir==="v", arr=ejeX?m.dx:m.dy, n=arr.length, pos=+(e.pos*c.esc+(ejeX?c.dx:c.dy)).toFixed(4),
+          k, cerca=0, dmin=Infinity, mismo=-1;
+      for(k=0;k<=n;k++){ var d=Math.abs(acum(arr,k)-pos); if(d<dmin){dmin=d;cerca=k;} if(nomEje(ejeX,k,m)===e.nombre)mismo=k; }
+      var f={nombre:e.nombre, ejeX:ejeX, pos:pos, cerca:{idx:cerca,nombre:nomEje(ejeX,cerca,m),pos:+acum(arr,cerca).toFixed(4)},
+             dif:+(pos-acum(arr,cerca)).toFixed(4)};
+      if(dmin<=0.005){ f.opciones=["nada"]; }
+      else{
+        var borde=pos<0||pos>acum(arr,n);
+        f.opciones=borde?["crear","nada"]:["prima","crear","nada"];
+        if(mismo>0){
+          var antes=acum(arr,mismo-1), despues=mismo<n?acum(arr,mismo+1):Infinity;
+          if(pos>antes+0.005&&pos<despues-0.005){ f.mover={idx:mismo,nombre:nomEje(ejeX,mismo,m)}; f.opciones.unshift("mover"); }
+        }
+      }
+      f.accion=f.opciones[0];
+      filas.push(f);
+    });
+    return filas;
+  }
+  /* ¿EL PLANO ESTA ANCLADO EN OTRO EJE?  Si corriendolo una distancia fija en una direccion casi todos sus ejes
+     caen sobre ejes del modelo, se dice ANTES de mover nada.  En el modelo de Victor los ejes 2 a 5 salian todos
+     1,14 m corridos: su eje 1′ es el 1 del AutoCAD, y adoptar habria movido medio modelo. */
+  function desfaseEjesCad(){
+    var c=calco(); if(!c||c.tipo!=="cad")return null;
+    if(!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
+    var m=N(), out={};
+    ["v","h"].forEach(function(dir){
+      var ejeX=dir==="v", arr=ejeX?m.dx:m.dy, M=[], k;
+      for(k=0;k<=arr.length;k++)M.push(acum(arr,k));
+      var P=c.cad.ejes.filter(function(e){return e.dir===dir}).map(function(e){return e.pos*c.esc+(ejeX?c.dx:c.dy)});
+      if(P.length<2)return;
+      function cuenta(s){ return P.filter(function(p){ return M.some(function(q){return Math.abs(p+s-q)<=0.005}); }).length; }
+      var base=cuenta(0), mejor={s:0,n:base};
+      P.forEach(function(p){ M.forEach(function(q){
+        var s=+(q-p).toFixed(4); if(Math.abs(s)<0.005)return;
+        var n2=cuenta(s);
+        if(n2>mejor.n||(n2===mejor.n&&mejor.s!==0&&Math.abs(s)<Math.abs(mejor.s)))mejor={s:s,n:n2};
+      }); });
+      if(mejor.s!==0&&mejor.n>=Math.max(2,base+1)&&mejor.n>=Math.ceil(0.6*P.length))
+        out[ejeX?"x":"y"]={s:mejor.s, n:mejor.n, de:P.length, ahora:base};
+    });
+    return out;
+  }
+  /* primero se mueven -no cambian indices-, despues se crean de menor a mayor; un eje creado antes del primero
+     corre el origen, y los que vienen detras en esa direccion se corren con el */
+  function adoptarEjesCad(filas){
+    var m=N(), hechos={mover:0,crear:0}, fallos=[], corr={x:0,y:0};
+    filas.forEach(function(f){
+      if(f.accion!=="mover"||!f.mover)return;
+      var arr=f.ejeX?m.dx:m.dy, op=f.ejeX?m.dx2:m.dy2, k=f.mover.idx, d=+(f.pos-acum(arr,k)).toFixed(4);
+      if(!(arr[k-1]+d>0)||(k<arr.length&&!(arr[k]-d>0))){ fallos.push(f.nombre+": no cabe entre sus vecinos"); return; }
+      arr[k-1]=+(arr[k-1]+d).toFixed(4); if(k<arr.length)arr[k]=+(arr[k]-d).toFixed(4);
+      if(op){ op[k-1]=+(op[k-1]+d).toFixed(4); if(k<op.length)op[k]=+(op[k]-d).toFixed(4); }
+      hechos.mover++;
+    });
+    filas.filter(function(f){return f.accion==="crear"||f.accion==="prima"}).sort(function(a,b){return a.pos-b.pos})
+      .forEach(function(f){
+        var r=insertarEjeEn(f.ejeX,f.pos+(f.ejeX?corr.x:corr.y),f.accion==="prima");
+        if(!r.ok){ fallos.push(f.nombre+": "+r.msg); return; }
+        if(r.corrido){ if(f.ejeX)corr.x+=r.corrido; else corr.y+=r.corrido; }
+        hechos.crear++;
+      });
+    return {hechos:hechos, fallos:fallos};
+  }
+  function pintaAdopta(){
+    var pe=$("#panelEjes"); if(!pe)return;
+    if(!ADOPTA){ if(!PROP)ver(pe,false); return; }
+    function h(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    var NOMB={nada:"Dejar",prima:"Crear prima (no corta lo que cruza)",crear:"Crear principal"};
+    var cuerpo=ADOPTA.map(function(f,i){
+      var dif=Math.abs(f.dif)<=0.005?"coincide":(f.dif>0?"+":"")+nm(f.dif)+" m";
+      var sel=f.opciones.length>1
+        ? '<select id="adopta'+i+'" data-adopta="'+i+'">'+f.opciones.map(function(o){
+            return '<option value="'+o+'"'+(o===f.accion?' selected':'')+'>'+
+              (o==="mover"?"Mover su eje "+h(f.mover.nombre)+" aquí":NOMB[o])+'</option>'; }).join("")+'</select>'
+        : '—';
+      return '<tr><td>'+h(f.nombre)+' <small>'+(f.ejeX?"X":"Y")+'</small></td><td>'+nm(f.pos)+'</td><td>'+
+        h(f.cerca.nombre)+' · '+nm(f.cerca.pos)+'</td><td>'+dif+'</td><td class="sis-n">'+sel+'</td></tr>';
+    }).join("");
+    var DS=desfaseEjesCad()||{}, aviso="";
+    ["x","y"].forEach(function(d){
+      var z=DS[d]; if(!z)return;
+      aviso+='<p class="aviso" style="margin:6px 0 0">Tus ejes en '+d.toUpperCase()+' coinciden con los del plano si lo corres <b>'+
+        nm(Math.abs(z.s))+' m '+(d==="x"?(z.s>0?"a la derecha":"a la izquierda"):(z.s>0?"hacia abajo":"hacia arriba"))+
+        '</b>: '+z.n+' de '+z.de+' ejes, y ahora coinciden '+z.ahora+'. ¿Lo anclaste en otro eje? Antes de mover nada, '+
+        '<button class="btn" data-corre="'+d+'" data-s="'+z.s+'">corre el plano '+nm(Math.abs(z.s))+' m</button></p>';
+    });
+    pe.innerHTML='<h3>Adoptar los ejes del plano</h3>'+aviso+
+      '<p class="nota" style="margin:4px 0 0">Medidas en metros desde el eje A-1 del modelo, con el plano anclado. '+
+      '<b>Mover</b> corre ese eje del modelo y sus columnas y vigas lo siguen; un <b>prima</b> no corta las vigas ni '+
+      'las losas que cruza; un <b>principal</b> sí. El modelo nombra los ejes por su orden: uno nuevo entre otros cambia '+
+      'los nombres de los que siguen.</p>'+
+      '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Eje del plano</th><th>Posición</th>'+
+      '<th>El más cercano del modelo</th><th>Diferencia</th><th>Qué hacer</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>'+
+      '<div class="row" style="margin:10px 0 0;gap:6px;flex-wrap:wrap">'+
+      '<button class="btn" id="adoptaAplica" style="background:var(--acc);color:#fff;border-color:var(--acc)">Aplicar</button>'+
+      '<button class="btn" id="adoptaCancela">Cancelar</button></div>';
+    Array.prototype.forEach.call(pe.querySelectorAll("button[data-corre]"),function(bt){
+      bt.onclick=function(){
+        var c=calco(); if(!c)return;
+        var s=+bt.dataset.s;
+        if(bt.dataset.corre==="x")c.dx=+(c.dx+s).toFixed(4); else c.dy=+(c.dy+s).toFixed(4);
+        guardarCalco(S.act,c); ADOPTA=compararEjesCad(); render(); pintaAdopta();
+        toast("Plano corrido "+nm(Math.abs(s))+" m: revisa la tabla otra vez.");
+      };
+    });
+    Array.prototype.forEach.call(pe.querySelectorAll("select[data-adopta]"),function(s){
+      s.onchange=function(){ if(ADOPTA&&ADOPTA[+s.dataset.adopta])ADOPTA[+s.dataset.adopta].accion=s.value; };
+    });
+    var bA=pe.querySelector("#adoptaAplica"), bC=pe.querySelector("#adoptaCancela");
+    if(bA)bA.onclick=function(){
+      if(!ADOPTA)return;
+      snap();
+      var r=adoptarEjesCad(ADOPTA); ADOPTA=null; ver(pe,false); render();
+      toast("Ejes del plano: "+r.hechos.mover+" movido(s) y "+r.hechos.crear+" creado(s)"+
+            (r.fallos.length?". No se pudo: "+r.fallos.join("; "):".")+" Ctrl+Z lo deshace.");
+    };
+    if(bC)bC.onclick=function(){ ADOPTA=null; ver(pe,false); render(); toast("No se cambió nada."); };
+    ver(pe,true);
+  }
+
+  /* las lineas horizontales y verticales del dibujo, una vez por plano y por capas prendidas */
+  function segsCad(cad){
+    var clave=cad.capas.map(function(x){return x.on?1:0}).join("");
+    if(SEGC.cad===cad&&SEGC.clave===clave)return SEGC;
+    var V=[], H=[];
+    cad.l.forEach(function(L){
+      if(!cad.capas[L[0]]||cad.capas[L[0]].on===false)return;
+      for(var k=2;k+3<L.length;k+=2){
+        var x1=L[k],y1=L[k+1],x2=L[k+2],y2=L[k+3],len=Math.hypot(x2-x1,y2-y1);
+        if(len<0.05)continue;
+        if(Math.abs(x2-x1)<=0.005*len)V.push({p:(x1+x2)/2,a:Math.min(y1,y2),b:Math.max(y1,y2)});
+        else if(Math.abs(y2-y1)<=0.005*len)H.push({p:(y1+y2)/2,a:Math.min(x1,x2),b:Math.max(x1,x2)});
+      }
+    });
+    SEGC={cad:cad,clave:clave,v:V,h:H};
+    return SEGC;
+  }
+  /* lo que hay debajo del cursor para poner un eje, en coordenadas del plano (m) */
+  function ejeBajo(c,u,v,tol){
+    var cad=c.cad, SG=segsCad(cad), mejor=null;
+    function toma(dir,pos,prio,que,d){
+      if(!mejor||prio<mejor.prio||(prio===mejor.prio&&d<mejor.d))mejor={dir:dir,pos:pos,prio:prio,que:que,d:d};
+    }
+    /* 1 · el centro de una columna: un rectangulo cerrado pequeño bajo el cursor */
+    cad.l.forEach(function(L){
+      if(L.length!==12||!cad.capas[L[0]]||cad.capas[L[0]].on===false)return;
+      if(Math.abs(L[2]-L[10])>1e-6||Math.abs(L[3]-L[11])>1e-6)return;
+      var xs=[L[2],L[4],L[6],L[8]], ys=[L[3],L[5],L[7],L[9]],
+          x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs), y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+      if(x1-x0>1.2||y1-y0>1.2||u<x0-tol||u>x1+tol||v<y0-tol||v>y1+tol)return;
+      toma("?",[(x0+x1)/2,(y0+y1)/2],0,"centro de columna "+Math.round((x1-x0)*100)+"×"+Math.round((y1-y0)*100),
+           Math.hypot(u-(x0+x1)/2,v-(y0+y1)/2));
+    });
+    /* 2 · un eje prolongado del plano */
+    if(c.ejesDibujo!==false){
+      if(!cad.ejes)cad.ejes=ejesDeCad(cad);
+      cad.ejes.forEach(function(e){
+        var d=e.dir==="v"?Math.abs(u-e.pos):Math.abs(v-e.pos);
+        if(d<=tol)toma(e.dir,e.pos,1,"eje "+e.nombre+" del plano",d);
+      });
+    }
+    /* 3 · el centro entre dos lineas paralelas a menos de 80 cm con el cursor entre ellas: una viga, un muro */
+    [["v",SG.v,u,v],["h",SG.h,v,u]].forEach(function(F){
+      var w=F[2], a=F[3], cerca=F[1].filter(function(s){return Math.abs(s.p-w)<=0.8&&a>=s.a-0.05&&a<=s.b+0.05})
+        .sort(function(p,q){return p.p-q.p}), i, j;
+      for(i=0;i<cerca.length;i++)for(j=i+1;j<cerca.length;j++){
+        var sep=cerca[j].p-cerca[i].p;
+        if(sep<0.08||sep>0.8||w<cerca[i].p-tol||w>cerca[j].p+tol)continue;
+        var mid=(cerca[i].p+cerca[j].p)/2;
+        toma(F[0],mid,2,"centro entre dos líneas a "+Math.round(sep*100)+" cm",Math.abs(w-mid)+sep*0.01);
+      }
+    });
+    /* 4 · una linea */
+    [["v",SG.v,u,v],["h",SG.h,v,u]].forEach(function(F){
+      F[1].forEach(function(s){
+        var d=Math.abs(s.p-F[2]);
+        if(d<=tol&&F[3]>=s.a-tol&&F[3]<=s.b+tol)toma(F[0],s.p,3,"línea del plano",d);
+      });
+    });
+    return mejor;
+  }
+  /* el eje que se crearia con un clic en q (m del modelo): direccion, posicion y de que eje del modelo parte */
+  function sugerirEje(q){
+    var m=N(), c=calco(), tol=tolPantalla(12), s=null, k;
+    function masCerca(x,y){
+      var dX=Infinity, dY=Infinity;
+      for(k=0;k<nx();k++)dX=Math.min(dX,Math.abs(x-posX(k)));
+      for(k=0;k<ny();k++)dY=Math.min(dY,Math.abs(y-posY(k)));
+      return {dX:dX,dY:dY};
+    }
+    if(c&&c.tipo==="cad"){
+      var b=ejeBajo(c,(q.x-c.dx)/c.esc,(q.y-c.dy)/c.esc,tol/c.esc);
+      if(b&&b.dir==="?"){
+        var cx=b.pos[0]*c.esc+c.dx, cy=b.pos[1]*c.esc+c.dy, mc=masCerca(cx,cy);
+        /* a la columna le falta el eje de una direccion: ese; si le faltan los dos, el que va a lo largo del cursor */
+        var ex=(mc.dX>0.005&&mc.dY<=0.005)?true:((mc.dY>0.005&&mc.dX<=0.005)?false:Math.abs(q.x-cx)<=Math.abs(q.y-cy));
+        s={ejeX:ex, coord:ex?cx:cy, que:b.que};
+      }else if(b){
+        s={ejeX:b.dir==="v", coord:b.pos*c.esc+(b.dir==="v"?c.dx:c.dy), que:b.que};
+      }
+    }
+    if(!s){
+      /* sin plano o sin nada debajo: paralelo al eje del modelo mas cercano, al centimetro */
+      var mq=masCerca(q.x,q.y), ex2=mq.dX<=mq.dY;
+      s={ejeX:ex2, coord:Math.round((ex2?q.x:q.y)*100)/100, que:"a mano, al centímetro"};
+    }
+    s.coord=+s.coord.toFixed(4);
+    var arr=s.ejeX?m.dx:m.dy, n=arr.length, ref=0;
+    for(k=0;k<=n;k++)if(acum(arr,k)<=s.coord+1e-9)ref=k;
+    s.ref={idx:ref, nombre:nomEje(s.ejeX,ref,m), dist:+(s.coord-acum(arr,ref)).toFixed(4)};
+    s.borde=s.coord<0||s.coord>acum(arr,n);
+    s.existe=false;
+    for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-s.coord)<0.005){ s.existe=true; s.ref={idx:k,nombre:nomEje(s.ejeX,k,m),dist:0}; }
+    return s;
+  }
+  function textoGuia(s,prima){
+    if(s.existe)return "Ya hay un eje aquí: el "+s.ref.nombre;
+    return (s.borde?"Eje de borde":(prima?"Prima":"Principal"))+" en "+(s.ejeX?"X":"Y")+" · "+
+      nm(Math.abs(s.ref.dist))+" m "+(s.ref.dist<0?"antes del":"del")+" eje "+s.ref.nombre+" · "+s.que;
+  }
+  /* la linea del eje que se va a crear y su medida, junto al cursor; no se pincha y no repinta la planta */
+  function pintaGuiaEje(s,q,prima){
+    var sv=$("#plano"); if(!sv||!sv.querySelector)return;
+    var old=sv.querySelector("#guiaEje"); if(old&&old.parentNode)old.parentNode.removeChild(old);
+    if(!s)return;
+    var L0=LIENZO||lienzo(S.verDims), mg=L0.mg, esc=L0.esc, kp=tolPantalla(1)*esc, P=mg+s.coord*esc,
+        col=s.existe?"var(--ink-3)":"var(--trib)";
+    var g=el("g",{id:"guiaEje","pointer-events":"none"});
+    var ln=s.ejeX?{x1:P,y1:L0.vy,x2:P,y2:L0.vy+L0.vh}:{x1:L0.vx,y1:P,x2:L0.vx+L0.vw,y2:P};
+    ln.stroke=col; ln["stroke-width"]=(1.6*kp).toFixed(3); ln["stroke-dasharray"]=(9*kp).toFixed(2)+" "+(4*kp).toFixed(2);
+    g.appendChild(el("line",ln));
+    var t=el("text",{x:mg+q.x*esc+14*kp, y:mg+q.y*esc-12*kp, "font-size":(12*kp).toFixed(2), "font-weight":600, fill:col,
+      "paint-order":"stroke", stroke:"var(--sheet)", "stroke-width":(3*kp).toFixed(2), "font-family":"IBM Plex Sans, sans-serif"});
+    t.textContent=textoGuia(s,prima)+(prima&&!s.existe&&!s.borde?"   (Shift: principal)":"");
+    g.appendChild(t);
+    sv.appendChild(g);
+  }
+  function alternaPonerEje(){
+    PONEJE=PONEJE?null:{};
+    if(!PONEJE)pintaGuiaEje(null);
+    toast(PONEJE?"Crear ejes: mueve el mouse sobre la planta y haz clic. Clic = prima · Shift+clic = principal · Esc para terminar."
+                :"Listo con los ejes.");
+    pintaCalcoCtl(); render();
+  }
   function traerCalco(f){
     if(!f)return;
     if(/\.json$/i.test(f.name)){
@@ -11407,8 +11713,14 @@ var TT={script:performance.now()};
     ver("#calcoEjes",!!(c&&(VECT[S.act]||c.ejes)));
     /* el plano de AutoCAD ya viene a escala real: no se calibra, se ancla */
     ver("#calcoCal",!esCad); ver("#calcoAncla",esCad); ver("#calcoColor",esCad); ver("#calcoCapas",esCad);
+    if(esCad&&!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
+    ver("#calcoAdopta",esCad&&!!c.cad.ejes.length); ver("#ejesAdopta",esCad&&!!c.cad.ejes.length);
+    Array.prototype.forEach.call(document.querySelectorAll("#calcoPonEje,#ejesPonEje"),function(b){
+      b.textContent=PONEJE?"Terminar ejes (Esc)":"Crear eje con clic";
+      if(b.classList)b.classList.toggle("on",!!PONEJE);
+    });
     pintaMarcaCtl();
-    ver("#panelEjes",!!PROP&&S.vista==="plano");
+    ver("#panelEjes",(!!PROP||!!ADOPTA)&&S.vista==="plano");
     if(!c||!inf)return;
     var op=$("#calcoOp"); if(op)op.value=Math.round(c.op*100);
     if(esCad){
@@ -11954,6 +12266,20 @@ var TT={script:performance.now()};
     /* Marcando, un clic en el lienzo es un eje: no una columna.  Va antes
        que nada y no mira e.target, porque se marca sobre el PLANO, donde no
        hay ningun elemento del modelo debajo. */
+    /* Creando ejes: el clic pone el eje que ensena la guia -prima; con Shift, principal- */
+    if(PONEJE&&!e.altKey){
+      e.preventDefault();
+      var sP=sugerirEje(xyModelo(e));
+      if(!sP)return;
+      if(sP.existe){ toast("Ya hay un eje ahí: el "+sP.ref.nombre+"."); return; }
+      snap();
+      var rP=insertarEjeEn(sP.ejeX,sP.coord,!e.shiftKey);
+      if(!rP.ok){ UNDO.pop(); toast(rP.msg); return; }
+      render();
+      toast("Eje "+nomEje(sP.ejeX,rP.idx,N())+" creado a "+nm(Math.abs(sP.ref.dist))+" m "+
+            (sP.ref.dist<0?"antes del":"del")+" eje "+sP.ref.nombre+" · "+sP.que+". Ctrl+Z lo deshace.");
+      return;
+    }
     /* Anclando el plano de AutoCAD: el clic se pega al cruce del dibujo y ese punto pasa al A-1 */
     if(anclando&&!e.altKey){
       var sA=anclarEn(xyModelo(e),tolPantalla(16));
@@ -12020,6 +12346,12 @@ var TT={script:performance.now()};
     c.dx+=p.x-moviendo.x; c.dy+=p.y-moviendo.y;
     moviendo=p; CALCO[S.act]=c; render();
   });
+  /* la guia del eje que se va a crear sigue al cursor */
+  svg.addEventListener("pointermove",function(e){
+    if(!PONEJE||moviendo)return;
+    var q=xyModelo(e); pintaGuiaEje(sugerirEje(q),q,!e.shiftKey);
+  });
+  svg.addEventListener("pointerleave",function(){ if(PONEJE)pintaGuiaEje(null); });
   window.addEventListener("pointerup",function(){
     if(moviendo){ moviendo=null; guardarCalco(S.act,calco()); }
   });
@@ -12077,6 +12409,16 @@ var TT={script:performance.now()};
     toast(anclando?"Haz clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto.":"Anclaje cancelado.");
     pintaCalcoCtl();
   };
+  $("#calcoAdopta").onclick=function(){
+    var c=calco(); if(!c||c.tipo!=="cad")return;
+    ADOPTA=compararEjesCad();
+    if(!ADOPTA||!ADOPTA.length){ ADOPTA=null; return toast("El plano no trae ejes con burbuja que adoptar."); }
+    if(!c.dx&&!c.dy)toast("¿Ya anclaste el plano en A-1? Las posiciones se miden desde ese cruce.");
+    pintaAdopta();
+  };
+  $("#calcoPonEje").onclick=alternaPonerEje;
+  $("#ejesPonEje").onclick=alternaPonerEje;
+  $("#ejesAdopta").onclick=function(){ $("#calcoAdopta").onclick(); };
   $("#calcoColores").addEventListener("change",function(){
     var c=calco(); if(!c||c.tipo!=="cad")return;
     c.colores=!!this.checked; guardarCalco(S.act,c); render();
@@ -17251,7 +17593,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
