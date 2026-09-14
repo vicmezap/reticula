@@ -7754,7 +7754,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v174 · 14-09-2026";
+  var BUILD="v175 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8034,6 +8034,7 @@ var TT={script:performance.now()};
   }
   var UNIR=null;                    /* lo primero que se pincho con Unir */
   var UNIR_SHIFT=false;             /* Shift en ese clic: hace lo contrario del modo elegido */
+  var UNIR_CONFIRMA=null;           /* {a,e}: Unir pregunto si quitar vigas o columnas y espera el segundo clic */
   /* REVISA un par de piezas seguidas sin tocar nada: si se pueden unir, la clave
      de su junta y si hoy ya van juntas (dentro). */
   function revisaPar(a,b,m){
@@ -8135,37 +8136,171 @@ var TT={script:performance.now()};
     else msg=(a.t==="losa"?"Losa unida: ":"Viga unida: ")+nombreTramo(a,m)+".";
     return {ok:true,unida:!r.dentro,clave:r.clave,valor:valor,msg:msg};
   }
-  /* UNIR (o SEPARAR) todo lo que hay entre a y b en la misma fila o linea: dos
-     seguidas, o la primera y la ultima.  Unir SOLO une -lo que ya va junto se
-     queda junto- y separar solo separa.  Antes el mismo clic hacia las dos cosas
-     y, sobre dos losas que un prima ya unia, «unir» las separaba sin que se
-     notara: asi Victor no podia unir tres losas.  Se revisa cada par antes de
-     tocar nada: si uno no se puede, no cambia ninguno. */
-  function unirSerie(a,b,m,unir){
+  /* =====================================================================
+     UNIR MANDA.  Lo que unes queda como UNA pieza: el complemento no decide
+     por ti.  Antes Unir rechazaba si los paños tenian distinta flecha, si no
+     iban de la misma viga a la misma viga o si habia un apoyo en medio, y a
+     Victor le parecia «aleatorio».  Ahora:
+       LOSAS   clic en una y en otra -la que sigue, la ultima de la fila o la
+               esquina opuesta-: queda UNA losa, el rectangulo que abarca a
+               las dos losas enteras.  Sus paños toman el tipo y la flecha de
+               la primera que pinchaste, y se dice cuales cambiaron.  Si dentro
+               hay vigas se pregunta: otro clic en la misma losa las quita.
+               Solo no se une a traves de un paño vacio, una escalera o una
+               placa: eso no se inventa ni se borra.  La losa queda EXACTAMENTE
+               ese rectangulo: donde un paño de fuera se pegaria solo, se corta.
+       VIGAS   igual en su linea: toman el tipo de la primera y, si en medio
+               hay columnas, otro clic las quita.
+       SEPARAR corta la linea ENTERA de la losa, o el nudo de la viga.
+     ===================================================================== */
+  function unirSerie(a,b,m,unir,confirmado){
     m=m||N(); unir=(unir!==false);
+    if(!a||!b||a.t!==b.t)return {ok:false,msg:"Se une losa con losa, o viga con viga."};
+    if(a.t==="losa")return unir?unirLosas(a,b,m,confirmado):separarLosas(a,b,m);
+    return unir?unirVigas(a,b,m,confirmado):separarVigas(a,b,m);
+  }
+  function nomPano(i,j,m){return eX(i,m)+"-"+eX(i+1,m)+" / "+eY(j,m)+"-"+eY(j+1,m)}
+  function nomRect(R,m){return eX(R.i0,m)+"-"+eX(R.i1,m)+" / "+eY(R.j0,m)+"-"+eY(R.j1,m)}
+  /* el rectangulo de paños de la losa a la que pertenece (i,j) */
+  function rectLosa(i,j,m){
+    var d=dirLosa(m.losas[key(i,j)]), t=tramoLosa(d,i,j,m);
+    return d==="y"?{i0:t.lat0,i1:t.lat1,j0:t.desde,j1:t.hasta}:{i0:t.desde,i1:t.hasta,j0:t.lat0,j1:t.lat1};
+  }
+  function unirLosas(a,b,m,confirmado){
     function no(t){return {ok:false,msg:t}}
-    if(!a||!b||a.t!==b.t)return no("Se une losa con losa, o viga con viga.");
-    if(a.t==="viga"&&a.o!==b.o)return no("Solo se unen tramos de viga en la misma línea.");
-    function pieza(i,j){return a.t==="losa"?{t:"losa",i:i,j:j}:{t:"viga",o:a.o,i:i,j:j}}
-    var pares=[], k, lo, hi, losa=(a.t==="losa");
-    var enJ=losa?(a.i===b.i&&a.j!==b.j):(a.o==="v"&&a.i===b.i&&a.j!==b.j),
-        enI=losa?(a.j===b.j&&a.i!==b.i):(a.o==="h"&&a.j===b.j&&a.i!==b.i);
-    if(enJ){lo=Math.min(a.j,b.j);hi=Math.max(a.j,b.j);for(k=lo;k<hi;k++)pares.push([pieza(a.i,k),pieza(a.i,k+1)]);}
-    else if(enI){lo=Math.min(a.i,b.i);hi=Math.max(a.i,b.i);for(k=lo;k<hi;k++)pares.push([pieza(k,a.j),pieza(k+1,a.j)]);}
-    else return no(losa?"Esas losas no están en la misma fila ni en la misma columna.":"Esos tramos no van en la misma línea.");
-    var rs=[];
-    for(k=0;k<pares.length;k++){var rp=revisaPar(pares[k][0],pares[k][1],m); if(!rp.ok)return rp; rs.push(rp);}
-    var cambian=rs.filter(function(x){return unir?!x.dentro:x.dentro});
-    if(!cambian.length)
-      return {ok:true,cambio:false,msg:unir?((losa?"Ya están unidas: ":"Ya están unidos: ")+nombreTramo(pares[0][0],m)+".")
-                                          :(losa?"Ya están separadas.":"Ya están separados.")};
+    var oa=m.losas[key(a.i,a.j)], ob=m.losas[key(b.i,b.j)];
+    if(!oa||!ob)return no("Uno de los dos paños no tiene losa: dibújala primero.");
+    if(esEscalera(oa)||esEscalera(ob))return no("Una escalera no se une con una losa: es un paño suelto.");
+    var ra=rectLosa(a.i,a.j,m), rb=rectLosa(b.i,b.j,m),
+        R={i0:Math.min(ra.i0,rb.i0),i1:Math.max(ra.i1,rb.i1),j0:Math.min(ra.j0,rb.j0),j1:Math.max(ra.j1,rb.j1)};
+    var tp=oa.tipo||"aligerada", dir=dirLosa(oa), y=(dir==="y"), i, j, k, cambian=[], vigas=[];
+    for(j=R.j0;j<R.j1;j++)for(i=R.i0;i<R.i1;i++){
+      var q=m.losas[key(i,j)];
+      if(!q)return no("El paño "+nomPano(i,j,m)+" está vacío: dibuja su losa y vuelve a unir.");
+      if(esEscalera(q))return no("En "+nomPano(i,j,m)+" hay una escalera: una losa no pasa por ella.");
+      if((q.tipo||"aligerada")!==tp||dirLosa(q)!==dir)
+        cambian.push(nomPano(i,j,m)+" ("+(q.tipo||"aligerada")+" en "+dirLosa(q).toUpperCase()+")");
+    }
+    /* lo que hay en las lineas de DENTRO del rectangulo */
+    for(k=R.i0+1;k<R.i1;k++)for(j=R.j0;j<R.j1;j++){
+      if(m.placas[key("v",k,j)])
+        return no("En el eje "+eX(k,m)+" ("+eY(j,m)+"-"+eY(j+1,m)+") hay una placa: la losa no la cruza. Quita la placa si no va.");
+      if(m.vigas[key("v",k,j)])
+        vigas.push({k:key("v",k,j),n:"la viga "+tipoViga(m.vigas[key("v",k,j)])+" del eje "+eX(k,m)+" ("+eY(j,m)+"-"+eY(j+1,m)+")"});
+    }
+    for(k=R.j0+1;k<R.j1;k++)for(i=R.i0;i<R.i1;i++){
+      if(m.placas[key("h",i,k)])
+        return no("En el eje "+eY(k,m)+" ("+eX(i,m)+"-"+eX(i+1,m)+") hay una placa: la losa no la cruza. Quita la placa si no va.");
+      if(m.vigas[key("h",i,k)])
+        vigas.push({k:key("h",i,k),n:"la viga "+tipoViga(m.vigas[key("h",i,k)])+" del eje "+eY(k,m)+" ("+eX(i,m)+"-"+eX(i+1,m)+")"});
+    }
+    if(vigas.length&&!confirmado)
+      return {ok:false,confirmar:true,msg:"Para que "+nomRect(R,m)+" sea una losa hay que quitar "+
+        vigas.map(function(v){return v.n}).join(", ")+", que la apoya. Otro clic en la misma losa la quita y une; "+
+        "un clic en otra parte cancela."};
+    if(ra.i0===R.i0&&ra.i1===R.i1&&ra.j0===R.j0&&ra.j1===R.j1&&!cambian.length)
+      return {ok:true,cambio:false,msg:"Ya están unidas: "+nomRect(R,m)+"."};
     snap();
-    cambian.forEach(function(x){ponJunta(m,x,unir);});
-    return {ok:true,cambio:true,
-            msg:unir?((losa?"Losa unida: ":"Viga unida: ")+nombreTramo(pares[0][0],m)+".")
-                    :((losa?"Losas separadas en ":"Vigas separadas en ")+
-                      (cambian.length>1?(losa?"los ejes ":"los nudos "):(losa?"el eje ":"el nudo "))+
-                      cambian.map(function(x){return x.nomE}).join(", ")+".")};
+    vigas.forEach(function(v){delete m.vigas[v.k];});
+    for(j=R.j0;j<R.j1;j++)for(i=R.i0;i<R.i1;i++){var q2=m.losas[key(i,j)]; q2.tipo=tp; q2.dir=dir;}
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    var J=m.juntas, nX=m.dx.length, nY=m.dy.length;
+    function hayFuera(i2,j2){return i2>=0&&j2>=0&&i2<nX&&j2<nY&&!!m.losas[key(i2,j2)]}
+    function borde(clave,i2,j2){if(hayFuera(i2,j2))J[clave]=false; else delete J[clave];}
+    for(i=R.i0;i<R.i1;i++){                       /* las lineas a lo largo de X: ejes de Y */
+      for(k=R.j0+1;k<R.j1;k++){J[y?("Ly:"+i+":"+k):("Tx:"+i+":"+k)]=true; delete J[y?("Tx:"+i+":"+k):("Ly:"+i+":"+k)];}
+      borde(y?("Ly:"+i+":"+R.j0):("Tx:"+i+":"+R.j0),i,R.j0-1);
+      borde(y?("Ly:"+i+":"+R.j1):("Tx:"+i+":"+R.j1),i,R.j1);
+    }
+    for(j=R.j0;j<R.j1;j++){                       /* las lineas a lo largo de Y: ejes de X */
+      for(k=R.i0+1;k<R.i1;k++){J[y?("Ty:"+k+":"+j):("Lx:"+k+":"+j)]=true; delete J[y?("Lx:"+k+":"+j):("Ty:"+k+":"+j)];}
+      borde(y?("Ty:"+R.i0+":"+j):("Lx:"+R.i0+":"+j),R.i0-1,j);
+      borde(y?("Ty:"+R.i1+":"+j):("Lx:"+R.i1+":"+j),R.i1,j);
+    }
+    /* la prueba de que quedo UNA; si no, se deshace y se dice */
+    var G=rectLosa(a.i,a.j,m);
+    if(G.i0!==R.i0||G.i1!==R.i1||G.j0!==R.j0||G.j1!==R.j1){
+      undo();
+      return no("No quedó como una sola losa ("+nomRect(G,m)+" en vez de "+nomRect(R,m)+"): no se cambió nada.");
+    }
+    var msg="Losa unida: "+nomRect(R,m)+", Ln "+nm(medLosa(R.i0,R.j0,m).Ln)+" m.";
+    if(vigas.length)msg+=" Se quitó "+vigas.map(function(v){return v.n}).join(", ")+".";
+    if(cambian.length)msg+=" Quedó toda "+tp+" con la flecha en "+dir.toUpperCase()+"; cambiaron "+cambian.join(", ")+".";
+    return {ok:true,cambio:true,R:R,msg:msg};
+  }
+  function separarLosas(a,b,m){
+    var oa=m.losas[key(a.i,a.j)], ob=m.losas[key(b.i,b.j)];
+    if(!oa||!ob)return {ok:false,msg:"Uno de los dos paños no tiene losa."};
+    var enFila=(a.j===b.j&&a.i!==b.i), enCol=(a.i===b.i&&a.j!==b.j);
+    if(!enFila&&!enCol)
+      return {ok:false,msg:"Para separar, clic en dos paños de la misma fila o columna, uno a cada lado de donde se corta."};
+    var ra=rectLosa(a.i,a.j,m), y=(dirLosa(oa)==="y"), lineas=[], k, c;
+    var lo=enFila?Math.min(a.i,b.i):Math.min(a.j,b.j), hi=enFila?Math.max(a.i,b.i):Math.max(a.j,b.j);
+    for(k=lo+1;k<=hi;k++)if(enFila?(k>ra.i0&&k<ra.i1):(k>ra.j0&&k<ra.j1))lineas.push(k);
+    if(!lineas.length)return {ok:true,cambio:false,msg:"Ya están separadas."};
+    snap();
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    lineas.forEach(function(k2){
+      if(enFila){for(c=ra.j0;c<ra.j1;c++)m.juntas[y?("Ty:"+k2+":"+c):("Lx:"+k2+":"+c)]=false;}
+      else      {for(c=ra.i0;c<ra.i1;c++)m.juntas[y?("Ly:"+c+":"+k2):("Tx:"+c+":"+k2)]=false;}
+    });
+    return {ok:true,cambio:true,msg:"Losas separadas en "+(lineas.length>1?"los ejes ":"el eje ")+
+            lineas.map(function(k2){return enFila?eX(k2,m):eY(k2,m)}).join(", ")+"."};
+  }
+  function unirVigas(a,b,m,confirmado){
+    function no(t){return {ok:false,msg:t}}
+    var h=(a.o==="h");
+    if(a.o!==b.o||(h?a.j!==b.j:a.i!==b.i))return no("Solo se unen tramos de viga en la misma línea.");
+    var va=m.vigas[key(a.o,a.i,a.j)], vb=m.vigas[key(b.o,b.i,b.j)];
+    if(!va||!vb)return no("Uno de los dos tramos no tiene viga: dibújala primero.");
+    var fila=h?a.j:a.i, ta=tramoViga(a.o,a.i,a.j,m), tb=tramoViga(b.o,b.i,b.j,m),
+        d0=Math.min(ta.desde,tb.desde), d1=Math.max(ta.hasta,tb.hasta), tipo=tipoViga(va), k, cols=[], cambian=[];
+    function pz(k2){return h?key("h",k2,fila):key("v",fila,k2)}
+    function nudo(k2){return h?key(k2,fila):key(fila,k2)}
+    function nomT(k2){return h?(eX(k2,m)+"-"+eX(k2+1,m)+" del eje "+eY(fila,m)):(eY(k2,m)+"-"+eY(k2+1,m)+" del eje "+eX(fila,m))}
+    function nomN(k2){return h?(eX(k2,m)+"-"+eY(fila,m)):(eX(fila,m)+"-"+eY(k2,m))}
+    for(k=d0;k<d1;k++){
+      var v=m.vigas[pz(k)];
+      if(!v)return no("El tramo "+nomT(k)+" no tiene viga: dibújala y vuelve a unir.");
+      if(tipoViga(v)!==tipo)cambian.push(nomT(k)+" ("+tipoViga(v)+")");
+    }
+    for(k=d0+1;k<d1;k++)if(m.cols[nudo(k)])cols.push(k);
+    if(cols.length&&!confirmado)
+      return {ok:false,confirmar:true,msg:"Para que sea una viga hay que quitar la columna de "+cols.map(nomN).join(", ")+
+        ", que la apoya. Otro clic en el mismo tramo la quita y une; un clic en otra parte cancela."};
+    if(ta.desde===d0&&ta.hasta===d1&&!cambian.length)return {ok:true,cambio:false,msg:"Ya están unidos: "+nombreTramo(a,m)+"."};
+    snap();
+    var cero=(m===S.niveles[0]);
+    cols.forEach(function(k2){delete m.cols[nudo(k2)]; if(cero&&m.zapatas)delete m.zapatas[nudo(k2)];});
+    for(k=d0;k<d1;k++)m.vigas[pz(k)].t=tipo;
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    var J=m.juntas, lim=h?m.dx.length:m.dy.length;
+    function jk(k2){return h?("Vh:"+k2+":"+fila):("Vv:"+fila+":"+k2)}
+    for(k=d0+1;k<d1;k++)J[jk(k)]=true;
+    [[d0,d0-1],[d1,d1]].forEach(function(p){
+      if(p[1]>=0&&p[1]<lim&&m.vigas[pz(p[1])])J[jk(p[0])]=false; else delete J[jk(p[0])];
+    });
+    var t2=tramoViga(a.o,a.i,a.j,m);
+    if(t2.desde!==d0||t2.hasta!==d1){undo();return no("No quedó como una sola viga: no se cambió nada.");}
+    var msg="Viga unida: "+nombreTramo(a,m)+".";
+    if(cols.length)msg+=" Se quitó la columna de "+cols.map(nomN).join(", ")+".";
+    if(cambian.length)msg+=" Quedó toda "+tipo+"; cambiaron "+cambian.join(", ")+".";
+    return {ok:true,cambio:true,msg:msg};
+  }
+  function separarVigas(a,b,m){
+    var h=(a.o==="h");
+    if(a.o!==b.o||(h?a.j!==b.j:a.i!==b.i))return {ok:false,msg:"Solo se separan tramos de viga en la misma línea."};
+    var fila=h?a.j:a.i, ia=h?a.i:a.j, ib=h?b.i:b.j, nudos=[], k;
+    for(k=Math.min(ia,ib)+1;k<=Math.max(ia,ib);k++){
+      var kv=h?key("h",k-1,fila):key("v",fila,k-1);
+      if(m.vigas[kv]&&tramoViga(a.o,h?k-1:fila,h?fila:k-1,m).hasta>k)nudos.push(k);
+    }
+    if(!nudos.length)return {ok:true,cambio:false,msg:"Ya están separados."};
+    snap();
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    nudos.forEach(function(k2){m.juntas[h?("Vh:"+k2+":"+fila):("Vv:"+fila+":"+k2)]=false;});
+    return {ok:true,cambio:true,msg:"Vigas separadas en "+(nudos.length>1?"los nudos ":"el nudo ")+
+            nudos.map(function(k2){return h?(eX(k2,m)+"-"+eY(fila,m)):(eX(fila,m)+"-"+eY(k2,m))}).join(", ")+"."};
   }
   /* LA HERRAMIENTA UNIR.  Primer clic: la pieza de partida.  Cada clic siguiente
      une -o separa, con el modo Separar o con Shift- desde la anterior hasta esa:
@@ -8178,20 +8313,26 @@ var TT={script:performance.now()};
     if(e.t==="losa"&&!m.losas[key(i,j)]){UNIR=null;toast("Ese paño no tiene losa.");return}
     if(e.t==="viga"&&!m.vigas[key(e.o,i,j)]){UNIR=null;toast("Ese tramo no tiene viga.");return}
     var unir=(S.unirModo!=="separar"); if(shift)unir=!unir;
+    function misma(p,q){return !!p&&!!q&&p.t===q.t&&p.i===q.i&&p.j===q.j&&(p.o||"")===(q.o||"")}
     if(!UNIR){
-      UNIR=e; S.sel=e; render();
-      toast(unir?(e.t==="losa"?"Unir: clic en la losa que sigue en la dirección de su flecha, o en la última de la fila."
-                              :"Unir: clic en el tramo que sigue, o en el último de la línea.")
+      UNIR_CONFIRMA=null; UNIR=e; S.sel=e; render();
+      toast(unir?(e.t==="losa"?"Unir: clic en otra losa -la que sigue, la última de la fila o la esquina opuesta- y quedan como UNA."
+                              :"Unir: clic en otro tramo de la misma línea y quedan como UNA viga.")
                 :(e.t==="losa"?"Separar: clic en la losa del otro lado del eje donde se corta."
                               :"Separar: clic en el tramo del otro lado del nudo donde se corta."));
       return;
     }
     var a=UNIR;
-    if(a.t===e.t&&a.i===e.i&&a.j===e.j&&(a.o||"")===(e.o||"")){UNIR=null;S.sel=null;render();toast("Listo.");return}
-    var r=unirSerie(a,e,m,unir);
+    /* tras la pregunta, otro clic en la MISMA pieza es «si, quitar los apoyos»; en otra, cancelar */
+    var confirma=!!(UNIR_CONFIRMA&&misma(UNIR_CONFIRMA.a,a)&&misma(UNIR_CONFIRMA.e,e));
+    if(UNIR_CONFIRMA&&!confirma){UNIR_CONFIRMA=null;UNIR=null;S.sel=null;render();toast("Cancelado: no se quitó nada.");return}
+    UNIR_CONFIRMA=null;
+    if(misma(a,e)){UNIR=null;S.sel=null;render();toast("Listo.");return}
+    var r=unirSerie(a,e,m,unir,confirma);
+    if(r.confirmar){UNIR_CONFIRMA={a:a,e:e};S.sel=e;render();toast(r.msg);return}
     UNIR=(r.ok&&unir)?e:null;
     S.sel=e; render();
-    toast(r.msg+((r.ok&&unir)?" Sigue con la próxima, o Esc para terminar.":""));
+    toast(r.msg+((r.ok&&unir)?" Sigue con otra, o Esc para terminar.":""));
   }
 
   /* La viga se interrumpe donde hay COLUMNA */
@@ -8218,10 +8359,14 @@ var TT={script:performance.now()};
      y se interrumpe donde hay VIGA, que es lo que la sostiene */
   function tramoLosaEje(dir,i,j,m){
     m=m||N();var ejeX=(dir==="x");
-    var esc0=esEscalera(m.losas[i+":"+j]);
+    var o0=m.losas[i+":"+j], esc0=esEscalera(o0), propia=!!o0&&dirLosa(o0)===dir;
     var t=tramo(ejeX,i,j,m,
-      /* una escalera es un paño suelto: ni se une a una losa ni una losa pasa por ella */
-      function(k){var q=m.losas[ejeX?(k+":"+j):(i+":"+k)];return !!q&&!esc0&&!esEscalera(q)},
+      /* una escalera es un paño suelto: ni se une a una losa ni una losa pasa por ella.  Y a lo largo de SU
+         armado la losa solo sigue por paños del mismo tipo y armado: antes un prima sin viga metia dentro un
+         paño armado en X y la flecha en Y lo tapaba (A′-B / 4′-5 en el N1 de Victor) */
+      function(k){var q=m.losas[ejeX?(k+":"+j):(i+":"+k)];
+        return !!q&&!esc0&&!esEscalera(q)&&
+               (!propia||((q.tipo||"aligerada")===(o0.tipo||"aligerada")&&dirLosa(q)===dir))},
       function(a){
         /* una VIGA siempre es apoyo; sin viga, la junta y si no el eje.  La
            junta solo vale entre losas del mismo tipo y armadas a lo largo:
@@ -8335,7 +8480,7 @@ var TT={script:performance.now()};
     S.niveles=JSON.parse(REDO.pop());S.act=Math.min(S.act,S.niveles.length-1);S.sel=null;render()}
   document.addEventListener("keydown",function(e){
     /* Esc termina la cadena de Unir */
-    if(e.key==="Escape"&&UNIR&&!MARCA){e.preventDefault();UNIR=null;S.sel=null;render();toast("Listo.");return}
+    if(e.key==="Escape"&&UNIR&&!MARCA){e.preventDefault();UNIR=null;UNIR_CONFIRMA=null;S.sel=null;render();toast("Listo.");return}
     if(!(e.ctrlKey||e.metaKey))return;
     var k=e.key.toLowerCase();
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
@@ -11022,9 +11167,9 @@ var TT={script:performance.now()};
     placa:"Clic o arrastra sobre los tramos entre ejes",
     losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado",
     zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna",
-    unir:"Clic en la primera y luego en la que sigue o en la última de la fila · encadena · Esc termina · Shift+clic hace lo contrario"};
+    unir:"Clic en una losa y en otra (la que sigue, la última o la esquina opuesta): quedan como UNA · si hay vigas o columnas en medio, otro clic las quita · Esc termina · Shift+clic separa"};
   function elegirTool(t){
-    S.tool=t; UNIR=null;
+    S.tool=t; UNIR=null; UNIR_CONFIRMA=null;
     if(S.vista!=="plano"){S.vista="plano";render();}
     document.querySelectorAll(".tool").forEach(function(o){
       o.setAttribute("aria-pressed",o.dataset.tool===t)});
@@ -11442,7 +11587,8 @@ var TT={script:performance.now()};
     delete N().losas[key(1,1)];limpiarSueltos();S.sel=null;render();toast("Planta con patio")};
 
   function toast(t){var e=$("#toast");e.textContent=t;e.classList.add("on");
-    clearTimeout(e._t);e._t=setTimeout(function(){e.classList.remove("on")},2800)}
+    /* un aviso largo se queda lo que tarda en leerse */
+    clearTimeout(e._t);e._t=setTimeout(function(){e.classList.remove("on")},Math.max(2800,Math.min(9000,55*String(t).length)))}
 
   /* ---------- inspector ---------- */
   function kv(k,v,env){return "<dt>"+k+"</dt><dd"+(env?' class="env"':"")+">"+v+"</dd>"}
