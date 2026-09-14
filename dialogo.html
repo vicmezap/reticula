@@ -433,6 +433,19 @@
 .pf.pf-txt{grid-template-columns:auto minmax(0,1fr)}
 .pf.pf-txt .pfi{text-align:left;font-family:"IBM Plex Sans",sans-serif;max-width:420px}
 .pf.pf-txt .pfu{display:none}
+/* PLANTA › 3D */
+.v3d{display:flex;flex-direction:column;gap:8px}
+.v3d-barra{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.v3d-g{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.v3d-g .mini[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:var(--sheet)}
+.v3d-ch{display:inline-flex;align-items:center;gap:4px;font:400 12px "IBM Plex Sans",sans-serif;color:var(--ink-2);white-space:nowrap}
+.v3d-lienzo{position:relative;height:min(72vh,760px);min-height:360px;border:1px solid var(--line);background:var(--sheet)}
+.v3d-lienzo canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+.v3d-lienzo canvas:active{cursor:grabbing}
+.v3d-lienzo canvas:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.v3d-pie{display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:space-between;align-items:baseline;
+  font:400 11.5px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+.v3d-info{color:var(--ink)}
 .sis-t.bib-t td:first-child{min-width:180px;white-space:normal;font-family:"IBM Plex Sans",sans-serif}
 .sis-t.bib-t small{display:block}
 .sis-t.bib-t tr.bib-act td{background:var(--acc-soft)}
@@ -727,6 +740,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button id="zRes" aria-label="Ajustar">◻</button><button id="zIn" aria-label="Acercar">+</button></div>
       <svg id="plano" role="img" aria-label="Planta estructural editable"></svg>
       <div class="edif" id="edificio" hidden></div>
+      <div class="edif v3d" id="vista3d" hidden></div>
       <div class="edif" id="panelInicio" hidden></div>
       <div class="edif" id="panelHojas" hidden></div>
       <div class="edif" id="panelProy" hidden></div>
@@ -6311,6 +6325,367 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== vista3d.js (inlinado) ===== */
+/* =====================================================================
+   vista3d.js — EL EDIFICIO EN 3D.  Planta (y Predimensionamiento) › 3D:
+   columnas, vigas, losas, placas y zapatas A ESCALA, con las medidas que
+   se llevan a ETABS -la exportacion del complemento-, para ver lo dibujado
+   antes de llevarlo.
+
+   Sin librerias: los solidos, la camara y que pieza hay bajo el raton son
+   cuentas de aqui, y el dibujo es WebGL con sombreado plano y aristas.  Lo
+   que no necesita navegador se prueba en probar_vista3d.js.
+
+   Ejes: X y Y los de ETABS (los de la exportacion: el eje 1 arriba en la
+   planta), Z hacia arriba; metros.  Una losa aligerada se ve maciza con su
+   espesor.  La zapata va con su cara de arriba en z = 0: la profundidad de
+   desplante no esta en el modelo.
+
+     node scripts/complemento/oviedo/probar_vista3d.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.VISTA3D = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
+                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A" };
+  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata"];
+  /* la losa tapa la cara de arriba de vigas, columnas y placas: se bajan un pelo para que no parpadeen */
+  var BAJA_VIGA = 0.003, BAJA_COL = 0.006, LADOS_CIRCULO = 20;
+
+  /* --- vectores ------------------------------------------------------------ */
+  function resta(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function suma(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+  function por(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+  function punto(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function cruz(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function largo(a) { return Math.sqrt(punto(a, a)); }
+  function unit(a) { var l = largo(a); return l > 1e-12 ? por(a, 1 / l) : [0, 0, 0]; }
+
+  /* "#0F6E8C", "#abc" o "rgb(15, 110, 140)" -> [r, g, b] de 0 a 1 */
+  function rgb(t) {
+    var s = String(t == null ? "" : t).trim(), m = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/.exec(s);
+    if (m) return [+m[1] / 255, +m[2] / 255, +m[3] / 255];
+    s = s.replace("#", "");
+    if (s.length === 3) s = s.split("").map(function (c) { return c + c; }).join("");
+    if (!/^[0-9a-fA-F]{6}$/.test(s)) return [0.5, 0.5, 0.5];
+    return [parseInt(s.slice(0, 2), 16) / 255, parseInt(s.slice(2, 4), 16) / 255, parseInt(s.slice(4, 6), 16) / 255];
+  }
+
+  /* --- solidos ---------------------------------------------------------------- */
+  function rect(x, y, bx, by) {
+    return [[x - bx / 2, y - by / 2], [x + bx / 2, y - by / 2], [x + bx / 2, y + by / 2], [x - bx / 2, y + by / 2]];
+  }
+  /* una tira de ancho dado a lo largo del segmento: viga o placa, con cualquier inclinacion en planta */
+  function tira(x1, y1, x2, y2, ancho) {
+    var dx = x2 - x1, dy = y2 - y1, L = Math.sqrt(dx * dx + dy * dy) || 1, nx = -dy / L * ancho / 2, ny = dx / L * ancho / 2;
+    return [[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]];
+  }
+  function circulo(x, y, r, n) {
+    var l = [], i;
+    for (i = 0; i < n; i++) l.push([x + r * Math.cos(2 * Math.PI * i / n), y + r * Math.sin(2 * Math.PI * i / n)]);
+    return l;
+  }
+  /* un poligono convexo en planta, extruido de z0 a z1; las caras miran hacia fuera */
+  function prisma(base, z0, z1, verticales) {
+    var n = base.length, area = 0, i, tris = [], aristas = [];
+    for (i = 0; i < n; i++) { var q = base[(i + 1) % n]; area += base[i][0] * q[1] - q[0] * base[i][1]; }
+    if (area < 0) base = base.slice().reverse();
+    var ab = base.map(function (p) { return [p[0], p[1], z0]; }), ar = base.map(function (p) { return [p[0], p[1], z1]; });
+    for (i = 1; i + 1 < n; i++) { tris.push([ar[0], ar[i], ar[i + 1]]); tris.push([ab[0], ab[i + 1], ab[i]]); }
+    for (i = 0; i < n; i++) {
+      var j = (i + 1) % n;
+      tris.push([ab[i], ab[j], ar[j]]); tris.push([ab[i], ar[j], ar[i]]);
+      aristas.push([ab[i], ab[j]], [ar[i], ar[j]]);
+      if (verticales !== false) aristas.push([ab[i], ar[i]]);
+    }
+    return { tris: tris, aristas: aristas };
+  }
+  function limitesDe(tris) {
+    var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    tris.forEach(function (t) { t.forEach(function (p) { for (var k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p[k]); mx[k] = Math.max(mx[k], p[k]); } }); });
+    return { min: mn, max: mx };
+  }
+  function cm(v) { return Math.round(+v * 100); }
+  function m2(v) { return (+v).toFixed(2); }
+
+  /* LA ESCENA.  ex: la exportacion a ETABS.  o: {zapatas: zapatasDelNivel(), colores, filtro: {familia: false},
+     niveles: "todos" | "hasta:k" | "solo:k"}  ->  {solidos: [{fam, cod, nivel, titulo, detalle, color, tris, aristas,
+     min, max}], caja: {min, max, centro, radio} | null, niveles: [{nombre, z0, z1}], avisos: {losasSinEspesor}} */
+  function escena(ex, o) {
+    o = o || {};
+    var C = {}, filtro = o.filtro || {}, sel = o.niveles || "todos", niv = (ex && ex.niveles) || [], out = [],
+        avisos = { losasSinEspesor: 0 };
+    Object.keys(COLORES).forEach(function (q) { C[q] = rgb((o.colores && o.colores[q]) || COLORES[q]); });
+    var mt = /^(hasta|solo):(\d+)$/.exec(sel);
+    function mostrar(fam, k) {
+      if (filtro[fam] === false) return false;
+      if (!mt) return true;
+      return mt[1] === "hasta" ? k <= +mt[2] : k === +mt[2];
+    }
+    function mete(fam, cod, k, titulo, detalle, color, g, extra) {
+      var lim = limitesDe(g.tris), s = { fam: fam, cod: cod, nivel: k, titulo: titulo, detalle: detalle, color: color,
+                                         tris: g.tris, aristas: g.aristas, min: lim.min, max: lim.max };
+      Object.keys(extra || {}).forEach(function (q) { s[q] = extra[q]; });
+      out.push(s);
+    }
+    niv.forEach(function (L, k) {
+      var z0 = +L.z0, z1 = +L.z1, nombre = L.nombre || ("N" + (k + 1));
+      if (mostrar("col", k)) (L.columnas || []).forEach(function (c) {
+        var circ = c.forma === "circular";
+        var g = circ ? prisma(circulo(+c.x, +c.y, +c.D / 2, LADOS_CIRCULO), z0, z1 - BAJA_COL, false)
+                     : prisma(rect(+c.x, +c.y, +c.b, +c.h), z0, z1 - BAJA_COL);
+        mete("col", c.cod, k, "Columna " + c.cod, (circ ? "Ø " + cm(c.D) : cm(c.b) + " × " + cm(c.h)) + " cm · " + nombre +
+             ", de " + m2(z0) + " a " + m2(z1) + " m", C.col, g);
+      });
+      if (mostrar("viga", k)) (L.vigas || []).forEach(function (v) {
+        if (!(v.b > 0 && v.h > 0)) return;
+        var chata = v.tipo === "chata", Lv = Math.sqrt(Math.pow(v.x2 - v.x1, 2) + Math.pow(v.y2 - v.y1, 2));
+        mete("viga", v.cod, k, (chata ? "Viga chata " : "Viga ") + v.cod,
+             cm(v.b) + " × " + cm(v.h) + " cm · " + m2(Lv) + " m de eje a eje · " + nombre,
+             chata ? C.chata : C.viga, prisma(tira(+v.x1, +v.y1, +v.x2, +v.y2, +v.b), z1 - v.h, z1 - BAJA_VIGA));
+      });
+      if (mostrar("losa", k)) (L.losas || []).forEach(function (l) {
+        if (!(l.e > 0) || !l.xs || l.xs.length < 3) { avisos.losasSinEspesor++; return; }
+        var tipo = l.tipo || "aligerada";
+        mete("losa", l.cod, k, "Losa " + l.cod, tipo + (tipo === "maciza" ? "" : ", viguetas en " + String(l.dir || "x").toUpperCase()) +
+             " · " + cm(l.e) + " cm · " + nombre, C[tipo] || C.aligerada,
+             prisma(l.xs.map(function (x, i) { return [+x, +l.ys[i]]; }), z1 - l.e, z1));
+      });
+      if (mostrar("placa", k)) (L.placas || []).forEach(function (p) {
+        if (!(p.t > 0)) return;
+        var Lp = Math.sqrt(Math.pow(p.x2 - p.x1, 2) + Math.pow(p.y2 - p.y1, 2));
+        mete("placa", p.cod, k, "Placa " + p.cod, "t " + cm(p.t) + " cm · " + m2(Lp) + " m de largo · " + nombre, C.placa,
+             prisma(tira(+p.x1, +p.y1, +p.x2, +p.y2, +p.t), z0, z1 - BAJA_COL));
+      });
+    });
+    /* las zapatas vienen en las coordenadas de la planta del complemento (Y hacia abajo): se voltean como la exportacion */
+    if (niv.length && mostrar("zapata", 0)) (o.zapatas || []).forEach(function (z) {
+      if (!(z.H > 0)) return;
+      mete("zapata", z.cod, 0, "Zapata " + z.cod, (z.tipo ? z.tipo + " · " : "") + m2(z.B) + " × " + m2(z.L) + " × " + m2(z.H) + " m",
+           C.zapata, prisma([[+z.x0, -z.y1], [+z.x1, -z.y1], [+z.x1, -z.y0], [+z.x0, -z.y0]], -z.H, 0), { ij: [z.i, z.j] });
+    });
+    var caja = null;
+    if (out.length) {
+      var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      out.forEach(function (s) { for (var q = 0; q < 3; q++) { mn[q] = Math.min(mn[q], s.min[q]); mx[q] = Math.max(mx[q], s.max[q]); } });
+      caja = { min: mn, max: mx, centro: por(suma(mn, mx), 0.5), radio: Math.max(0.5, largo(resta(mx, mn)) / 2) };
+    }
+    return { solidos: out, caja: caja, avisos: avisos,
+             niveles: niv.map(function (L, k) { return { nombre: L.nombre || ("N" + (k + 1)), z0: +L.z0, z1: +L.z1 }; }) };
+  }
+
+  /* --- camara -------------------------------------------------------------------- */
+  var FOV = 40 * Math.PI / 180, TOPE_EL = Math.PI / 2 - 1e-4;
+  var VISTAS = { iso: { az: -0.62, el: 0.5, orto: false }, planta: { az: 0, el: TOPE_EL, orto: true },
+                 frente: { az: 0, el: 0, orto: true }, lado: { az: Math.PI / 2, el: 0, orto: true } };
+
+  /* el ojo, hacia donde mira (f), la derecha (r) y el arriba (u) de la pantalla */
+  function base(cam) {
+    var ce = Math.cos(cam.el), ojo = suma(cam.objetivo, por([ce * Math.sin(cam.az), -ce * Math.cos(cam.az), Math.sin(cam.el)], cam.dist));
+    var f = unit(resta(cam.objetivo, ojo)), r = cruz(f, [0, 0, 1]);
+    if (largo(r) < 1e-6) r = [Math.cos(cam.az), Math.sin(cam.az), 0];
+    r = unit(r);
+    return { ojo: ojo, f: f, r: r, u: cruz(r, f) };
+  }
+  function ajustaRadio(cam, esc) { cam.radio = (esc && esc.caja) ? esc.caja.radio : 5; return cam; }
+  /* todo el edificio a la vista: por lo alto y, en un lienzo angosto, tambien por lo ancho (cam.aspecto = ancho / alto) */
+  function encuadrar(cam, esc) {
+    var c = esc && esc.caja, t = Math.tan(cam.fov / 2), tMin = t * Math.min(1, cam.aspecto > 0 ? cam.aspecto : 1);
+    cam.objetivo = c ? c.centro.slice() : [0, 0, 0];
+    ajustaRadio(cam, esc);
+    cam.dist = (cam.orto ? cam.radio / tMin : cam.radio / Math.sin(Math.atan(tMin))) * 1.08;
+    return cam;
+  }
+  function vista(cam, nombre, esc) {
+    var v = VISTAS[nombre] || VISTAS.iso;
+    cam.az = v.az; cam.el = v.el; cam.orto = v.orto;
+    return encuadrar(cam, esc);
+  }
+  function camara(esc, nombre, aspecto) {
+    return vista({ objetivo: [0, 0, 0], dist: 10, az: 0, el: 0, fov: FOV, orto: false, radio: 5, aspecto: aspecto > 0 ? aspecto : 1 },
+                 nombre || "iso", esc);
+  }
+  function orbita(cam, dAz, dEl) {
+    cam.az += dAz;
+    cam.el = Math.max(-TOPE_EL, Math.min(TOPE_EL, cam.el + dEl));
+    return cam;
+  }
+  function acerca(cam, factor) {
+    var R = cam.radio || 5;
+    cam.dist = Math.max(R * 0.05, Math.min(R * 40, cam.dist * factor));
+    return cam;
+  }
+  /* mover lo que se mira tantos pixeles como se arrastro */
+  function desplaza(cam, dx, dy, w, h) {
+    var b = base(cam), mpp = 2 * cam.dist * Math.tan(cam.fov / 2) / Math.max(1, h);
+    cam.objetivo = suma(cam.objetivo, suma(por(b.r, -dx * mpp), por(b.u, dy * mpp)));
+    return cam;
+  }
+  function mul(A, B) {
+    var C = new Array(16), c, r, k;
+    for (c = 0; c < 4; c++) for (r = 0; r < 4; r++) { var s = 0; for (k = 0; k < 4; k++) s += A[k * 4 + r] * B[c * 4 + k]; C[c * 4 + r] = s; }
+    return C;
+  }
+  /* vista, proyeccion y su producto, por columnas como las pide WebGL */
+  function matrices(cam, aspecto) {
+    var b = base(cam), R = cam.radio || 5, t = Math.tan(cam.fov / 2), cerca, lejos, P;
+    lejos = cam.dist + 4 * R;
+    if (cam.orto) {
+      cerca = Math.max(0.01, cam.dist - 4 * R);
+      var hh = cam.dist * t, hw = hh * aspecto;
+      P = [1 / hw, 0, 0, 0, 0, 1 / hh, 0, 0, 0, 0, -2 / (lejos - cerca), 0, 0, 0, -(lejos + cerca) / (lejos - cerca), 1];
+    } else {
+      cerca = Math.max(cam.dist * 0.02, cam.dist - 4 * R);
+      var fy = 1 / t;
+      P = [fy / aspecto, 0, 0, 0, 0, fy, 0, 0, 0, 0, (lejos + cerca) / (cerca - lejos), -1, 0, 0, 2 * lejos * cerca / (cerca - lejos), 0];
+    }
+    var e = b.ojo;
+    var V = [b.r[0], b.u[0], -b.f[0], 0, b.r[1], b.u[1], -b.f[1], 0, b.r[2], b.u[2], -b.f[2], 0,
+             -punto(b.r, e), -punto(b.u, e), punto(b.f, e), 1];
+    return { V: V, P: P, MVP: mul(P, V), base: b };
+  }
+  /* un punto del mundo en pixeles de un lienzo w x h; z de -1 (cerca) a 1 (lejos) */
+  function proyecta(cam, p, w, h) {
+    var M = matrices(cam, w / h).MVP, x = p[0], y = p[1], z = p[2];
+    var cx = M[0] * x + M[4] * y + M[8] * z + M[12], cy = M[1] * x + M[5] * y + M[9] * z + M[13],
+        cz = M[2] * x + M[6] * y + M[10] * z + M[14], cw = M[3] * x + M[7] * y + M[11] * z + M[15];
+    return [(cx / cw + 1) / 2 * w, (1 - cy / cw) / 2 * h, cz / cw];
+  }
+  /* el rayo que sale del pixel (sx, sy) */
+  function rayo(cam, sx, sy, w, h) {
+    var b = base(cam), a = w / h, t = Math.tan(cam.fov / 2), nx = 2 * sx / w - 1, ny = 1 - 2 * sy / h;
+    if (cam.orto) {
+      var hh = cam.dist * t;
+      return { o: suma(b.ojo, suma(por(b.r, nx * hh * a), por(b.u, ny * hh))), d: b.f };
+    }
+    return { o: b.ojo, d: unit(suma(b.f, suma(por(b.r, nx * t * a), por(b.u, ny * t)))) };
+  }
+  function tocaTriangulo(o, d, a, b, c) {
+    var e1 = resta(b, a), e2 = resta(c, a), p = cruz(d, e2), det = punto(e1, p);
+    if (Math.abs(det) < 1e-12) return null;
+    var inv = 1 / det, t0 = resta(o, a), u = punto(t0, p) * inv;
+    if (u < 0 || u > 1) return null;
+    var q = cruz(t0, e1), v = punto(d, q) * inv;
+    if (v < 0 || u + v > 1) return null;
+    var t = punto(e2, q) * inv;
+    return t > 1e-9 ? t : null;
+  }
+  function tocaCaja(o, d, mn, mx) {
+    var t0 = -Infinity, t1 = Infinity, k;
+    for (k = 0; k < 3; k++) {
+      if (Math.abs(d[k]) < 1e-12) { if (o[k] < mn[k] || o[k] > mx[k]) return false; continue; }
+      var a = (mn[k] - o[k]) / d[k], b = (mx[k] - o[k]) / d[k];
+      t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b));
+    }
+    return t1 >= Math.max(t0, 0);
+  }
+  /* la pieza mas cercana que toca el rayo -> {indice, t} o null */
+  function elegir(esc, ry) {
+    var mejor = null;
+    ((esc && esc.solidos) || []).forEach(function (s, i) {
+      if (!tocaCaja(ry.o, ry.d, s.min, s.max)) return;
+      s.tris.forEach(function (tr) {
+        var t = tocaTriangulo(ry.o, ry.d, tr[0], tr[1], tr[2]);
+        if (t !== null && (!mejor || t < mejor.t)) mejor = { indice: i, t: t };
+      });
+    });
+    return mejor;
+  }
+
+  /* --- WebGL ---------------------------------------------------------------------- */
+  var VS = "attribute vec3 p; attribute vec3 n; attribute vec3 c; uniform mat4 mvp; uniform vec3 luz; uniform vec3 tinte;" +
+           "uniform float usaTinte; varying vec3 col;" +
+           "void main(){ float d = max(dot(n, luz), 0.0); vec3 b = mix(c, tinte, usaTinte);" +
+           " col = b * (0.58 + 0.42 * d); gl_Position = mvp * vec4(p, 1.0); }";
+  var FS = "precision mediump float; varying vec3 col; uniform float alfa; void main(){ gl_FragColor = vec4(col, alfa); }";
+
+  /* el que dibuja en un <canvas>; null si el navegador no tiene WebGL */
+  function visor(canvas) {
+    var gl = null;
+    try { gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true }) || canvas.getContext("experimental-webgl"); }
+    catch (e) { gl = null; }
+    if (!gl || typeof gl.createShader !== "function" || typeof gl.createBuffer !== "function") return null;
+    function shader(tipo, src) {
+      var s = gl.createShader(tipo);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || "sombreador");
+      return s;
+    }
+    var prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+    var aP = gl.getAttribLocation(prog, "p"), aN = gl.getAttribLocation(prog, "n"), aC = gl.getAttribLocation(prog, "c");
+    var uM = gl.getUniformLocation(prog, "mvp"), uL = gl.getUniformLocation(prog, "luz"), uT = gl.getUniformLocation(prog, "tinte"),
+        uU = gl.getUniformLocation(prog, "usaTinte"), uA = gl.getUniformLocation(prog, "alfa");
+    var B = { p: gl.createBuffer(), n: gl.createBuffer(), c: gl.createBuffer(), lp: gl.createBuffer(), ln: gl.createBuffer(), lc: gl.createBuffer() };
+    var dat = { nTri: 0, nLin: 0, rangos: [] };
+    function sube(buf, arr) { gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); }
+    function atributo(loc, buf) {
+      if (loc < 0) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+    }
+    return {
+      gl: gl,
+      cargar: function (esc) {
+        var nT = 0, nL = 0;
+        esc.solidos.forEach(function (s) { nT += s.tris.length * 3; nL += s.aristas.length * 2; });
+        var P = new Float32Array(nT * 3), N = new Float32Array(nT * 3), Cc = new Float32Array(nT * 3),
+            LP = new Float32Array(nL * 3), LN = new Float32Array(nL * 3), LC = new Float32Array(nL * 3), i = 0, j = 0;
+        dat.rangos = [];
+        esc.solidos.forEach(function (s) {
+          var ini = i;
+          s.tris.forEach(function (t) {
+            var n = unit(cruz(resta(t[1], t[0]), resta(t[2], t[0])));
+            for (var q = 0; q < 3; q++) { P.set(t[q], i * 3); N.set(n, i * 3); Cc.set(s.color, i * 3); i++; }
+          });
+          dat.rangos.push([ini, i - ini]);
+          s.aristas.forEach(function (a) { LP.set(a[0], j * 3); LP.set(a[1], (j + 1) * 3); j += 2; });
+        });
+        sube(B.p, P); sube(B.n, N); sube(B.c, Cc); sube(B.lp, LP); sube(B.ln, LN); sube(B.lc, LC);
+        dat.nTri = nT; dat.nLin = nL;
+      },
+      dibujar: function (cam, o) {
+        o = o || {};
+        var w = canvas.width, h = canvas.height, fondo = rgb(o.fondo || "#FFFFFF");
+        gl.viewport(0, 0, w, h);
+        gl.clearColor(fondo[0], fondo[1], fondo[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        if (!dat.nTri) return;
+        gl.useProgram(prog);
+        gl.uniformMatrix4fv(uM, false, new Float32Array(matrices(cam, w / Math.max(1, h)).MVP));
+        gl.uniform3fv(uL, new Float32Array(unit([0.35, -0.55, 0.76])));
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.BLEND);
+        gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
+        atributo(aP, B.p); atributo(aN, B.n); atributo(aC, B.c);
+        gl.uniform1f(uU, 0); gl.uniform1f(uA, 1); gl.uniform3fv(uT, new Float32Array([0, 0, 0]));
+        gl.drawArrays(gl.TRIANGLES, 0, dat.nTri);
+        var r = (o.sel !== null && o.sel !== undefined) ? dat.rangos[o.sel] : null;
+        if (r) {
+          gl.uniform1f(uU, 0.85); gl.uniform3fv(uT, new Float32Array(rgb(o.acento || "#F2B705")));
+          gl.drawArrays(gl.TRIANGLES, r[0], r[1]);
+        }
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+        if (dat.nLin) {
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          atributo(aP, B.lp); atributo(aN, B.ln); atributo(aC, B.lc);
+          gl.uniform1f(uU, 1); gl.uniform3fv(uT, new Float32Array(rgb(o.tinta || "#1A2029"))); gl.uniform1f(uA, 0.5);
+          gl.drawArrays(gl.LINES, 0, dat.nLin);
+        }
+      }
+    };
+  }
+
+  return { COLORES: COLORES, FAMILIAS: FAMILIAS, VISTAS: VISTAS, rgb: rgb, prisma: prisma, escena: escena, camara: camara,
+           vista: vista, encuadrar: encuadrar, ajustaRadio: ajustaRadio, orbita: orbita, acerca: acerca, desplaza: desplaza,
+           base: base, matrices: matrices, proyecta: proyecta, rayo: rayo, elegir: elegir, visor: visor };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -7103,7 +7478,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v165 · 13-09-2026";
+  var BUILD="v168 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -10353,6 +10728,10 @@ var TT={script:performance.now()};
     e.setAttribute("aria-current",S.vista==="edificio");e.textContent="Edificio";
     e.title="Resumen de todos los niveles: lo que va a METRADO_CARGAS";
     e.onclick=function(){S.vista="edificio";S.sel=null;render()};c.appendChild(e);
+    var t3=document.createElement("button");t3.className="nbtn";
+    t3.setAttribute("aria-current",S.vista==="3d");t3.textContent="3D";
+    t3.title="El edificio en 3D, con las secciones que se llevan a ETABS";
+    t3.onclick=function(){S.vista="3d";S.sel=null;render()};c.appendChild(t3);
     var a=document.createElement("div");a.className="acts";
     a.innerHTML='<button class="btn" id="nAdd">+ Nivel</button><button class="btn" id="nDup">Duplicar</button>'+
       '<button class="btn" id="nDel">Eliminar</button>';
@@ -14344,6 +14723,192 @@ var TT={script:performance.now()};
   }
 
   /* Resumen por nivel. No calcula cargas: solo mide lo que Excel no sabe. */
+  /* =====================================================================
+     PLANTA › 3D.  La geometria, la camara y el dibujo viven en
+     oviedo/vista3d.js; aqui van los mandos.  Lo que se ve es la exportacion
+     a ETABS -las secciones que se llevarian- y las zapatas dibujadas.  La
+     camara, los filtros y lo elegido no son del modelo: no se guardan.
+     ===================================================================== */
+  var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true}, niveles:"todos",
+           sel:null, selIdx:null, visor:null, esc:null, drag:null, sinGL:false, pedido:0};
+  try{ window.addEventListener("resize",function(){ if(S.vista==="3d")dibuja3D(); }); }catch(e){}
+  function esc3(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+  function colores3D(){
+    var cs=null; try{ cs=getComputedStyle(document.documentElement); }catch(e){}
+    function v(n,def){ var t=(cs&&cs.getPropertyValue)?String(cs.getPropertyValue(n)||"").trim():""; return t||def; }
+    return {col:v("--col","#0F6E8C"), viga:v("--viga","#A85A2B"), chata:v("--chata","#D9A579"),
+            aligerada:v("--alig","#7FA0AE"), maciza:v("--maci","#5B7686"), nervada:v("--nerv","#8FA8A0"),
+            placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"),
+            fondo:v("--sheet","#FFFFFF"), tinta:v("--ink","#1A2029"),
+            /* lo elegido va en amarillo: el acento es el mismo azul de las columnas y no se veia */
+            resalte:v("--resalte3d","#F2B705")};
+  }
+  function montar3D(el){
+    el.innerHTML='<div class="v3d-barra">'+
+      '<div class="v3d-g" role="group" aria-label="Vista">'+
+      [["iso","Isométrica"],["planta","Planta"],["frente","Frente · X"],["lado","Lado · Y"]].map(function(q){
+        return '<button type="button" class="mini" data-v3="'+q[0]+'">'+q[1]+'</button>'}).join("")+
+      '<button type="button" class="mini" data-v3="acercar" aria-label="Acercar">+</button>'+
+      '<button type="button" class="mini" data-v3="alejar" aria-label="Alejar">−</button>'+
+      '<button type="button" class="mini" data-v3="encuadrar">Encuadrar</button></div>'+
+      '<div class="v3d-g" role="group" aria-label="Qué se ve">'+
+      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"]].map(function(f){
+        return '<label class="v3d-ch"><input type="checkbox" id="f3'+f[0]+'" data-f3="'+f[0]+'"'+
+          (V3D.filtro[f[0]]!==false?' checked':'')+'>'+f[1]+'</label>'}).join("")+'</div>'+
+      '<label class="v3d-ch">Niveles <select id="n3d" class="mini"></select></label></div>'+
+      '<div class="v3d-lienzo"><canvas id="c3d" tabindex="0" aria-label="El edificio en 3D: arrastra para girar, '+
+      'rueda para acercar"></canvas></div>'+
+      '<div class="v3d-pie"><span class="v3d-info" id="i3d"></span><span>Arrastra para girar · clic derecho o Mayús + '+
+      'arrastrar para mover · rueda para acercar · doble clic para encuadrar · clic en una pieza para ver qué es</span></div>';
+    el.querySelectorAll("[data-v3]").forEach(function(b){ b.onclick=function(){ accion3D(this.getAttribute("data-v3")); }; });
+    el.querySelectorAll("[data-f3]").forEach(function(c){
+      c.onchange=function(){ V3D.filtro[this.getAttribute("data-f3")]=!!this.checked; pinta3D(); }; });
+    var sn=$("#n3d"); if(sn)sn.onchange=function(){ V3D.niveles=this.value; pinta3D(); };
+    var cv=$("#c3d"); if(cv&&cv.addEventListener)eventos3D(cv);
+    V3D.visor=null; V3D.sinGL=false;
+  }
+  function eventos3D(cv){
+    cv.addEventListener("pointerdown",function(e){
+      try{ cv.setPointerCapture(e.pointerId); }catch(x){}
+      V3D.drag={x:e.clientX, y:e.clientY, x0:e.clientX, y0:e.clientY, mover:(e.button===2||e.shiftKey), boton:e.button, movio:false};
+    });
+    cv.addEventListener("pointermove",function(e){
+      var d=V3D.drag; if(!d||!V3D.cam)return;
+      var dx=e.clientX-d.x, dy=e.clientY-d.y; d.x=e.clientX; d.y=e.clientY;
+      if(Math.abs(e.clientX-d.x0)+Math.abs(e.clientY-d.y0)>3)d.movio=true;
+      if(!d.movio)return;
+      if(d.mover)VISTA3D.desplaza(V3D.cam,dx,dy,cv.clientWidth,cv.clientHeight);
+      else{ VISTA3D.orbita(V3D.cam,-dx*0.008,dy*0.008); V3D.vistaNom=null; }
+      pedir3D();
+    });
+    cv.addEventListener("pointerup",function(e){
+      var d=V3D.drag; V3D.drag=null;
+      if(d&&!d.movio&&d.boton===0)elige3D(cv,e.offsetX,e.offsetY);
+      marcaVista3D();
+    });
+    cv.addEventListener("wheel",function(e){
+      if(!V3D.cam)return; e.preventDefault();
+      VISTA3D.acerca(V3D.cam,e.deltaY>0?1.12:1/1.12); pedir3D();
+    },{passive:false});
+    cv.addEventListener("dblclick",function(){ accion3D("encuadrar"); });
+    cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
+    cv.addEventListener("keydown",function(e){
+      if(!V3D.cam)return;
+      var k=e.key, hecho=true;
+      if(k==="ArrowLeft")VISTA3D.orbita(V3D.cam,0.08,0);
+      else if(k==="ArrowRight")VISTA3D.orbita(V3D.cam,-0.08,0);
+      else if(k==="ArrowUp")VISTA3D.orbita(V3D.cam,0,0.06);
+      else if(k==="ArrowDown")VISTA3D.orbita(V3D.cam,0,-0.06);
+      else if(k==="+"||k==="=")VISTA3D.acerca(V3D.cam,1/1.15);
+      else if(k==="-")VISTA3D.acerca(V3D.cam,1.15);
+      else if(k==="0")VISTA3D.encuadrar(V3D.cam,V3D.esc);
+      else hecho=false;
+      if(hecho){ e.preventDefault(); if(k.indexOf("Arrow")===0){ V3D.vistaNom=null; marcaVista3D(); } pedir3D(); }
+    });
+  }
+  function accion3D(a){
+    if(!V3D.cam||!V3D.esc)return;
+    if(a==="acercar")VISTA3D.acerca(V3D.cam,1/1.25);
+    else if(a==="alejar")VISTA3D.acerca(V3D.cam,1.25);
+    else if(a==="encuadrar")VISTA3D.encuadrar(V3D.cam,V3D.esc);
+    else{ VISTA3D.vista(V3D.cam,a,V3D.esc); V3D.vistaNom=a; }
+    marcaVista3D(); dibuja3D();
+  }
+  function marcaVista3D(){
+    var el=$("#vista3d"); if(!el||!el.querySelectorAll)return;
+    el.querySelectorAll("[data-v3]").forEach(function(b){
+      var n=b.getAttribute("data-v3");
+      if(VISTA3D.VISTAS[n])b.setAttribute("aria-pressed",String(n===V3D.vistaNom));
+    });
+  }
+  function pedir3D(){
+    if(V3D.pedido)return;
+    V3D.pedido=requestAnimationFrame(function(){ V3D.pedido=0; dibuja3D(); });
+  }
+  function dibuja3D(){
+    var cv=$("#c3d"); if(!cv||!V3D.visor||!V3D.cam)return;
+    var dpr=window.devicePixelRatio||1,
+        w=Math.max(1,Math.round((cv.clientWidth||800)*dpr)), h=Math.max(1,Math.round((cv.clientHeight||500)*dpr));
+    if(cv.width!==w)cv.width=w;
+    if(cv.height!==h)cv.height=h;
+    V3D.cam.aspecto=w/h;               /* lo usa Encuadrar: en un lienzo angosto manda el ancho */
+    var c=colores3D();
+    try{ V3D.visor.dibujar(V3D.cam,{fondo:c.fondo, tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx}); }catch(e){}
+  }
+  function elige3D(cv,x,y){
+    if(!V3D.esc||!V3D.cam)return;
+    var w=cv.clientWidth||1, h=cv.clientHeight||1, q=VISTA3D.elegir(V3D.esc,VISTA3D.rayo(V3D.cam,x,y,w,h));
+    V3D.selIdx=q?q.indice:null; V3D.sel=q?V3D.esc.solidos[q.indice]:null;
+    dibuja3D(); info3D();
+  }
+  function info3D(aviso){
+    var i=$("#i3d"); if(!i)return;
+    var E=V3D.esc, s=V3D.sel, t;
+    if(aviso)t=aviso;
+    else if(s)t='<b>'+esc3(s.titulo)+'</b> · '+esc3(s.detalle)+' <button type="button" class="mini" id="ir3d">Ver en la planta</button>';
+    else if(E){
+      var n={col:0,viga:0,losa:0,placa:0,zapata:0};
+      E.solidos.forEach(function(x){n[x.fam]++});
+      t=[[n.col,"columna","columnas"],[n.viga,"viga","vigas"],[n.losa,"losa","losas"],[n.placa,"placa","placas"],
+         [n.zapata,"zapata","zapatas"]].filter(function(q){return q[0]}).map(function(q){
+           return q[0]+" "+(q[0]===1?q[1]:q[2])}).join(" · ")||"Nada que ver con estos filtros";
+      if(E.avisos.losasSinEspesor)t+=' · <span class="deci-no">'+E.avisos.losasSinEspesor+' losa(s) sin espesor calculado, '+
+        'no se dibujan</span>';
+    }
+    i.innerHTML=t||"";
+    var b=$("#ir3d"); if(b&&s)b.onclick=function(){ irAPlanta3D(V3D.sel); };
+  }
+  /* de la pieza del 3D a la misma pieza en la planta, por su codigo */
+  function irAPlanta3D(s){
+    if(!s)return;
+    var k=s.nivel||0, sel=null, nm=nombres(k);
+    if(s.fam==="zapata"&&s.ij)sel={t:"col",i:s.ij[0],j:s.ij[1]};
+    else{
+      function busca(mapa,hace){ Object.keys(mapa).forEach(function(kk){ if(!sel&&mapa[kk].cod===s.cod)sel=hace(kk.split(":")); }); }
+      if(s.fam==="col")busca(nm.C,function(p){return {t:"col",i:+p[0],j:+p[1]}});
+      else if(s.fam==="viga")busca(nm.V,function(p){return {t:"viga",o:p[0],i:+p[1],j:+p[2]}});
+      else if(s.fam==="placa")busca(nm.P,function(p){return {t:"placa",o:p[0],i:+p[1],j:+p[2]}});
+      else if(s.fam==="losa")busca(nm.L,function(p){return {t:"losa",i:+p[0],j:+p[1]}});
+    }
+    S.act=Math.min(k,S.niveles.length-1); S.vista="plano"; S.sel=sel; render();
+  }
+  function pinta3D(){
+    var el=$("#vista3d"); if(!el)return;
+    if(String(el.innerHTML||"").indexOf('id="c3d"')<0)montar3D(el);
+    var ex, zs=[];
+    try{ ex=exportaEtabs(); }catch(e){ info3D('<span class="deci-no">No se pudo armar el edificio: '+esc3(e&&e.message)+'</span>'); return; }
+    try{ zs=zapatasDelNivel(); }catch(e){ zs=[]; }
+    var n=ex.niveles.length, mt=/^(hasta|solo):(\d+)$/.exec(V3D.niveles);
+    if(mt&&+mt[2]>=n)V3D.niveles="todos";
+    var sn=$("#n3d");
+    if(sn){
+      var op='<option value="todos">Todos</option>';
+      ex.niveles.forEach(function(L,k){ op+='<option value="hasta:'+k+'">Hasta '+esc3(L.nombre)+'</option>'; });
+      ex.niveles.forEach(function(L,k){ op+='<option value="solo:'+k+'">Solo '+esc3(L.nombre)+'</option>'; });
+      sn.innerHTML=op; sn.value=V3D.niveles;
+    }
+    ["col","viga","losa","placa","zapata"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
+    V3D.esc=VISTA3D.escena(ex,{zapatas:zs, colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles});
+    if(!V3D.cam){
+      var cv0=$("#c3d"), asp=(cv0&&cv0.clientWidth>0&&cv0.clientHeight>0)?cv0.clientWidth/cv0.clientHeight:1.4;
+      V3D.cam=VISTA3D.camara(V3D.esc,"iso",asp); V3D.vistaNom="iso";
+    }
+    else VISTA3D.ajustaRadio(V3D.cam,V3D.esc);
+    /* lo elegido sigue a la pieza, no a su posicion en la lista */
+    V3D.selIdx=null;
+    if(V3D.sel)V3D.esc.solidos.forEach(function(s,i){ if(s.fam===V3D.sel.fam&&s.cod===V3D.sel.cod){ V3D.selIdx=i; V3D.sel=s; } });
+    if(V3D.selIdx===null)V3D.sel=null;
+    marcaVista3D();
+    if(!V3D.visor&&!V3D.sinGL){
+      try{ V3D.visor=VISTA3D.visor($("#c3d")); }catch(e){ V3D.visor=null; }
+      if(!V3D.visor)V3D.sinGL=true;
+    }
+    if(!V3D.visor){ info3D('<span class="deci-no">Este navegador no dibuja en 3D: WebGL no está disponible.</span>'); return; }
+    V3D.visor.cargar(V3D.esc);
+    dibuja3D();
+    info3D();
+  }
+
   function pintaEdificio(){
     var d=$("#edificio"),filas=[],tA=0,tAl=0,tMa=0,tNe=0,tC=0,tVP=0,tVC=0,tPL=0;
     S.niveles.forEach(function(m,k){
@@ -14434,7 +14999,8 @@ var TT={script:performance.now()};
     ver("#resumen",!solo&&!deci);
     ver("#notas",!solo&&!deci);
     ver("#plano",esPlano);          /* <- el que fallaba: es un SVG */
-    ver("#edificio",!(esPlano||solo));
+    ver("#edificio",!(esPlano||solo)&&S.vista!=="3d");
+    ver("#vista3d",S.vista==="3d"&&!solo);
     ver("#hint",!solo&&esPlano&&!usos);
     ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
@@ -14450,6 +15016,7 @@ var TT={script:performance.now()};
     else if(ini){pintaInicio();}
     else if(dise){pintaDiseno();}
     else if(deci&&solo){pintaCuadroDecisiones();}
+    else if(!esPlano&&S.vista==="3d"){pinta3D(); if(deci)pintaDecisiones();}
     else if(!esPlano){pintaEdificio(); if(deci)pintaDecisiones();}
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else if(deci){draw();pintaDecisiones();}
@@ -14463,7 +15030,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
