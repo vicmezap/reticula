@@ -8284,7 +8284,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v189 · 14-09-2026";
+  var BUILD="v192 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9254,7 +9254,16 @@ var TT={script:performance.now()};
         H=Math.max(posY(ny()-1),acum(ladoY2(m),ny()-1)),
         mg=conDims?76:56,
         esc=Math.max(22,Math.min(46,500/Math.max(W,H,1)))*S.zoom;
-    LIENZO={m:m,W:W,H:H,mg:mg,esc:esc,w:W*esc+2*mg,h:H*esc+2*mg};
+    /* EL PLANO DE FONDO CABE ENTERO.  El lienzo median lo que el modelo, y un AutoCAD mas grande que
+       el -o anclado con parte a la izquierda o arriba del eje A-1- se cortaba en el borde: faltaban
+       burbujas y medio dibujo.  La VISTA (viewBox) se agranda hasta abarcarlo, sin mover coordenadas;
+       w y h siguen siendo los del modelo, que es contra lo que se colocan las cotas de los bordes. */
+    var w0=W*esc+2*mg, h0=H*esc+2*mg, vx=0, vy=0, vw=w0, vh=h0, c=(typeof calco==="function")?calco():null;
+    if(c&&c.w>0&&c.h>0&&c.esc>0){
+      var x0=mg+c.dx*esc-24, y0=mg+c.dy*esc-24, x1=mg+(c.dx+c.w*c.esc)*esc+24, y1=mg+(c.dy+c.h*c.esc)*esc+24;
+      vx=Math.min(0,x0); vy=Math.min(0,y0); vw=Math.max(w0,x1)-vx; vh=Math.max(h0,y1)-vy;
+    }
+    LIENZO={m:m,W:W,H:H,mg:mg,esc:esc,w:w0,h:h0,vx:vx,vy:vy,vw:vw,vh:vh};
     return LIENZO;
   }
 
@@ -9579,7 +9588,7 @@ var TT={script:performance.now()};
        La vista de usos no lleva etiquetas de seccion: margen corto. */
     var L0=lienzo(false),
         m=L0.m, mg=L0.mg, esc=L0.esc, w=L0.w, h=L0.h;
-    sv.setAttribute("viewBox","0 0 "+w+" "+h);
+    sv.setAttribute("viewBox",L0.vx+" "+L0.vy+" "+L0.vw+" "+L0.vh);
     sv.style.maxWidth=(S.zoom>1?w+"px":"100%");
     /* LOS DOS INDICES SON OBLIGATORIOS.
 
@@ -10210,12 +10219,14 @@ var TT={script:performance.now()};
 
   function svgAPng(svg, ancho){
     return new Promise(function(res){
-      var vb=(svg.getAttribute("viewBox")||"0 0 100 100").split(/\s+/);
-      var w=+vb[2]||100, h=+vb[3]||100;
+      /* la foto es del MODELO: su lienzo, aunque la vista se haya agrandado por un plano de fondo */
+      var L0=LIENZO, vb=(svg.getAttribute("viewBox")||"0 0 100 100").split(/\s+/);
+      var w=(L0&&L0.w)||+vb[2]||100, h=(L0&&L0.h)||+vb[3]||100;
       var copia=svg.cloneNode(true);
-      /* el calco se quita: es el PDF del arquitecto, no el modelo */
-      Array.prototype.slice.call(copia.querySelectorAll("image")).forEach(
-        function(im){ if(im.parentNode) im.parentNode.removeChild(im); });
+      /* el fondo -el PDF o el AutoCAD del arquitecto- no va en la foto.  Se aparta ahora y se quita DESPUES de
+         copiar los estilos: ese recorrido va elemento a elemento a la par del original, y quitarlo antes lo
+         desfasaba */
+      var fuera=Array.prototype.slice.call(copia.querySelectorAll("image,g.calco-cad"));
 
       /* LOS ESTILOS HAY QUE METERLOS DENTRO, UNO A UNO.
 
@@ -10242,6 +10253,8 @@ var TT={script:performance.now()};
         clon[i].setAttribute("style",trozos.join(";"));
         clon[i].removeAttribute("class");
       }
+      fuera.forEach(function(n){ if(n.parentNode) n.parentNode.removeChild(n); });
+      copia.setAttribute("viewBox","0 0 "+w+" "+h);
       copia.setAttribute("style","background:#FFFFFF");
       copia.setAttribute("width", w);
       copia.setAttribute("height", h);
@@ -10298,8 +10311,8 @@ var TT={script:performance.now()};
        Con 56 las dos cosas se pisaban. */
     var L0=lienzo(DIMS),
         m=L0.m, mg=L0.mg, esc=L0.esc, w=L0.w, h=L0.h;
-    s.setAttribute("viewBox","0 0 "+w+" "+h);
-    s.style.maxWidth=(S.zoom>1?w+"px":"100%");
+    s.setAttribute("viewBox",L0.vx+" "+L0.vy+" "+L0.vw+" "+L0.vh);
+    s.style.maxWidth=(S.zoom>1?L0.vw+"px":"100%");
     /* LOS DOS INDICES SON OBLIGATORIOS.
 
        El segundo era opcional y, si faltaba, caia al borde de referencia.
@@ -11059,6 +11072,11 @@ var TT={script:performance.now()};
       c:(D.c||[]).map(function(C){return [C[0],C[1]||null,X(C[2]),Y(C[3]),C[4]]}),
       t:(D.t||[]).map(function(T){return [T[0],T[1]||null,X(T[2]),Y(T[3]),T[4],T[5]||0,limpiaMtext(T[6]),T[7]||"i",T[8]||"base"]})
          .filter(function(T){return !!T[6]}),
+      /* sombreados y solidos: sus contornos; el solido va relleno y el de patron, apenas tenido */
+      h:(D.h||[]).map(function(S2){
+        return [S2[0], S2[1]||null, String(S2[2]||""), S2.slice(3).map(function(lz){
+          var o=[]; for(var k=0;k+1<lz.length;k+=2)o.push(X(lz[k]),Y(lz[k+1])); return o; })];
+      }),
       omitidos:D.omitidos||{}};
     var c={tipo:"cad", cad:cad, w:+(x1-x0).toFixed(4), h:+(y1-y0).toFixed(4), esc:1, dx:0, dy:0, op:0.9, cal:true, colores:true};
     CADV[S.act]=null; VECT[S.act]=null; PROP=null; calibrando=null; anclando=false;
@@ -11084,6 +11102,47 @@ var TT={script:performance.now()};
     if(/dot|punto/.test(t))return "0.03 0.09";
     return "";
   }
+  /* LOS EJES DEL DIBUJO, PROLONGADOS.  En un plano de arquitectura el eje suele ser una burbuja -circulo con
+     su nombre- y un tramo de linea hasta el borde del edificio; dentro no se dibuja.  Aqui se reconoce cada
+     burbuja con su tramo y el eje se prolonga a trazos por todo el dibujo, con su nombre en los dos extremos.
+     No es modelo: es una guia exacta, en la misma linea que se dibujo. */
+  function ejesDeCad(cad){
+    var X0=Infinity, Y0=Infinity, X1=-Infinity, Y1=-Infinity, segs=[], ejes=[];
+    cad.l.forEach(function(L){
+      for(var k=2;k+1<L.length;k+=2){ X0=Math.min(X0,L[k]); X1=Math.max(X1,L[k]); Y0=Math.min(Y0,L[k+1]); Y1=Math.max(Y1,L[k+1]); }
+      for(k=2;k+3<L.length;k+=2)segs.push([L[k],L[k+1],L[k+2],L[k+3]]);
+    });
+    if(!(X1>X0||Y1>Y0))return ejes;
+    cad.c.forEach(function(C){
+      var cx=C[2], cy=C[3], r=C[4], nombre=null, dir=null, pos=null, largo=0;
+      if(!(r>=0.1&&r<=1.0))return;
+      cad.t.forEach(function(T){
+        if(!nombre&&Math.hypot(T[2]-cx,T[3]-cy)<=1.3*r&&/^([A-Za-z]{1,2}|[0-9]{1,2})['′´]*$/.test(T[6]))nombre=T[6];
+      });
+      if(!nombre)return;
+      /* su tramo: recto, horizontal o vertical, por el centro y con un extremo en el circulo */
+      segs.forEach(function(s){
+        var len=Math.hypot(s[2]-s[0],s[3]-s[1]); if(len<r)return;
+        var d1=Math.hypot(s[0]-cx,s[1]-cy), d2=Math.hypot(s[2]-cx,s[3]-cy);
+        if(Math.min(Math.abs(d1-r),Math.abs(d2-r),d1,d2)>0.15*r+0.02)return;
+        if(Math.abs(s[2]-s[0])<=0.01*len&&Math.abs((s[0]+s[2])/2-cx)<=0.1*r&&len>largo){largo=len;dir="v";pos=(s[0]+s[2])/2;}
+        if(Math.abs(s[3]-s[1])<=0.01*len&&Math.abs((s[1]+s[3])/2-cy)<=0.1*r&&len>largo){largo=len;dir="h";pos=(s[1]+s[3])/2;}
+      });
+      /* sin tramo: la burbuja de arriba o de abajo es de un eje vertical; la de un costado, de uno horizontal */
+      if(!dir){
+        dir=Math.min(Math.abs(cy-Y0),Math.abs(cy-Y1))<Math.min(Math.abs(cx-X0),Math.abs(cx-X1))?"v":"h";
+        pos=dir==="v"?cx:cy;
+      }
+      var mismo=ejes.filter(function(e){return e.dir===dir&&e.nombre===nombre&&Math.abs(e.pos-pos)<0.02})[0];
+      if(mismo)mismo.burbujas++;
+      else ejes.push({nombre:nombre, dir:dir, pos:+pos.toFixed(4), burbujas:1});
+    });
+    ejes.forEach(function(e){
+      if(e.dir==="v"){ e.x1=e.x2=e.pos; e.y1=+(Y0-0.5).toFixed(4); e.y2=+(Y1+0.5).toFixed(4); }
+      else{ e.y1=e.y2=e.pos; e.x1=+(X0-0.5).toFixed(4); e.x2=+(X1+0.5).toFixed(4); }
+    });
+    return ejes;
+  }
   function trazosCad(c){
     var cad=c.cad, clave=cad.capas.map(function(x){return x.on?1:0}).join("")+(c.colores===false?"g":"c"), mem=CADV[S.act];
     if(mem&&mem.cad===cad&&mem.clave===clave)return mem.V;
@@ -11105,6 +11164,17 @@ var TT={script:performance.now()};
       if(!vis(C[0]))return;
       var r=f(C[4]);
       grupo(C[0],C[1]).d.push("M"+f(C[2]-C[4])+" "+f(C[3])+"a"+r+" "+r+" 0 1 0 "+f(2*C[4])+" 0a"+r+" "+r+" 0 1 0 "+f(-2*C[4])+" 0");
+    });
+    /* los rellenos van DEBAJO de las lineas: se ponen primero */
+    (cad.h||[]).forEach(function(S2){
+      if(!vis(S2[0]))return;
+      var d=S2[3].map(function(lz){
+        var s="M"+f(lz[0])+" "+f(lz[1]);
+        for(var k=2;k+1<lz.length;k+=2)s+="L"+f(lz[k])+" "+f(lz[k+1]);
+        return s+"Z";
+      }).join("");
+      if(d)V.push({tipo:"relleno", d:d, solido:S2[2]==="SOLID",
+                   col:c.colores===false?"var(--ink-3)":tintaCad(S2[1]||cad.capas[S2[0]].hex)});
     });
     orden.forEach(function(k){ grupos[k].d=grupos[k].d.join(""); V.push(grupos[k]); });
     cad.t.forEach(function(T){
@@ -11130,6 +11200,12 @@ var TT={script:performance.now()};
                   opacity:c.op,"pointer-events":"none","class":"calco-cad"});
     trazosCad(c).forEach(function(t){
       var a;
+      if(t.tipo==="relleno"){
+        a={d:t.d,fill:t.col,"fill-rule":"evenodd","fill-opacity":t.solido?1:0.16};
+        if(!t.solido){ a.stroke=t.col; a["stroke-width"]=(0.5/k).toFixed(5); }
+        g.appendChild(el("path",a));
+        return;
+      }
       if(t.tipo==="path"){
         a={d:t.d,fill:"none",stroke:t.col,"stroke-width":sw,"stroke-linecap":"round","stroke-linejoin":"round"};
         if(t.dash)a["stroke-dasharray"]=t.dash;
@@ -11141,18 +11217,36 @@ var TT={script:performance.now()};
       if(t.rot)a.transform="rotate("+t.rot+" "+t.x+" "+t.y+")";
       var tx=el("text",a); tx.textContent=t.s; g.appendChild(tx);
     });
+    /* los ejes del dibujo prolongados, en el color del complemento para no confundirlos con los del modelo.
+       Sin rotulo: el nombre ya lo dicen sus burbujas, y uno en cada punta las tapaba («1 1») */
+    if(c.ejesDibujo!==false){
+      if(!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
+      c.cad.ejes.forEach(function(ej){
+        g.appendChild(el("path",{d:"M"+ej.x1+" "+ej.y1+"L"+ej.x2+" "+ej.y2,fill:"none",stroke:"var(--acc)",
+          "stroke-width":(1.1/k).toFixed(5),"stroke-dasharray":"0.5 0.15 0.1 0.15","class":"calco-eje"}));
+      });
+    }
     cont.appendChild(g);
   }
   function pintaCapasCad(c){
     var box=$("#calcoCapas"); if(!box)return;
     var cad=c.cad, n={};
-    [cad.l,cad.c,cad.t].forEach(function(A){ A.forEach(function(x){ n[x[0]]=(n[x[0]]||0)+1; }); });
+    [cad.l,cad.c,cad.t,cad.h||[]].forEach(function(A){ A.forEach(function(x){ n[x[0]]=(n[x[0]]||0)+1; }); });
     function h(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
-    box.innerHTML=cad.capas.map(function(cp,i){
+    if(!cad.ejes)cad.ejes=ejesDeCad(cad);
+    box.innerHTML=(cad.ejes.length
+      ? '<label class="calco-capa"><input type="checkbox" data-ejescad="1"'+(c.ejesDibujo!==false?' checked':'')+'>'+
+        '<i style="background:var(--acc)"></i><span title="Los ejes del dibujo, prolongados desde sus burbujas">'+
+        'Ejes prolongados</span><small>'+cad.ejes.length+'</small></label>' : '')+cad.capas.map(function(cp,i){
       if(!n[i])return "";
       return '<label class="calco-capa"><input type="checkbox" data-capa="'+i+'"'+(cp.on?' checked':'')+'>'+
         '<i style="background:'+h(tintaCad(cp.hex))+'"></i><span title="'+h(cp.n)+'">'+h(cp.n)+'</span><small>'+n[i]+'</small></label>';
     }).join("");
+    var ejc=box.querySelector("input[data-ejescad]");
+    if(ejc)ejc.onchange=function(){
+      var cc=calco(); if(!cc||cc.tipo!=="cad")return;
+      cc.ejesDibujo=!!ejc.checked; guardarCalco(S.act,cc); render();
+    };
     Array.prototype.forEach.call(box.querySelectorAll("input[data-capa]"),function(inp){
       inp.onchange=function(){
         var cc=calco(); if(!cc||cc.tipo!=="cad")return;
@@ -11176,9 +11270,11 @@ var TT={script:performance.now()};
     function vis(ci){return !!cad.capas[ci]&&cad.capas[ci].on!==false}
     /* cruce, extremo y centro compiten por CERCANIA: apuntando al centro de una columna, un cruce de
        muros a 5 cm se lo llevaba.  El punto sobre una linea solo entra si no hay ninguno de los otros */
+    /* y por encima de todos, el cruce de DOS ejes prolongados: anclando en A-1 un muro a 3 cm de ese cruce
+       se lo llevaba por estar mas cerca del clic, y el plano quedaba 7 cm corrido */
     function toma(x,y,prio,que){
       var d=Math.hypot(x-u,y-v); if(d>tol)return;
-      var r=prio<=1?0:prio, rm=mejor?(mejor.prio<=1?0:mejor.prio):9;
+      var r=prio<0?-1:(prio<=1?0:prio), rm=mejor?(mejor.prio<0?-1:(mejor.prio<=1?0:mejor.prio)):9;
       if(!mejor||r<rm||(r===rm&&d<mejor.d))mejor={x:x,y:y,d:d,prio:prio,que:que};
     }
     cad.l.forEach(function(L){
@@ -11196,8 +11292,18 @@ var TT={script:performance.now()};
         toma((L[2]+L[4]+L[6]+L[8])/4,(L[3]+L[5]+L[7]+L[9])/4,1,"centro");
     });
     cad.c.forEach(function(C){ if(vis(C[0]))toma(C[2],C[3],1,"centro"); });
+    /* los ejes prolongados tambien son lineas: su cruce es el A-1 exacto, aunque el dibujo no lo tenga */
+    if(c.ejesDibujo!==false){
+      if(!cad.ejes)cad.ejes=ejesDeCad(cad);
+      cad.ejes.forEach(function(ej){
+        var ax=ej.x1,ay=ej.y1,dx=ej.x2-ax,dy=ej.y2-ay,l2=dx*dx+dy*dy,
+            t=l2>0?Math.max(0,Math.min(1,((u-ax)*dx+(v-ay)*dy)/l2)):0, px=ax+t*dx, py=ay+t*dy;
+        if(Math.hypot(px-u,py-v)<=tol)cerca.push([ax,ay,ej.x2,ej.y2,px,py,true]);
+      });
+    }
     for(var i=0;i<cerca.length;i++)for(var j=i+1;j<cerca.length;j++){
-      var P=cruceSeg(cerca[i],cerca[j]); if(P)toma(P[0],P[1],0,"cruce");
+      var P=cruceSeg(cerca[i],cerca[j]), dosEjes=!!(cerca[i][6]&&cerca[j][6]);
+      if(P)toma(P[0],P[1],dosEjes?-1:0,dosEjes?"cruce de ejes":"cruce");
     }
     if(!mejor&&conLinea)cerca.forEach(function(s){ toma(s[4],s[5],3,"punto de la línea"); });
     return mejor;
@@ -11840,7 +11946,8 @@ var TT={script:performance.now()};
     /* el SVG se escala al ancho del contenedor: hay que deshacerlo */
     var k=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)
           ? svg.viewBox.baseVal.width/r.width : 1;
-    return {x:((e.clientX-r.left)*k-mg)/esc, y:((e.clientY-r.top)*k-mg)/esc};
+    /* la vista puede empezar antes del 0 cuando el plano de fondo sobresale: se suma su origen */
+    return {x:((e.clientX-r.left)*k+(L0.vx||0)-mg)/esc, y:((e.clientY-r.top)*k+(L0.vy||0)-mg)/esc};
   }
 
   svg.addEventListener("pointerdown",function(e){
@@ -12676,7 +12783,8 @@ var TT={script:performance.now()};
       var k=1;
       try{ var sv=$("#plano"), rc=sv.getBoundingClientRect(), vb=sv.viewBox&&sv.viewBox.baseVal;
            if(vb&&vb.width>0&&rc.width>0)k=vb.width/rc.width; }catch(x){}
-      var vbW=1e9; try{ vbW=$("#plano").viewBox.baseVal.width||1e9; }catch(x){}
+      /* el borde derecho de la vista: con un plano de fondo la vista puede empezar antes del 0 */
+      var vbW=1e9; try{ var vb2=$("#plano").viewBox.baseVal; vbW=(vb2.x||0)+(vb2.width||1e9); }catch(x){}
       var AYUDA={desc:"Pasa el "+(G.tramos===2?"descanso":"lado de llegada")+" al otro eje",
                  lado:"Pasa el primer tramo al otro lado", girar:"Los tramos van en la otra dirección",
                  tramos:"Cambia entre 1 tramo recto y 2 en U"};
