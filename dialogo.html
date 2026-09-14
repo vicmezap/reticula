@@ -10,6 +10,7 @@
     --alig:#7FA0AE; --alig-f:rgba(127,160,174,.20);
     --maci:#5B7686; --maci-f:rgba(91,118,134,.34);
     --nerv:#8FA8A0; --nerv-f:rgba(143,168,160,.22);
+    --esc:#7C6FA8; --esc-f:rgba(124,111,168,.20);
     --trib:#C0392B; --trib-fill:rgba(192,57,43,.09); --grid:#9FB0BC;
     /* series del espectro: validadas con validate_palette.js en claro y oscuro */
     --sx:#0A74A8; --sy:#A85A2B;
@@ -22,7 +23,7 @@
       --col:#4FB3D1; --viga:#D08A5A;
       --alig:#6E8C99; --alig-f:rgba(110,140,153,.22);
       --maci:#9BB6C4; --maci-f:rgba(155,182,196,.30);
-      --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22);
+      --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
       --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A5A66;
       --sx:#35A0C8; --sy:#C47A48;
     }
@@ -34,7 +35,7 @@
     --col:#4FB3D1; --viga:#D08A5A;
     --alig:#6E8C99; --alig-f:rgba(110,140,153,.22);
     --maci:#9BB6C4; --maci-f:rgba(155,182,196,.30);
-    --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22);
+    --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.22); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
     --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A5A66;
     --sx:#35A0C8; --sy:#C47A48;
   }
@@ -672,6 +673,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="sopt" data-losa="aligerada" aria-pressed="true"><span class="sdot" style="background:var(--alig)"></span>Aligerada</button>
         <button class="sopt" data-losa="maciza" aria-pressed="false"><span class="sdot" style="background:var(--maci)"></span>Maciza</button>
         <button class="sopt" data-losa="nervada" aria-pressed="false"><span class="sdot" style="background:var(--nerv)"></span>Nervada</button>
+        <button class="sopt" data-losa="escalera" aria-pressed="false"><span class="sdot" style="background:var(--esc)"></span>Escalera</button>
         <button class="sopt" data-losa="vacio" aria-pressed="false"><span class="sdot" style="background:var(--sheet)"></span>Vacío (quitar)</button>
       </div>
       <button class="tool" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
@@ -6325,6 +6327,191 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== escalera.js (inlinado) ===== */
+/* =====================================================================
+   escalera.js — LA ESCALERA: su geometria, su predimensionamiento y lo que
+   descarga sobre sus apoyos.  Sin interfaz: lo usa el complemento para el
+   paño de tipo «escalera» (Planta, Predimensionamiento, Comprobacion, Sismo,
+   la exportacion a ETABS y la vista 3D).
+
+   Fuentes:
+     RNE A.010, texto actualizado, Art. 23.2: maximo 17 pasos entre
+       descansos; en escaleras lineales el descanso mide al menos 0,90 m y en
+       las demas no menos que el ancho del tramo; paso minimo 0,25 m
+       (vivienda e industria), 0,28 m (hospedaje, comercio, oficinas y
+       servicios comunales) y 0,30 m (salud, educacion, recreacion y deportes,
+       transportes y comunicaciones); contrapaso maximo 0,18 m.
+     E.020, Tabla 1: «Corredores y escaleras» de cada ocupacion.
+     Criterio usual en el Peru, no de la E.060: garganta t = Ln/25 a Ln/20,
+       con Ln la luz horizontal libre entre apoyos; espesor medio
+       hm = t / cos θ + cp / 2, con cos θ = p / √(p² + cp²).
+     Apoyos: cada tramo, con su parte de descanso, es una losa simplemente
+       apoyada en el borde de arranque o llegada y en el borde del descanso.
+   El libro de Oviedo (Predimensionamiento en edificios de C.A., 2025) no
+   trata escaleras.
+
+   Ejes locales del paño: u a lo largo de los tramos, desde el borde de
+   arranque (E1) hasta el del descanso (E2); v a lo ancho; z desde el piso
+   de abajo.  Unidades: m, kg/m² y kg/m.
+
+     node scripts/complemento/oviedo/probar_escalera.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.ESCALERA = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var ART = { a010: "RNE A.010, Art. 23.2", e020: "E.020, Tabla 1 · Corredores y escaleras" };
+  var A010 = { pasosMax: 17, contrapasoMax: 0.18, descansoLineal: 0.90 };
+  var CP_OBJETIVO = 0.175;       /* sin contrapaso escrito: el que reparte la altura sin pasar de 17,5 cm */
+  var CV_SIN_TABLA = 400;        /* uso sin «corredores y escaleras» en la E.020: el de oficinas, del lado seguro */
+
+  /* el paso minimo del A.010 segun el uso del proyecto (los de la E.030) */
+  var PASO_MIN = [
+    { min: 0.30, grupo: "salud, educación, recreación y deportes, transportes y comunicaciones",
+      re: /hospital|cl[ií]nica|posta|educativ|universidad|instituto|estadio|coliseo|terminal|aeropuerto|puerto|comunicaci|cine|teatro/i },
+    { min: 0.28, grupo: "hospedaje, comercio, oficinas y servicios comunales",
+      re: /hotel|hospedaje|oficina|comercial|tienda|municipal|biblioteca|museo|bomberos|cuartel|penitenciar/i },
+    { min: 0.25, grupo: "vivienda e industria",
+      re: /vivienda|f[aá]brica|horno|dep[oó]sito|almac|industria|reservorio|planta|generaci/i }
+  ];
+  function pasoMinimo(uso) {
+    for (var i = 0; i < PASO_MIN.length; i++)
+      if (PASO_MIN[i].re.test(String(uso || ""))) return { min: PASO_MIN[i].min, grupo: PASO_MIN[i].grupo, supuesto: false };
+    return { min: 0.25, grupo: "vivienda e industria", supuesto: true };
+  }
+
+  var GRUPO_E020 = [
+    [/vivienda/i, "VIVIENDAS"], [/oficina/i, "OFICINAS"], [/hotel|hospedaje/i, "HOTELES"],
+    [/hospital|cl[ií]nica|posta/i, "HOSPITALES"], [/educativ|universidad|instituto/i, "CENTROS DE EDUCACIÓN"],
+    [/biblioteca/i, "BIBLIOTECAS"], [/cine|teatro|estadio|coliseo|museo|terminal/i, "LUGARES DE ASAMBLEA"],
+    [/comercial|tienda/i, "TIENDAS"], [/penitenciar/i, "INSTITUCIONES PENALES"]
+  ];
+  /* la carga viva de la escalera: «Corredores y escaleras» del grupo de la E.020 que corresponde al uso */
+  function cargaViva(uso, tabla) {
+    var g = null, i;
+    for (i = 0; i < GRUPO_E020.length; i++) if (GRUPO_E020[i][0].test(String(uso || ""))) { g = GRUPO_E020[i][1]; break; }
+    var f = g ? (tabla || []).filter(function (x) { return x.g === g && x.a === "Corredores y escaleras"; })[0] : null;
+    if (f && f.w > 0) return { w: +f.w, grupo: g, supuesto: false };
+    return { w: CV_SIN_TABLA, grupo: g, supuesto: true };
+  }
+
+  /* LA GEOMETRIA.  o: {h: altura de entrepiso, largo: el paño a lo largo de los tramos (eje a eje), ancho: a lo
+     ancho, tramos: 1 o 2 (en U), paso, cp: contrapaso (vacio = se propone), ojo: hueco entre los dos tramos,
+     descanso: largo del descanso (vacio = lo que queda)} */
+  function geometria(o) {
+    o = o || {};
+    var h = +o.h, tramos = (+o.tramos === 1) ? 1 : 2, p = (+o.paso > 0) ? +o.paso : 0.25,
+        largo = +o.largo, ancho = +o.ancho, ojo = tramos === 2 ? Math.max(0, +o.ojo || 0) : 0;
+    var nCp = (+o.cp > 0) ? Math.max(2, Math.round(h / +o.cp)) : Math.max(2, Math.ceil(h / CP_OBJETIVO - 1e-9));
+    var cp = h / nCp, n1 = tramos === 2 ? Math.ceil(nCp / 2) : nCp, n = tramos === 2 ? [n1, nCp - n1] : [nCp];
+    /* un tramo de n contrapasos tiene n − 1 pasos en planta: el ultimo contrapaso sube al descanso o al piso */
+    var Lt = n.map(function (k) { return (k - 1) * p; }), LtMax = Math.max.apply(null, Lt);
+    var bt = tramos === 2 ? (ancho - ojo) / 2 : ancho;
+    var descanso = (+o.descanso > 0) ? +o.descanso : Math.max(0, largo - LtMax);
+    return { h: h, tramos: tramos, paso: p, cp: cp, nCp: nCp, n: n, Lt: Lt, bt: bt, ojo: ojo, largo: largo, ancho: ancho,
+             descanso: descanso, cabe: LtMax + (tramos === 2 ? descanso : 0) <= largo + 1e-9 && bt > 0,
+             cos: p / Math.sqrt(p * p + cp * cp), theta: Math.atan(cp / p) };
+  }
+
+  function redondea5(v) { return Math.ceil(v * 100 / 5 - 1e-9) * 5 / 100; }
+  /* EL PREDIMENSIONAMIENTO.  o: {Ln: luz horizontal libre entre apoyos, t: garganta decidida (vacio = la calculada),
+     gamma: peso del concreto, acabados, cv}  ->  pesos por m² EN PLANTA del tramo y del descanso */
+  function predim(g, o) {
+    o = o || {};
+    var Ln = Math.max(+o.Ln || 0, 0.01), t20 = Ln / 20, t25 = Ln / 25, tCalc = redondea5((t20 + t25) / 2);
+    var propia = +o.t > 0, t = propia ? +o.t : tCalc, hm = t / g.cos + g.cp / 2,
+        gamma = +o.gamma || 2400, acab = +o.acabados || 0, cv = +o.cv || 0;
+    return { Ln: Ln, t20: t20, t25: t25, tCalc: tCalc, t: t, propia: propia, hm: hm, cumple: t >= t25 - 1e-9,
+             tramo: { pp: gamma * hm, acab: acab, cm: gamma * hm + acab, cv: cv },
+             descanso: { pp: gamma * t, acab: acab, cm: gamma * t + acab, cv: cv } };
+  }
+
+  /* DONDE VA CADA COSA en los ejes locales.  lado "a": el primer tramo en v = 0; "b": al otro lado */
+  function trazado(g, o) {
+    o = o || {};
+    if (g.tramos === 1)
+      return { tramos: [{ v0: 0, v1: g.ancho, uBase: 0, sentido: 1, zBase: 0, n: g.n[0] }],
+               descanso: g.descanso > 1e-9 ? { u0: g.Lt[0], u1: g.largo, v0: 0, v1: g.ancho, z: g.h } : null };
+    var uD = g.largo - g.descanso, a = [0, g.bt], b = [g.ancho - g.bt, g.ancho];
+    if (o.lado === "b") { var x = a; a = b; b = x; }
+    return { tramos: [{ v0: a[0], v1: a[1], uBase: uD - g.Lt[0], sentido: 1, zBase: 0, n: g.n[0] },
+                      { v0: b[0], v1: b[1], uBase: uD, sentido: -1, zBase: g.n[0] * g.cp, n: g.n[1] }],
+             descanso: { u0: uD, u1: g.largo, v0: 0, v1: g.ancho, z: g.n[0] * g.cp } };
+  }
+
+  /* un tramo con su parte de descanso, por metro de ancho, simplemente apoyado en u = 0 (E1) y u = largo (E2) */
+  function apoyosTramo(g, pr, trz, i, caso) {
+    var f = trz.tramos[i], uF = f.uBase + f.sentido * (f.n - 1) * g.paso, piezas = [[Math.min(f.uBase, uF), Math.max(f.uBase, uF), pr.tramo[caso]]];
+    if (trz.descanso) piezas.push([trz.descanso.u0, trz.descanso.u1, pr.descanso[caso]]);
+    var W = 0, M = 0;
+    piezas.forEach(function (q) { var l = q[1] - q[0]; W += q[2] * l; M += q[2] * l * (q[0] + q[1]) / 2; });
+    var R2 = M / g.largo;
+    return { E1: W - R2, E2: R2, total: W };
+  }
+
+  /* LO QUE LLEGA A LOS BORDES del paño, repartido en su ancho (kg/m), en el piso de abajo y en el de arriba.
+     1 tramo: arranca en E1 abajo y llega a E2 arriba.  2 tramos en U: el primero arranca en E1 abajo, el segundo
+     llega a E1 arriba, y el descanso -en E2, a media altura- se reparte mitad a cada piso. */
+  function cargasApoyos(g, pr, trz) {
+    function cero() { return { E1: { cm: 0, cv: 0 }, E2: { cm: 0, cv: 0 } }; }
+    var r = { abajo: cero(), arriba: cero(), total: { cm: 0, cv: 0 } };
+    ["cm", "cv"].forEach(function (c) {
+      trz.tramos.forEach(function (f, i) {
+        var a = apoyosTramo(g, pr, trz, i, c), b = f.v1 - f.v0;
+        if (g.tramos === 1) { r.abajo.E1[c] += a.E1 * b; r.arriba.E2[c] += a.E2 * b; }
+        else {
+          (i === 0 ? r.abajo : r.arriba).E1[c] += a.E1 * b;
+          r.abajo.E2[c] += a.E2 * b / 2; r.arriba.E2[c] += a.E2 * b / 2;
+        }
+        r.total[c] += a.total * b;
+      });
+      /* el descanso sobre el ojo, entre los dos tramos, va entero a su borde */
+      if (g.tramos === 2 && trz.descanso && g.ojo > 0) {
+        var w = pr.descanso[c] * (trz.descanso.u1 - trz.descanso.u0) * g.ojo;
+        r.abajo.E2[c] += w / 2; r.arriba.E2[c] += w / 2; r.total[c] += w;
+      }
+    });
+    ["abajo", "arriba"].forEach(function (n) { ["E1", "E2"].forEach(function (e) { ["cm", "cv"].forEach(function (c) { r[n][e][c] /= g.ancho; }); }); });
+    return r;
+  }
+
+  function cm1(v) { return String(Math.round(v * 1000) / 10).replace(".", ","); }
+  /* LO QUE NO CUMPLE O HAY QUE MIRAR -> [{nivel: "grave" | "revisar", texto}] */
+  function comprobar(g, pr, o) {
+    o = o || {};
+    var av = [], pm = o.pasoMin || pasoMinimo(o.uso);
+    function mete(nivel, texto) { av.push({ nivel: nivel, texto: texto }); }
+    if (!(g.bt > 0)) mete("grave", "Con un ojo de " + cm1(g.ojo) + " cm no queda ancho para los dos tramos.");
+    else if (!g.cabe)
+      mete("grave", "No cabe: " + (g.tramos === 2 ? "el tramo más largo (" + cm1(Math.max.apply(null, g.Lt)) + " cm) más el descanso (" +
+           cm1(g.descanso) + " cm)" : "el tramo (" + cm1(g.Lt[0]) + " cm)") + " pasa los " + cm1(g.largo) + " cm del paño.");
+    if (g.cp > A010.contrapasoMax + 1e-9)
+      mete("grave", "Contrapaso de " + cm1(g.cp) + " cm: el A.010 (Art. 23.2 c) permite hasta 18 cm. Agrega contrapasos.");
+    if (g.paso < pm.min - 1e-9)
+      mete("grave", "Paso de " + cm1(g.paso) + " cm: el A.010 (Art. 23.2 b) pide al menos " + cm1(pm.min) + " cm en " + pm.grupo + ".");
+    g.n.forEach(function (k, i) {
+      if (k - 1 > A010.pasosMax)
+        mete("grave", (g.tramos === 2 ? "El tramo " + (i + 1) : "El tramo") + " tiene " + (k - 1) + " pasos: el A.010 (Art. 23.2 a) " +
+             "permite hasta 17 entre descansos.");
+    });
+    if (g.tramos === 2 && g.bt > 0 && g.descanso < g.bt - 1e-9)
+      mete("grave", "Descanso de " + cm1(g.descanso) + " cm, más corto que el ancho del tramo (" + cm1(g.bt) + " cm): el A.010 " +
+           "(Art. 23.2 a) lo pide igual o mayor.");
+    if (pr && pr.propia && pr.t < pr.t25 - 1e-9)
+      mete("revisar", "Garganta de " + cm1(pr.t) + " cm, menor que Ln/25 = " + cm1(pr.t25) + " cm.");
+    if (pm.supuesto)
+      mete("revisar", "El uso «" + (o.uso || "sin uso") + "» no está entre los del A.010: se pide un paso de 25 cm. Revísalo.");
+    return av;
+  }
+
+  return { ART: ART, A010: A010, PASO_MIN: PASO_MIN, CP_OBJETIVO: CP_OBJETIVO, CV_SIN_TABLA: CV_SIN_TABLA,
+           pasoMinimo: pasoMinimo, cargaViva: cargaViva, geometria: geometria, predim: predim, trazado: trazado,
+           apoyosTramo: apoyosTramo, cargasApoyos: cargasApoyos, comprobar: comprobar };
+});
+</script>
+<script>
 /* ===== vista3d.js (inlinado) ===== */
 /* =====================================================================
    vista3d.js — EL EDIFICIO EN 3D.  Planta (y Predimensionamiento) › 3D:
@@ -6350,8 +6537,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   "use strict";
 
   var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
-                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A" };
-  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata"];
+                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", escalera: "#7C6FA8" };
+  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "escalera"];
   /* la losa tapa la cara de arriba de vigas, columnas y placas: se bajan un pelo para que no parpadeen */
   var BAJA_VIGA = 0.003, BAJA_COL = 0.006, LADOS_CIRCULO = 20;
 
@@ -6401,6 +6588,22 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       aristas.push([ab[i], ab[j]], [ar[i], ar[j]]);
       if (verticales !== false) aristas.push([ab[i], ar[i]]);
     }
+    return { tris: tris, aristas: aristas };
+  }
+  /* un solido de ocho vertices -la garganta inclinada de un tramo-: abajo 0..3 y arriba 4..7 en el mismo orden;
+     cada cara se voltea hacia fuera mirando el centro, que para un solido convexo basta */
+  function hexaedro(P) {
+    var c = [0, 0, 0], tris = [], aristas = [];
+    P.forEach(function (p) { c[0] += p[0] / 8; c[1] += p[1] / 8; c[2] += p[2] / 8; });
+    [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]].forEach(function (f) {
+      [[f[0], f[1], f[2]], [f[0], f[2], f[3]]].forEach(function (t) {
+        var a = P[t[0]], b = P[t[1]], d = P[t[2]], n = cruz(resta(b, a), resta(d, a)),
+            g = [(a[0] + b[0] + d[0]) / 3 - c[0], (a[1] + b[1] + d[1]) / 3 - c[1], (a[2] + b[2] + d[2]) / 3 - c[2]];
+        tris.push(punto(n, g) >= 0 ? [a, b, d] : [a, d, b]);
+      });
+    });
+    [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
+      .forEach(function (e) { aristas.push([P[e[0]], P[e[1]]]); });
     return { tris: tris, aristas: aristas };
   }
   function limitesDe(tris) {
@@ -6459,6 +6662,34 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         var Lp = Math.sqrt(Math.pow(p.x2 - p.x1, 2) + Math.pow(p.y2 - p.y1, 2));
         mete("placa", p.cod, k, "Placa " + p.cod, "t " + cm(p.t) + " cm · " + m2(Lp) + " m de largo · " + nombre, C.placa,
              prisma(tira(+p.x1, +p.y1, +p.x2, +p.y2, +p.t), z0, z1 - BAJA_COL));
+      });
+      /* LA ESCALERA que llega a este piso: sus pasos, la garganta de cada tramo y el descanso, en los ejes del paño
+         -u a lo largo de los tramos, v a lo ancho- llevados a la planta por sus cuatro esquinas */
+      if (mostrar("escalera", k)) (L.escaleras || []).forEach(function (e) {
+        var q = e.esquinas, La = +e.largo, An = +e.ancho, T = e.trazado || {}, p = +e.paso, cp = +e.cp,
+            bajo = (+e.t) / (p / Math.sqrt(p * p + cp * cp)), tris = [], aristas = [];
+        if (!q || q.length !== 4 || !(La > 0 && An > 0 && p > 0 && cp > 0)) return;
+        function xy(u, v) {
+          var s = u / La, r = v / An;
+          return [(1 - s) * (1 - r) * q[0][0] + s * (1 - r) * q[1][0] + s * r * q[2][0] + (1 - s) * r * q[3][0],
+                  (1 - s) * (1 - r) * q[0][1] + s * (1 - r) * q[1][1] + s * r * q[2][1] + (1 - s) * r * q[3][1]];
+        }
+        function cuadro(u0, u1, v0, v1) { return [xy(u0, v0), xy(u1, v0), xy(u1, v1), xy(u0, v1)]; }
+        function junta(g) { tris = tris.concat(g.tris); aristas = aristas.concat(g.aristas); }
+        (T.tramos || []).forEach(function (f) {
+          var base = z0 + f.zBase, kk;
+          for (kk = 1; kk < f.n; kk++) {
+            var ua = f.uBase + f.sentido * (kk - 1) * p, ub = f.uBase + f.sentido * kk * p;
+            junta(prisma(cuadro(Math.min(ua, ub), Math.max(ua, ub), f.v0, f.v1), base + (kk - 1) * cp, base + kk * cp));
+          }
+          var uB = f.uBase + f.sentido * (f.n - 1) * p, zB = base + (f.n - 1) * cp,
+              a0 = xy(f.uBase, f.v0), a1 = xy(f.uBase, f.v1), b0 = xy(uB, f.v0), b1 = xy(uB, f.v1);
+          junta(hexaedro([[a0[0], a0[1], base - bajo], [b0[0], b0[1], zB - bajo], [b1[0], b1[1], zB - bajo], [a1[0], a1[1], base - bajo],
+                          [a0[0], a0[1], base], [b0[0], b0[1], zB], [b1[0], b1[1], zB], [a1[0], a1[1], base]]));
+        });
+        if (T.descanso)
+          junta(prisma(cuadro(T.descanso.u0, T.descanso.u1, T.descanso.v0, T.descanso.v1), z0 + T.descanso.z - (+e.t), z0 + T.descanso.z));
+        if (tris.length) mete("escalera", e.cod, k, "Escalera " + e.cod, e.detalle || "", C.escalera, { tris: tris, aristas: aristas });
       });
     });
     /* las zapatas vienen en las coordenadas de la planta del complemento (Y hacia abajo): se voltean como la exportacion */
@@ -6680,7 +6911,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     };
   }
 
-  return { COLORES: COLORES, FAMILIAS: FAMILIAS, VISTAS: VISTAS, rgb: rgb, prisma: prisma, escena: escena, camara: camara,
+  return { COLORES: COLORES, FAMILIAS: FAMILIAS, VISTAS: VISTAS, rgb: rgb, prisma: prisma, hexaedro: hexaedro, escena: escena, camara: camara,
            vista: vista, encuadrar: encuadrar, ajustaRadio: ajustaRadio, orbita: orbita, acerca: acerca, desplaza: desplaza,
            base: base, matrices: matrices, proyecta: proyecta, rayo: rayo, elegir: elegir, visor: visor };
 });
@@ -7460,7 +7691,9 @@ var TT={script:performance.now()};
   var ORD=["1er","2do","3er","4to","5to","6to","7mo","8vo","9no","10mo","11vo","12vo","13vo","14vo","15vo"];
   var TIPOS={aligerada:{c:"--alig",f:"--alig-f",n:"Aligerada"},
              maciza:{c:"--maci",f:"--maci-f",n:"Maciza"},
-             nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"}};
+             nervada:{c:"--nerv",f:"--nerv-f",n:"Nervada"},
+             /* la escalera es un paño: se pinta como una losa, pero en ETABS es un hueco y su peso va a sus vigas */
+             escalera:{c:"--esc",f:"--esc-f",n:"Escalera"}};
   var $=function(s){return document.querySelector(s)};
 
   /* MOSTRAR U OCULTAR, sin fiarse de la propiedad .hidden.
@@ -7478,7 +7711,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v168 · 13-09-2026";
+  var BUILD="v170 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7731,6 +7964,7 @@ var TT={script:performance.now()};
      ===================================================================== */
   function junta(m,k){var J=m&&m.juntas;return (J&&typeof J==="object"&&(k in J))?J[k]:null}
   function dirLosa(o){return (o&&o.dir==="y")?"y":"x"}
+  function esEscalera(o){return !!o&&o.tipo==="escalera"}
   /* La S/C de una losa unida es la MAYOR de sus paños: del lado seguro,
      igual que la viga toma la mayor de los paños que carga. */
   function scTramoLosa(i,j,m){
@@ -7852,8 +8086,10 @@ var TT={script:performance.now()};
      y se interrumpe donde hay VIGA, que es lo que la sostiene */
   function tramoLosa(dir,i,j,m){
     m=m||N();var ejeX=(dir==="x");
+    var esc0=esEscalera(m.losas[i+":"+j]);
     var t=tramo(ejeX,i,j,m,
-      function(k){return !!m.losas[ejeX?(k+":"+j):(i+":"+k)]},
+      /* una escalera es un paño suelto: ni se une a una losa ni una losa pasa por ella */
+      function(k){var q=m.losas[ejeX?(k+":"+j):(i+":"+k)];return !!q&&!esc0&&!esEscalera(q)},
       function(a){
         /* una VIGA siempre es apoyo; sin viga, la junta y si no el eje.  La
            junta solo vale entre losas del mismo tipo y armadas a lo largo:
@@ -8304,7 +8540,7 @@ var TT={script:performance.now()};
   }
   /* area techada separada por tipo de losa: es lo que necesita el metrado */
   function areasPorTipo(m){
-    var a={aligerada:0,maciza:0,nervada:0},i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
+    var a={aligerada:0,maciza:0,nervada:0,escalera:0},i,j,nX=m.dx.length+1,nY=m.dy.length+1,o;
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){o=m.losas[i+":"+j];
       if(o)a[o.tipo||"aligerada"]+=areaPano(i,j,m);}
     return a;
@@ -8329,12 +8565,14 @@ var TT={script:performance.now()};
   }
   /* Un paño con almacen (500) y otro con vivienda (200) ya no comparten alfa. */
   function alfaLosa(o){
+    if(esEscalera(o))return null;               /* la escalera no tiene α: su garganta es Ln/25 a Ln/20 */
     return CRITERIOS.alfaLosa((o&&o.tipo)||"aligerada", scPano(o)).alfa;
   }
   /* La tabla de losas de Oviedo se corta en 500 kg/m²; la de vigas llega a 750.
      Arriba de 500 se sigue usando 19 pero hay que decirlo: extrapolar en
      silencio seria inventar un valor que el libro no da. */
   function losaFueraTabla(o){
+    if(esEscalera(o))return false;
     return CRITERIOS.alfaLosa((o&&o.tipo)||"aligerada", scPano(o)).fueraDeTabla===true;
   }
   /* La viga toma la sobrecarga MAYOR de los paños que carga: del lado seguro. */
@@ -8363,7 +8601,7 @@ var TT={script:performance.now()};
   /* Codigo de identificacion: N{nivel}-{TIPO}-{NN}[-{VARIANTE}]
      El mismo formato que arman las hojas de Excel, para que coincidan.
      El eje ubica el elemento en la planta y va en la columna D. */
-  var TIPO_LOSA={aligerada:"LA",maciza:"LM",nervada:"LN"};
+  var TIPO_LOSA={aligerada:"LA",maciza:"LM",nervada:"LN",escalera:"ESC"};
   function nn(n){return (n<10?"0":"")+n}
   /* Los nombres salen de nomEje, no de LETRAS[i], para que un prima se llame
      A′ y no desplace las letras de todos los ejes que vienen detras. */
@@ -8379,7 +8617,7 @@ var TT={script:performance.now()};
   function nombres(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
         C={},V={},L={},P={},c=0,v={principal:0,chata:0},pl=0,
-        l={aligerada:0,maciza:0,nervada:0},i,j;
+        l={aligerada:0,maciza:0,nervada:0,escalera:0},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){c++;
       var tp=medCol(i,j,m).tipo,sf=tp==="Interior"?"INT":(tp==="Exterior"?"EXT":"ESQ");
       C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j)};}
@@ -8654,6 +8892,12 @@ var TT={script:performance.now()};
     });
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[key(i,j)]){
       if(!tramoLosa(dirLosa(m.losas[key(i,j)]),i,j,m).dueno)continue;
+      if(esEscalera(m.losas[key(i,j)])){
+        var ce=calculoEscalera(i,j,m,niv);
+        mete("losa",{t:"losa",i:i,j:j},nmx.L[key(i,j)].cod,"t "+Math.round(ce.pr.t*100),ce.pr.propia,
+             ce.pr.cumple&&!ce.avisos.some(function(a){return a.nivel==="grave"}),"t "+Math.round(ce.pr.tCalc*100));
+        continue;
+      }
       var pl=predimLosa(i,j,m);
       mete("losa",{t:"losa",i:i,j:j},nmx.L[key(i,j)].cod,"e "+pl.e,pl.propia,pl.cumple!==false,
            "e "+pl.eCalc);
@@ -8831,6 +9075,16 @@ var TT={script:performance.now()};
       var kl=key(q.i,q.j), ol=m.losas[kl];
       if(!ol)h='<p class="empty">Ese paño no tiene losa.</p>';
       else if(!ve("losa"))h='<p class="empty">Las losas están ocultas por el filtro.</p>';
+      else if(esEscalera(ol)){
+        var ce=calculoEscalera(q.i,q.j,m), c2m=function(v){return String(Math.round(v*1000)/10).replace(".",",")};
+        h+='<div class="name">'+nmx.L[kl].cod+'</div><span class="tag" style="color:var(--esc)">Escalera · '+nmx.L[kl].eje+'</span>';
+        h+=bloque("Predimensionamiento",'<dl class="kv">'+kv("Luz libre Ln",n2(ce.Ln)+" m",1)+
+          kv("Ln/25 a Ln/20",c2m(ce.pr.t25)+" a "+c2m(ce.pr.t20)+" cm",1)+
+          kv("Garganta calculada",c2m(ce.pr.tCalc)+" cm",1)+kv("Espesor medio hm",c2m(ce.pr.hm)+" cm",1)+'</dl>'+
+          '<p class="calcnote">Promedio de Ln/25 y Ln/20, al múltiplo de 5 cm superior. Oviedo no trata escaleras.</p>');
+        h+=bloque("Decisión",entrada("losa","e",Math.round(ce.pr.t*100),"t")+
+          '<div>'+estado(ce.pr.cumple,"t ≥ Ln/25")+'</div>'+borra("losa",ce.pr.propia));
+      }
       else{
         var pl=predimLosa(q.i,q.j,m), lo=medLosa(q.i,q.j,m), nu=lo.tramo.hasta-lo.tramo.desde;
         h+='<div class="name">'+nmx.L[kl].cod+'</div><span class="tag" style="color:var('+
@@ -9198,6 +9452,7 @@ var TT={script:performance.now()};
         g.appendChild(el("polygon",{points:pts(Q),
           fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
         if(tl.dueno)(function(i,j,o,tp,Q,dl,tl,unida){ luego.push(function(){
+          if(esEscalera(o)){ dibujaEscalera(sobre,i,j,m,XY,DIMS); return; }
           var QT=!unida?Q:((dl==="y")
                 ?[XY(i,tl.desde),XY(i+1,tl.desde),XY(i+1,tl.hasta),XY(i,tl.hasta)]
                 :[XY(tl.desde,j),XY(tl.hasta,j),XY(tl.hasta,j+1),XY(tl.desde,j+1)]);
@@ -9584,7 +9839,8 @@ var TT={script:performance.now()};
       var lk=key(i,j),tp=S.tipoLosa,ex=m.losas[lk];
       if(tp==="vacio"){delete m.losas[lk];limpiarSueltos();}
       else if(primero&&ex&&ex.tipo===tp){ex.dir=ex.dir==="y"?"x":"y";modo="giro";}
-      else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};}
+      else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};
+        if(tp==="escalera"&&ex&&ex.esc)m.losas[lk].esc=ex.esc;}
     }else return;
     render();
   }
@@ -11093,6 +11349,7 @@ var TT={script:performance.now()};
     }else{
       if(!m.losas[key(q.i,q.j)]){T.textContent="Paño vacío";
         B.innerHTML='<p class="empty">Este paño no tiene losa: es un vacío del edificio.</p>';return}
+      if(esEscalera(m.losas[key(q.i,q.j)])){ inspEscalera(q,T,B,m,nm); return; }
       var lo=medLosa(q.i,q.j),pl=predimLosa(q.i,q.j,m);
       T.textContent="Losa · paño "+eX(q.i)+eX(q.i+1)+"-"+eY(q.j)+eY(q.j+1);
       html='<div class="name">'+nm.L[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var('+
@@ -11126,12 +11383,181 @@ var TT={script:performance.now()};
     if(gb)gb.onclick=function(){snap();var o=N().losas[key(q.i,q.j)];o.dir=o.dir==="y"?"x":"y";render()};
   }
 
+  /* =====================================================================
+     LA ESCALERA.  Un paño de tipo «escalera»: sus datos viven en o.esc -en
+     cm, lo que no se escribio va por defecto- y la garganta decidida en
+     o.sec.e, como el espesor de una losa.  La cuenta es de
+     oviedo/escalera.js; aqui se le dan el paño, la altura del nivel, los
+     acabados y la carga viva, y se pinta.  La escalera de un nivel es la
+     que LLEGA a ese piso: arranca en el de abajo.
+     ===================================================================== */
+  var ESC_DEF={tramos:2, paso:25, cp:"", ojo:10, descanso:"", lado:"a", sube:"+"};
+  function datosEsc(o){
+    var d={}, k, e=(o&&o.esc&&typeof o.esc==="object")?o.esc:{};
+    for(k in ESC_DEF)d[k]=(e[k]===undefined||e[k]===null)?ESC_DEF[k]:e[k];
+    return d;
+  }
+  /* los cuatro nudos del paño en el orden de sus ejes: u de E1 (arranque) a E2 (descanso), v a lo ancho */
+  function esquinasEscalera(i,j,o){
+    var s=datosEsc(o).sube!=="-";
+    if(dirLosa(o)==="y"){ var a=s?j:j+1, b=s?j+1:j; return [[i,a],[i,b],[i+1,b],[i+1,a]]; }
+    var a2=s?i:i+1, b2=s?i+1:i; return [[a2,j],[b2,j],[b2,j+1],[a2,j+1]];
+  }
+  function calculoEscalera(i,j,m,niv){
+    m=m||N(); var o=m.losas[key(i,j)]; if(!esEscalera(o))return null;
+    var d=datosEsc(o), E=esquinasEscalera(i,j,o), P=E.map(function(q){return nodo(q[0],q[1],m)});
+    var largo=(dist(P[0],P[1])+dist(P[3],P[2]))/2, ancho=(dist(P[0],P[3])+dist(P[1],P[2]))/2;
+    var g=ESCALERA.geometria({h:+m.h||2.80, largo:largo, ancho:ancho, tramos:+d.tramos, paso:(+d.paso||25)/100,
+            cp:(+d.cp>0)?+d.cp/100:null, ojo:(+d.ojo||0)/100, descanso:(+d.descanso>0)?+d.descanso/100:null});
+    var y=(dirLosa(o)==="y"), e1=y?["h",i,E[0][1]]:["v",E[0][0],j], e2=y?["h",i,E[1][1]]:["v",E[1][0],j];
+    var Ln=largo-(bViga(e1[0],e1[1],e1[2],m)+bViga(e2[0],e2[1],e2[2],m))/2;
+    var cp0=cargasPermanentes(), gamma=(+(S.proy&&S.proy.concreto)||2400), acab=(+cp0.piso||0)+(+cp0.cielo||0);
+    var cv=ESCALERA.cargaViva(S.proy.uso,E020.TABLA);
+    if(o.uso){ var w=pesoAmb(o.uso,o.amb||""); if(w>0)cv={w:w, grupo:o.amb||o.uso, supuesto:false, delPano:true}; }
+    var pr=ESCALERA.predim(g,{Ln:Ln, t:(o.sec&&o.sec.e>0)?o.sec.e/100:null, gamma:gamma, acabados:acab, cv:cv.w});
+    var trz=ESCALERA.trazado(g,{lado:d.lado}), pm=ESCALERA.pasoMinimo(S.proy.uso);
+    return {o:o, d:d, esquinas:E, g:g, pr:pr, trazado:trz, apoyos:ESCALERA.cargasApoyos(g,pr,trz), pasoMin:pm, cv:cv,
+            avisos:ESCALERA.comprobar(g,pr,{uso:S.proy.uso, pasoMin:pm}), bordes:{E1:e1,E2:e2}, Ln:Ln,
+            largo:largo, ancho:ancho, acabados:acab};
+  }
+  function cmEsc(v){return String(Math.round(v*1000)/10).replace(".",",")}
+  /* EL SIMBOLO EN LA PLANTA, a escala: el contorno y los pasos de cada tramo, su flecha de subida y el descanso */
+  function dibujaEscalera(g,i,j,m,XY,dims){
+    var c=calculoEscalera(i,j,m); if(!c)return;
+    var E=c.esquinas.map(function(q){return XY(q[0],q[1])}), G=c.g, T=c.trazado, col="var(--esc)";
+    function P(u,v){
+      var s=G.largo>0?u/G.largo:0, r=G.ancho>0?v/G.ancho:0;
+      return {x:(1-s)*(1-r)*E[0].x+s*(1-r)*E[1].x+s*r*E[2].x+(1-s)*r*E[3].x,
+              y:(1-s)*(1-r)*E[0].y+s*(1-r)*E[1].y+s*r*E[2].y+(1-s)*r*E[3].y};
+    }
+    function poli(l,extra){
+      var p=el("polygon",{points:l.map(function(q){return q.x.toFixed(1)+","+q.y.toFixed(1)}).join(" "),fill:"none",stroke:col});
+      for(var k in extra)p.setAttribute(k,extra[k]);
+      g.appendChild(p);
+    }
+    function linea(a,b,w){
+      var l=el("line",{x1:a.x.toFixed(1),y1:a.y.toFixed(1),x2:b.x.toFixed(1),y2:b.y.toFixed(1),stroke:col,"stroke-width":w});
+      g.appendChild(l); return l;
+    }
+    T.tramos.forEach(function(f){
+      var uF=f.uBase+f.sentido*(f.n-1)*G.paso, u0=Math.min(f.uBase,uF), u1=Math.max(f.uBase,uF), k;
+      poli([P(u0,f.v0),P(u1,f.v0),P(u1,f.v1),P(u0,f.v1)],{"stroke-width":1.2});
+      for(k=1;k<f.n-1;k++){ var u=f.uBase+f.sentido*k*G.paso; linea(P(u,f.v0),P(u,f.v1),0.7); }
+      var vm=(f.v0+f.v1)/2, fl=linea(P(f.uBase,vm),P(uF,vm),1.4);
+      fl.setAttribute("color","var(--esc)"); fl.setAttribute("marker-end","url(#ar)");
+    });
+    if(T.descanso){ var dd=T.descanso; poli([P(dd.u0,dd.v0),P(dd.u1,dd.v0),P(dd.u1,dd.v1),P(dd.u0,dd.v1)],{"stroke-width":1,"stroke-dasharray":"4 3"}); }
+    if(dims){
+      var C=centro(E), mal=c.avisos.some(function(a){return a.nivel==="grave"});
+      txt(g,C.x,C.y+4,G.nCp+" cp "+cmEsc(G.cp)+" · t "+Math.round(c.pr.t*100),mal?"#c62828":"var(--acc-ink)",9.5,null,true);
+    }
+  }
+  /* EL INSPECTOR de la escalera: sus datos, lo que sale y lo que no cumple */
+  function inspEscalera(q,T,B,m,nm){
+    var c=calculoEscalera(q.i,q.j,m), d=c.d, g=c.g, pr=c.pr, cod=nm.L[key(q.i,q.j)].cod;
+    function campo(id,etq,val,unid,extra){
+      return '<label class="pf"><span class="pfe">'+etq+'</span><input id="'+id+'" class="pfi" type="number" '+extra+
+             ' value="'+val+'"><span class="pfu">'+unid+'</span></label>';
+    }
+    T.textContent="Escalera · paño "+eX(q.i)+eX(q.i+1)+"-"+eY(q.j)+eY(q.j+1);
+    B.innerHTML='<div class="name">'+cod+'</div><span class="tag" style="color:var(--esc)">Escalera · '+
+      (g.tramos===2?"2 tramos en U":"1 tramo recto")+' · tramos en '+dirLosa(c.o).toUpperCase()+'</span>'+
+      '<div style="margin-top:9px">'+
+      '<label class="pf"><span class="pfe">Tramos</span><select id="eTr" class="pfi"><option value="2"'+(g.tramos===2?" selected":"")+
+        '>2 en U</option><option value="1"'+(g.tramos===1?" selected":"")+'>1 recto</option></select><span class="pfu"></span></label>'+
+      campo("ePa","Paso",d.paso,"cm",'min="20" max="40" step="0.5"')+
+      campo("eCp","Contrapaso",d.cp,"cm",'min="12" max="20" step="0.1" placeholder="'+cmEsc(g.cp)+'"')+
+      (g.tramos===2?campo("eOj","Ojo entre tramos",d.ojo,"cm",'min="0" max="100" step="1"'):'')+
+      campo("eDe","Descanso",d.descanso,"cm",'min="0" max="800" step="1" placeholder="'+cmEsc(g.descanso)+'"')+
+      '<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><button class="btn" id="eSube">Arranca del otro borde</button>'+
+      (g.tramos===2?'<button class="btn" id="eLado">Primer tramo al otro lado</button>':'')+
+      '<button class="btn" id="girar">Girar tramos</button></div></div>'+
+      '<dl class="kv" style="margin-top:9px">'+
+      kv("Entrepiso",g.h.toFixed(2)+" m",1)+
+      kv("Contrapasos",g.nCp+" de "+cmEsc(g.cp)+" cm"+(g.tramos===2?" · "+g.n.join(" + "):""),1)+
+      kv("Pasos por tramo",g.n.map(function(k){return k-1}).join(" y ")+" de "+cmEsc(g.paso)+" cm",1)+
+      kv("Ancho de tramo",cmEsc(g.bt)+" cm",1)+
+      kv("Largo de tramo",g.Lt.map(cmEsc).join(" y ")+" cm",1)+
+      kv("Descanso",cmEsc(g.descanso)+" cm",1)+
+      kv("Luz libre Ln",c.Ln.toFixed(2)+" m",1)+
+      kv("Garganta",cmEsc(pr.t25)+" a "+cmEsc(pr.t20)+" cm → <b>"+cmEsc(pr.t)+" cm</b>"+(pr.propia?"  (tuya)":""),1)+
+      kv("Espesor medio hm",cmEsc(pr.hm)+" cm",1)+
+      kv("Tramo",Math.round(pr.tramo.pp)+" + "+Math.round(pr.tramo.acab)+" kg/m² en planta",1)+
+      kv("Descanso",Math.round(pr.descanso.pp)+" + "+Math.round(pr.descanso.acab)+" kg/m²",1)+
+      kv("Carga viva",Math.round(c.cv.w)+" kg/m²"+(c.cv.delPano?" · uso del paño":" · E.020, corredores y escaleras"+
+         (c.cv.grupo?" de "+c.cv.grupo.toLowerCase():"")+(c.cv.supuesto?" (supuesta)":"")),1)+
+      '</dl>'+
+      (c.avisos.length?'<p class="aviso" style="margin-top:8px">'+c.avisos.map(function(a){return a.texto}).join("<br>")+'</p>'
+        :'<p class="calcnote">Cumple el A.010 (Art. 23.2): paso ≥ '+cmEsc(c.pasoMin.min)+' cm, contrapaso ≤ 18 cm y hasta 17 pasos por tramo.</p>')+
+      '<p class="calcnote">Garganta t = Ln/25 a Ln/20, al múltiplo de 5 cm (Oviedo no trata escaleras); con t ≥ ℓ/20 = '+
+      cmEsc(pr.t20)+' cm la E.060 (Tabla 9.1) no pide calcular deflexiones. hm = t/cos θ + cp/2. En ETABS el paño va como '+
+      'hueco: el peso de la escalera y su carga viva van a las vigas de sus bordes. La garganta se decide en Predimensionamiento.</p>';
+    function guarda(clave,val){
+      snap(); var o=N().losas[key(q.i,q.j)]; o.esc=(o.esc&&typeof o.esc==="object")?o.esc:{};
+      if(val===null)delete o.esc[clave]; else o.esc[clave]=val;
+      render();
+    }
+    function num(id,clave,min,max){
+      var e=$("#"+id); if(!e)return;
+      e.onchange=function(){
+        var v=String(this.value).trim();
+        if(v===""){ guarda(clave,null); return; }
+        v=+v;
+        if(isFinite(v)&&v>=min&&v<=max)guarda(clave,v); else { toast("Fuera de rango: de "+min+" a "+max+" cm."); render(); }
+      };
+    }
+    var tr=$("#eTr"); if(tr)tr.onchange=function(){ guarda("tramos",+this.value); };
+    num("ePa","paso",20,40); num("eCp","cp",12,20); num("eOj","ojo",0,100); num("eDe","descanso",0,800);
+    var su=$("#eSube"); if(su)su.onclick=function(){ guarda("sube",d.sube==="-"?"+":"-"); };
+    var la=$("#eLado"); if(la)la.onclick=function(){ guarda("lado",d.lado==="b"?"a":"b"); };
+    var gb=$("#girar"); if(gb)gb.onclick=function(){ snap(); var o=N().losas[key(q.i,q.j)]; o.dir=o.dir==="y"?"x":"y"; render(); };
+  }
+  /* A ETABS: la escalera como dato para el 3D y la firma, y lo que carga sobre las vigas de sus bordes -abajo y
+     arriba-.  Cada carga va SOLO sobre el tramo del borde (d1-d2 relativos a la barra: una viga unida es una
+     barra mas larga que la escalera) y con la fuerza total de la reaccion: q · ancho repartido en ese tramo.
+     Donde no hay viga se avisa: esa parte del peso no llega */
+  function escaleraEtabs(out,L,k,i,j,m,nm,pt,r4){
+    var c=calculoEscalera(i,j,m,k), cod=nm.L[key(i,j)].cod, G=c.g, n=S.niveles.length;
+    L.escaleras=L.escaleras||[];
+    L.escaleras.push({cod:cod, dir:dirLosa(c.o), esquinas:c.esquinas.map(function(q){return pt(m,q[0],q[1])}),
+      largo:r4(c.largo), ancho:r4(c.ancho), tramos:G.tramos, nCp:G.nCp, paso:r4(G.paso), cp:r4(G.cp),
+      t:r4(c.pr.t), e:r4(c.pr.t), trazado:c.trazado,
+      detalle:(G.tramos===2?"2 tramos en U":"1 tramo")+" · "+G.nCp+" contrapasos de "+cmEsc(G.cp)+" cm · paso "+
+              cmEsc(G.paso)+" cm · garganta "+cmEsc(c.pr.t)+" cm"});
+    c.avisos.filter(function(a){return a.nivel==="grave"}).forEach(function(a){ out.avisos.push(cod+": "+a.texto); });
+    function borde(b,mm){
+      return b[0]==="h"?("eje "+eY(b[2],mm)+" entre "+eX(b[1],mm)+" y "+eX(b[1]+1,mm))
+                       :("eje "+eX(b[1],mm)+" entre "+eY(b[2],mm)+" y "+eY(b[2]+1,mm));
+    }
+    function carga(kk,b,q){
+      if(kk<0||!(q.cm>0||q.cv>0))return;          /* el arranque del primer piso va al cimiento */
+      var mm=S.niveles[kk], kv=key(b[0],b[1],b[2]);
+      if(!mm||!mm.vigas||!mm.vigas[kv]){
+        out.avisos.push(cod+": se apoya en el "+borde(b,m)+" del nivel "+(kk+1)+" y ahí no hay viga: esa parte de su peso no llega a ETABS.");
+        return;
+      }
+      var LL=(kk===k)?L:out.niveles[kk], vc=nombres(kk).V[kv].cod;
+      var bar=LL.vigas.filter(function(z){return z.cod===vc})[0]; if(!bar)return;
+      /* el tramo del borde sobre la barra, en distancias relativas */
+      var p1=pt(mm,b[1],b[2]), p2=(b[0]==="h")?pt(mm,b[1]+1,b[2]):pt(mm,b[1],b[2]+1),
+          ux=bar.x2-bar.x1, uy=bar.y2-bar.y1, Lb=Math.sqrt(ux*ux+uy*uy)||1;
+      function rel(p){return Math.min(1,Math.max(0,((p[0]-bar.x1)*ux+(p[1]-bar.y1)*uy)/(Lb*Lb)))}
+      var d1=rel(p1), d2=rel(p2), Le=Math.abs(d2-d1)*Lb; if(!(Le>0))return;
+      LL.cargasVigas=LL.cargasVigas||[];
+      LL.cargasVigas.push({cod:vc, d1:r4(Math.min(d1,d2)), d2:r4(Math.max(d1,d2)),
+        cm:r4(q.cm*c.ancho/Le/1000), cv:r4(q.cv*c.ancho/Le/1000),
+        patCV:(kk===n-1)?PAT_ETABS.cvt:PAT_ETABS.cv, escalera:cod});
+    }
+    carga(k-1,c.bordes.E1,c.apoyos.abajo.E1); carga(k-1,c.bordes.E2,c.apoyos.abajo.E2);
+    carga(k,c.bordes.E1,c.apoyos.arriba.E1); carga(k,c.bordes.E2,c.apoyos.arriba.E2);
+  }
+
   /* Espesor adoptado de un pano, en cm.  Lo necesita la viga chata: su
      peralte NO se calcula, es el de la losa en la que se apoya.  Antes lo
      escribia el usuario en Excel; ahora el complemento ya lo sabe. */
   function espesorLosaCm(i,j,m){
     var o=m.losas[key(i,j)];
-    if(!o)return null;
+    if(!o||esEscalera(o))return null;             /* la chata no hereda la garganta de una escalera */
     /* el espesor DECIDIDO es el que tiene la losa, y el que hereda la chata */
     var od=losaDuena(i,j,m); if(od&&od.sec&&od.sec.e>0)return od.sec.e;
     var a=alfaLosa(o); if(!(a>0))return null;
@@ -11278,7 +11704,7 @@ var TT={script:performance.now()};
   function predimLosa(i,j,m){
     m = m || N();
     var o = m.losas[key(i,j)];
-    if(!o) return null;
+    if(!o || esEscalera(o)) return null;          /* la escalera va por calculoEscalera */
     var lo = medLosa(i,j,m);
     var q = CALCULO.losa({subtipo:lo.tipo, Ln:lo.Ln, sc:scTramoLosa(i,j,m)});
     var sdl=secDe(losaDuena(i,j,m)), eCalc=Math.round(q.h*100),
@@ -11438,7 +11864,7 @@ var TT={script:performance.now()};
     /* igual con la losa: la que cruza un prima sin viga es un solo paño */
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
       var lo=medLosa(i,j,m),c2=nm.L[i+":"+j];
-      if(!lo.tramo.dueno)continue;
+      if(!lo.tramo.dueno||esEscalera(m.losas[i+":"+j]))continue;
       LS[lo.tipo].push([c2.cod,c2.eje,lo.Ln.toFixed(2),
                         CRITERIOS.alfaLosa(lo.tipo,scTramoLosa(i,j,m)).alfa]);}
     /* una fila de metrado por nivel: sobrecarga y areas por tipo de losa */
@@ -11491,7 +11917,7 @@ var TT={script:performance.now()};
     }
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j])calcPlaca("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j])calcPlaca("v",i,j);
-    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]&&!esEscalera(m.losas[i+":"+j])){
       var pl3=predimLosa(i,j,m),c3=nm.L[i+":"+j];
       CA[c3.cod]=(pl3.tipo==="maciza")?[pl3.hCalc.toFixed(2),pl3.eCalc]
         :(pl3.tipo==="nervada")?[pl3.hCalc.toFixed(2),pl3.eCalc,Math.round(pl3.b*100),pl3.sMax.toFixed(2)]
@@ -11779,13 +12205,13 @@ var TT={script:performance.now()};
   /* Y con sus MEDIDAS, en m con 4 decimales: los nombres se reparten por
      tamano, y agrandar todas las columnas de 25×25 a 65×25 las dejaba en C1
      con la misma firma -resultados viejos «al dia»-.  Visto en C4d. */
-  var DIM_FIRMA=["b","h","D","e","t"];
+  var DIM_FIRMA=["b","h","D","e","t","paso","cp"];
   function firmaModelo(ex){
     var partes=[];
     (ex||exportaEtabs()).niveles.forEach(function(L){
       partes.push(L.nombre+"@"+L.z1);
-      ["columnas","vigas","losas","placas"].forEach(function(k){
-        L[k].forEach(function(x){
+      ["columnas","vigas","losas","placas","escaleras"].forEach(function(k){
+        (L[k]||[]).forEach(function(x){
           var d=DIM_FIRMA.filter(function(c){return typeof x[c]==="number"&&isFinite(x[c])})
                          .map(function(c){return c+x[c].toFixed(4)});
           partes.push(x.cod+"="+(x.sec||"")+(d.length?"|"+d.join(","):""));
@@ -13215,6 +13641,7 @@ var TT={script:performance.now()};
            entera; los paños de dentro no se llevan */
         var dl=dirLosa(m.losas[key(i,j)]), tl=tramoLosa(dl,i,j,m);
         if(!tl.dueno)continue;
+        if(esEscalera(m.losas[key(i,j)])){ escaleraEtabs(out,L,k,i,j,m,nm,pt,r4); continue; }
         var pl=predimLosa(i,j,m), cod=nm.L[key(i,j)].cod;
         var q=(dl==="y")?[pt(m,i,tl.desde),pt(m,i+1,tl.desde),pt(m,i+1,tl.hasta),pt(m,i,tl.hasta)]
                         :[pt(m,tl.desde,j),pt(m,tl.hasta,j),pt(m,tl.hasta,j+1),pt(m,tl.desde,j+1)];
@@ -13435,6 +13862,13 @@ var TT={script:performance.now()};
           mete("luz","grave","viga "+ejeVigaV(i,j,m)+": el vano ("+vv2.L.toFixed(2)+
                " m) no deja luz libre entre apoyos de "+vv2.desc.toFixed(2)+" m",
                nv,{t:"viga",o:"v",i:i,j:j});
+      }
+      /* la escalera: lo que el A.010 no deja pasar y lo que no cabe en su paño */
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(esEscalera(m.losas[key(i,j)])){
+        calculoEscalera(i,j,m,k).avisos.forEach(function(a){
+          mete("escalera",a.nivel==="grave"?"grave":"revisar","escalera "+ex(i)+ex(i+1)+"-"+ey(j)+ey(j+1)+": "+
+               a.texto.charAt(0).toLowerCase()+a.texto.slice(1),nv,{t:"losa",i:i,j:j});
+        });
       }
       for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
         var lo2=m.losas[key(i,j)];
@@ -13735,15 +14169,27 @@ var TT={script:performance.now()};
     var P=S.proy, cp=cargasPermanentes(), pe=pesoEstructura(), st=sitio(),
         gamma=(+P.concreto||2400), n=S.niveles.length,
         otras=(+cp.piso||0)+(+cp.cielo||0)+(+cp.tabiq||0);
+    /* LAS ESCALERAS pesan donde se apoyan, como en ETABS: lo de sus bordes de arriba en su piso y lo de abajo en
+       el de abajo -el arranque del primer piso va al cimiento y no es peso sismico- */
+    var esc=S.niveles.map(function(){return {cm:0,cv:0}});
+    S.niveles.forEach(function(m,k){
+      for(var i2=0;i2<m.dx.length;i2++)for(var j2=0;j2<m.dy.length;j2++){
+        if(!esEscalera(m.losas[key(i2,j2)]))continue;
+        var ce=calculoEscalera(i2,j2,m,k), ap=ce.apoyos, W=ce.ancho;
+        esc[k].cm+=(ap.arriba.E1.cm+ap.arriba.E2.cm)*W; esc[k].cv+=(ap.arriba.E1.cv+ap.arriba.E2.cv)*W;
+        if(k>0){ esc[k-1].cm+=(ap.abajo.E1.cm+ap.abajo.E2.cm)*W; esc[k-1].cv+=(ap.abajo.E1.cv+ap.abajo.E2.cv)*W; }
+      }
+    });
     return S.niveles.map(function(m,k){
       var nX=m.dx.length+1, nY=m.dy.length+1, i, j, area=0, losa=0, cv=0;
       for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
-        var o=m.losas[key(i,j)]; if(!o)continue;
+        var o=m.losas[key(i,j)]; if(!o||esEscalera(o))continue;
         var a=areaPano(i,j,m), pl=predimLosa(i,j,m);
         area+=a;
         losa+=a*SISMO.pesoLosa(o.tipo||"aligerada",pl?pl.e:20,gamma);
         cv+=a*scPano(o);
       }
+      losa+=esc[k].cm; cv+=esc[k].cv;
       var est=(pe.porNivel&&pe.porNivel[k]?pe.porNivel[k].vol:0)*gamma,
           azotea=(k===n-1), pct=SISMO.pctCargaViva(st.catE030,azotea), dim=medidasPlanta(m),
           cm=(losa+area*otras+est)/1000, cvt=cv/1000;
@@ -14441,7 +14887,7 @@ var TT={script:performance.now()};
      lo produce. Aqui se ve QUE se va a generar antes de generarlo, y la
      ausencia de una hoja es informacion: dice que no modelaste eso. */
   function inventario(){
-    var c={losa:{aligerada:0,maciza:0,nervada:0},viga:{principal:0,chata:0},
+    var c={losa:{aligerada:0,maciza:0,nervada:0,escalera:0},viga:{principal:0,chata:0},
            col:0,placa:0,usos:0,zapata:0},k;
     /* las que HAYAS dibujado en el nivel de cimentacion */
     if(S.niveles[0]&&S.niveles[0].zapatas)for(k in S.niveles[0].zapatas)c.zapata++;
@@ -14729,7 +15175,7 @@ var TT={script:performance.now()};
      a ETABS -las secciones que se llevarian- y las zapatas dibujadas.  La
      camara, los filtros y lo elegido no son del modelo: no se guardan.
      ===================================================================== */
-  var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true}, niveles:"todos",
+  var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true,escalera:true}, niveles:"todos",
            sel:null, selIdx:null, visor:null, esc:null, drag:null, sinGL:false, pedido:0};
   try{ window.addEventListener("resize",function(){ if(S.vista==="3d")dibuja3D(); }); }catch(e){}
   function esc3(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
@@ -14738,7 +15184,7 @@ var TT={script:performance.now()};
     function v(n,def){ var t=(cs&&cs.getPropertyValue)?String(cs.getPropertyValue(n)||"").trim():""; return t||def; }
     return {col:v("--col","#0F6E8C"), viga:v("--viga","#A85A2B"), chata:v("--chata","#D9A579"),
             aligerada:v("--alig","#7FA0AE"), maciza:v("--maci","#5B7686"), nervada:v("--nerv","#8FA8A0"),
-            placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"),
+            placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"), escalera:v("--esc","#7C6FA8"),
             fondo:v("--sheet","#FFFFFF"), tinta:v("--ink","#1A2029"),
             /* lo elegido va en amarillo: el acento es el mismo azul de las columnas y no se veia */
             resalte:v("--resalte3d","#F2B705")};
@@ -14752,7 +15198,7 @@ var TT={script:performance.now()};
       '<button type="button" class="mini" data-v3="alejar" aria-label="Alejar">−</button>'+
       '<button type="button" class="mini" data-v3="encuadrar">Encuadrar</button></div>'+
       '<div class="v3d-g" role="group" aria-label="Qué se ve">'+
-      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"]].map(function(f){
+      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"],["escalera","Escaleras"]].map(function(f){
         return '<label class="v3d-ch"><input type="checkbox" id="f3'+f[0]+'" data-f3="'+f[0]+'"'+
           (V3D.filtro[f[0]]!==false?' checked':'')+'>'+f[1]+'</label>'}).join("")+'</div>'+
       '<label class="v3d-ch">Niveles <select id="n3d" class="mini"></select></label></div>'+
@@ -14847,10 +15293,10 @@ var TT={script:performance.now()};
     if(aviso)t=aviso;
     else if(s)t='<b>'+esc3(s.titulo)+'</b> · '+esc3(s.detalle)+' <button type="button" class="mini" id="ir3d">Ver en la planta</button>';
     else if(E){
-      var n={col:0,viga:0,losa:0,placa:0,zapata:0};
+      var n={col:0,viga:0,losa:0,placa:0,zapata:0,escalera:0};
       E.solidos.forEach(function(x){n[x.fam]++});
       t=[[n.col,"columna","columnas"],[n.viga,"viga","vigas"],[n.losa,"losa","losas"],[n.placa,"placa","placas"],
-         [n.zapata,"zapata","zapatas"]].filter(function(q){return q[0]}).map(function(q){
+         [n.zapata,"zapata","zapatas"],[n.escalera,"escalera","escaleras"]].filter(function(q){return q[0]}).map(function(q){
            return q[0]+" "+(q[0]===1?q[1]:q[2])}).join(" · ")||"Nada que ver con estos filtros";
       if(E.avisos.losasSinEspesor)t+=' · <span class="deci-no">'+E.avisos.losasSinEspesor+' losa(s) sin espesor calculado, '+
         'no se dibujan</span>';
@@ -14868,7 +15314,7 @@ var TT={script:performance.now()};
       if(s.fam==="col")busca(nm.C,function(p){return {t:"col",i:+p[0],j:+p[1]}});
       else if(s.fam==="viga")busca(nm.V,function(p){return {t:"viga",o:p[0],i:+p[1],j:+p[2]}});
       else if(s.fam==="placa")busca(nm.P,function(p){return {t:"placa",o:p[0],i:+p[1],j:+p[2]}});
-      else if(s.fam==="losa")busca(nm.L,function(p){return {t:"losa",i:+p[0],j:+p[1]}});
+      else if(s.fam==="losa"||s.fam==="escalera")busca(nm.L,function(p){return {t:"losa",i:+p[0],j:+p[1]}});
     }
     S.act=Math.min(k,S.niveles.length-1); S.vista="plano"; S.sel=sel; render();
   }
@@ -14887,7 +15333,7 @@ var TT={script:performance.now()};
       ex.niveles.forEach(function(L,k){ op+='<option value="solo:'+k+'">Solo '+esc3(L.nombre)+'</option>'; });
       sn.innerHTML=op; sn.value=V3D.niveles;
     }
-    ["col","viga","losa","placa","zapata"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
+    ["col","viga","losa","placa","zapata","escalera"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
     V3D.esc=VISTA3D.escena(ex,{zapatas:zs, colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles});
     if(!V3D.cam){
       var cv0=$("#c3d"), asp=(cv0&&cv0.clientWidth>0&&cv0.clientHeight>0)?cv0.clientWidth/cv0.clientHeight:1.4;
