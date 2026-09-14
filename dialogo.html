@@ -8302,7 +8302,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v197 · 14-09-2026";
+  var BUILD="v198 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -11137,15 +11137,44 @@ var TT={script:performance.now()};
   }
   var CADV={};            /* por nivel: los trazos ya armados, para no rehacerlos en cada pintada */
   var anclando=false;
+  /* LO QUE ESTA MUY LEJOS DEL PLANO NO ENTRA: fuera del 5-95 % del dibujo mas dos veces su tamano, como en
+     AUTOCAD.bat.  Cinco lineas sueltas a 5,4 km estiraban la vista hasta dejar la planta en blanco. */
+  function sacaLejanosCad(D){
+    var P=[];
+    D.l.forEach(function(L){ if(L.length>=4)P.push([L[2],L[3]]); });
+    D.c.forEach(function(C){ P.push([C[2],C[3]]); });
+    D.t.forEach(function(T){ P.push([T[2],T[3]]); });
+    if(P.length<20)return 0;
+    var xs=P.map(function(p){return p[0]}).sort(function(a,b){return a-b}),
+        ys=P.map(function(p){return p[1]}).sort(function(a,b){return a-b});
+    var k0=Math.floor(0.05*P.length), k1=Math.floor(0.95*P.length)-1, w=Math.max(xs[k1]-xs[k0],ys[k1]-ys[k0],1e-9);
+    var a=xs[k0]-2*w, b=ys[k0]-2*w, c=xs[k1]+2*w, d=ys[k1]+2*w, n=0;
+    function dentro(A,desde){ for(var k=desde;k+1<A.length;k+=2)if(A[k]>=a&&A[k]<=c&&A[k+1]>=b&&A[k+1]<=d)return true; return false; }
+    function deja(ok){ if(!ok)n++; return ok; }
+    D.l=D.l.filter(function(L){ return deja(dentro(L,2)); });
+    D.c=D.c.filter(function(C){ return deja(dentro([C[2],C[3]],0)); });
+    D.t=D.t.filter(function(T){ return deja(dentro([T[2],T[3]],0)); });
+    D.h=D.h.filter(function(S2){ return deja(S2.slice(3).some(function(lz){ return dentro(lz,0); })); });
+    return n;
+  }
   function ponCalcoCad(D){
     if(!D||D.origen!=="autocad"||!Array.isArray(D.l)){
       toast("Ese archivo no es un plano de AUTOCAD.bat."); return false; }
+    var D0=D, kD; D={}; for(kD in D0)D[kD]=D0[kD];
+    D.c=D.c||[]; D.t=D.t||[]; D.h=D.h||[];
+    var lejos=sacaLejanosCad(D);
     var x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
     function mide(x,y){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
     D.l.forEach(function(L){ for(var k=2;k+1<L.length;k+=2)mide(L[k],L[k+1]); });
     (D.c||[]).forEach(function(C){ mide(C[2]-C[4],C[3]-C[4]); mide(C[2]+C[4],C[3]+C[4]); });
     (D.t||[]).forEach(function(T){ mide(T[2],T[3]); });
     if(!(x1>x0||y1>y0)){ toast("El plano de AutoCAD viene vacío."); return false; }
+    /* un edificio no mide 1 cm: se leyo en milimetros estando en metros (el Dibujo11 de Victor medía 0,011 × 0,04) */
+    if(Math.max(x1-x0,y1-y0)<2){
+      toast("Este plano mide "+nm(x1-x0)+" × "+nm(y1-y0)+" m: se leyó en milímetros y está dibujado en metros. "+
+            "No se trae. Vuelve a leerlo con AUTOCAD.bat [2] y trae el archivo nuevo.");
+      return false;
+    }
     /* al marco del calco: x a la derecha desde el borde izquierdo, y hacia ABAJO desde el de arriba */
     function X(x){return +(x-x0).toFixed(4)}
     function Y(y){return +(y1-y).toFixed(4)}
@@ -11166,7 +11195,10 @@ var TT={script:performance.now()};
     guardarCalco(S.act,c);
     render();
     toast("Plano de AutoCAD de fondo: "+(cad.l.length+cad.c.length+cad.t.length)+" trazos en "+cad.capas.length+
-          " capas, "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m. Ánclalo con «Anclar en A-A» y «Anclar en 1-1».");
+          " capas, "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m."+
+          (lejos?" "+lejos+" objeto(s) sueltos lejos del plano no entraron.":"")+
+          (Math.max(c.w,c.h)>1000?" ¡Ojo! mide más de 1 km: revisa las unidades con AUTOCAD.bat [1].":"")+
+          " Ánclalo con «Anclar en A-A» y «Anclar en 1-1».");
     return true;
   }
   /* el amarillo o el blanco de AutoCAD no se ven sobre la planta clara: se oscurecen lo justo */
