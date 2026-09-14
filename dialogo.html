@@ -399,6 +399,12 @@
 .dis-cort .kv{max-width:560px}
 .dis-figw{margin:2px 0 10px}
 .dis-figw svg{display:block;max-width:none}
+.calco-capas{max-height:190px;overflow:auto;margin:4px 2px 0;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
+.calco-capa{display:grid;grid-template-columns:auto 12px minmax(0,1fr) auto;gap:6px;align-items:center;
+  padding:2px 6px;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-2);cursor:pointer}
+.calco-capa i{width:12px;height:12px;border-radius:2px;border:1px solid var(--line)}
+.calco-capa span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calco-capa small{color:var(--ink-3);font-variant-numeric:tabular-nums}
 .aviso.dis-no{background:var(--sheet);border-color:#c62828;color:var(--ink)}
 @media (max-width:560px){.dis-arm .pf{grid-template-columns:1fr 64px 116px}.dis-arm .pfn{grid-column:1/-1}}
 .sis-ok,.sis-no{font:700 11px "IBM Plex Sans",sans-serif}
@@ -724,10 +730,13 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <button class="btn" id="limpiar" style="margin:4px 2px 0"
         title="Deja el nivel en blanco: quita columnas, vigas, losas, placas y zapatas">Limpiar</button>
       <span class="lbl" style="padding:8px 8px 4px">Plano de fondo</span>
-      <input type="file" id="calcoFile" accept=".pdf,image/*" hidden>
-      <button class="btn" id="calcoCargar" style="margin:0 2px">Traer plano…</button>
+      <input type="file" id="calcoFile" accept=".pdf,image/*,.json" hidden>
+      <button class="btn" id="calcoCargar" style="margin:0 2px"
+        title="Un PDF, una imagen o el plano que deja AUTOCAD.bat en la carpeta autocad">Traer plano…</button>
       <div id="calcoCtl" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
+        <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
+          title="Clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto">1 · Anclar en A-1</button>
         <button class="btn" id="marcarEjes" style="margin:4px 2px 0">2 · Marcar ejes sobre el plano</button>
         <div id="marcaCtl" hidden style="margin:4px 2px 0;padding:6px;border:1px solid var(--acc);border-radius:6px;background:var(--acc-soft)">
           <div class="lbl" id="marcaTit" style="padding:0 0 2px"></div>
@@ -740,6 +749,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="calcoEjes" hidden style="margin:4px 2px 0">Leer los ejes (automático)</button>
         <label class="pf" style="padding:4px 2px 0"><span class="pfe">Opacidad</span>
           <input type="range" id="calcoOp" min="10" max="100" step="5" value="45"></label>
+        <label class="pf" id="calcoColor" hidden style="padding:4px 2px 0"><span class="pfe">Colores de AutoCAD</span>
+          <input type="checkbox" id="calcoColores" checked></label>
+        <div id="calcoCapas" class="calco-capas" hidden></div>
         <button class="btn" id="calcoQuitar" style="margin:4px 2px 0">Quitar plano</button>
         <p class="nota" id="calcoInfo" style="padding:0 2px"></p>
       </div>
@@ -8272,7 +8284,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v186 · 14-09-2026";
+  var BUILD="v189 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9595,10 +9607,7 @@ var TT={script:performance.now()};
     defs.appendChild(pt);sv.appendChild(defs);
     /* El calco va PRIMERO: todo lo demas se dibuja encima. */
     (function(){var c=calco();if(!c)return;
-      sv.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
-        width:c.w*c.esc*esc,height:c.h*c.esc*esc,
-        opacity:c.op,preserveAspectRatio:"none",
-        href:c.src,"pointer-events":"none"}));
+      pintaCalcoFondo(sv,mg,esc,c);
       pintaCandidatos(sv,mg,esc,c);})();
     var g=el("g",{});sv.appendChild(g);
     var col=coloresAmb(),i,j;
@@ -10343,10 +10352,7 @@ var TT={script:performance.now()};
     defs.appendChild(pt);s.appendChild(defs);
     /* El calco va PRIMERO: todo lo demas se dibuja encima. */
     (function(){var c=calco();if(!c)return;
-      s.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
-        width:c.w*c.esc*esc,height:c.h*c.esc*esc,
-        opacity:c.op,preserveAspectRatio:"none",
-        href:c.src,"pointer-events":"none"}));
+      pintaCalcoFondo(s,mg,esc,c);
       pintaCandidatos(s,mg,esc,c);})();
     var g=el("g",{});s.appendChild(g);
     var i,j;
@@ -11013,8 +11019,222 @@ var TT={script:performance.now()};
                "Calíbralo con dos puntos de medida conocida.");
   }
 
+  /* =====================================================================
+     EL PLANO DE AUTOCAD, DE FONDO.  AUTOCAD.bat lee el dibujo activo -solo
+     leyendo- y deja autocad\<dibujo>_plano.json: lineas, circulos y textos
+     en metros, capa por capa.  Aqui va debajo de la planta como un CAD
+     vinculado en Revit: no es modelo, es la base para modelar encima.  Ya
+     viene a escala real, asi que no se calibra: se ANCLA con un clic en el
+     cruce A-1 del dibujo, que se pega al punto exacto -cruce de lineas,
+     extremo o centro-.  Y al marcar ejes, el clic se pega a sus lineas.
+     ===================================================================== */
+  /* los codigos de formato de un MTEXT, tambien aqui: un archivo de un lector anterior los traia */
+  function limpiaMtext(t){
+    var s=String(t==null?"":t).replace(/\\S([^;]*);/g,function(m,a){return a.replace(/[#^]/g,"/")});
+    /* una sola pasada: \\ \{ \} son el caracter mismo; los codigos con parametros acaban en punto y coma;
+       \L \O \K son interruptores; \P, \N y \~ son espacios; las llaves sueltas agrupan y se quitan */
+    s=s.replace(/\\([\\{}])|\\[ACcFfHpQTW][^;]*;|\\[LlOoKk]|\\[PN~]|[{}]/g,function(m,lit){
+      if(lit)return lit;
+      return /^\\[PN~]$/.test(m)?" ":"";
+    });
+    return s.replace(/\s+/g," ").trim();
+  }
+  var CADV={};            /* por nivel: los trazos ya armados, para no rehacerlos en cada pintada */
+  var anclando=false;
+  function ponCalcoCad(D){
+    if(!D||D.origen!=="autocad"||!Array.isArray(D.l)){
+      toast("Ese archivo no es un plano de AUTOCAD.bat."); return false; }
+    var x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    function mide(x,y){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    D.l.forEach(function(L){ for(var k=2;k+1<L.length;k+=2)mide(L[k],L[k+1]); });
+    (D.c||[]).forEach(function(C){ mide(C[2]-C[4],C[3]-C[4]); mide(C[2]+C[4],C[3]+C[4]); });
+    (D.t||[]).forEach(function(T){ mide(T[2],T[3]); });
+    if(!(x1>x0||y1>y0)){ toast("El plano de AutoCAD viene vacío."); return false; }
+    /* al marco del calco: x a la derecha desde el borde izquierdo, y hacia ABAJO desde el de arriba */
+    function X(x){return +(x-x0).toFixed(4)}
+    function Y(y){return +(y1-y).toFixed(4)}
+    var cad={dibujo:String(D.dibujo||""), leido:String(D.leido||""), unidades:String(D.unidades||"m"),
+      capas:(D.capas||[]).map(function(c){return {n:String(c.n), hex:c.hex||"#282828", on:c.on!==false, lt:String(c.lt||"")}}),
+      l:D.l.map(function(L){ var o=[L[0],L[1]||null]; for(var k=2;k+1<L.length;k+=2)o.push(X(L[k]),Y(L[k+1])); return o; }),
+      c:(D.c||[]).map(function(C){return [C[0],C[1]||null,X(C[2]),Y(C[3]),C[4]]}),
+      t:(D.t||[]).map(function(T){return [T[0],T[1]||null,X(T[2]),Y(T[3]),T[4],T[5]||0,limpiaMtext(T[6]),T[7]||"i",T[8]||"base"]})
+         .filter(function(T){return !!T[6]}),
+      omitidos:D.omitidos||{}};
+    var c={tipo:"cad", cad:cad, w:+(x1-x0).toFixed(4), h:+(y1-y0).toFixed(4), esc:1, dx:0, dy:0, op:0.9, cal:true, colores:true};
+    CADV[S.act]=null; VECT[S.act]=null; PROP=null; calibrando=null; anclando=false;
+    guardarCalco(S.act,c);
+    render();
+    toast("Plano de AutoCAD de fondo: "+(cad.l.length+cad.c.length+cad.t.length)+" trazos en "+cad.capas.length+
+          " capas, "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m. Pulsa «Anclar en A-1» y haz clic en ese cruce del dibujo.");
+    return true;
+  }
+  /* el amarillo o el blanco de AutoCAD no se ven sobre la planta clara: se oscurecen lo justo */
+  function tintaCad(hex){
+    var m=/^#([0-9a-f]{6})$/i.exec(hex||""); if(!m)return "#282828";
+    var n=parseInt(m[1],16), r=(n>>16)&255, g=(n>>8)&255, b=n&255, lum=(0.299*r+0.587*g+0.114*b)/255;
+    if(lum<=0.72)return hex.toLowerCase();
+    var k=0.72/lum;
+    return "#"+[r,g,b].map(function(v){var s=Math.round(v*k).toString(16);return s.length<2?"0"+s:s}).join("");
+  }
+  /* los tipos de linea de AutoCAD, en metros de obra: un eje se ve a trazo y punto */
+  function rayaCad(lt){
+    var t=String(lt||"").toLowerCase();
+    if(/center|eje|phantom|dashdot/.test(t))return "0.6 0.12 0.12 0.12";
+    if(/hidden|dash|oculta|trazo/.test(t))return "0.25 0.1";
+    if(/dot|punto/.test(t))return "0.03 0.09";
+    return "";
+  }
+  function trazosCad(c){
+    var cad=c.cad, clave=cad.capas.map(function(x){return x.on?1:0}).join("")+(c.colores===false?"g":"c"), mem=CADV[S.act];
+    if(mem&&mem.cad===cad&&mem.clave===clave)return mem.V;
+    var grupos={}, orden=[], V=[];
+    function f(v){return (+v).toFixed(3)}
+    function vis(ci){return !!cad.capas[ci]&&cad.capas[ci].on!==false}
+    function grupo(ci,col){
+      var cp=cad.capas[ci], hex=col||cp.hex, k=ci+"|"+hex;
+      if(!grupos[k]){ grupos[k]={tipo:"path", d:[], col:c.colores===false?"var(--ink-3)":tintaCad(hex), dash:rayaCad(cp.lt)}; orden.push(k); }
+      return grupos[k];
+    }
+    cad.l.forEach(function(L){
+      if(!vis(L[0]))return;
+      var s="M"+f(L[2])+" "+f(L[3]);
+      for(var k=4;k+1<L.length;k+=2)s+="L"+f(L[k])+" "+f(L[k+1]);
+      grupo(L[0],L[1]).d.push(s);
+    });
+    cad.c.forEach(function(C){
+      if(!vis(C[0]))return;
+      var r=f(C[4]);
+      grupo(C[0],C[1]).d.push("M"+f(C[2]-C[4])+" "+f(C[3])+"a"+r+" "+r+" 0 1 0 "+f(2*C[4])+" 0a"+r+" "+r+" 0 1 0 "+f(-2*C[4])+" 0");
+    });
+    orden.forEach(function(k){ grupos[k].d=grupos[k].d.join(""); V.push(grupos[k]); });
+    cad.t.forEach(function(T){
+      if(!vis(T[0]))return;
+      V.push({tipo:"texto", x:T[2], y:T[3], h:T[4], rot:T[5]?-T[5]:0, s:T[6],
+              anc:T[7]==="c"?"middle":(T[7]==="d"?"end":"start"), base:T[8]==="sup"?"hanging":(T[8]==="med"?"central":""),
+              col:c.colores===false?"var(--ink-3)":tintaCad(T[1]||cad.capas[T[0]].hex)});
+    });
+    CADV[S.act]={cad:cad, clave:clave, V:V};
+    return V;
+  }
+  /* el fondo: la imagen de siempre o el dibujo de AutoCAD, en un grupo que no se pincha */
+  function pintaCalcoFondo(cont,mg,esc,c){
+    if(c.tipo!=="cad"){
+      cont.appendChild(el("image",{x:mg+c.dx*esc,y:mg+c.dy*esc,
+        width:c.w*c.esc*esc,height:c.h*c.esc*esc,
+        opacity:c.op,preserveAspectRatio:"none",
+        href:c.src,"pointer-events":"none"}));
+      return;
+    }
+    var k=c.esc*esc, sw=(0.9/k).toFixed(5);
+    var g=el("g",{transform:"translate("+(mg+c.dx*esc)+" "+(mg+c.dy*esc)+") scale("+k+")",
+                  opacity:c.op,"pointer-events":"none","class":"calco-cad"});
+    trazosCad(c).forEach(function(t){
+      var a;
+      if(t.tipo==="path"){
+        a={d:t.d,fill:"none",stroke:t.col,"stroke-width":sw,"stroke-linecap":"round","stroke-linejoin":"round"};
+        if(t.dash)a["stroke-dasharray"]=t.dash;
+        g.appendChild(el("path",a));
+        return;
+      }
+      a={x:t.x,y:t.y,"font-size":t.h,fill:t.col,"text-anchor":t.anc,"font-family":"IBM Plex Sans, Arial, sans-serif"};
+      if(t.base)a["dominant-baseline"]=t.base;
+      if(t.rot)a.transform="rotate("+t.rot+" "+t.x+" "+t.y+")";
+      var tx=el("text",a); tx.textContent=t.s; g.appendChild(tx);
+    });
+    cont.appendChild(g);
+  }
+  function pintaCapasCad(c){
+    var box=$("#calcoCapas"); if(!box)return;
+    var cad=c.cad, n={};
+    [cad.l,cad.c,cad.t].forEach(function(A){ A.forEach(function(x){ n[x[0]]=(n[x[0]]||0)+1; }); });
+    function h(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    box.innerHTML=cad.capas.map(function(cp,i){
+      if(!n[i])return "";
+      return '<label class="calco-capa"><input type="checkbox" data-capa="'+i+'"'+(cp.on?' checked':'')+'>'+
+        '<i style="background:'+h(tintaCad(cp.hex))+'"></i><span title="'+h(cp.n)+'">'+h(cp.n)+'</span><small>'+n[i]+'</small></label>';
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("input[data-capa]"),function(inp){
+      inp.onchange=function(){
+        var cc=calco(); if(!cc||cc.tipo!=="cad")return;
+        cc.cad.capas[+inp.dataset.capa].on=!!inp.checked; guardarCalco(S.act,cc); render();
+      };
+    });
+  }
+  /* EL PUNTO DEL DIBUJO MAS CERCANO, en coordenadas del calco (m).  Manda un cruce de dos lineas,
+     despues un extremo o vertice, despues el centro de un circulo -una burbuja de eje- y, si se pide,
+     el punto de la linea mas cercana. */
+  function cruceSeg(a,b){
+    var d=(a[2]-a[0])*(b[3]-b[1])-(a[3]-a[1])*(b[2]-b[0]);
+    if(Math.abs(d)<1e-12)return null;
+    var t=((b[0]-a[0])*(b[3]-b[1])-(b[1]-a[1])*(b[2]-b[0]))/d,
+        s=((b[0]-a[0])*(a[3]-a[1])-(b[1]-a[1])*(a[2]-a[0]))/d;
+    if(t<-1e-9||t>1+1e-9||s<-1e-9||s>1+1e-9)return null;
+    return [a[0]+t*(a[2]-a[0]),a[1]+t*(a[3]-a[1])];
+  }
+  function snapCad(c,u,v,tol,conLinea){
+    var cad=c.cad, mejor=null, cerca=[];
+    function vis(ci){return !!cad.capas[ci]&&cad.capas[ci].on!==false}
+    /* cruce, extremo y centro compiten por CERCANIA: apuntando al centro de una columna, un cruce de
+       muros a 5 cm se lo llevaba.  El punto sobre una linea solo entra si no hay ninguno de los otros */
+    function toma(x,y,prio,que){
+      var d=Math.hypot(x-u,y-v); if(d>tol)return;
+      var r=prio<=1?0:prio, rm=mejor?(mejor.prio<=1?0:mejor.prio):9;
+      if(!mejor||r<rm||(r===rm&&d<mejor.d))mejor={x:x,y:y,d:d,prio:prio,que:que};
+    }
+    cad.l.forEach(function(L){
+      if(!vis(L[0]))return;
+      for(var k=2;k+1<L.length;k+=2){
+        toma(L[k],L[k+1],1,"extremo");
+        if(k+3>=L.length)continue;
+        var ax=L[k],ay=L[k+1],bx=L[k+2],by=L[k+3],dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy,
+            t=l2>0?Math.max(0,Math.min(1,((u-ax)*dx+(v-ay)*dy)/l2)):0, px=ax+t*dx, py=ay+t*dy;
+        if(Math.hypot(px-u,py-v)<=tol)cerca.push([ax,ay,bx,by,px,py]);
+      }
+      /* el centro de un rectangulo cerrado -una columna-: por ahi pasan sus ejes.  Los ejes de un
+         plano de arquitectura suelen ser solo burbujas, sin lineas que se crucen */
+      if(L.length===12&&Math.abs(L[2]-L[10])<1e-6&&Math.abs(L[3]-L[11])<1e-6)
+        toma((L[2]+L[4]+L[6]+L[8])/4,(L[3]+L[5]+L[7]+L[9])/4,1,"centro");
+    });
+    cad.c.forEach(function(C){ if(vis(C[0]))toma(C[2],C[3],1,"centro"); });
+    for(var i=0;i<cerca.length;i++)for(var j=i+1;j<cerca.length;j++){
+      var P=cruceSeg(cerca[i],cerca[j]); if(P)toma(P[0],P[1],0,"cruce");
+    }
+    if(!mejor&&conLinea)cerca.forEach(function(s){ toma(s[4],s[5],3,"punto de la línea"); });
+    return mejor;
+  }
+  /* cuantos metros son tantos pixeles de pantalla, en el lienzo que se esta viendo */
+  function tolPantalla(px){
+    var sv=$("#plano"), L0=LIENZO||lienzo(S.verDims), r=(sv&&sv.getBoundingClientRect)?sv.getBoundingClientRect():null;
+    var k=(r&&r.width&&sv.viewBox&&sv.viewBox.baseVal&&sv.viewBox.baseVal.width)?sv.viewBox.baseVal.width/r.width:1;
+    return px*k/L0.esc;
+  }
+  /* un punto del modelo pegado al dibujo de AutoCAD, si lo hay debajo */
+  function pegaCad(q){
+    var c=calco(); if(!c||c.tipo!=="cad")return q;
+    var s=snapCad(c,(q.x-c.dx)/c.esc,(q.y-c.dy)/c.esc,tolPantalla(12)/c.esc,true);
+    return s?{x:s.x*c.esc+c.dx, y:s.y*c.esc+c.dy}:q;
+  }
+  /* ANCLAR: el punto del dibujo que se toco pasa al cruce A-1 del modelo, que es el origen */
+  function anclarEn(q,tol){
+    var c=calco(); if(!c||c.tipo!=="cad")return null;
+    var s=snapCad(c,(q.x-c.dx)/c.esc,(q.y-c.dy)/c.esc,tol/c.esc,false);
+    if(!s)return null;
+    c.dx=+(-s.x*c.esc).toFixed(4); c.dy=+(-s.y*c.esc).toFixed(4);
+    guardarCalco(S.act,c);
+    return s;
+  }
   function traerCalco(f){
     if(!f)return;
+    if(/\.json$/i.test(f.name)){
+      var frc=new FileReader();
+      frc.onload=function(){
+        var D=null; try{ D=JSON.parse(frc.result); }catch(e){}
+        if(!D)return toast("No se pudo leer ese archivo: ¿es el que dejó AUTOCAD.bat?");
+        ponCalcoCad(D);
+      };
+      frc.readAsText(f);
+      return;
+    }
     if(/\.pdf$/i.test(f.name)){
       var LIB=null;
       cargarPdfJs().then(function(lib){
@@ -11076,13 +11296,25 @@ var TT={script:performance.now()};
   }
 
   function pintaCalcoCtl(){
-    var c=calco(), ctl=$("#calcoCtl"), inf=$("#calcoInfo");
+    var c=calco(), ctl=$("#calcoCtl"), inf=$("#calcoInfo"), esCad=!!(c&&c.tipo==="cad");
     ver(ctl,!!c);
     ver("#calcoEjes",!!(c&&(VECT[S.act]||c.ejes)));
+    /* el plano de AutoCAD ya viene a escala real: no se calibra, se ancla */
+    ver("#calcoCal",!esCad); ver("#calcoAncla",esCad); ver("#calcoColor",esCad); ver("#calcoCapas",esCad);
     pintaMarcaCtl();
     ver("#panelEjes",!!PROP&&S.vista==="plano");
     if(!c||!inf)return;
     var op=$("#calcoOp"); if(op)op.value=Math.round(c.op*100);
+    if(esCad){
+      var cc=$("#calcoColores"); if(cc)cc.checked=c.colores!==false;
+      var om=Object.keys(c.cad.omitidos||{}).map(function(k){return c.cad.omitidos[k]+" "+k});
+      inf.textContent=anclando
+        ? "Haz clic en el cruce de los ejes A y 1 del dibujo."
+        : "AutoCAD · "+(c.cad.dibujo||"dibujo")+" · "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m, leído en "+
+          (c.cad.unidades||"m")+(om.length?" · sin dibujar: "+om.join(", "):"");
+      pintaCapasCad(c);
+      return;
+    }
     inf.textContent=calibrando
       ? "Haz clic en el segundo punto."
       : "Escala: "+(1/c.esc).toFixed(1)+" px/m  ·  "+
@@ -11615,8 +11847,18 @@ var TT={script:performance.now()};
     /* Marcando, un clic en el lienzo es un eje: no una columna.  Va antes
        que nada y no mira e.target, porque se marca sobre el PLANO, donde no
        hay ningun elemento del modelo debajo. */
+    /* Anclando el plano de AutoCAD: el clic se pega al cruce del dibujo y ese punto pasa al A-1 */
+    if(anclando&&!e.altKey){
+      var sA=anclarEn(xyModelo(e),tolPantalla(16));
+      if(sA)anclando=false;
+      toast(sA?"Plano anclado: el "+sA.que+" que tocaste cae en el cruce A-1 del modelo."
+              :"Ahí no hay un punto del dibujo: acerca la vista y haz clic justo en el cruce de los ejes A y 1.");
+      pintaCalcoCtl(); render(); e.preventDefault();
+      return;
+    }
     if(MARCA&&!e.altKey){
-      var q=xyModelo(e), p=PASOS[MARCA.i];
+      /* con un plano de AutoCAD debajo, el clic se pega a su linea: la medida sale exacta */
+      var q=pegaCad(xyModelo(e)), p=PASOS[MARCA.i];
       MARCA.pts[p.k].push({x:q.x,y:q.y});
       MARCA.igual[p.k]=false;
       pintaMarcaCtl(); render();
@@ -11722,8 +11964,18 @@ var TT={script:performance.now()};
   });
 
   $("#calcoEjes").onclick=leerEjes;
+  $("#calcoAncla").onclick=function(){
+    var c=calco(); if(!c||c.tipo!=="cad")return;
+    anclando=!anclando;
+    toast(anclando?"Haz clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto.":"Anclaje cancelado.");
+    pintaCalcoCtl();
+  };
+  $("#calcoColores").addEventListener("change",function(){
+    var c=calco(); if(!c||c.tipo!=="cad")return;
+    c.colores=!!this.checked; guardarCalco(S.act,c); render();
+  });
   $("#calcoQuitar").onclick=function(){
-    guardarCalco(S.act,null); VECT[S.act]=null; calibrando=null;
+    guardarCalco(S.act,null); VECT[S.act]=null; CADV[S.act]=null; calibrando=null; anclando=false;
     PROP=null; ver("#panelEjes",false); render();
     toast("Plano de fondo quitado.");
   };
@@ -16891,7 +17143,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
