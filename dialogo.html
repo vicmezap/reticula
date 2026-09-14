@@ -401,6 +401,27 @@
 .tb-tit{font:600 11.5px "IBM Plex Mono",monospace;color:var(--ink);margin:10px 0 4px}
 .tb-pre{font:400 11px/1.5 "IBM Plex Mono",monospace;color:var(--ink-2);white-space:pre-wrap;margin:4px 0 8px}
 .sis-t.tb-t th.tb-izq,.sis-t.tb-t td.tb-izq{text-align:left}
+/* CORREGIR LA ESTRUCTURA: el diagnostico, en orden */
+.dx-l{margin:10px 0 0;padding:0 0 0 24px;display:grid;gap:10px}
+.dx-i{border:1px solid var(--line);border-left:4px solid var(--line);background:var(--sheet);padding:9px 12px}
+.dx-i::marker{font:700 12px "IBM Plex Mono",monospace;color:var(--ink-3)}
+.dx-impide{border-left-color:#c62828}.dx-revisar{border-left-color:#b26a00}
+.dx-c{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.dx-e{font:700 11px "IBM Plex Sans",sans-serif;white-space:nowrap}
+.dx-impide .dx-e{color:#c62828}.dx-revisar .dx-e{color:#b26a00}
+.dx-t{font:600 13px "IBM Plex Sans",sans-serif;color:var(--ink)}
+.dx-q{font:600 12px "IBM Plex Mono",monospace;color:var(--ink)}
+.dx-d{margin:6px 0 8px 18px;padding:0;font:400 12px/1.5 "IBM Plex Sans",sans-serif;color:var(--ink-2)}
+.dx-ir{font-size:11.5px}
+.rb-dir{margin:0 0 14px}
+.rb-res{font:400 12.5px/1.5 "IBM Plex Sans",sans-serif;color:var(--ink);margin:6px 0 8px}
+.op-ok{border-left-color:#2e7d32}.op-ok .dx-e{color:#2e7d32}
+.op-justo{border-left-color:#b26a00}.op-justo .dx-e{color:#b26a00}
+.op-no{border-left-color:#c62828}.op-no .dx-e{color:#c62828}
+.op-que{font:400 12px/1.5 "IBM Plex Sans",sans-serif;color:var(--ink);margin:6px 0 4px}
+.op-m{list-style:none;margin:4px 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:2px 16px;
+  font:400 11.5px "IBM Plex Mono",monospace;color:var(--ink-2)}
+.op-p summary{cursor:pointer;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin:4px 0}
 /* INICIO: donde va el proyecto, un paso por fila */
 .ini-l{display:grid;border-top:1px solid var(--line-soft)}
 .ini-p{display:grid;grid-template-columns:minmax(160px,210px) 104px 1fr;gap:4px 14px;align-items:baseline;
@@ -5116,6 +5137,982 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== rigidez.js (inlinado) ===== */
+/* =====================================================================
+   rigidez.js — EL MODELO PLANO DE PORTICOS Y PLACAS (parte C4c).  Sin
+   interfaz: lo usa corregir.js para estimar que le pasa a la deriva si se
+   agrandan columnas, se peraltan vigas o se agregan placas.
+
+   Todo lo que resiste en una direccion se junta en un solo plano, unido por
+   el diafragma rigido de cada piso -un desplazamiento por piso- y con un
+   giro en cada nudo:
+     · columnas y placas: barras verticales con flexion y corte
+       (Timoshenko, As = A / 1,2), empotradas en la base;
+     · vigas: flexion, con brazo rigido cuando llegan al borde de una placa:
+       la placa gira y el extremo de la viga sube o baja con ella;
+     · una columna dentro de una placa es parte de la placa y suma su inercia
+       con Steiner (I + A·e²); tramos de placa seguidos en un eje son una.
+   Sin deformacion axial, sin torsion y sin la losa.  Con Libro1 da algo
+   menos rigidez que ETABS -1,2 veces en X y 1,4 en Y, parejo en todos los
+   pisos-: por eso las opciones se estiman con COCIENTES entre este modelo
+   antes y despues del cambio, y esa diferencia se cancela.
+
+   La columna: la b va en X y la h en Y, como la lleva a_etabs.py
+   (SetRectangle(b, h): t3 = b, a lo largo del eje local 2 = X global).
+
+   Unidades: m, t, s.  E en t/m² -la del material de la exportacion viene en
+   kg/cm²-.  Las fuerzas del patron son w·z^K; el periodo sale de Rayleigh,
+   T = 2π √(Σ m u² / Σ F u), y no depende de la escala de las fuerzas.
+
+     node scripts/complemento/oviedo/probar_rigidez.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.RIGIDEZ = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var TOL = 0.005, GRAV = 9.80665, PESO = 2.4;   /* t/m³ del concreto armado */
+
+  function dirDe(e) {
+    var ax = Math.abs(e.x2 - e.x1), ay = Math.abs(e.y2 - e.y1);
+    if (ay < TOL && ax > TOL) return "x";
+    if (ax < TOL && ay > TOL) return "y";
+    return null;
+  }
+  function largo(e) { return Math.sqrt((e.x2 - e.x1) * (e.x2 - e.x1) + (e.y2 - e.y1) * (e.y2 - e.y1)); }
+  function otra(d) { return d === "x" ? "y" : "x"; }
+  function clave(v) { return (Math.round(v * 1000) / 1000 + 0).toFixed(3); }
+  function moduloE(modelo) {
+    var m = modelo.material || {}, fc = +(m.fc || modelo.fc || 210);
+    return (m.E > 0 ? +m.E : 15000 * Math.sqrt(fc)) * 10;
+  }
+  function circular(c) { return c.forma === "circular"; }
+  function seccionColumna(c, d) {
+    if (circular(c)) { var D = +c.D; return { I: Math.PI * Math.pow(D, 4) / 64, A: Math.PI * D * D / 4, dep: D }; }
+    var dep = d === "x" ? +c.b : +c.h, anc = d === "x" ? +c.h : +c.b;
+    return { I: anc * dep * dep * dep / 12, A: anc * dep, dep: dep };
+  }
+
+  /* las placas de un nivel en la direccion d, con los tramos seguidos juntos */
+  function murosDe(L, d) {
+    var o = otra(d), porEje = {}, out = [];
+    (L.placas || []).forEach(function (p) {
+      if (dirDe(p) !== d || !(p.t > 0)) return;
+      var c1 = Math.min(p[d + "1"], p[d + "2"]), c2 = Math.max(p[d + "1"], p[d + "2"]), k = clave(p[o + "1"]);
+      (porEje[k] = porEje[k] || []).push({ eje: +p[o + "1"], c1: c1, c2: c2, t: +p.t, cod: p.cod });
+    });
+    Object.keys(porEje).forEach(function (k) {
+      var w = null;
+      porEje[k].sort(function (p, q) { return p.c1 - q.c1; }).forEach(function (p) {
+        if (w && p.c1 <= w.c2 + TOL) { w.c2 = Math.max(w.c2, p.c2); w.partes.push(p); w.cods.push(p.cod); }
+        else { w = { eje: p.eje, c1: p.c1, c2: p.c2, partes: [p], cods: [p.cod], cols: [] }; out.push(w); }
+      });
+    });
+    out.forEach(function (w) {
+      var A = 0, S = 0, I = 0;
+      w.partes.forEach(function (q) { var l = q.c2 - q.c1; A += q.t * l; S += q.t * l * (q.c1 + q.c2) / 2; });
+      w.cen = S / A;
+      w.partes.forEach(function (q) {
+        var l = q.c2 - q.c1, c = (q.c1 + q.c2) / 2;
+        I += q.t * l * l * l / 12 + q.t * l * (c - w.cen) * (c - w.cen);
+      });
+      w.A = A; w.I = I;
+    });
+    return out;
+  }
+
+  /* lo vertical de un nivel que resiste en d: columnas sueltas y placas (con sus columnas dentro) */
+  function verticales(L, d, E, Gm, nivel) {
+    var o = otra(d), muros = murosDe(L, d), out = [];
+    (L.columnas || []).forEach(function (c) {
+      var s = seccionColumna(c, d), pos = +c[d], eje = +c[o];
+      if (!(s.I > 0)) return;
+      var w = muros.filter(function (m) { return Math.abs(m.eje - eje) < TOL && pos > m.c1 - TOL && pos < m.c2 + TOL; })[0];
+      if (w) { w.I += s.I + s.A * (pos - w.cen) * (pos - w.cen); w.cols.push(c.cod); return; }
+      out.push({ tipo: "columna", cod: c.cod, nivel: nivel, eje: eje, c1: pos, c2: pos, cen: pos,
+                 EI: E * s.I, GA: Gm * s.A / 1.2 });
+    });
+    muros.forEach(function (w) {
+      out.push({ tipo: "placa", cod: w.cods.join("+"), cols: w.cols, nivel: nivel, eje: w.eje, c1: w.c1, c2: w.c2,
+                 cen: w.cen, largo: w.c2 - w.c1, EI: E * w.I, GA: Gm * w.A / 1.2 });
+    });
+    return out;
+  }
+
+  /* los nudos de un piso: lo que llega de abajo y lo que sale hacia arriba, junto si se toca en el mismo eje */
+  function agrupar(miembros) {
+    var porEje = {}, gs = [];
+    miembros.forEach(function (mb) { var k = clave(mb.eje); (porEje[k] = porEje[k] || []).push(mb); });
+    Object.keys(porEje).forEach(function (k) {
+      var g = null;
+      porEje[k].sort(function (p, q) { return p.c1 - q.c1; }).forEach(function (mb) {
+        if (g && mb.c1 <= g.c2 + TOL) {
+          g.c2 = Math.max(g.c2, mb.c2); g.ms.push(mb);
+          if (mb.c2 - mb.c1 > g.ancho) { g.ancho = mb.c2 - mb.c1; g.cen = mb.cen; }
+        } else {
+          g = { eje: mb.eje, clave: k, c1: mb.c1, c2: mb.c2, cen: mb.cen, ancho: mb.c2 - mb.c1, ms: [mb] };
+          gs.push(g);
+        }
+      });
+    });
+    return gs;
+  }
+  function buscar(gs, eje, s) {
+    var k = clave(eje);
+    for (var i = 0; i < gs.length; i++)
+      if (gs[i].clave === k && s > gs[i].c1 - TOL && s < gs[i].c2 + TOL) return gs[i];
+    return null;
+  }
+
+  /* barra vertical [u abajo, giro abajo, u arriba, giro arriba], flexion y corte */
+  function kVertical(EI, GA, L) {
+    var ph = 12 * EI / (GA * L * L), c = EI / (L * L * L * (1 + ph)), L2 = L * L;
+    return [[12 * c, 6 * L * c, -12 * c, 6 * L * c],
+            [6 * L * c, (4 + ph) * L2 * c, -6 * L * c, (2 - ph) * L2 * c],
+            [-12 * c, -6 * L * c, 12 * c, -6 * L * c],
+            [6 * L * c, (2 - ph) * L2 * c, -6 * L * c, (4 + ph) * L2 * c]];
+  }
+  /* viga [giro 1, giro 2] con brazos rigidos e1 y e2: del centro del nudo al extremo flexible */
+  function kViga(EI, L, e1, e2) {
+    var c = EI / (L * L * L);
+    return [[c * (12 * e1 * e1 + 12 * L * e1 + 4 * L * L), c * (-12 * e1 * e2 + 6 * L * e1 - 6 * L * e2 + 2 * L * L)],
+            [c * (-12 * e1 * e2 + 6 * L * e1 - 6 * L * e2 + 2 * L * L), c * (12 * e2 * e2 - 12 * L * e2 + 4 * L * L)]];
+  }
+  /* K simetrica y definida positiva, sin pivoteo, dentro de la banda */
+  function resolver(K, F, bw) {
+    var N = F.length, i, j, k, escala = 0;
+    for (i = 0; i < N; i++) escala = Math.max(escala, Math.abs(K[i][i]));
+    for (i = 0; i < N; i++) {
+      var piv = K[i][i], fin = Math.min(N - 1, i + bw);
+      if (!(piv > 1e-12 * escala)) return null;
+      for (j = i + 1; j <= fin; j++) {
+        var f = K[j][i] / piv;
+        if (!f) continue;
+        for (k = i; k <= fin; k++) K[j][k] -= f * K[i][k];
+        F[j] -= f * F[i];
+      }
+    }
+    var x = new Array(N);
+    for (i = N - 1; i >= 0; i--) {
+      var s = F[i], fin2 = Math.min(N - 1, i + bw);
+      for (k = i + 1; k <= fin2; k++) s -= K[i][k] * x[k];
+      x[i] = s / K[i][i];
+    }
+    return x;
+  }
+
+  /* EL MODELO PLANO en la direccion d.
+     modelo: la exportacion a ETABS {material, fc, niveles: [{h, columnas, vigas, placas}]}
+     o: {masas: t·s²/m por piso de abajo arriba, K: exponente del patron (1), corte: false para no contar el corte}
+     -> {d, n, N, z, F, u, deriva, V, k, T, pctMuros, porPiso: [{V, muros, cr}]} o {error} */
+  function plano(modelo, d, o) {
+    o = o || {};
+    var niv = (modelo && modelo.niveles) || [], n = niv.length;
+    if (!n) return { error: "El modelo no tiene niveles." };
+    var masas = o.masas || [];
+    if (masas.length !== n || masas.some(function (m) { return !(m > 0); }))
+      return { error: "Faltan las masas de los pisos." };
+    var E = moduloE(modelo), Gm = o.corte === false ? Infinity : E / 2.4, K = o.K > 0 ? +o.K : 1, oo = otra(d), i, j;
+    var vert = niv.map(function (L, i) { return verticales(L, d, E, Gm, i); });
+    for (i = 0; i < n; i++)
+      if (!vert[i].length)
+        return { error: "El nivel " + (niv[i].nombre || i + 1) + " no tiene columnas ni placas que resistan en " + d.toUpperCase() + "." };
+
+    /* numeracion piso por piso: su desplazamiento y el giro de cada nudo -la banda queda angosta- */
+    var pisos = [], N = 0, z = 0;
+    for (j = 0; j < n; j++) {
+      var gs = agrupar(vert[j].concat(j + 1 < n ? vert[j + 1] : []));
+      var P = { u: N++, grupos: gs };
+      gs.forEach(function (g) {
+        g.dof = N++;
+        g.ms.forEach(function (mb) { if (mb.nivel === j) mb.dofArriba = g.dof; else mb.dofAbajo = g.dof; });
+      });
+      z += +niv[j].h; P.z = z;
+      pisos.push(P);
+    }
+    var elems = [], bw = 0;
+    function agrega(dofs, k) {
+      var v = dofs.filter(function (x) { return x >= 0; });
+      bw = Math.max(bw, Math.max.apply(null, v) - Math.min.apply(null, v));
+      elems.push({ dofs: dofs, k: k });
+      return elems[elems.length - 1];
+    }
+    vert.forEach(function (lista, i) {
+      lista.forEach(function (mb) {
+        var e = agrega([i === 0 ? -1 : pisos[i - 1].u, i === 0 ? -1 : mb.dofAbajo, pisos[i].u, mb.dofArriba],
+                       kVertical(mb.EI, mb.GA, +niv[i].h));
+        e.mb = mb;
+      });
+    });
+    niv.forEach(function (L, i) {
+      var gs = pisos[i].grupos;
+      (L.vigas || []).forEach(function (v) {
+        if (dirDe(v) !== d || !(v.b > 0 && v.h > 0)) return;
+        var eje = +v[oo + "1"], s1 = Math.min(v[d + "1"], v[d + "2"]), s2 = Math.max(v[d + "1"], v[d + "2"]);
+        var g1 = buscar(gs, eje, s1), g2 = buscar(gs, eje, s2);
+        if (!g1 || !g2 || g1 === g2) return;
+        var a1 = Math.max(s1, g1.c2), a2 = Math.min(s2, g2.c1);
+        if (a2 - a1 < TOL) return;
+        agrega([g1.dof, g2.dof], kViga(E * v.b * v.h * v.h * v.h / 12, a2 - a1, a1 - g1.cen, a2 - g2.cen)).viga = v.cod;
+      });
+    });
+
+    var Km = [], F = new Array(N), q, r;
+    for (q = 0; q < N; q++) { Km.push(new Float64Array(N)); F[q] = 0; }
+    elems.forEach(function (e) {
+      for (var p = 0; p < e.dofs.length; p++) {
+        if (e.dofs[p] < 0) continue;
+        for (var s = 0; s < e.dofs.length; s++) if (e.dofs[s] >= 0) Km[e.dofs[p]][e.dofs[s]] += e.k[p][s];
+      }
+    });
+    var Fp = pisos.map(function (P, j) { return masas[j] * GRAV * Math.pow(P.z, K); });
+    pisos.forEach(function (P, j) { F[P.u] = Fp[j]; });
+    var U = resolver(Km, F, bw);
+    if (!U) return { error: "El modelo plano en " + d.toUpperCase() + " es inestable: algún piso no tiene rigidez lateral." };
+
+    var u = pisos.map(function (P) { return U[P.u]; }), deriva = [], V = [], k = [], num = 0, den = 0;
+    for (j = 0; j < n; j++) {
+      var Vj = 0; for (q = j; q < n; q++) Vj += Fp[q];
+      deriva.push(u[j] - (j ? u[j - 1] : 0)); V.push(Vj);
+      k.push(deriva[j] > 0 ? Vj / deriva[j] : null);
+      num += masas[j] * u[j] * u[j]; den += Fp[j] * u[j];
+    }
+    var porPiso = niv.map(function () { return { V: 0, Vmuros: 0, momento: 0 }; });
+    elems.forEach(function (e) {
+      if (!e.mb) return;
+      var dv = e.dofs.map(function (x) { return x < 0 ? 0 : U[x]; }), f = 0;
+      for (r = 0; r < 4; r++) f += e.k[2][r] * dv[r];
+      var pp = porPiso[e.mb.nivel];
+      pp.V += f; pp.momento += f * e.mb.eje;
+      if (e.mb.tipo === "placa") pp.Vmuros += f;
+    });
+    porPiso = porPiso.map(function (pp) {
+      return { V: pp.V, muros: pp.V ? pp.Vmuros / pp.V : null, cr: pp.V ? pp.momento / pp.V : null };
+    });
+    return { d: d, n: n, N: N, bw: bw, z: pisos.map(function (P) { return P.z; }), F: Fp, u: u, deriva: deriva, V: V, k: k,
+             T: den > 0 ? 2 * Math.PI * Math.sqrt(num / den) : null, pctMuros: porPiso[0].muros, porPiso: porPiso,
+             placas: vert.map(function (l) { return l.filter(function (mb) { return mb.tipo === "placa"; }).length; }) };
+  }
+
+  /* el peso de columnas, vigas y placas de cada nivel, en t (sin losas) */
+  function pesoPisos(modelo) {
+    return ((modelo && modelo.niveles) || []).map(function (L) {
+      var h = +L.h, w = 0;
+      (L.columnas || []).forEach(function (c) { w += (circular(c) ? Math.PI * c.D * c.D / 4 : c.b * c.h) * h; });
+      (L.vigas || []).forEach(function (v) { w += v.b * v.h * largo(v); });
+      (L.placas || []).forEach(function (p) { w += p.t * largo(p) * h; });
+      return w * PESO;
+    });
+  }
+
+  /* el centro de las losas de cada nivel y el ancho de la planta */
+  function centros(modelo) {
+    return ((modelo && modelo.niveles) || []).map(function (L) {
+      var A = 0, Sx = 0, Sy = 0, xs = [], ys = [];
+      (L.losas || []).forEach(function (l) {
+        var n = (l.xs || []).length, a = 0, cx = 0, cy = 0, i;
+        for (i = 0; i < n; i++) {
+          var j = (i + 1) % n, c = l.xs[i] * l.ys[j] - l.xs[j] * l.ys[i];
+          a += c; cx += (l.xs[i] + l.xs[j]) * c; cy += (l.ys[i] + l.ys[j]) * c;
+        }
+        a /= 2;
+        if (Math.abs(a) < 1e-9) return;
+        A += Math.abs(a); Sx += Math.abs(a) * cx / (6 * a); Sy += Math.abs(a) * cy / (6 * a);
+        xs = xs.concat(l.xs); ys = ys.concat(l.ys);
+      });
+      var cols = L.columnas || [];
+      cols.forEach(function (c) { xs.push(+c.x); ys.push(+c.y); });
+      if (!xs.length) return null;
+      var x = A > 0 ? Sx / A : xs.reduce(function (s, v) { return s + v; }, 0) / xs.length,
+          y = A > 0 ? Sy / A : ys.reduce(function (s, v) { return s + v; }, 0) / ys.length;
+      return { x: x, y: y, Bx: Math.max.apply(null, xs) - Math.min.apply(null, xs), By: Math.max.apply(null, ys) - Math.min.apply(null, ys) };
+    });
+  }
+
+  /* el nombre del eje donde la coordenada «fija» vale «valor»: fija "y" es una linea a lo largo de X */
+  function ejeEn(modelo, fija, valor) {
+    var o = otra(fija);
+    var e = ((modelo && modelo.ejes) || []).filter(function (e) {
+      return Math.abs(e[fija + "1"] - e[fija + "2"]) < TOL && Math.abs(e[o + "1"] - e[o + "2"]) > TOL &&
+             Math.abs(e[fija + "1"] - valor) < TOL;
+    })[0];
+    return e ? e.id : null;
+  }
+
+  function copia(modelo) {
+    return JSON.parse(JSON.stringify({ fc: modelo.fc, material: modelo.material, ejes: modelo.ejes, niveles: modelo.niveles }));
+  }
+
+  return { TOL: TOL, GRAV: GRAV, PESO: PESO, dirDe: dirDe, largo: largo, moduloE: moduloE, seccionColumna: seccionColumna,
+           murosDe: murosDe, kViga: kViga, kVertical: kVertical, plano: plano, pesoPisos: pesoPisos, centros: centros,
+           ejeEn: ejeEn, copia: copia };
+});
+</script>
+<script>
+/* ===== corregir.js (inlinado) ===== */
+/* =====================================================================
+   corregir.js — CORREGIR LA ESTRUCTURA (parte C4).  Sin interfaz: lo pinta
+   Paso 6 · Verificación E.030 › Corregir la estructura.
+
+   C4a · EL DIAGNOSTICO.  Todo lo que impide que la estructura cumpla la
+   E.030, en el orden en que conviene corregirlo, porque lo de arriba cambia
+   lo de abajo:
+     1. los resultados de ETABS -sin ellos, o de otro modelo, no hay nada
+        que diagnosticar-;
+     2. los avisos graves del modelo -ETABS analiza lo que se dibujo-;
+     3. el sistema estructural que dicen los muros -cambia R₀-;
+     4. las irregularidades que mide ETABS -cambian R-, y el R del analisis;
+     5. las restricciones de la Tabla N.º 13;
+     6. las derivas, piso a piso;
+     7. la cortante minima y la masa participante.
+   Cada cosa dice que pasa, cuanto, y donde se corrige.
+
+   C4b · CUANTA RIGIDEZ FALTA, piso a piso, con el espectro.
+   C4c · OPCIONES PARA RIGIDIZAR -columnas, vigas, placas-, con el modelo
+   plano de rigidez.js.
+
+   E.030 vigente (RM 183-2026): Art. 20 y Tabla N.º 8 (sistemas: porticos con
+   al menos el 80 % de la cortante en la base en las columnas; muros
+   estructurales con al menos el 70 % en los muros; dual, entre el 20 % y el
+   70 %), Tabla N.º 10 (R₀), Art. 26 (R), Tablas N.º 11 y 12, Art. 25 y
+   Tabla N.º 13, Art. 51 y Tabla N.º 14, Art. 40 y Art. 44.
+
+     node scripts/complemento/oviedo/probar_corregir.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir(require("./rigidez.js"));
+  else raiz.CORREGIR = definir(raiz.RIGIDEZ);
+})(typeof self !== "undefined" ? self : this, function (RIGIDEZ) {
+  "use strict";
+
+  var ART = { sistemas: "Art. 20, Tabla N.º 8", R0: "Tabla N.º 10", R: "Art. 26", derivas: "Art. 51, Tabla N.º 14",
+              restricciones: "Art. 25, Tabla N.º 13", modos: "Art. 40", Vmin: "Art. 44" };
+  var CONCRETO = ["Pórticos", "Dual", "Muros estructurales"];
+  var CERCA = 0.05;          /* a menos de 5 puntos de un limite de la Tabla N.º 8: revisar, no impide */
+
+  var DONDE = {
+    envio: { md: "etabs", sub: "envio", texto: "Paso 5 · ETABS › Llevar y traer" },
+    cargasEtabs: { md: "etabs", sub: "cargas", texto: "Paso 5 · ETABS › Cargas y sismo" },
+    datos: { md: "proyecto", sub: "sitio", texto: "Paso 1 · Datos › Proyecto y sitio" },
+    comprobacion: { md: "comprobacion", sub: "", texto: "Paso 2 · Comprobación" },
+    planta: { md: "modelo", sub: "", texto: "Paso 2 · Planta" },
+    irregularidades: { md: "sismo", sub: "parametros", texto: "Paso 4 · Sismo E.030 › Parámetros" }
+  };
+
+  function f(x, d) { return (+x).toFixed(d); }
+  function D(k) { return k.toUpperCase(); }
+  function pc(v) { return Math.round(v * 100) + " %"; }
+  function lista(l) { return l.length === 1 ? l[0] : l.slice(0, -1).join(", ") + " y " + l[l.length - 1]; }
+
+  /* Art. 20, Tabla N.º 8: el sistema que corresponde a la parte de la cortante
+     basal que toman los muros */
+  function sistemaPorMuros(pct) {
+    if (pct >= 0.70) return "Muros estructurales";
+    if (pct > 0.20) return "Dual";
+    return "Pórticos";
+  }
+  function deSistema(s) { return s === "Dual" ? "dual" : "de " + String(s).toLowerCase(); }
+
+  /* los avisos que dicen lo mismo en varios niveles, juntos -como Comprobación- */
+  function juntarAvisos(av) {
+    var por = {}, out = [];
+    (av || []).forEach(function (a) {
+      var c = a.familia + "|" + a.gravedad + "|" + a.texto;
+      if (!por[c]) { por[c] = { familia: a.familia, gravedad: a.gravedad, texto: a.texto, niveles: [] }; out.push(por[c]); }
+      if (a.nivel && por[c].niveles.indexOf(a.nivel) < 0) por[c].niveles.push(a.nivel);
+    });
+    out.forEach(function (x) { x.niveles.sort(function (p, q) { return p - q; }); });
+    return out;
+  }
+  function nivelesTxt(ns) {
+    if (!ns.length) return "";
+    if (ns.length === 1) return "N" + ns[0];
+    return ns[ns.length - 1] - ns[0] === ns.length - 1 ? "N" + ns[0] + "–N" + ns[ns.length - 1]
+                                                       : ns.map(function (n) { return "N" + n; }).join(", ");
+  }
+
+  /* donde la mide ETABS, piso a piso, con su razon */
+  function dondeIrregularidad(v, nombre) {
+    var l = [], s = String(nombre).toLowerCase(), extrema = s.indexOf("extrema") >= 0;
+    if (s.indexOf("torsional") >= 0) {
+      ["x", "y"].forEach(function (k) {
+        ((v.torsion && v.torsion[k] && v.torsion[k].filas) || []).forEach(function (q) {
+          if (extrema ? q.extrema : q.torsional)
+            l.push(q.piso + " en " + D(k) + ": Δmax/Δprom " + f(q.razon, 2) + " con " + q.caso);
+        });
+      });
+    } else if (s.indexOf("rigidez") >= 0) {
+      ["x", "y"].forEach(function (k) {
+        ((v.rigidez && v.rigidez[k] && v.rigidez[k].filas) || []).forEach(function (q) {
+          if (extrema ? q.extrema : q.blando)
+            l.push(q.piso + " en " + D(k) + ": k/k de arriba " + (q.r1 == null ? "—" : f(q.r1, 2)) +
+                   (q.r3 == null ? "" : ", del promedio de los tres de arriba " + f(q.r3, 2)));
+        });
+      });
+    } else if (s.indexOf("masa") >= 0) {
+      (v.masa || []).forEach(function (q) {
+        if (q.irregular) l.push(q.piso + ": pesa " + f(q.razon, 2) + " veces un piso vecino");
+      });
+    }
+    return l;
+  }
+
+  /* EL DIAGNOSTICO.
+     o: {resultados: {hay, alDia, error}, faltanSismo: [...], avisos: los de
+         Comprobación sin «Ya lo vi», v: la verificacion, sistemas: {x, y},
+         murosSismo: FUERZAS.cortanteMuros, r0De: E030.r0De, TP}
+     -> {cumple, items: [{n, clave, nivel: "impide"|"revisar", titulo, cuanto, detalle: [...], donde}]} */
+  function diagnostico(o) {
+    o = o || {};
+    var items = [], R = o.resultados || {};
+    function item(clave, nivel, titulo, cuanto, detalle, donde) {
+      items.push({ n: items.length + 1, clave: clave, nivel: nivel, titulo: titulo, cuanto: cuanto || null,
+                   detalle: detalle || [], donde: donde || null });
+    }
+    function fin() {
+      return { cumple: !items.some(function (x) { return x.nivel === "impide"; }), items: items };
+    }
+
+    /* 1 · los resultados */
+    if (!R.hay) {
+      item("resultados", "impide", "Todavía no hay resultados de ETABS", null,
+           ["Sin ellos no se puede saber qué impide cumplir.",
+            "Guarda el proyecto, llévalo a ETABS con RETICULA.bat [1] y trae los resultados con [2]."], DONDE.envio);
+      return fin();
+    }
+    if (R.error) {
+      item("resultados", "impide", "No se pueden leer los resultados de ETABS", null,
+           [String(R.error), "Vuelve a traerlos con RETICULA.bat [2]."], DONDE.envio);
+      return fin();
+    }
+    if ((o.faltanSismo || []).length) {
+      item("sismo", "impide", "A Sismo E.030 le faltan datos para verificar", null,
+           ["Falta " + o.faltanSismo.join(", ") + "."], DONDE.datos);
+      return fin();
+    }
+    if (R.alDia === false)
+      item("resultados", "impide", "Los resultados son de un modelo anterior", null,
+           ["El modelo cambió desde que se llevó a ETABS: lo de abajo es del modelo de antes.",
+            "Vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2]."], DONDE.envio);
+
+    /* 2 · el modelo */
+    var graves = juntarAvisos(o.avisos).filter(function (a) { return a.gravedad === "grave"; });
+    if (graves.length)
+      item("modelo", "impide", "El modelo tiene " + graves.length + " problema" + (graves.length === 1 ? "" : "s") +
+           " grave" + (graves.length === 1 ? "" : "s") + " en Comprobación", null,
+           graves.map(function (a) { return a.texto + (a.niveles.length ? " (" + nivelesTxt(a.niveles) + ")" : ""); })
+             .concat(["ETABS analiza lo que está dibujado: con estos problemas, las derivas y las fuerzas no son las de la " +
+                      "estructura que se construiría. Si alguno es a propósito, márcalo «Ya lo vi» en Comprobación."]),
+           DONDE.comprobacion);
+
+    var v = o.v;
+    if (!v) return fin();
+
+    /* 3 · el sistema que dicen los muros */
+    var MS = o.murosSismo || {};
+    ["x", "y"].forEach(function (k) {
+      var decl = (o.sistemas || {})[k], m = MS[k];
+      if (CONCRETO.indexOf(decl) < 0 || !m || m.pct === null || m.pct === undefined) return;
+      var med = sistemaPorMuros(m.pct);
+      if (med === decl) return;
+      var cerca = Math.min(Math.abs(m.pct - 0.20), Math.abs(m.pct - 0.70)) < CERCA;
+      var r0d = o.r0De ? o.r0De(decl) : null, r0m = o.r0De ? o.r0De(med) : null;
+      item("sistema" + k, cerca ? "revisar" : "impide", "En " + D(k) + " el sistema es " + deSistema(med) + ", no " + deSistema(decl),
+           (r0d !== null && r0m !== null) ? "R₀ " + r0d + " → " + r0m : null,
+           ["Los muros toman el " + pc(m.pct) + " de la cortante basal con " + m.caso + " (" + f(m.muros, 1) + " de " +
+            f(m.total, 1) + " t). Es la suma de las envolventes de cada muro: queda del lado alto.",
+            ART.sistemas + ": pórticos, con los muros hasta el 20 %; dual, más del 20 % y menos del 70 %; muros " +
+            "estructurales, desde el 70 %.",
+            (r0d !== null && r0m !== null ? "Con " + med.toLowerCase() + " R₀ pasa de " + r0d + " a " + r0m + " (" + ART.R0 +
+              "): cambian las fuerzas de diseño y hay que volver a analizar. " : "") +
+            (cerca ? "Está cerca del límite: confírmalo antes de cambiarlo." : "Cámbialo en Datos, o cambia los muros para que " +
+              "el sistema sea el que buscas.")],
+           DONDE.datos);
+    });
+
+    /* 4 · las irregularidades y R */
+    var marcadas = v.marcadas || [], med = v.medidas || {};
+    var Rs = f(v.R.x.R, 2) + " / " + f(v.R.y.R, 2), Rm = v.Rmed ? f(v.Rmed.x, 2) + " / " + f(v.Rmed.y, 2) : "";
+    var sinMarcar = Object.keys(med).filter(function (n) { return med[n] === true && marcadas.indexOf(n) < 0; });
+    var sobran = Object.keys(med).filter(function (n) { return med[n] === false && marcadas.indexOf(n) >= 0; });
+    if (sinMarcar.length) {
+      var det = [];
+      sinMarcar.forEach(function (n) { det.push(n + ": " + (dondeIrregularidad(v, n).join(" · ") || "medida por ETABS")); });
+      det.push("Cambian R (" + ART.R + "): márcalas en Sismo E.030 y vuelve a analizar, o corrige la estructura para que no " +
+               "las tenga.");
+      item("irregularidades", "impide", "ETABS mide " + (sinMarcar.length === 1 ? "una irregularidad que no está marcada"
+           : sinMarcar.length + " irregularidades que no están marcadas"), v.cambiaR ? "R " + Rs + " → " + Rm : null, det,
+           DONDE.irregularidades);
+    }
+    if (sobran.length)
+      item("irregularidadesDeMas", "revisar", "Está marcada " + lista(sobran) + " y ETABS no la mide",
+           v.cambiaR && !sinMarcar.length ? "R " + Rs + " → " + Rm : null,
+           ["Si la estructura no la tiene, desmárcala en Sismo E.030: R sube y las fuerzas bajan. Vuelve a analizar después."],
+           DONDE.irregularidades);
+    ["x", "y"].forEach(function (k) {
+      var q = v.R[k];
+      if (q.deducido && q.actual > 0 && Math.abs(q.R - q.actual) > 0.005 * q.actual)
+        item("R" + k, "impide", "ETABS se analizó con otro R en " + D(k), "R " + f(q.R, 2) + " → " + f(q.actual, 2),
+             ["Sismo E.030 da ahora R = " + f(q.actual, 2) + ": vuelve a llevar el modelo con RETICULA.bat [1] y a traer los " +
+              "resultados con [2]."], DONDE.envio);
+    });
+
+    /* 5 · las restricciones */
+    if (v.restriccion && !v.restriccion.cumple)
+      item("restricciones", "impide", "Tiene irregularidades que la norma no permite aquí", null,
+           [String(v.restriccion.texto || "") + " (categoría " + String(v.restriccion.categoria || "").split("_")[0] +
+            ", zona " + v.restriccion.zona + ", " + ART.restricciones + ").",
+            (v.restriccion.incumplen && v.restriccion.incumplen.length ? "No permitidas: " + v.restriccion.incumplen.join(", ") +
+              ". " : "") + "No basta con marcarlas: hay que cambiar la estructura para que no las tenga."],
+           DONDE.planta);
+
+    /* 6 · las derivas */
+    ["x", "y"].forEach(function (k) {
+      var L = v.limite[k].v, malos = (v.derivas || []).filter(function (p) { return p[k] && p[k].cumple === false; })
+        .sort(function (a, b) { return b[k].inelastica - a[k].inelastica; });
+      if (!malos.length) return;
+      var peor = malos[0][k], T = v.modos && v.modos[k] ? v.modos[k] : null;
+      item("derivas" + k, "impide", "La deriva en " + D(k) + " no cumple en " + malos.length + " de " + v.derivas.length +
+           " piso" + (v.derivas.length === 1 ? "" : "s"),
+           "Hay que bajarla " + f(peor.inelastica / L, 1) + " veces",
+           malos.map(function (p) {
+             return p.piso + ": " + f(p[k].inelastica, 4) + " con " + p[k].caso + ", " + f(p[k].inelastica / L, 1) +
+                    " veces el límite de " + f(L, 3);
+           }).concat([(T ? "T en " + D(k) + " = " + f(T.T, 3) + " s (modo " + T.modo + ")" : "Sin período de ETABS") +
+                      (o.TP ? " · TP = " + f(o.TP, 2) + " s" : "") + ". Hay que rigidizar en " + D(k) +
+                      ": placas, columnas o vigas. Cuánta rigidez falta, piso a piso, y las opciones para " +
+                      "dársela están abajo."]),
+           DONDE.planta);
+    });
+
+    /* 7 · la cortante minima y la masa participante */
+    if (v.analisis === "dinamico")
+      ["x", "y"].forEach(function (k) {
+        var c = v.cortante[k];
+        if (c && !c.cumpleEscalada)
+          item("cortante" + k, "impide", "La cortante dinámica en " + D(k) + " no llega al mínimo ni escalada", null,
+               ["Llega al " + pc(c.razon || 0) + " de la estática y el mínimo es " + pc(c.minimo) + " (" + ART.Vmin + ").",
+                "RETICULA.bat [1] escribe el factor de escala al analizar: vuelve a llevar el modelo."], DONDE.envio);
+      });
+    if (v.modos && !v.modos.cumple)
+      item("modos", "impide", "La masa participante no llega al 90 %", null,
+           ["X " + pc(v.modos.sumaX || 0) + " · Y " + pc(v.modos.sumaY || 0) + " (" + ART.modos + "): faltan modos en el caso " +
+            "modal de ETABS."], DONDE.cargasEtabs);
+
+    return fin();
+  }
+
+  /* =====================================================================
+     C4b · CUANTA RIGIDEZ FALTA, por direccion y piso.
+
+     La deriva de un entrepiso es V / (k h): si su rigidez se multiplica por
+     α, su deriva se divide entre α... si la fuerza no cambiara.  Pero cambia:
+     al rigidizar baja el periodo -T va con 1/√K- y el espectro da otra C.  La
+     cuenta lo tiene en cuenta asi:
+       · rigidizando igual todos los pisos, la deriva pasa a ser
+             d · [C(T/√α) / C(T)] / α
+         y α se busca por biseccion hasta dejar la peor en el objetivo;
+       · piso a piso, cada entrepiso recibe lo que el necesita, α_i =
+         d_i · Cr / objetivo; el periodo nuevo sale de la flexibilidad
+         -Σ d_i h_i / α_i frente a Σ d_i h_i-, Cr = C(T nuevo) / C(T), y se
+         repite hasta que no cambia.
+     La k de cada entrepiso es V / Δ del patron estatico mas flexible de esa
+     direccion (tabla de rigidez de ETABS).  Supone la misma masa.  R no
+     entra: la deriva se multiplica por R y R se cancela.
+
+     o: {v, sis (R.sismo), C: T -> C del espectro, TP, TL, margen (0,10)}
+     -> {x, y}: {dir, T, limite, objetivo, margen, cumple, peor, global:
+        {alfa, alfaMargen, Tn, Cr}, pisos: [{piso, h, deriva, veces, caso, k,
+        alfa, alfaMargen, kNecesaria, kFalta}], region, avisos}
+     ===================================================================== */
+  function rigidezFaltante(o) {
+    o = o || {};
+    var v = o.v, sis = o.sis || {}, fC = o.C, margen = (o.margen === undefined || o.margen === null) ? 0.10 : o.margen;
+    if (!v || typeof fC !== "function") return null;
+    var out = {};
+    ["x", "y"].forEach(function (k) {
+      var L = v.limite[k].v, T = (v.modos && v.modos[k]) ? v.modos[k].T : null;
+      var pisos = (v.derivas || []).map(function (p) {
+        return { piso: p.piso, h: p.h, d: p[k] ? p[k].inelastica : null, caso: p[k] ? p[k].caso : null };
+      }).filter(function (p) { return p.d !== null && p.d !== undefined && isFinite(p.d); });
+      if (!pisos.length || !(T > 0) || !(fC(T) > 0)) { out[k] = null; return; }
+      var pats = (sis.estatico || []).filter(function (e) { return e.dir === k; }).map(function (e) { return e.patron; });
+      pisos.forEach(function (p) {
+        var ks = (sis.rigidez || []).filter(function (r) { return r.piso === p.piso && pats.indexOf(r.caso) >= 0; })
+          .map(function (r) { var V = +r["V" + k], dl = +r["d" + k]; return (V > 0 && dl > 0) ? V / dl : null; })
+          .filter(function (x) { return x !== null; });
+        p.k = ks.length ? Math.min.apply(null, ks) : null;
+      });
+      var C0 = fC(T), peor = Math.max.apply(null, pisos.map(function (p) { return p.d; }));
+      var avisos = [];
+
+      function global(obj) {
+        function deriva(a) { return peor * (fC(T / Math.sqrt(a)) / C0) / a; }
+        if (deriva(1) <= obj) return { alfa: 1, Tn: T, Cr: 1 };
+        var lo = 1, hi = 2, i;
+        while (deriva(hi) > obj && hi < 1e4) hi *= 2;
+        for (i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (deriva(m) > obj) lo = m; else hi = m; }
+        return { alfa: hi, Tn: T / Math.sqrt(hi), Cr: fC(T / Math.sqrt(hi)) / C0 };
+      }
+      function porPiso(obj) {
+        var Cr = 1, Tn = T, a, it, converge = false;
+        for (it = 0; it < 100; it++) {
+          a = pisos.map(function (p) { return Math.min(1e4, Math.max(1, p.d * Cr / obj)); });
+          var viejo = 0, nuevo = 0;
+          pisos.forEach(function (p, i) { viejo += p.d * p.h; nuevo += p.d * p.h / a[i]; });
+          Tn = T / Math.sqrt(nuevo > 0 ? viejo / nuevo : 1);
+          var Cn = fC(Tn) / C0;
+          if (Math.abs(Cn - Cr) < 1e-10) { Cr = Cn; converge = true; break; }
+          Cr = Cn;
+        }
+        a = pisos.map(function (p) { return Math.min(1e4, Math.max(1, p.d * Cr / obj)); });
+        return { alfas: a, Cr: Cr, Tn: Tn, converge: converge };
+      }
+
+      var obj = L * (1 - margen), G = global(L), GM = global(obj), P = porPiso(L), PM = porPiso(obj);
+      if (!P.converge || !PM.converge)
+        avisos.push("La cuenta piso a piso no se estabiliza: el período está en la rama larga del espectro. Toma el factor " +
+                    "global como referencia.");
+      var filas = pisos.map(function (p, i) {
+        return { piso: p.piso, h: p.h, deriva: p.d, veces: p.d / L, caso: p.caso, k: p.k,
+                 alfa: P.alfas[i], alfaMargen: PM.alfas[i],
+                 kNecesaria: p.k !== null ? p.k * PM.alfas[i] : null,
+                 kFalta: p.k !== null ? p.k * (PM.alfas[i] - 1) : null };
+      });
+      /* rigidizar solo los pisos que fallan puede dejar uno blando (Tabla N.º 11: 70 % del de arriba) */
+      filas.forEach(function (q, i) {
+        var arriba = filas[i + 1];
+        if (!arriba || q.kNecesaria === null || arriba.kNecesaria === null || !(arriba.kNecesaria > 0)) return;
+        var r1 = q.kNecesaria / arriba.kNecesaria;
+        if (r1 < 0.70)
+          avisos.push("Con este reparto, " + q.piso + " quedaría con " + f(r1, 2) + " de la rigidez de " + arriba.piso +
+                      ": sería piso blando (Tabla N.º 11, 70 %). Dale también rigidez a " + q.piso + ".");
+      });
+      var region = "";
+      if (o.TP > 0) {
+        var Tn = GM.Tn;
+        if (o.TL > 0 && T > o.TL) region = "el período está en la rama larga del espectro: la deriva casi no baja hasta que T " +
+                                           "pase por debajo de TL = " + f(o.TL, 2) + " s";
+        else if (T > o.TP && Tn <= o.TP) region = "al rigidizar, el período entra en la meseta del espectro (TP = " + f(o.TP, 2) + " s)";
+        else if (T > o.TP) region = "el período sigue en la rama que baja del espectro: al bajar T sube la fuerza";
+        else region = "el período está en la meseta del espectro: la fuerza casi no cambia al rigidizar";
+      }
+      out[k] = { dir: k, T: T, limite: L, objetivo: obj, margen: margen, peor: peor,
+                 cumple: pisos.every(function (p) { return p.d <= L + 1e-12; }),
+                 global: { alfa: G.alfa, alfaMargen: GM.alfa, Tn: G.Tn, Cr: G.Cr },
+                 pisoAPiso: { Tn: PM.Tn, Cr: PM.Cr },
+                 pisos: filas, region: region, avisos: avisos };
+    });
+    return out;
+  }
+
+  /* =====================================================================
+     C4c · OPCIONES PARA RIGIDIZAR la direccion que no cumple, cada una
+     llevada hasta donde cumple con el margen:
+       · columnas: todas con al menos tanto en esa direccion, de 5 en 5 cm
+         hasta 1,00 m;
+       · vigas: todas las de esa direccion con al menos tanto de peralte, de
+         5 en 5 cm hasta 0,90 m;
+       · placas: de a dos, en los ejes de los bordes -una a cada lado, para no
+         torcer el edificio-, en el tramo mas largo entre dos columnas, de
+         0,15, 0,20 o 0,25 m de espesor, hasta tres pares.
+     La deriva de cada opcion sale del modelo plano (rigidez.js) con
+     cocientes:  d nueva = d de ETABS · (Δ del modelo nuevo / Δ del modelo de
+     hoy) · C(T nuevo) / C(T),  con T nuevo = T de ETABS · T del modelo nuevo /
+     T del modelo de hoy, y con la masa del concreto que se agrega.  El
+     sistema sale del % de la cortante basal que toman las placas en el
+     modelo -corregido con el de ETABS si ya hay placas en esa direccion-:
+     Art. 20, Tabla N.º 8.
+
+     o: {modelo: la exportacion que se llevo a ETABS, v, sis, C, TP, TL,
+         margen, sistemas, murosSismo, r0De, falta: rigidezFaltante(...)}
+     -> {x, y}: null si cumple; si no {dir, error} o {dir, base, avisos,
+        familias: [{clave, titulo, que, elegido, pruebas, cambios, avisos,
+        consecuencias}]}, con primero las que cumplen con margen; entre
+        ellas, la que menos consecuencias trae -otro sistema, el centro de
+        rigidez que se mueve mas del 10 % del ancho, placas que no llegan
+        arriba- y, a igual, la que menos peso agrega
+     ===================================================================== */
+  var PASO = 0.05, COL_MAX = 1.00, VIGA_MAX = 0.90, ESPESORES = [0.15, 0.20, 0.25], PARES = 3, LARGO_MIN = 1.00;
+  var CERCA_EST = 0.10;      /* sin placas de ETABS con que corregir el %, el aviso de limite es mas ancho */
+  function m2(x) { return f(x, 2) + " m"; }
+  function pasosDesde(actual, tope) {
+    var l = [], i;
+    for (i = Math.floor(actual / PASO + 1e-6) + 1; i * PASO <= tope + 1e-9; i++) l.push(Math.round(i * PASO * 100) / 100);
+    return l;
+  }
+  /* el primer paso que cumple con margen -mas grande es mas rigido-, por biseccion; si ni el ultimo, el ultimo */
+  function primerPaso(pasos, evalua) {
+    var hechas = {};
+    function ev(i) { if (!(i in hechas)) { hechas[i] = evalua(pasos[i]); hechas[i].i = i; } return hechas[i]; }
+    if (!pasos.length) return null;
+    var hi = pasos.length - 1, lo = -1, ult = ev(hi);
+    if (!ult.error && ult.conMargen)
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1, e = ev(mid); if (!e.error && e.conMargen) hi = mid; else lo = mid; }
+    return { elegido: hechas[hi], pruebas: Object.keys(hechas).map(function (i) { return hechas[i]; })
+                                             .sort(function (a, b) { return a.i - b.i; }) };
+  }
+
+  function opciones(o) {
+    o = o || {};
+    var margen = (o.margen === undefined || o.margen === null) ? 0.10 : o.margen;
+    if (!o.modelo || !o.v || typeof o.C !== "function" || !RIGIDEZ) return null;
+    var falta = o.falta || rigidezFaltante({ v: o.v, sis: o.sis, C: o.C, TP: o.TP, TL: o.TL, margen: margen });
+    if (!falta) return null;
+    var out = {};
+    ["x", "y"].forEach(function (k) { out[k] = (falta[k] && !falta[k].cumple) ? opcionesEn(k, falta[k], o, margen) : null; });
+    return out;
+  }
+
+  function opcionesEn(k, q, o, margen) {
+    var M = o.modelo, v = o.v, sis = o.sis || {}, fC = o.C, oo = k === "x" ? "y" : "x", K = D(k), TOL = RIGIDEZ.TOL;
+    var res = { dir: k, avisos: [], familias: [] }, pisos = v.pisos || [], niv = M.niveles || [], n = niv.length;
+    if (pisos.length !== n) {
+      res.error = "El modelo tiene " + n + " nivel" + (n === 1 ? "" : "es") + " y los resultados de ETABS " + pisos.length +
+                  " piso" + (pisos.length === 1 ? "" : "s") + ": vuelve a llevarlo con RETICULA.bat [1] y a traer los " +
+                  "resultados con [2].";
+      return res;
+    }
+    var masas = pisos.map(function (p) {
+      var mm = (sis.masa || []).filter(function (x) { return x.piso === p.piso; })[0];
+      return mm ? +mm.masa : null;
+    });
+    if (masas.some(function (m) { return !(m > 0); })) {
+      res.error = "Los resultados no traen la masa de cada piso: vuelve a traerlos con RETICULA.bat [2].";
+      return res;
+    }
+    var est = (sis.estatico || []).filter(function (e) { return e.dir === k; })[0], Kx = (est && est.K > 0) ? +est.K : 1;
+    var base = RIGIDEZ.plano(M, k, { masas: masas, K: Kx });
+    if (base.error) { res.error = base.error; return res; }
+    var L = q.limite, obj = L * (1 - margen), T0 = q.T, C0 = fC(T0);
+    var dePiso = pisos.map(function (p) { return q.pisos.filter(function (x) { return x.piso === p.piso; })[0] || null; });
+    var dE = dePiso.map(function (x) { return x ? x.deriva : null; });
+    var peso0 = RIGIDEZ.pesoPisos(M), CM = RIGIDEZ.centros(M);
+    var sis0 = o.sistemas ? o.sistemas[k] : null, concreto = CONCRETO.indexOf(sis0) >= 0;
+    function r0(s) { return o.r0De ? o.r0De(s) : null; }
+    var ms = o.murosSismo && o.murosSismo[k], pctE = (ms && ms.pct !== null && ms.pct !== undefined) ? +ms.pct : null;
+    var ajuste = (pctE !== null && base.pctMuros > 0.05) ? pctE / base.pctMuros : null;
+
+    /* cuanto se mueve el centro de rigidez frente al de hoy, en el piso donde mas, sobre el ancho de ese piso.  No
+       frente al centro de las losas: no pesa vigas ni placas, y con Libro1 da 16 % en la azotea donde ETABS mide 1,065 */
+    function centro(P) {
+      var peor = null;
+      P.porPiso.forEach(function (pp, j) {
+        var c = CM[j], B = c ? (oo === "x" ? c.Bx : c.By) : 0, cb = base.porPiso[j].cr;
+        if (!c || pp.cr === null || cb === null || !(B > 0)) return;
+        var mueve = pp.cr - cb, rel = Math.abs(mueve) / B;
+        if (!peor || rel > peor.rel) peor = { piso: pisos[j].piso, mueve: mueve, rel: rel };
+      });
+      return peor;
+    }
+    var cal = dePiso.map(function (x, j) { return (x && x.k && base.k[j]) ? x.k / base.k[j] : null; })
+                    .filter(function (c) { return c !== null; });
+    res.base = { T: T0, Tmodelo: base.T, pctModelo: base.pctMuros, pctEtabs: pctE,
+                 calibracion: cal.length ? { min: Math.min.apply(null, cal), max: Math.max.apply(null, cal) } : null,
+                 limite: L, objetivo: obj, peor: q.peor, sistema: sis0, R0: r0(sis0) };
+    if (res.base.calibracion && res.base.calibracion.max / res.base.calibracion.min > 1.3)
+      res.avisos.push("El modelo simple no sigue parejo a ETABS en " + K + ": ETABS da entre " + f(res.base.calibracion.min, 2) +
+                      " y " + f(res.base.calibracion.max, 2) + " veces su rigidez según el piso. Toma las estimaciones con más cuidado.");
+
+    function evalua(Mn, paso) {
+      var pesoN = RIGIDEZ.pesoPisos(Mn), dPeso = 0;
+      var masasN = masas.map(function (m, j) { var dw = pesoN[j] - peso0[j]; dPeso += dw; return m + dw / RIGIDEZ.GRAV; });
+      var P = RIGIDEZ.plano(Mn, k, { masas: masasN, K: Kx });
+      if (P.error) return { paso: paso, error: P.error };
+      var Tn = T0 * P.T / base.T, Cr = fC(Tn) / C0, peor = null, jp = -1;
+      var der = dE.map(function (d, j) { return d === null ? null : d * (P.deriva[j] / base.deriva[j]) * Cr; });
+      der.forEach(function (d, j) { if (d !== null && (peor === null || d > peor)) { peor = d; jp = j; } });
+      var pct = P.pctMuros === null ? null : (ajuste ? Math.min(1, P.pctMuros * ajuste) : P.pctMuros);
+      var sisN = (concreto && pct !== null) ? sistemaPorMuros(pct) : sis0;
+      return { paso: paso, derivas: der, peor: peor, piso: jp >= 0 ? pisos[jp].piso : null,
+               cumple: peor !== null && peor <= L + 1e-12, conMargen: peor !== null && peor <= obj + 1e-12,
+               factor: P.k.map(function (kk, j) { return (kk && base.k[j]) ? kk / base.k[j] : null; }),
+               T: Tn, Cr: Cr, pct: pct, sistema: sisN, R0: r0(sisN), cambiaSistema: concreto && sisN !== sis0,
+               cercaLimite: concreto && pct !== null && [0.20, 0.70].some(function (l) {
+                 return Math.abs(pct - l) < (ajuste ? CERCA : CERCA_EST); }),
+               peso: dPeso, centro: centro(P) };
+    }
+    function noAlcanza(fam, con) {
+      var e = fam.elegido;
+      if (e.error) fam.avisos.push(e.error);
+      else if (!e.cumple)
+        fam.avisos.push("Ni " + con + " alcanza: la deriva queda en " + f(e.peor, 4) + " en " + e.piso + ", " +
+                        f(e.peor / L, 1) + " veces el límite.");
+      else if (!e.conMargen) fam.avisos.push("Así cumple justo, sin el " + Math.round(margen * 100) + " % de margen.");
+    }
+    function avisosComunes(fam) {
+      var e = fam.elegido;
+      if (!e || e.error) return;
+      if (e.cambiaSistema && e.R0 && res.base.R0)
+        fam.avisos.push("El sistema en " + K + " pasaría a ser " + deSistema(e.sistema) + " (R₀ " + res.base.R0 + " → " + e.R0 +
+                        "): cámbialo en Datos. Las fuerzas de diseño suben ×" + f(res.base.R0 / e.R0, 2) +
+                        "; la deriva casi no cambia, porque se multiplica por R.");
+      if (e.cercaLimite)
+        fam.avisos.push("Las placas tomarían cerca del " + pc(e.pct) + " de la cortante basal, junto a un límite de la " +
+                        "Tabla N.º 8: el sistema lo confirma ETABS.");
+      fam.consecuencias = e.cambiaSistema ? 1 : 0;
+      var ce = e.centro;
+      if (ce && ce.rel > 0.10) {
+        fam.consecuencias++;
+        fam.avisos.push("El centro de rigidez se movería " + m2(Math.abs(ce.mueve)) + " en " + D(oo) + " en " + ce.piso + " (" +
+                        pc(ce.rel) + " del ancho de ese piso): puede aparecer torsión, y la mide ETABS.");
+      }
+    }
+    function hoy(l) {
+      var a = Math.min.apply(null, l), b = Math.max.apply(null, l);
+      return a === b ? m2(a) : "de " + f(a, 2) + " a " + m2(b);
+    }
+
+    /* columnas */
+    var deps = [];
+    niv.forEach(function (Ln) { (Ln.columnas || []).forEach(function (c) { deps.push(RIGIDEZ.seccionColumna(c, k).dep); }); });
+    var rc = deps.length ? primerPaso(pasosDesde(Math.max.apply(null, deps), COL_MAX), function (s) {
+      var Mn = RIGIDEZ.copia(M), cambios = [];
+      Mn.niveles.forEach(function (Ln) {
+        (Ln.columnas || []).forEach(function (c) {
+          var campo = c.forma === "circular" ? "D" : (k === "x" ? "b" : "h");
+          if (+c[campo] < s - 1e-9) { cambios.push({ cod: c.cod, campo: campo, antes: +c[campo], despues: s }); c[campo] = s; }
+        });
+      });
+      var e = evalua(Mn, s); e.cambios = cambios; return e;
+    }) : null;
+    if (rc) {
+      var fc_ = { clave: "columnas", titulo: "Columnas más grandes en " + K, elegido: rc.elegido, pruebas: rc.pruebas,
+                  cambios: rc.elegido.cambios || [], avisos: [] };
+      fc_.que = "Todas las columnas con al menos " + m2(fc_.elegido.paso) + " en " + K + " (hoy " + hoy(deps) + "): cambian " +
+                fc_.cambios.length + " de " + deps.length + ", en todos los niveles.";
+      noAlcanza(fc_, "con columnas de " + m2(COL_MAX) + " en " + K);
+      avisosComunes(fc_);
+      res.familias.push(fc_);
+    }
+
+    /* vigas */
+    var pers = [];
+    niv.forEach(function (Ln) { (Ln.vigas || []).forEach(function (vg) { if (RIGIDEZ.dirDe(vg) === k) pers.push(+vg.h); }); });
+    var rv = pers.length ? primerPaso(pasosDesde(Math.max.apply(null, pers), VIGA_MAX), function (s) {
+      var Mn = RIGIDEZ.copia(M), cambios = [];
+      Mn.niveles.forEach(function (Ln) {
+        (Ln.vigas || []).forEach(function (vg) {
+          if (RIGIDEZ.dirDe(vg) === k && +vg.h < s - 1e-9) { cambios.push({ cod: vg.cod, campo: "h", antes: +vg.h, despues: s }); vg.h = s; }
+        });
+      });
+      var e = evalua(Mn, s); e.cambios = cambios; return e;
+    }) : null;
+    if (rv) {
+      var fv = { clave: "vigas", titulo: "Vigas más peraltadas en " + K, elegido: rv.elegido, pruebas: rv.pruebas,
+                 cambios: rv.elegido.cambios || [], avisos: [] };
+      fv.que = "Todas las vigas en " + K + " con al menos " + m2(fv.elegido.paso) + " de peralte (hoy " + hoy(pers) + "): cambian " +
+               fv.cambios.length + " de " + pers.length + ".";
+      noAlcanza(fv, "con vigas de " + m2(VIGA_MAX));
+      if (!fv.elegido.error && !fv.elegido.cumple)
+        fv.avisos.push("Al pórtico lo limitan las columnas: con vigas infinitamente rígidas, cada columna no pasa de 12EI/h³.");
+      avisosComunes(fv);
+      res.familias.push(fv);
+    }
+
+    /* placas: los tramos entre columnas del primer nivel, de los ejes de los bordes hacia dentro, un lado y el otro */
+    var lineas = {}, cen = CM[0] ? CM[0][oo] : 0, lados = [[], []];
+    (niv[0].columnas || []).forEach(function (c) {
+      var kk = f(c[oo], 3);
+      (lineas[kk] = lineas[kk] || { eje: +c[oo], cols: [] }).cols.push(c);
+    });
+    function hayCol(Ln, c) {
+      return (Ln.columnas || []).some(function (x) { return Math.abs(x.x - c.x) < TOL && Math.abs(x.y - c.y) < TOL; });
+    }
+    function hayPlaca(eje, c1, c2) {
+      return niv.some(function (Ln) {
+        return (Ln.placas || []).some(function (p) {
+          return RIGIDEZ.dirDe(p) === k && Math.abs(p[oo + "1"] - eje) < TOL &&
+                 Math.min(p[k + "1"], p[k + "2"]) < c2 - TOL && Math.max(p[k + "1"], p[k + "2"]) > c1 + TOL;
+        });
+      });
+    }
+    Object.keys(lineas).forEach(function (kk) {
+      var l = lineas[kk], i;
+      l.cols.sort(function (a, b) { return a[k] - b[k]; });
+      l.tramos = [];
+      for (i = 0; i + 1 < l.cols.length; i++) {
+        var a = l.cols[i], b = l.cols[i + 1], c1 = +a[k], c2 = +b[k], hasta = 0;
+        if (c2 - c1 < LARGO_MIN || hayPlaca(l.eje, c1, c2)) continue;
+        while (hasta < n && hayCol(niv[hasta], a) && hayCol(niv[hasta], b)) hasta++;
+        if (hasta) l.tramos.push({ eje: l.eje, c1: c1, c2: c2, largo: c2 - c1, niveles: hasta });
+      }
+      /* los que llegan mas arriba y, de ellos, el mas corto: la placa mas chica que se puede dibujar */
+      l.tramos.sort(function (a, b) { return b.niveles - a.niveles || a.largo - b.largo; });
+      if (l.tramos.length) lados[l.eje < cen - TOL ? 0 : 1].push(l);
+    });
+    var sec = lados.map(function (ls) {
+      var t = [];
+      ls.sort(function (a, b) { return Math.abs(b.eje - cen) - Math.abs(a.eje - cen); })
+        .forEach(function (l) { t = t.concat(l.tramos.slice(0, 2)); });
+      return t;
+    });
+    var pasosP = [], p, i2;
+    for (p = 1; p <= PARES; p++) {
+      var tr = [];
+      for (i2 = 0; i2 < p; i2++) { if (sec[0][i2]) tr.push(sec[0][i2]); if (sec[1][i2]) tr.push(sec[1][i2]); }
+      if (!tr.length || (pasosP.length && tr.length === pasosP[pasosP.length - 1].tramos.length)) break;
+      ESPESORES.forEach(function (t) { pasosP.push({ tramos: tr, t: t }); });
+    }
+    if (pasosP.length) {
+      var pruebas = [], eleg = null;
+      for (i2 = 0; i2 < pasosP.length; i2++) {
+        var ps = pasosP[i2], Mn = RIGIDEZ.copia(M), cambios = [];
+        ps.tramos.forEach(function (tr, j) {
+          for (var nv = 0; nv < tr.niveles; nv++) {
+            var pl = { cod: "C4C-PL-" + (j + 1), t: ps.t, nueva: true };
+            pl[k + "1"] = tr.c1; pl[k + "2"] = tr.c2; pl[oo + "1"] = tr.eje; pl[oo + "2"] = tr.eje;
+            Mn.niveles[nv].placas = (Mn.niveles[nv].placas || []).concat([pl]);
+            cambios.push({ nivel: nv, piso: pisos[nv].piso, x1: pl.x1, y1: pl.y1, x2: pl.x2, y2: pl.y2, t: ps.t });
+          }
+        });
+        var e = evalua(Mn, ps.tramos.length + " × " + f(ps.t, 2) + " m");
+        e.i = i2; e.cambios = cambios; e.tramos = ps.tramos; e.t = ps.t;
+        pruebas.push(e); eleg = e;
+        if (!e.error && e.conMargen) break;
+      }
+      var fp = { clave: "placas", titulo: "Placas nuevas en " + K, elegido: eleg, pruebas: pruebas, cambios: eleg.cambios, avisos: [] };
+      fp.que = eleg.tramos.length + " placa" + (eleg.tramos.length === 1 ? "" : "s") + " de " + m2(eleg.t) + " de espesor: " +
+        lista(eleg.tramos.map(function (tr) {
+          var e1 = RIGIDEZ.ejeEn(M, k, tr.c1), e2 = RIGIDEZ.ejeEn(M, k, tr.c2), ej = RIGIDEZ.ejeEn(M, oo, tr.eje);
+          return "eje " + (ej || f(tr.eje, 2)) + " entre " + (e1 || f(tr.c1, 2)) + " y " + (e2 || f(tr.c2, 2)) + " (" + m2(tr.largo) +
+                 (tr.niveles < n ? ", hasta " + pisos[tr.niveles - 1].piso : "") + ")";
+        })) + ". Van de columna a columna, en lugar de la viga de ese tramo.";
+      noAlcanza(fp, "con " + eleg.tramos.length + " placas de " + m2(eleg.t));
+      avisosComunes(fp);
+      var cortas = eleg.tramos.filter(function (tr) { return tr.niveles < n; });
+      if (cortas.length) {
+        fp.consecuencias = (fp.consecuencias || 0) + 1;
+        fp.avisos.push("No llega" + (cortas.length === 1 ? "" : "n") + " arriba " + lista(cortas.map(function (tr) {
+          return "la del eje " + (RIGIDEZ.ejeEn(M, oo, tr.eje) || f(tr.eje, 2)) + " (hasta " + pisos[tr.niveles - 1].piso + ")"; })) +
+          ": encima no hay columnas en los dos extremos del tramo.");
+      }
+      if (!eleg.error && eleg.i === 0 && eleg.peor < 0.5 * L)
+        fp.avisos.push("Cumple de sobra: una placa de columna a columna es lo menos que se puede dibujar en esta retícula; " +
+                       "con un eje intermedio podría ser más corta.");
+      res.familias.push(fp);
+    }
+    if (!res.familias.length)
+      res.avisos.push("No hay columnas, vigas ni tramos entre columnas donde probar opciones en " + K + ".");
+
+    function rango(e) { return e.error ? 3 : (e.conMargen ? 0 : (e.cumple ? 1 : 2)); }
+    res.familias.sort(function (a, b) {
+      var ra = rango(a.elegido), rb = rango(b.elegido);
+      if (ra !== rb) return ra - rb;
+      if (ra === 3) return 0;
+      if (ra === 2) return a.elegido.peor - b.elegido.peor;
+      return (a.consecuencias || 0) - (b.consecuencias || 0) || a.elegido.peso - b.elegido.peso;
+    });
+    return res;
+  }
+
+  return { ART: ART, sistemaPorMuros: sistemaPorMuros, juntarAvisos: juntarAvisos, nivelesTxt: nivelesTxt,
+           dondeIrregularidad: dondeIrregularidad, diagnostico: diagnostico, rigidezFaltante: rigidezFaltante,
+           opciones: opciones };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -5908,7 +6905,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v155 · 13-09-2026";
+  var BUILD="v159 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -6000,7 +6997,8 @@ var TT={script:performance.now()};
     sismo:[["parametros","Parámetros"],["estatico","Estático"],["dinamico","Dinámico"]],
     etabs:[["pisos","Material y pisos"],["secciones","Secciones"],["cargas","Cargas y sismo"],
            ["combinaciones","Combinaciones"],["envio","Llevar y traer"],["tablas","Tablas del .bat"]],
-    /* Paso 6, Verificacion E.030, va entera; Paso 7, Fuerzas, por familia */
+    /* Paso 6: si cumple y, si no, como corregirla (C4); Paso 7, las fuerzas por familia */
+    verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"]],
     fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
     diseno:[["criterios","Criterios"],["datos","Datos para diseño"]],
@@ -10385,6 +11383,159 @@ var TT={script:performance.now()};
      arriba, lo siguiente que hay que hacer.  No calcula nada nuevo: pregunta
      a las mismas funciones que pintan cada pestana.
      ===================================================================== */
+  /* ir a un paso -y a una de sus sub-pestanas- desde Inicio o desde el diagnostico */
+  function irAPaso(md,sb){
+    if(sb){
+      if(!S.sub||typeof S.sub!=="object")S.sub={};
+      S.sub[md]=sb;
+      try{ localStorage.setItem("reticula_sub",JSON.stringify(S.sub)); }catch(e){}
+    }
+    elegirModo(md);
+  }
+  /* =====================================================================
+     C4 · CORREGIR LA ESTRUCTURA.  C4a, el diagnostico: lo arma
+     oviedo/corregir.js con lo que ya saben la verificacion, las fuerzas, los
+     datos y Comprobación; aqui se pinta, en orden y con a donde ir.
+     ===================================================================== */
+  function tarjetaCorregir(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    var r=resultadosEtabs(), c=calculoSismo(), P=S.proy, st=sitio(), VS=null, FZ=null, ab=[];
+    var hay=!!(r&&r.R&&!r.error);
+    if(hay){ try{ VS=verificacionSismica(); }catch(e){} try{ FZ=fuerzasEtabs(); }catch(e){} }
+    try{ ab=avisosAbiertos(); }catch(e){}
+    var Dg=CORREGIR.diagnostico({resultados:{hay:hay, error:(r&&r.error)||null, alDia:!!(r&&r.alDia)},
+      faltanSismo:c.faltan, avisos:ab, v:VS&&VS.v, sistemas:{x:P.sistemaX,y:P.sistemaY},
+      murosSismo:FZ&&FZ.murosSismo, r0De:E030.r0De, TP:st.Tp});
+    var n=Dg.items.length, h='<section class="pbox sis-ancha"><h3>Corregir la estructura · diagnóstico</h3>'+estadoResultados(r);
+    if(!n)h+='<p class="nota">No hay nada que corregir: la estructura cumple lo que se verifica con ETABS.</p>';
+    else h+='<p class="nota">'+n+(n===1?' cosa que corregir.':' cosas que corregir, en el orden en que conviene hacerlo: '+
+        'lo de arriba cambia lo de abajo —un modelo mal dibujado, otro sistema u otra R cambian las fuerzas y las derivas—.')+
+        ' Corrige, vuelve a llevar el modelo con RETICULA.bat [1], trae los resultados con [2] y mira otra vez aquí.</p>'+
+      '<ol class="dx-l">'+Dg.items.map(function(it){
+        return '<li class="dx-i dx-'+it.nivel+'"><div class="dx-c"><span class="dx-e">'+
+          (it.nivel==="impide"?"✗ Impide cumplir":"! Revisar")+'</span><b class="dx-t">'+esc(it.titulo)+'</b>'+
+          (it.cuanto?'<span class="dx-q">'+esc(it.cuanto)+'</span>':'')+'</div>'+
+          '<ul class="dx-d">'+it.detalle.map(function(d){return '<li>'+esc(d)+'</li>'}).join("")+'</ul>'+
+          (it.donde?'<button type="button" class="btn dx-ir" data-ir="'+it.donde.md+'" data-sub="'+esc(it.donde.sub)+'">'+
+            esc(it.donde.texto)+' →</button>':'')+'</li>';
+      }).join("")+'</ol>';
+    h+='</section>';
+
+    /* C4b · cuanta rigidez falta, con el espectro de Sismo E.030 */
+    var RB=null;
+    if(hay&&VS&&VS.v){
+      try{ RB=CORREGIR.rigidezFaltante({v:VS.v, sis:r.R.sismo, TP:st.Tp, TL:st.Tl, margen:0.10,
+                                       C:function(T){return SISMO.factorC(T,st.Tp,st.Tl,false);}}); }catch(e){}
+    }
+    if(RB&&(RB.x||RB.y)){
+      h+='<section class="pbox sis-ancha"><h3>Cuánta rigidez falta · C4b</h3>';
+      ["x","y"].forEach(function(k){
+        var q=RB[k]; if(!q)return;
+        var D=k.toUpperCase(), M=Math.round(q.margen*100);
+        if(q.cumple){
+          h+='<p class="rb-res"><b>En '+D+' la deriva ya cumple:</b> no hace falta rigidizar. La peor es '+q.peor.toFixed(4)+
+             ', '+(q.peor/q.limite).toFixed(1)+' veces el límite.</p>';
+          return;
+        }
+        var G=q.global, cambio=G.Cr>1.005?'subiría ×'+G.Cr.toFixed(2):(G.Cr<0.995?'bajaría ×'+G.Cr.toFixed(2):'casi no cambia');
+        h+='<div class="rb-dir"><p class="rb-res"><b>En '+D+' hay que multiplicar la rigidez lateral por '+G.alfa.toFixed(1)+
+          '</b> si se reparte igual en todos los pisos, <b>×'+G.alfaMargen.toFixed(1)+'</b> con '+M+' % de margen. El '+
+          'período bajaría de '+q.T.toFixed(3)+' s a '+G.Tn.toFixed(3)+' s y la fuerza sísmica '+cambio+
+          (q.region?': '+esc(q.region):'')+'.</p>'+
+          '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Nivel</th><th>Deriva</th><th>Veces el límite</th>'+
+          '<th>k actual (t/m)</th><th>× justo</th><th>× con '+M+' %</th><th>k necesaria (t/m)</th><th>Falta (t/m)</th>'+
+          '</tr></thead><tbody>'+
+          q.pisos.slice().reverse().map(function(p){
+            return '<tr><td>'+esc(p.piso)+'</td><td>'+p.deriva.toFixed(4)+'</td><td>'+p.veces.toFixed(2)+'</td><td>'+
+              (p.k==null?'—':Math.round(p.k).toLocaleString("es-PE"))+'</td><td>'+p.alfa.toFixed(2)+'</td><td><b>'+
+              p.alfaMargen.toFixed(2)+'</b></td><td>'+(p.kNecesaria==null?'—':Math.round(p.kNecesaria).toLocaleString("es-PE"))+
+              '</td><td><b>'+(p.kFalta==null?'—':Math.round(p.kFalta).toLocaleString("es-PE"))+'</b></td></tr>'}).join("")+
+          '</tbody></table></div>'+
+          (q.avisos.length?'<p class="aviso">'+q.avisos.map(esc).join("<br>")+'</p>':'')+'</div>';
+      });
+      h+='<p class="nota">Piso a piso, lo que necesita cada entrepiso para que su deriva quede en el límite menos el '+
+        'margen, con la fuerza corregida por el período nuevo: T baja con la raíz de la rigidez y el espectro de Sismo '+
+        'E.030 da la fuerza. «k actual» es V / Δ del patrón estático más flexible, de la tabla de rigidez de ETABS. '+
+        'Supone la misma masa: placas y secciones más grandes pesan más y piden algo más. Cambiar el sistema cambia R y '+
+        'las fuerzas de diseño, pero casi no la deriva, que se multiplica por R; si la estructura pasa a irregular, f sube '+
+        'de 0,75 a 0,85 (+13 %). Es una estimación para elegir bien; la última palabra la tiene ETABS.</p></section>';
+    }
+    /* C4c · opciones para rigidizar, con el modelo que se llevo a ETABS */
+    if(RB&&((RB.x&&!RB.x.cumple)||(RB.y&&!RB.y.cumple))){
+      h+='<section class="pbox sis-ancha"><h3>Opciones para rigidizar · C4c</h3>';
+      if(!r.alDia)h+='<p class="aviso">Las opciones salen del modelo que se llevó a ETABS, y el modelo cambió desde '+
+        'entonces: vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2].</p>';
+      else{
+        var OP=null, opErr="";
+        try{ OP=opcionesC4c(r,VS,st,FZ,RB); }catch(e){ opErr=(e&&e.message)||String(e); }
+        if(!OP)h+='<p class="aviso">No se pudieron calcular las opciones'+(opErr?': '+esc(opErr):'')+'.</p>';
+        else{
+          ["x","y"].forEach(function(k){
+            var q=OP[k]; if(!q)return;
+            var D=k.toUpperCase(), M=Math.round(RB[k].margen*100);
+            h+='<div class="rb-dir"><p class="rb-res"><b>En '+D+'</b> la peor deriva es '+RB[k].peor.toFixed(4)+', '+
+              (RB[k].peor/RB[k].limite).toFixed(1)+' veces el límite.'+(q.error?'':' Cada opción va hasta donde cumple con '+
+              M+' % de margen. Primero las que cumplen; entre ellas, las que no cambian el sistema, no tuercen el edificio y '+
+              'llegan arriba, y luego la que menos peso agrega.')+'</p>';
+            if(q.error){ h+='<p class="aviso">'+esc(q.error)+'</p></div>'; return; }
+            h+='<ol class="dx-l">'+q.familias.map(function(fa){
+              var e=fa.elegido, est=e.error?"no":(e.conMargen?"ok":(e.cumple?"justo":"no")),
+                  etq={ok:"✓ Cumple con margen", justo:"! Cumple justo", no:"✗ No alcanza"}[est], met="";
+              if(!e.error){
+                var fs=e.factor.filter(function(x){return x!=null}),
+                    fmin=Math.min.apply(null,fs), fmax=Math.max.apply(null,fs);
+                met='<ul class="op-m"><li>Período ≈ '+e.T.toFixed(3)+' s</li><li>Rigidez ×'+fmin.toFixed(1)+
+                  (fmax-fmin>=0.05?' a ×'+fmax.toFixed(1):'')+'</li><li>Peso +'+e.peso.toFixed(1)+' t</li>'+
+                  (e.sistema?'<li>'+(e.cambiaSistema?esc(q.base.sistema)+' → ':'')+esc(e.sistema)+(e.R0?' · R₀ '+e.R0:'')+
+                    (e.pct>0.005?' · placas ≈ '+Math.round(e.pct*100)+' %':'')+'</li>':'')+'</ul>';
+              }
+              var pr=fa.pruebas.length>1?'<details class="op-p"><summary>'+fa.pruebas.length+' pruebas</summary>'+
+                '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Prueba</th><th>Deriva máx</th>'+
+                '<th>Veces el límite</th><th>Período (s)</th><th>Peso (t)</th></tr></thead><tbody>'+
+                fa.pruebas.map(function(p){
+                  if(p.error)return '<tr><td>'+esc(typeof p.paso==="number"?p.paso.toFixed(2)+' m':p.paso)+'</td><td colspan="4">'+esc(p.error)+'</td></tr>';
+                  return '<tr><td>'+esc(typeof p.paso==="number"?p.paso.toFixed(2)+' m':p.paso)+'</td><td>'+p.peor.toFixed(4)+
+                    '</td><td>'+(p.peor/q.base.limite).toFixed(2)+'</td><td>'+p.T.toFixed(3)+'</td><td>'+p.peso.toFixed(1)+'</td></tr>'}).join("")+
+                '</tbody></table></div></details>':'';
+              return '<li class="dx-i op-'+est+'"><div class="dx-c"><span class="dx-e">'+etq+'</span><b class="dx-t">'+
+                esc(fa.titulo)+'</b>'+(e.error?'':'<span class="dx-q">deriva ≈ '+e.peor.toFixed(4)+' en '+esc(e.piso)+'</span>')+
+                '</div><p class="op-que">'+esc(fa.que)+'</p>'+met+
+                (fa.avisos.length?'<ul class="dx-d">'+fa.avisos.map(function(a){return '<li>'+esc(a)+'</li>'}).join("")+'</ul>':'')+
+                pr+'</li>';
+            }).join("")+'</ol>';
+            if(q.avisos.length)h+='<p class="aviso">'+q.avisos.map(esc).join("<br>")+'</p>';
+            h+='</div>';
+          });
+          var cals=["x","y"].filter(function(k){return OP[k]&&OP[k].base&&OP[k].base.calibracion}).map(function(k){
+            var c=OP[k].base.calibracion;
+            return 'en '+k.toUpperCase()+' ETABS da '+c.min.toFixed(2)+(c.max-c.min>=0.005?' a '+c.max.toFixed(2):'')+' veces su rigidez';
+          });
+          h+='<p class="nota">Cada opción se calcula con un modelo plano de pórticos y placas: columnas y placas con flexión '+
+            'y corte, vigas con brazo rígido en el borde de las placas y el diafragma rígido de cada piso. No cuenta la losa '+
+            'ni la torsión —solo avisa si el centro de rigidez se mueve más del 10 % del ancho—, y da algo menos rigidez que ETABS'+(cals.length?' ('+cals.join('; ')+')':'')+'; por eso la '+
+            'deriva nueva sale de la de ETABS multiplicada por lo que cambia el modelo, y esa diferencia se cancela. Suma '+
+            'el peso del concreto nuevo y el cambio de período en el espectro. El sistema sale de la parte de la cortante '+
+            'basal que toman las placas (Art. 20, Tabla N.º 8). Son estimaciones para elegir: en C4d se aplican al modelo y '+
+            'ETABS da la última palabra.</p>';
+        }
+      }
+      h+='</section>';
+    }
+    return h+'<section class="pbox sis-ancha"><h3>Lo que viene en Corregir la estructura</h3><p class="nota"><b>C4d</b>: '+
+      'aplicar la opción que elijas al modelo, llevarlo a ETABS y comparar los intentos. La última palabra la tiene '+
+      'ETABS.</p></section>';
+  }
+  /* C4c se calcula una vez por modelo, resultados y datos: son varios modelos planos */
+  var OPC={k:null,v:null};
+  function opcionesC4c(r,VS,st,FZ,RB){
+    var P=S.proy, key=[firmaModelo(),r.R.leido,st.Tp,st.Tl,P.sistemaX,P.sistemaY,JSON.stringify(RB)].join("|");
+    if(OPC.k===key)return OPC.v;
+    var v=CORREGIR.opciones({modelo:exportaEtabs(), v:VS.v, sis:r.R.sismo, TP:st.Tp, TL:st.Tl, margen:0.10, falta:RB,
+      C:function(T){return SISMO.factorC(T,st.Tp,st.Tl,false);}, sistemas:{x:P.sistemaX,y:P.sistemaY},
+      murosSismo:FZ&&FZ.murosSismo, r0De:E030.r0De});
+    OPC={k:key,v:v};
+    return v;
+  }
   function pintaInicio(){
     var el=$("#panelInicio"); if(!el)return;
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
@@ -10443,9 +11594,9 @@ var TT={script:performance.now()};
                        "Vuelve a llevar el modelo con RETICULA.bat [1] y a traer los resultados con [2].");
     else if(V.cumple)paso("6","Verificación E.030","verificacion","","ok","Cumple lo que se verifica con ETABS: derivas, "+
                           "masa participante, cortante mínima, irregularidades que se miden y restricciones.","");
-    else paso("6","Verificación E.030","verificacion","","no",
+    else paso("6","Verificación E.030","verificacion","corregir","no",
               V.motivos[0]+(V.motivos.length>1?" Y "+(V.motivos.length-1)+" motivo(s) más.":""),
-              "Corrige la estructura en el modelador, llévala con RETICULA.bat [1] y trae los resultados con [2].");
+              "Mira qué corregir, y en qué orden, en Verificación E.030 › Corregir la estructura.");
 
     var nF=FZ?FZ.vigas.length+" vigas · "+FZ.columnas.length+" columnas · "+FZ.placas.length+" muros · "+
               FZ.reacciones.length+" apoyos":"";
@@ -10482,15 +11633,7 @@ var TT={script:performance.now()};
       '</div><p class="nota">Con un clic en el nombre vas a ese paso. El orden es el de la barra de arriba.</p></section>';
     el.innerHTML=h+'</div>';
     el.querySelectorAll("[data-ir]").forEach(function(b){
-      b.onclick=function(){
-        var md=this.dataset.ir, sb=this.dataset.sub;
-        if(sb){
-          if(!S.sub||typeof S.sub!=="object")S.sub={};
-          S.sub[md]=sb;
-          try{ localStorage.setItem("reticula_sub",JSON.stringify(S.sub)); }catch(e){}
-        }
-        elegirModo(md);
-      };
+      b.onclick=function(){ irAPaso(this.dataset.ir,this.dataset.sub); };
     });
   }
   /* LAS TABLAS DEL .bat: las mismas que imprime RETICULA.bat [3], con los
@@ -10555,8 +11698,8 @@ var TT={script:performance.now()};
       (dis?'<b>No la diseñes todavía:</b> al corregirla cambian las secciones y todas las fuerzas, y el diseño habría '+
            'que rehacerlo. Corrígela en el modelador, llévala con RETICULA.bat [1], trae los resultados con [2] y '+
            'vuelve cuando cumpla.'
-          :'Hay que corregirla antes de diseñar: cámbiala en el modelador, llévala con RETICULA.bat [1] y trae los '+
-           'resultados con [2].')+'</section>';
+          :'Hay que corregirla antes de diseñar: qué corregir, y en qué orden, está en <b>Verificación E.030 › Corregir '+
+           'la estructura</b>.')+'</section>';
   }
   /* C2 · LA VERIFICACION SISMICA con lo que devolvio ETABS.  La norma vive
      en oviedo/verificacion.js; aqui se le dan los datos y se ensena. */
@@ -10736,7 +11879,8 @@ var TT={script:performance.now()};
   function pintaResultados(){
     var el=$("#panelRes"); if(!el)return;
     var h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"resultados");
-    if(S.modo==="verificacion"){
+    if(S.modo==="verificacion"&&subDe("verificacion")==="corregir")h+=tarjetaCorregir();
+    else if(S.modo==="verificacion"){
       var c=calculoSismo();
       h+=c.faltan.length
         ? '<section class="pbox sis-ancha"><h3>No se puede verificar todavía</h3><p class="aviso">A Sismo '+
@@ -10751,6 +11895,9 @@ var TT={script:performance.now()};
     if(bi)bi.onclick=function(){ marcarIrregularidadesMedidas(); };
     var rn=$("#resNivel");
     if(rn)rn.onchange=function(){ S.resNivel=this.value; render(); };
+    el.querySelectorAll("[data-ir]").forEach(function(b){
+      b.onclick=function(){ irAPaso(this.dataset.ir,this.dataset.sub); };
+    });
   }
 
   /* =====================================================================
