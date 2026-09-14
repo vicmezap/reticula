@@ -422,6 +422,9 @@
 .op-m{list-style:none;margin:4px 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:2px 16px;
   font:400 11.5px "IBM Plex Mono",monospace;color:var(--ink-2)}
 .op-p summary{cursor:pointer;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin:4px 0}
+.sis-t.it-t td:first-child{min-width:220px;white-space:normal;font-family:"IBM Plex Sans",sans-serif}
+.sis-t.it-t small{display:block}
+.sis-t.it-t tr.it-act td{background:var(--acc-soft)}
 /* INICIO: donde va el proyecto, un paso por fila */
 .ini-l{display:grid;border-top:1px solid var(--line-soft)}
 .ini-p{display:grid;grid-template-columns:minmax(160px,210px) 104px 1fr;gap:4px 14px;align-items:baseline;
@@ -6078,7 +6081,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           var e1 = RIGIDEZ.ejeEn(M, k, tr.c1), e2 = RIGIDEZ.ejeEn(M, k, tr.c2), ej = RIGIDEZ.ejeEn(M, oo, tr.eje);
           return "eje " + (ej || f(tr.eje, 2)) + " entre " + (e1 || f(tr.c1, 2)) + " y " + (e2 || f(tr.c2, 2)) + " (" + m2(tr.largo) +
                  (tr.niveles < n ? ", hasta " + pisos[tr.niveles - 1].piso : "") + ")";
-        })) + ". Van de columna a columna, en lugar de la viga de ese tramo.";
+        })) + ". Van de columna a columna, bajo la viga de ese tramo.";
       noAlcanza(fp, "con " + eleg.tramos.length + " placas de " + m2(eleg.t));
       avisosComunes(fp);
       var cortas = eleg.tramos.filter(function (tr) { return tr.niveles < n; });
@@ -6905,7 +6908,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v159 · 13-09-2026";
+  var BUILD="v162 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -6986,6 +6989,9 @@ var TT={script:performance.now()};
        categoria:"comun"};
   /* lo que se ve en la planta de DECISIONES: no es del modelo, no se guarda */
   S.verDeci={col:true,viga:true,losa:true,placa:true,zapata:true};
+  /* C4d · LOS INTENTOS de Corregir la estructura.  Estos SI son del modelo:
+     se guardan y viajan con el al libro */
+  S.intentos=[];
   /* LAS SUB-PESTANAS.  Solo las tienen las pestanas que hacen cosas distintas;
      Planta, Cargas y Comprobacion hacen una sola y se quedan enteras.  La
      primera de cada lista es la que se abre la primera vez; despues cada
@@ -7345,7 +7351,7 @@ var TT={script:performance.now()};
       localStorage.setItem("reticula",
         JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
                         vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
-                        pr:S.proy,et:S.etabs}));
+                        pr:S.proy,et:S.etabs,in:S.intentos}));
       GUARDADO.ultimo=Date.now();
       selloGuardado();
       /* y se empuja al libro, espaciado: cerrar la ventana con la X no
@@ -7392,6 +7398,7 @@ var TT={script:performance.now()};
       if(d.vc!==undefined)S.verCim=!!d.vc;
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
       if(d.et&&typeof d.et==="object")S.etabs=d.et;
+      if(Array.isArray(d.in))S.intentos=d.in;
       if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
       /* Un modelo guardado ANTES de la E.030 trae categoria pero no uso.
          Como ahora la categoria sigue al uso, dejarlo asi le cambiaria la
@@ -11187,12 +11194,20 @@ var TT={script:performance.now()};
      pieza con su seccion, sumados con FNV-1a de 32 bits.  a_excel.py calcula
      la misma sobre el mismo texto: si no coinciden, los resultados son de
      otro modelo. */
+  /* Y con sus MEDIDAS, en m con 4 decimales: los nombres se reparten por
+     tamano, y agrandar todas las columnas de 25×25 a 65×25 las dejaba en C1
+     con la misma firma -resultados viejos «al dia»-.  Visto en C4d. */
+  var DIM_FIRMA=["b","h","D","e","t"];
   function firmaModelo(ex){
     var partes=[];
     (ex||exportaEtabs()).niveles.forEach(function(L){
       partes.push(L.nombre+"@"+L.z1);
       ["columnas","vigas","losas","placas"].forEach(function(k){
-        L[k].forEach(function(x){partes.push(x.cod+"="+(x.sec||""))});
+        L[k].forEach(function(x){
+          var d=DIM_FIRMA.filter(function(c){return typeof x[c]==="number"&&isFinite(x[c])})
+                         .map(function(c){return c+x[c].toFixed(4)});
+          partes.push(x.cod+"="+(x.sec||"")+(d.length?"|"+d.join(","):""));
+        });
       });
     });
     var s=unescape(encodeURIComponent(partes.join(";"))), h=0x811c9dc5, i;
@@ -11402,6 +11417,7 @@ var TT={script:performance.now()};
     var r=resultadosEtabs(), c=calculoSismo(), P=S.proy, st=sitio(), VS=null, FZ=null, ab=[];
     var hay=!!(r&&r.R&&!r.error);
     if(hay){ try{ VS=verificacionSismica(); }catch(e){} try{ FZ=fuerzasEtabs(); }catch(e){} }
+    try{ anotaIntento(r,VS,FZ); }catch(e){}
     try{ ab=avisosAbiertos(); }catch(e){}
     var Dg=CORREGIR.diagnostico({resultados:{hay:hay, error:(r&&r.error)||null, alDia:!!(r&&r.alDia)},
       faltanSismo:c.faltan, avisos:ab, v:VS&&VS.v, sistemas:{x:P.sistemaX,y:P.sistemaY},
@@ -11464,7 +11480,8 @@ var TT={script:performance.now()};
     if(RB&&((RB.x&&!RB.x.cumple)||(RB.y&&!RB.y.cumple))){
       h+='<section class="pbox sis-ancha"><h3>Opciones para rigidizar · C4c</h3>';
       if(!r.alDia)h+='<p class="aviso">Las opciones salen del modelo que se llevó a ETABS, y el modelo cambió desde '+
-        'entonces: vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2].</p>';
+        'entonces: vuelve a llevarlo con RETICULA.bat [1] y a traer los resultados con [2]. Si aplicaste una opción, '+
+        'está abajo, en Intentos.</p>';
       else{
         var OP=null, opErr="";
         try{ OP=opcionesC4c(r,VS,st,FZ,RB); }catch(e){ opErr=(e&&e.message)||String(e); }
@@ -11501,6 +11518,8 @@ var TT={script:performance.now()};
                 esc(fa.titulo)+'</b>'+(e.error?'':'<span class="dx-q">deriva ≈ '+e.peor.toFixed(4)+' en '+esc(e.piso)+'</span>')+
                 '</div><p class="op-que">'+esc(fa.que)+'</p>'+met+
                 (fa.avisos.length?'<ul class="dx-d">'+fa.avisos.map(function(a){return '<li>'+esc(a)+'</li>'}).join("")+'</ul>':'')+
+                (!e.error&&e.cumple?'<button type="button" class="btn dx-ir" data-aplicar="'+k+'|'+esc(fa.clave)+'">'+
+                  'Aplicar al modelo →</button>':'')+
                 pr+'</li>';
             }).join("")+'</ol>';
             if(q.avisos.length)h+='<p class="aviso">'+q.avisos.map(esc).join("<br>")+'</p>';
@@ -11515,15 +11534,13 @@ var TT={script:performance.now()};
             'ni la torsión —solo avisa si el centro de rigidez se mueve más del 10 % del ancho—, y da algo menos rigidez que ETABS'+(cals.length?' ('+cals.join('; ')+')':'')+'; por eso la '+
             'deriva nueva sale de la de ETABS multiplicada por lo que cambia el modelo, y esa diferencia se cancela. Suma '+
             'el peso del concreto nuevo y el cambio de período en el espectro. El sistema sale de la parte de la cortante '+
-            'basal que toman las placas (Art. 20, Tabla N.º 8). Son estimaciones para elegir: en C4d se aplican al modelo y '+
-            'ETABS da la última palabra.</p>';
+            'basal que toman las placas (Art. 20, Tabla N.º 8). Son estimaciones para elegir: «Aplicar al modelo» cambia las '+
+            'decisiones de esas piezas —las usan también el predimensionamiento y las hojas— y ETABS da la última palabra.</p>';
         }
       }
       h+='</section>';
     }
-    return h+'<section class="pbox sis-ancha"><h3>Lo que viene en Corregir la estructura</h3><p class="nota"><b>C4d</b>: '+
-      'aplicar la opción que elijas al modelo, llevarlo a ETABS y comparar los intentos. La última palabra la tiene '+
-      'ETABS.</p></section>';
+    return h+tarjetaIntentos();
   }
   /* C4c se calcula una vez por modelo, resultados y datos: son varios modelos planos */
   var OPC={k:null,v:null};
@@ -11535,6 +11552,176 @@ var TT={script:performance.now()};
       murosSismo:FZ&&FZ.murosSismo, r0De:E030.r0De});
     OPC={k:key,v:v};
     return v;
+  }
+
+  /* =====================================================================
+     C4d · APLICAR Y COMPARAR.  «Aplicar al modelo» cambia las DECISIONES de
+     las piezas -la seccion de la columna, el peralte de la viga duena, las
+     placas de la reticula-, no la medida solo para ETABS: una estructura
+     corregida se predimensiona, se verifica y se disena con lo corregido.
+     Antes de cambiar guarda el intento de antes, con lo que dio ETABS, y
+     despues el nuevo, con lo que estimo C4c.  Cuando llegan los resultados
+     de un modelo -la firma coincide- se anotan en su intento.  Una opcion
+     por vuelta: con el modelo cambiado, las opciones ya no son de el.
+     ===================================================================== */
+  var MAX_INTENTOS=12;
+  function estadoCorregir(){
+    var r=resultadosEtabs(), st=sitio(), VS=null, FZ=null, RB=null, OP=null, hay=!!(r&&r.R&&!r.error);
+    if(hay){ try{ VS=verificacionSismica(); }catch(e){} try{ FZ=fuerzasEtabs(); }catch(e){} }
+    if(hay&&VS&&VS.v){
+      try{ RB=CORREGIR.rigidezFaltante({v:VS.v, sis:r.R.sismo, TP:st.Tp, TL:st.Tl, margen:0.10,
+                                       C:function(T){return SISMO.factorC(T,st.Tp,st.Tl,false);}}); }catch(e){}
+    }
+    if(RB&&r.alDia&&((RB.x&&!RB.x.cumple)||(RB.y&&!RB.y.cumple))){ try{ OP=opcionesC4c(r,VS,st,FZ,RB); }catch(e){} }
+    return {r:r, st:st, VS:VS, FZ:FZ, RB:RB, OP:OP};
+  }
+  function opcionesActuales(){ return estadoCorregir().OP; }
+  /* lo que se guarda de unos resultados de ETABS: lo que hace falta para comparar intentos */
+  function resumenEtabs(r,VS,FZ){
+    var v=VS&&VS.v; if(!r||!r.R||!v)return null;
+    var est=(r.R.sismo&&r.R.sismo.estatico)||[],
+        d={leido:r.R.leido||"", archivo:String((r.R.etabs&&r.R.etabs.archivo)||"").split(/[\\/]/).pop(),
+           cumple:!!(VS.veredicto&&VS.veredicto.cumple), deriva:{}, limite:{}, T:{}, pct:{},
+           W:est.length&&est[0].W!=null?+est[0].W:null};
+    ["x","y"].forEach(function(k){
+      var m=v.derivaMax&&v.derivaMax[k], ms=FZ&&FZ.murosSismo&&FZ.murosSismo[k];
+      d.deriva[k]=m?{v:m.inelastica, piso:m.piso}:null;
+      d.limite[k]=v.limite&&v.limite[k]?v.limite[k].v:null;
+      d.T[k]=v.modos&&v.modos[k]?v.modos[k].T:null;
+      d.pct[k]=(ms&&ms.pct!=null)?ms.pct:null;
+    });
+    return d;
+  }
+  function anotaIntento(r,VS,FZ){
+    if(!r||!r.R||r.error||!r.alDia||!VS||!VS.v||!Array.isArray(S.intentos))return;
+    var fm=r.R.modelo&&r.R.modelo.firma;
+    S.intentos.forEach(function(it){
+      if(it.firma===fm&&(!it.etabs||it.etabs.leido!==r.R.leido))it.etabs=resumenEtabs(r,VS,FZ);
+    });
+  }
+  function proximoIntento(){
+    return (S.intentos||[]).reduce(function(m,it){return Math.max(m,+it.n||0)},0)+1;
+  }
+  /* los cambios de una opcion, sobre S.niveles.  Las piezas se encuentran por su codigo -columnas y vigas- o por
+     sus nudos -placas-; lo que no se mantiene en ETABS -la otra medida- se toma de la exportacion con que se estimo */
+  function aplicaCambios(fam,ex){
+    var TOLp=0.005, n=0, faltan=[], loc={col:{},viga:{}}, exCol={}, exViga={};
+    function cm(v){return Math.round(v*100)}
+    function dentro(c,v){return isFinite(v)&&v>=LIM_DECI[c][0]&&v<=LIM_DECI[c][1]}
+    S.niveles.forEach(function(m,kn){
+      var nm=nombres(kn);
+      Object.keys(nm.C).forEach(function(kk){var p=kk.split(":"); loc.col[nm.C[kk].cod]={k:kn,i:+p[0],j:+p[1]};});
+      Object.keys(nm.V).forEach(function(kk){var p=kk.split(":");
+        if(!loc.viga[nm.V[kk].cod])loc.viga[nm.V[kk].cod]={k:kn,o:p[0],i:+p[1],j:+p[2]};});
+    });
+    ex.niveles.forEach(function(L){
+      L.columnas.forEach(function(c){exCol[c.cod]=c}); L.vigas.forEach(function(v){exViga[v.cod]=v});
+    });
+    (fam.cambios||[]).forEach(function(c){
+      if(fam.clave==="columnas"){
+        var l=loc.col[c.cod], x=exCol[c.cod], m=l&&S.niveles[l.k], o=m&&m.cols[key(l.i,l.j)], s;
+        if(!o||!x){faltan.push(c.cod);return}
+        s=(c.campo==="D")?{D:cm(c.despues)}:{b:cm(c.campo==="b"?c.despues:x.b), h:cm(c.campo==="h"?c.despues:x.h)};
+        if(Object.keys(s).some(function(f){return !dentro(f,s[f])})){faltan.push(c.cod);return}
+        o.sec=s; n++;
+      }else if(fam.clave==="vigas"){
+        var lv=loc.viga[c.cod], xv=exViga[c.cod], mv=lv&&S.niveles[lv.k], ov=mv&&vigaDuena(lv.o,lv.i,lv.j,mv);
+        if(!ov||!xv||!dentro("h",cm(c.despues))){faltan.push(c.cod);return}
+        if(tipoViga(ov)==="chata")ov.t="principal";
+        ov.sec={b:cm(xv.b), h:cm(c.despues)}; n++;
+      }else if(fam.clave==="placas"){
+        var mp=S.niveles[c.nivel], a=null, b=null, i, j, t=cm(c.t);
+        if(!mp||!dentro("t",t)){faltan.push("placa en N"+(c.nivel+1));return}
+        for(i=0;i<mp.dx.length+1;i++)for(j=0;j<mp.dy.length+1;j++){
+          var nd=nodo(i,j,mp);
+          if(Math.abs(nd.x-c.x1)<TOLp&&Math.abs(-nd.y-c.y1)<TOLp)a={i:i,j:j};
+          if(Math.abs(nd.x-c.x2)<TOLp&&Math.abs(-nd.y-c.y2)<TOLp)b={i:i,j:j};
+        }
+        if(a&&b&&a.j===b.j&&a.i!==b.i){for(i=Math.min(a.i,b.i);i<Math.max(a.i,b.i);i++)mp.placas[key("h",i,a.j)]={t:t}; n++;}
+        else if(a&&b&&a.i===b.i&&a.j!==b.j){for(j=Math.min(a.j,b.j);j<Math.max(a.j,b.j);j++)mp.placas[key("v",a.i,j)]={t:t}; n++;}
+        else faltan.push("placa en N"+(c.nivel+1));
+      }
+    });
+    if(faltan.length)return {ok:false, msg:"No se pudo aplicar a "+faltan.slice(0,4).join(", ")+
+      (faltan.length>4?" y "+(faltan.length-4)+" más":"")+": el modelo quedó como estaba."};
+    if(!n)return {ok:false, msg:"Esa opción no cambia nada en el modelo."};
+    return {ok:true, n:n};
+  }
+  function aplicarOpcion(k,clave){
+    var E=estadoCorregir(), r=E.r;
+    if(!r||!r.R||r.error)return {ok:false, msg:"Sin resultados de ETABS no hay opciones que aplicar."};
+    if(!r.alDia)return {ok:false, msg:"El modelo cambió desde que se llevó a ETABS: llévalo y trae los resultados "+
+      "antes de aplicar otra opción."};
+    var q=E.OP&&E.OP[k];
+    if(!q||q.error)return {ok:false, msg:(q&&q.error)||("En "+String(k).toUpperCase()+" no hay opciones que aplicar.")};
+    var fam=q.familias.filter(function(x){return x.clave===clave})[0];
+    if(!fam||fam.elegido.error||!fam.elegido.cumple)return {ok:false, msg:"Esa opción no cumple: no se aplica."};
+    var ex=exportaEtabs(), fm0=firmaModelo(ex), antes=JSON.stringify(S.niveles), base=null;
+    var z=aplicaCambios(fam,ex);
+    if(!z.ok){ S.niveles=JSON.parse(antes); PASADA++; return z; }
+    UNDO.push(antes); if(UNDO.length>60)UNDO.shift(); REDO.length=0;
+    PASADA++;
+    if(!Array.isArray(S.intentos))S.intentos=[];
+    S.intentos.forEach(function(it){ if(it.firma===fm0)base=it; });
+    if(!base){
+      base={n:proximoIntento(), fecha:new Date().toISOString(), titulo:"Así estaba", firma:fm0, niveles:antes, etabs:null};
+      S.intentos.push(base);
+    }
+    base.etabs=resumenEtabs(r,E.VS,E.FZ);
+    var e=fam.elegido,
+        it={n:proximoIntento(), fecha:new Date().toISOString(),
+            titulo:fam.titulo+" · "+(typeof e.paso==="number"?e.paso.toFixed(2)+" m":e.paso), que:fam.que,
+            dir:k, clave:clave, desde:base.n, firma:firmaModelo(), niveles:JSON.stringify(S.niveles), etabs:null,
+            estimado:{dir:k, peor:e.peor, piso:e.piso, T:e.T, peso:e.peso, sistema:e.sistema, R0:e.R0, pct:e.pct}};
+    S.intentos.push(it);
+    while(S.intentos.length>MAX_INTENTOS)S.intentos.shift();
+    return {ok:true, intento:it, piezas:z.n,
+            msg:"Aplicado: "+fam.titulo.charAt(0).toLowerCase()+fam.titulo.slice(1)+". Llévalo a ETABS con RETICULA.bat [1] "+
+                "y trae los resultados con [2]."};
+  }
+  function volverIntento(n){
+    var it=(S.intentos||[]).filter(function(x){return x.n===n})[0];
+    if(!it||!it.niveles)return {ok:false, msg:"Ese intento ya no está."};
+    snap();
+    S.niveles=JSON.parse(it.niveles); S.act=Math.min(S.act,S.niveles.length-1); S.sel=null; PASADA++;
+    return {ok:true, msg:"El modelo volvió al intento "+n+" · "+it.titulo+". Llévalo a ETABS con RETICULA.bat [1] y trae "+
+            "los resultados con [2]."};
+  }
+  function tarjetaIntentos(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    var L=Array.isArray(S.intentos)?S.intentos:[], fm=null;
+    var h='<section class="pbox sis-ancha"><h3>Intentos · C4d</h3>';
+    if(!L.length)return h+'<p class="nota">Todavía no hay intentos. Cuando apliques una opción, aquí quedan el modelo '+
+      'de antes y el de después, lo que estimó C4c y lo que dio ETABS, y puedes volver a cualquiera.</p></section>';
+    try{ fm=firmaModelo(); }catch(e){}
+    function der(it,k){
+      var E=it.etabs, e=E&&E.deriva?E.deriva[k]:null, s=(it.estimado&&it.estimado.dir===k)?it.estimado:null,
+          t=s?'≈ '+s.peor.toFixed(4):'';
+      if(e)t+=(t?' → ':'')+'<b class="'+(e.v<=(E.limite[k]||0.007)+1e-12?'sis-ok':'sis-no')+'">'+e.v.toFixed(4)+'</b>';
+      return t||'—';
+    }
+    function tres(v){return v==null?'—':(+v).toFixed(3)}
+    h+='<div class="etb-scroll"><table class="sis-t it-t"><thead><tr><th>Intento</th><th>Deriva X</th><th>Deriva Y</th>'+
+      '<th>T X / Y (s)</th><th>W (t)</th><th>Placas X / Y</th><th>E.030</th><th></th></tr></thead><tbody>'+
+      L.slice().reverse().map(function(it){
+        var act=(it.firma===fm), E=it.etabs, s=it.estimado;
+        var T=E?tres(E.T.x)+' / '+tres(E.T.y):(s?'≈ '+tres(s.T)+' en '+s.dir.toUpperCase():'—');
+        var W=(E&&E.W!=null)?E.W.toFixed(1):(s?'≈ +'+s.peso.toFixed(1):'—');
+        var pc=E?[E.pct.x,E.pct.y].map(function(v){return v==null?'—':Math.round(v*100)+' %'}).join(' / '):
+               (s&&s.pct!=null?'≈ '+Math.round(s.pct*100)+' % en '+s.dir.toUpperCase():'—');
+        return '<tr'+(act?' class="it-act"':'')+'><td><b>'+it.n+' · '+esc(it.titulo)+'</b>'+
+          (act?'<small>el modelo de ahora</small>':'')+(it.desde?'<small>sobre el intento '+it.desde+'</small>':'')+'</td>'+
+          '<td>'+der(it,"x")+'</td><td>'+der(it,"y")+'</td><td>'+T+'</td><td>'+W+'</td><td>'+pc+'</td><td>'+
+          (E?(E.cumple?'<b class="sis-ok">Cumple</b>':'<b class="sis-no">No cumple</b>'):'<small>Falta llevarlo a ETABS</small>')+
+          '</td><td>'+(act?'':'<button type="button" class="mini" data-intento="'+it.n+'">Volver a este</button>')+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+    var ult=L[L.length-1];
+    if(ult&&ult.firma===fm&&!ult.etabs)
+      h+='<p class="aviso">El modelo de ahora es el intento '+ult.n+'. Llévalo a ETABS con RETICULA.bat [1], analízalo y '+
+        'trae los resultados con [2]: aquí aparecerá lo que da ETABS al lado de lo que estimó C4c.</p>';
+    return h+'<p class="nota">Cada intento guarda su modelo. «≈» es lo que estimó C4c y, en negrita, lo que dio ETABS; W es '+
+      'el peso sísmico de ETABS. «Volver a este» deja el modelo como estaba en ese intento, y Ctrl+Z deshace el último '+
+      'cambio. Se guardan los últimos '+MAX_INTENTOS+', con el modelo, en el libro.</p></section>';
   }
   function pintaInicio(){
     var el=$("#panelInicio"); if(!el)return;
@@ -11897,6 +12084,16 @@ var TT={script:performance.now()};
     if(rn)rn.onchange=function(){ S.resNivel=this.value; render(); };
     el.querySelectorAll("[data-ir]").forEach(function(b){
       b.onclick=function(){ irAPaso(this.dataset.ir,this.dataset.sub); };
+    });
+    /* C4d: aplicar una opcion y volver a un intento */
+    el.querySelectorAll("[data-aplicar]").forEach(function(b){
+      b.onclick=function(){
+        var p=String(this.dataset.aplicar).split("|"), z=aplicarOpcion(p[0],p[1]);
+        toast(z.msg); render();
+      };
+    });
+    el.querySelectorAll("[data-intento]").forEach(function(b){
+      b.onclick=function(){ var z=volverIntento(+this.dataset.intento); toast(z.msg); render(); };
     });
   }
 
@@ -13850,7 +14047,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
