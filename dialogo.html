@@ -152,6 +152,11 @@
   .sopt:hover{background:var(--sheet)}
   .sopt[aria-pressed="true"]{background:var(--acc-soft);color:var(--acc-ink);font-weight:600}
   .sopt:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .esc-seg{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;margin:3px 0}
+  .esc-seg-b{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}
+  .esc-seg-b .sopt{border-color:var(--line);padding:3px 10px;width:auto;flex:0 0 auto;justify-content:center;white-space:nowrap}
+  .esc-btn{cursor:pointer}
+  .esc-btn:hover rect{fill:var(--acc-soft)}
   .sdot{width:10px;height:10px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
   .edif{padding:4px 2px 10px}
   .edif table{width:100%;border-collapse:collapse;font:400 11.5px "IBM Plex Mono",monospace}
@@ -680,6 +685,10 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <span>Placa<small>clic o arrastra</small></span></button>
       <button class="tool" data-tool="unir" aria-pressed="false"><span class="swatch" style="background:var(--sheet);border-style:dashed"></span>
         <span>Unir / separar<small>losas o vigas seguidas</small></span></button>
+      <div class="sub" id="subUnir" hidden role="group" aria-label="Unir o separar">
+        <button class="sopt" data-unir="unir" aria-pressed="true"><span class="sdot" style="background:var(--sheet);border:1px dashed var(--ink-3)"></span>Unir (encadena)</button>
+        <button class="sopt" data-unir="separar" aria-pressed="false"><span class="sdot" style="background:var(--sheet)"></span>Separar</button>
+      </div>
       <button class="tool" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
         <span>Zapata<small>solo bajo columna</small></span></button>
       <div class="sub" id="subZapata" hidden role="group" aria-label="Zapatas">
@@ -6399,7 +6408,10 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 
   /* LA GEOMETRIA.  o: {h: altura de entrepiso, largo: el paño a lo largo de los tramos (eje a eje), ancho: a lo
      ancho, tramos: 1 o 2 (en U), paso, cp: contrapaso (vacio = se propone), ojo: hueco entre los dos tramos,
-     descanso: largo del descanso (vacio = lo que queda)} */
+     descanso: largo del descanso de la U (vacio = el ancho del tramo al multiplo de 5 cm, que es lo que pide el
+     A.010, o lo que quepa)}.  Lo que sobra del paño a lo largo es la LLEGADA AL PISO: losa plana a la altura del
+     piso de arriba, en el borde de arranque de la U o despues del tramo recto.  Antes el descanso se comia todo
+     lo que sobraba y en un vano de 4,30 m salia de 2,30 m. */
   function geometria(o) {
     o = o || {};
     var h = +o.h, tramos = (+o.tramos === 1) ? 1 : 2, p = (+o.paso > 0) ? +o.paso : 0.25,
@@ -6408,10 +6420,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var cp = h / nCp, n1 = tramos === 2 ? Math.ceil(nCp / 2) : nCp, n = tramos === 2 ? [n1, nCp - n1] : [nCp];
     /* un tramo de n contrapasos tiene n − 1 pasos en planta: el ultimo contrapaso sube al descanso o al piso */
     var Lt = n.map(function (k) { return (k - 1) * p; }), LtMax = Math.max.apply(null, Lt);
-    var bt = tramos === 2 ? (ancho - ojo) / 2 : ancho;
-    var descanso = (+o.descanso > 0) ? +o.descanso : Math.max(0, largo - LtMax);
+    var bt = tramos === 2 ? (ancho - ojo) / 2 : ancho, sobra = Math.max(0, largo - LtMax);
+    var propio = tramos === 2 && +o.descanso > 0;
+    var descanso = tramos !== 2 ? 0 : (propio ? +o.descanso : Math.min(redondea5(Math.max(bt, 0)), sobra));
     return { h: h, tramos: tramos, paso: p, cp: cp, nCp: nCp, n: n, Lt: Lt, bt: bt, ojo: ojo, largo: largo, ancho: ancho,
-             descanso: descanso, cabe: LtMax + (tramos === 2 ? descanso : 0) <= largo + 1e-9 && bt > 0,
+             descanso: descanso, descansoPropio: propio, llegada: Math.max(0, largo - LtMax - descanso),
+             cabe: LtMax + descanso <= largo + 1e-9 && bt > 0,
              cos: p / Math.sqrt(p * p + cp * cp), theta: Math.atan(cp / p) };
   }
 
@@ -6428,32 +6442,50 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
              descanso: { pp: gamma * t, acab: acab, cm: gamma * t + acab, cv: cv } };
   }
 
-  /* DONDE VA CADA COSA en los ejes locales.  lado "a": el primer tramo en v = 0; "b": al otro lado */
+  /* DONDE VA CADA COSA en los ejes locales.  lado "a": el primer tramo en v = 0; "b": al otro lado.
+     llegadas: la losa plana del piso de arriba en lo que sobra del paño -z = h-, una por franja: la del tramo
+     que llega sigue su franja; la que queda sobre el arranque del primer tramo y la del ojo van «aparte», enteras
+     al borde E1 de arriba, porque debajo no tienen tramo que las sostenga. */
   function trazado(g, o) {
     o = o || {};
-    if (g.tramos === 1)
-      return { tramos: [{ v0: 0, v1: g.ancho, uBase: 0, sentido: 1, zBase: 0, n: g.n[0] }],
-               descanso: g.descanso > 1e-9 ? { u0: g.Lt[0], u1: g.largo, v0: 0, v1: g.ancho, z: g.h } : null };
+    if (g.tramos === 1) {
+      var L1 = g.Lt[0];
+      return { tramos: [{ v0: 0, v1: g.ancho, uBase: 0, sentido: 1, zBase: 0, n: g.n[0] }], descanso: null,
+               llegadas: g.largo - L1 > 1e-9 ? [{ u0: L1, u1: g.largo, v0: 0, v1: g.ancho, z: g.h, tramo: 0 }] : [] };
+    }
     var uD = g.largo - g.descanso, a = [0, g.bt], b = [g.ancho - g.bt, g.ancho];
     if (o.lado === "b") { var x = a; a = b; b = x; }
-    return { tramos: [{ v0: a[0], v1: a[1], uBase: uD - g.Lt[0], sentido: 1, zBase: 0, n: g.n[0] },
+    var u1 = uD - g.Lt[0], u2 = uD - g.Lt[1], lleg = [];
+    if (u1 > 1e-9) lleg.push({ u0: 0, u1: u1, v0: a[0], v1: a[1], z: g.h, tramo: 0, aparte: true });
+    if (u2 > 1e-9) lleg.push({ u0: 0, u1: u2, v0: b[0], v1: b[1], z: g.h, tramo: 1 });
+    if (g.ojo > 1e-9 && Math.min(u1, u2) > 1e-9)
+      lleg.push({ u0: 0, u1: Math.min(u1, u2), v0: Math.min(a[1], b[1]), v1: Math.max(a[0], b[0]), z: g.h, tramo: null, aparte: true });
+    return { tramos: [{ v0: a[0], v1: a[1], uBase: u1, sentido: 1, zBase: 0, n: g.n[0] },
                       { v0: b[0], v1: b[1], uBase: uD, sentido: -1, zBase: g.n[0] * g.cp, n: g.n[1] }],
-             descanso: { u0: uD, u1: g.largo, v0: 0, v1: g.ancho, z: g.n[0] * g.cp } };
+             descanso: { u0: uD, u1: g.largo, v0: 0, v1: g.ancho, z: g.n[0] * g.cp }, llegadas: lleg };
   }
 
-  /* un tramo con su parte de descanso, por metro de ancho, simplemente apoyado en u = 0 (E1) y u = largo (E2) */
+  /* un tramo con su parte de descanso y de llegada, por metro de ancho, simplemente apoyado en u = 0 (E1) y
+     u = largo (E2).  aparte: la llegada de su franja que no sostiene el tramo, entera a E1 de arriba */
   function apoyosTramo(g, pr, trz, i, caso) {
     var f = trz.tramos[i], uF = f.uBase + f.sentido * (f.n - 1) * g.paso, piezas = [[Math.min(f.uBase, uF), Math.max(f.uBase, uF), pr.tramo[caso]]];
     if (trz.descanso) piezas.push([trz.descanso.u0, trz.descanso.u1, pr.descanso[caso]]);
+    var aparte = 0;
+    (trz.llegadas || []).forEach(function (q) {
+      if (q.tramo !== i) return;
+      if (q.aparte) aparte += pr.descanso[caso] * (q.u1 - q.u0);
+      else piezas.push([q.u0, q.u1, pr.descanso[caso]]);
+    });
     var W = 0, M = 0;
     piezas.forEach(function (q) { var l = q[1] - q[0]; W += q[2] * l; M += q[2] * l * (q[0] + q[1]) / 2; });
     var R2 = M / g.largo;
-    return { E1: W - R2, E2: R2, total: W };
+    return { E1: W - R2, E2: R2, total: W, aparte: aparte };
   }
 
   /* LO QUE LLEGA A LOS BORDES del paño, repartido en su ancho (kg/m), en el piso de abajo y en el de arriba.
      1 tramo: arranca en E1 abajo y llega a E2 arriba.  2 tramos en U: el primero arranca en E1 abajo, el segundo
-     llega a E1 arriba, y el descanso -en E2, a media altura- se reparte mitad a cada piso. */
+     llega a E1 arriba, y el descanso -en E2, a media altura- se reparte mitad a cada piso.  La llegada al piso que
+     va aparte, a E1 de arriba. */
   function cargasApoyos(g, pr, trz) {
     function cero() { return { E1: { cm: 0, cv: 0 }, E2: { cm: 0, cv: 0 } }; }
     var r = { abajo: cero(), arriba: cero(), total: { cm: 0, cv: 0 } };
@@ -6465,7 +6497,14 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           (i === 0 ? r.abajo : r.arriba).E1[c] += a.E1 * b;
           r.abajo.E2[c] += a.E2 * b / 2; r.arriba.E2[c] += a.E2 * b / 2;
         }
-        r.total[c] += a.total * b;
+        r.arriba.E1[c] += a.aparte * b;
+        r.total[c] += (a.total + a.aparte) * b;
+      });
+      /* la llegada sobre el ojo */
+      (trz.llegadas || []).forEach(function (q) {
+        if (q.tramo !== null && q.tramo !== undefined) return;
+        var w = pr.descanso[c] * (q.u1 - q.u0) * (q.v1 - q.v0);
+        r.arriba.E1[c] += w; r.total[c] += w;
       });
       /* el descanso sobre el ojo, entre los dos tramos, va entero a su borde */
       if (g.tramos === 2 && trz.descanso && g.ojo > 0) {
@@ -6689,6 +6728,10 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         });
         if (T.descanso)
           junta(prisma(cuadro(T.descanso.u0, T.descanso.u1, T.descanso.v0, T.descanso.v1), z0 + T.descanso.z - (+e.t), z0 + T.descanso.z));
+        /* la llegada al piso: losa plana a la altura del piso de arriba */
+        (T.llegadas || []).forEach(function (q) {
+          junta(prisma(cuadro(q.u0, q.u1, q.v0, q.v1), z0 + q.z - (+e.t), z0 + q.z));
+        });
         if (tris.length) mete("escalera", e.cod, k, "Escalera " + e.cod, e.detalle || "", C.escalera, { tris: tris, aristas: aristas });
       });
     });
@@ -7711,7 +7754,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v170 · 14-09-2026";
+  var BUILD="v172 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7986,10 +8029,10 @@ var TT={script:performance.now()};
     return losaCruza("y",i-1,j,m)||losaCruza("y",i,j,m)||losaCruza("x",i,j-1,m)||losaCruza("x",i,j,m);
   }
   var UNIR=null;                    /* lo primero que se pincho con Unir */
-  /* Une o separa dos piezas seguidas.  El mismo gesto hace las dos cosas:
-     si ya van juntas -a mano, o solas por un prima sin apoyo- las separa. */
-  function unirPar(a,b,m){
-    m=m||N();
+  var UNIR_SHIFT=false;             /* Shift en ese clic: hace lo contrario del modo elegido */
+  /* REVISA un par de piezas seguidas sin tocar nada: si se pueden unir, la clave
+     de su junta y si hoy ya van juntas (dentro). */
+  function revisaPar(a,b,m){
     function no(t){return {ok:false,msg:t}}
     if(!a||!b||a.t!==b.t)return no("Se une losa con losa, o viga con viga.");
     var clave,ejeX,eje,dentro,nomE;
@@ -8004,11 +8047,14 @@ var TT={script:performance.now()};
         return no("Las dos losas tienen la flecha en distinta dirección: se unen en la dirección de su armado.");
       if(dirLosa(la)!==d)
         return no("Esas losas están una al lado de la otra: unirlas no cambia su luz, que va en la dirección de la flecha.");
+      if(esEscalera(la)||esEscalera(lb))
+        return no("Una escalera no se une con otro paño: es un paño suelto.");
       if((la.tipo||"aligerada")!==(lb.tipo||"aligerada"))
         return no("Una es "+(la.tipo||"aligerada")+" y la otra "+(lb.tipo||"aligerada")+
                   ": solo se une el mismo tipo de losa.");
-      if(m.vigas[ejeX?key("v",eje,a.j):key("h",a.i,eje)])
-        return no("En el eje "+nomE+" hay una viga entre las dos: es su apoyo, y la luz va de "+
+      var vj=m.vigas[ejeX?key("v",eje,a.j):key("h",a.i,eje)];
+      if(vj)
+        return no("En el eje "+nomE+" hay una viga "+tipoViga(vj)+" entre las dos: es su apoyo, y la luz va de "+
                   "apoyo a apoyo. Si la losa pasa de largo, quita esa viga.");
       var tl=tramoLosa(d,a.i,a.j,m), ol=ejeX?b.i:b.j;
       dentro=(tl.desde<=ol&&ol<tl.hasta);
@@ -8029,37 +8075,94 @@ var TT={script:performance.now()};
       var tv=tramoViga(a.o,a.i,a.j,m), ov=ejeX?b.i:b.j;
       dentro=(tv.desde<=ov&&ov<tv.hasta);
     }
-    /* sin junta, un prima sin apoyo ya une: ahi separar es poner false */
-    var porDefecto=esPrima(ejeX,eje,m);
-    var valor=dentro?(porDefecto?false:null):(porDefecto?null:true);
-    snap();
-    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
-    if(valor===null)delete m.juntas[clave]; else m.juntas[clave]=valor;
-    var msg, t2;
-    if(dentro)msg=(a.t==="losa"?"Losas separadas en el eje ":"Vigas separadas en el nudo ")+nomE+".";
-    else{
-      t2=(a.t==="losa")?tramoLosa(dirLosa(m.losas[key(a.i,a.j)]),a.i,a.j,m):tramoViga(a.o,a.i,a.j,m);
-      msg=(a.t==="losa"?"Losa unida":"Viga unida")+": va de "+
-          (ejeX?eX(t2.desde,m):eY(t2.desde,m))+" a "+(ejeX?eX(t2.hasta,m):eY(t2.hasta,m))+
-          ", luz "+nm(t2.L)+" m.";
-    }
-    return {ok:true,unida:!dentro,clave:clave,valor:valor,msg:msg};
+    return {ok:true,clave:clave,ejeX:ejeX,eje:eje,dentro:dentro,nomE:nomE};
   }
-  function unirClic(d,i,j){
+  /* pone la junta de un par, uniendo o separando.  Sin junta un prima sin apoyo
+     ya une: ahi unir es no poner nada y separar es poner false; en un eje
+     principal, al reves. */
+  function ponJunta(m,r,unir){
+    var porDefecto=esPrima(r.ejeX,r.eje,m);
+    var valor=unir?(porDefecto?null:true):(porDefecto?false:null);
+    if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
+    if(valor===null)delete m.juntas[r.clave]; else m.juntas[r.clave]=valor;
+    return valor;
+  }
+  /* «va de A a C, luz 7.79 m»: la losa o la viga entera de esa pieza */
+  function nombreTramo(a,m){
+    var ejeX=(a.t==="losa")?dirLosa(m.losas[key(a.i,a.j)])==="x":(a.o==="h");
+    var t2=(a.t==="losa")?tramoLosa(dirLosa(m.losas[key(a.i,a.j)]),a.i,a.j,m):tramoViga(a.o,a.i,a.j,m);
+    return "va de "+(ejeX?eX(t2.desde,m):eY(t2.desde,m))+" a "+(ejeX?eX(t2.hasta,m):eY(t2.hasta,m))+
+           ", luz "+nm(t2.L)+" m";
+  }
+  /* El gesto de antes para dos piezas seguidas: si ya van juntas las separa y
+     si no, las une.  Lo usan RET.unir y sus pruebas; la herramienta Unir ya no:
+     ahi el modo lo eliges tu (unirSerie). */
+  function unirPar(a,b,m){
+    m=m||N();
+    var r=revisaPar(a,b,m); if(!r.ok)return r;
+    snap();
+    var valor=ponJunta(m,r,!r.dentro), msg;
+    if(r.dentro)msg=(a.t==="losa"?"Losas separadas en el eje ":"Vigas separadas en el nudo ")+r.nomE+".";
+    else msg=(a.t==="losa"?"Losa unida: ":"Viga unida: ")+nombreTramo(a,m)+".";
+    return {ok:true,unida:!r.dentro,clave:r.clave,valor:valor,msg:msg};
+  }
+  /* UNIR (o SEPARAR) todo lo que hay entre a y b en la misma fila o linea: dos
+     seguidas, o la primera y la ultima.  Unir SOLO une -lo que ya va junto se
+     queda junto- y separar solo separa.  Antes el mismo clic hacia las dos cosas
+     y, sobre dos losas que un prima ya unia, «unir» las separaba sin que se
+     notara: asi Victor no podia unir tres losas.  Se revisa cada par antes de
+     tocar nada: si uno no se puede, no cambia ninguno. */
+  function unirSerie(a,b,m,unir){
+    m=m||N(); unir=(unir!==false);
+    function no(t){return {ok:false,msg:t}}
+    if(!a||!b||a.t!==b.t)return no("Se une losa con losa, o viga con viga.");
+    if(a.t==="viga"&&a.o!==b.o)return no("Solo se unen tramos de viga en la misma línea.");
+    function pieza(i,j){return a.t==="losa"?{t:"losa",i:i,j:j}:{t:"viga",o:a.o,i:i,j:j}}
+    var pares=[], k, lo, hi, losa=(a.t==="losa");
+    var enJ=losa?(a.i===b.i&&a.j!==b.j):(a.o==="v"&&a.i===b.i&&a.j!==b.j),
+        enI=losa?(a.j===b.j&&a.i!==b.i):(a.o==="h"&&a.j===b.j&&a.i!==b.i);
+    if(enJ){lo=Math.min(a.j,b.j);hi=Math.max(a.j,b.j);for(k=lo;k<hi;k++)pares.push([pieza(a.i,k),pieza(a.i,k+1)]);}
+    else if(enI){lo=Math.min(a.i,b.i);hi=Math.max(a.i,b.i);for(k=lo;k<hi;k++)pares.push([pieza(k,a.j),pieza(k+1,a.j)]);}
+    else return no(losa?"Esas losas no están en la misma fila ni en la misma columna.":"Esos tramos no van en la misma línea.");
+    var rs=[];
+    for(k=0;k<pares.length;k++){var rp=revisaPar(pares[k][0],pares[k][1],m); if(!rp.ok)return rp; rs.push(rp);}
+    var cambian=rs.filter(function(x){return unir?!x.dentro:x.dentro});
+    if(!cambian.length)
+      return {ok:true,cambio:false,msg:unir?((losa?"Ya están unidas: ":"Ya están unidos: ")+nombreTramo(pares[0][0],m)+".")
+                                          :(losa?"Ya están separadas.":"Ya están separados.")};
+    snap();
+    cambian.forEach(function(x){ponJunta(m,x,unir);});
+    return {ok:true,cambio:true,
+            msg:unir?((losa?"Losa unida: ":"Viga unida: ")+nombreTramo(pares[0][0],m)+".")
+                    :((losa?"Losas separadas en ":"Vigas separadas en ")+
+                      (cambian.length>1?(losa?"los ejes ":"los nudos "):(losa?"el eje ":"el nudo "))+
+                      cambian.map(function(x){return x.nomE}).join(", ")+".")};
+  }
+  /* LA HERRAMIENTA UNIR.  Primer clic: la pieza de partida.  Cada clic siguiente
+     une -o separa, con el modo Separar o con Shift- desde la anterior hasta esa:
+     la que sigue o la ultima de la fila.  Uniendo se encadena: la ultima
+     pinchada es la partida de la siguiente.  Termina con Esc, con otro clic en
+     la misma pieza o al cambiar de herramienta. */
+  function unirClic(d,i,j,shift){
     var m=N(), e=(d.t==="viga")?{t:"viga",o:d.o,i:i,j:j}:(d.t==="losa"?{t:"losa",i:i,j:j}:null);
     if(!e){UNIR=null;S.sel=null;render();return}
     if(e.t==="losa"&&!m.losas[key(i,j)]){UNIR=null;toast("Ese paño no tiene losa.");return}
     if(e.t==="viga"&&!m.vigas[key(e.o,i,j)]){UNIR=null;toast("Ese tramo no tiene viga.");return}
+    var unir=(S.unirModo!=="separar"); if(shift)unir=!unir;
     if(!UNIR){
       UNIR=e; S.sel=e; render();
-      toast(e.t==="losa"?"Ahora clic en la losa que sigue, en la dirección de su flecha."
-                        :"Ahora clic en el tramo de viga que sigue en la misma línea.");
+      toast(unir?(e.t==="losa"?"Unir: clic en la losa que sigue en la dirección de su flecha, o en la última de la fila."
+                              :"Unir: clic en el tramo que sigue, o en el último de la línea.")
+                :(e.t==="losa"?"Separar: clic en la losa del otro lado del eje donde se corta."
+                              :"Separar: clic en el tramo del otro lado del nudo donde se corta."));
       return;
     }
-    var a=UNIR; UNIR=null;
-    if(a.t===e.t&&a.i===e.i&&a.j===e.j&&(a.o||"")===(e.o||"")){S.sel=null;render();return}
-    var r=unirPar(a,e,m);
-    S.sel=e; render(); toast(r.msg);
+    var a=UNIR;
+    if(a.t===e.t&&a.i===e.i&&a.j===e.j&&(a.o||"")===(e.o||"")){UNIR=null;S.sel=null;render();toast("Listo.");return}
+    var r=unirSerie(a,e,m,unir);
+    UNIR=(r.ok&&unir)?e:null;
+    S.sel=e; render();
+    toast(r.msg+((r.ok&&unir)?" Sigue con la próxima, o Esc para terminar.":""));
   }
 
   /* La viga se interrumpe donde hay COLUMNA */
@@ -8142,6 +8245,8 @@ var TT={script:performance.now()};
   function redo(){if(!REDO.length)return;UNDO.push(JSON.stringify(S.niveles));
     S.niveles=JSON.parse(REDO.pop());S.act=Math.min(S.act,S.niveles.length-1);S.sel=null;render()}
   document.addEventListener("keydown",function(e){
+    /* Esc termina la cadena de Unir */
+    if(e.key==="Escape"&&UNIR&&!MARCA){e.preventDefault();UNIR=null;S.sel=null;render();toast("Listo.");return}
     if(!(e.ctrlKey||e.metaKey))return;
     var k=e.key.toLowerCase();
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
@@ -9430,7 +9535,7 @@ var TT={script:performance.now()};
     var i,j;
     /* flechas, espesores y contornos van ENCIMA de todos los paños: la de
        una losa unida cruza los paños que se pintan despues de ella */
-    var sobre=el("g",{"pointer-events":"none"}), luego=[];
+    var sobre=el("g",{"pointer-events":"none"}), luego=[], capaEsc=el("g",{});
 
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
@@ -9452,7 +9557,11 @@ var TT={script:performance.now()};
         g.appendChild(el("polygon",{points:pts(Q),
           fill:sl?"var(--acc-soft)":(o.tipo==="nervada"?"url(#hatch)":"var("+tp.f+")")}));
         if(tl.dueno)(function(i,j,o,tp,Q,dl,tl,unida){ luego.push(function(){
-          if(esEscalera(o)){ dibujaEscalera(sobre,i,j,m,XY,DIMS); return; }
+          if(esEscalera(o)){
+            dibujaEscalera(sobre,i,j,m,XY,DIMS,
+              (S.modo==="modelo"&&S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j)?capaEsc:null);
+            return;
+          }
           var QT=!unida?Q:((dl==="y")
                 ?[XY(i,tl.desde),XY(i+1,tl.desde),XY(i+1,tl.hasta),XY(i,tl.hasta)]
                 :[XY(tl.desde,j),XY(tl.hasta,j),XY(tl.hasta,j+1),XY(tl.desde,j+1)]);
@@ -9479,6 +9588,8 @@ var TT={script:performance.now()};
       }
     }
     g.appendChild(sobre); luego.forEach(function(f){f()});
+    /* los botones de la escalera seleccionada, ENCIMA de todo: el clic tiene que llegarles */
+    s.appendChild(capaEsc);
     /* LOS EJES SE INCLINAN.
 
        Esta linea iba de X(i) a X(i): del nudo de ARRIBA al nudo de ARRIBA,
@@ -9801,7 +9912,7 @@ var TT={script:performance.now()};
       return;
     }
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
-    if(S.tool==="unir"){if(primero)unirClic(d,i,j);return}
+    if(S.tool==="unir"){if(primero)unirClic(d,i,j,UNIR_SHIFT);return}
     if(S.tool==="col"&&d.t==="col"){
       var ec=m.cols[key(i,j)];
       /* misma forma -> quita;  forma distinta -> convierte.  Igual que las
@@ -9841,6 +9952,8 @@ var TT={script:performance.now()};
       else if(primero&&ex&&ex.tipo===tp){ex.dir=ex.dir==="y"?"x":"y";modo="giro";}
       else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};
         if(tp==="escalera"&&ex&&ex.esc)m.losas[lk].esc=ex.esc;}
+      /* la escalera recien pintada queda seleccionada: salen sus botones en la planta */
+      if(tp==="escalera"&&primero&&m.losas[lk])S.sel={t:"losa",i:i,j:j};
     }else return;
     render();
   }
@@ -10709,10 +10822,13 @@ var TT={script:performance.now()};
       render();
       return;
     }
-    if(!e.target.dataset||!e.target.dataset.t)return;
+    /* los botones de la escalera seleccionada, sobre la planta */
+    var eb=(e.target&&e.target.closest)?e.target.closest("[data-escbtn]"):null;
+    if(eb){e.preventDefault();accionEscalera(eb.getAttribute("data-escbtn"));return;}
     if(!e.target.dataset||!e.target.dataset.t)return;
     /* Unir guarda su propio paso de deshacer, y solo cuando une o separa */
     if(S.tool!=="sel"&&S.tool!=="unir"&&S.modo!=="decisiones")snap();
+    UNIR_SHIFT=!!e.shiftKey;
     pintando=true;modo=null;tocados={};aplicar(e.target,true);
     if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}}
   });
@@ -10816,7 +10932,7 @@ var TT={script:performance.now()};
     placa:"Clic o arrastra sobre los tramos entre ejes",
     losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado",
     zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna",
-    unir:"Clic en una losa o viga y luego en la que sigue · si ya van juntas, las separa"};
+    unir:"Clic en la primera y luego en la que sigue o en la última de la fila · encadena · Esc termina · Shift+clic hace lo contrario"};
   function elegirTool(t){
     S.tool=t; UNIR=null;
     if(S.vista!=="plano"){S.vista="plano";render();}
@@ -10826,6 +10942,7 @@ var TT={script:performance.now()};
     ver("#subCol",t==="col");
     ver("#subViga",t==="viga");
     ver("#subLosa",t==="losa");
+    ver("#subUnir",t==="unir");
     ver("#subZapata",t==="zapata");
     /* la cimentacion solo se dibuja en el 1er piso: se salta alli sola en
        vez de dejarte pintando sobre un nivel donde no pasa nada */
@@ -10960,6 +11077,13 @@ var TT={script:performance.now()};
         o.setAttribute("aria-pressed",o===b)});
       $("#swLosa").style.background=S.tipoLosa==="vacio"?"var(--sheet)":"var("+TIPOS[S.tipoLosa].c+")";
       elegirTool("losa");});
+  });
+  document.querySelectorAll("[data-unir]").forEach(function(b){
+    b.addEventListener("click",function(){
+      S.unirModo=b.dataset.unir;
+      document.querySelectorAll("[data-unir]").forEach(function(o){
+        o.setAttribute("aria-pressed",o===b)});
+      elegirTool("unir");});
   });
   document.querySelectorAll(".tab").forEach(function(b){
     b.addEventListener("click",function(){S.tab=b.dataset.t;
@@ -11422,7 +11546,7 @@ var TT={script:performance.now()};
   }
   function cmEsc(v){return String(Math.round(v*1000)/10).replace(".",",")}
   /* EL SIMBOLO EN LA PLANTA, a escala: el contorno y los pasos de cada tramo, su flecha de subida y el descanso */
-  function dibujaEscalera(g,i,j,m,XY,dims){
+  function dibujaEscalera(g,i,j,m,XY,dims,capa){
     var c=calculoEscalera(i,j,m); if(!c)return;
     var E=c.esquinas.map(function(q){return XY(q[0],q[1])}), G=c.g, T=c.trazado, col="var(--esc)";
     function P(u,v){
@@ -11446,15 +11570,88 @@ var TT={script:performance.now()};
       var vm=(f.v0+f.v1)/2, fl=linea(P(f.uBase,vm),P(uF,vm),1.4);
       fl.setAttribute("color","var(--esc)"); fl.setAttribute("marker-end","url(#ar)");
     });
-    if(T.descanso){ var dd=T.descanso; poli([P(dd.u0,dd.v0),P(dd.u1,dd.v0),P(dd.u1,dd.v1),P(dd.u0,dd.v1)],{"stroke-width":1,"stroke-dasharray":"4 3"}); }
+    /* el descanso, lleno; la llegada al piso, punteada; cada una con su nombre si cabe */
+    function zona(q,nombre,extra){
+      poli([P(q.u0,q.v0),P(q.u1,q.v0),P(q.u1,q.v1),P(q.u0,q.v1)],extra);
+      var c0=P((q.u0+q.u1)/2,(q.v0+q.v1)/2);
+      if(q.u1-q.u0>=0.45&&q.v1-q.v0>=0.6)txt(g,c0.x,c0.y+3,nombre,"var(--esc)",8.5);
+    }
+    if(T.descanso)zona(T.descanso,"descanso",{"stroke-width":1,fill:"var(--esc)","fill-opacity":".18"});
+    (T.llegadas||[]).forEach(function(q){
+      if(q.tramo===null)poli([P(q.u0,q.v0),P(q.u1,q.v0),P(q.u1,q.v1),P(q.u0,q.v1)],
+                             {"stroke-width":.6,"stroke-dasharray":"3 3",fill:"var(--esc)","fill-opacity":".07"});
+      else zona(q,"llegada",{"stroke-width":.8,"stroke-dasharray":"4 3",fill:"var(--esc)","fill-opacity":".07"});
+    });
     if(dims){
       var C=centro(E), mal=c.avisos.some(function(a){return a.nivel==="grave"});
       txt(g,C.x,C.y+4,G.nCp+" cp "+cmEsc(G.cp)+" · t "+Math.round(c.pr.t*100),mal?"#c62828":"var(--acc-ink)",9.5,null,true);
     }
+    /* SUS BOTONES sobre la planta, con la escalera seleccionada: sin bajar al inspector.  Van en UNA fila
+       ENCIMA del paño -dentro tapaban la escalera en un paño chico- y con tamaño de pantalla: la planta se
+       dibuja escalada y, en unidades del dibujo, crecian con el zoom hasta apilarse en cuatro filas. */
+    if(capa){
+      var k=1;
+      try{ var sv=$("#plano"), rc=sv.getBoundingClientRect(), vb=sv.viewBox&&sv.viewBox.baseVal;
+           if(vb&&vb.width>0&&rc.width>0)k=vb.width/rc.width; }catch(x){}
+      var vbW=1e9; try{ vbW=$("#plano").viewBox.baseVal.width||1e9; }catch(x){}
+      var AYUDA={desc:"Pasa el "+(G.tramos===2?"descanso":"lado de llegada")+" al otro eje",
+                 lado:"Pasa el primer tramo al otro lado", girar:"Los tramos van en la otra dirección",
+                 tramos:"Cambia entre 1 tramo recto y 2 en U"};
+      var BT=[["desc",G.tramos===2?"Descanso ⇄":"Llegada ⇄"]].concat(G.tramos===2?[["lado","1er tramo ⇅"]]:[])
+               .concat([["girar","Girar ↻"],["tramos",G.tramos===2?"1 tramo":"2 en U"]]);
+      var hB=19*k, gap=5*k, anchos=BT.map(function(b){return (b[1].length*6.3+16)*k}),
+          total=anchos.reduce(function(s2,a2){return s2+a2},0)+gap*(BT.length-1);
+      var xs=E.map(function(p){return p.x}), ys=E.map(function(p){return p.y});
+      var x=Math.min.apply(null,xs), y=Math.min.apply(null,ys)-hB-6*k;
+      if(y<2)y=Math.max.apply(null,ys)+6*k;                 /* sin sitio arriba: debajo */
+      if(x+total>vbW-4)x=Math.max(4,vbW-4-total);
+      BT.forEach(function(b,n){
+        var w=anchos[n];
+        var bt=el("g",{"class":"esc-btn","data-escbtn":b[0],transform:"translate("+x.toFixed(1)+","+y.toFixed(1)+")"});
+        bt.appendChild(el("rect",{width:w.toFixed(1),height:hB.toFixed(1),rx:(4*k).toFixed(1),fill:"var(--sheet)",
+                                  stroke:"var(--esc)","stroke-width":(1.3*k).toFixed(2)}));
+        var tt=el("text",{x:(w/2).toFixed(1),y:(13.5*k).toFixed(1),"text-anchor":"middle","font-size":(11*k).toFixed(1),
+                          "font-weight":600,fill:"var(--ink)"});
+        tt.textContent=b[1]; bt.appendChild(tt);
+        var ti=el("title",{}); ti.textContent=AYUDA[b[0]]; bt.appendChild(ti);
+        capa.appendChild(bt); x+=w+gap;
+      });
+    }
+  }
+  /* los nombres de los ejes de la escalera: u[0]/u[1] los de sus bordes a lo largo de los tramos, v[0]/v[1] a lo ancho */
+  function ejesEscalera(i,j,m,o){
+    var y=(dirLosa(o)==="y");
+    return {u:y?[eY(j,m),eY(j+1,m)]:[eX(i,m),eX(i+1,m)], v:y?[eX(i,m),eX(i+1,m)]:[eY(j,m),eY(j+1,m)]};
+  }
+  function escGuarda(i,j,clave,val){
+    var o=N().losas[key(i,j)]; if(!esEscalera(o))return;
+    snap(); o.esc=(o.esc&&typeof o.esc==="object")?o.esc:{};
+    if(val===null)delete o.esc[clave]; else o.esc[clave]=val;
+    render();
+  }
+  function escGira(i,j){
+    var o=N().losas[key(i,j)]; if(!esEscalera(o))return;
+    snap(); o.dir=(o.dir==="y")?"x":"y"; render();
+  }
+  /* un boton de la escalera seleccionada, en la planta */
+  function accionEscalera(a){
+    var q=S.sel; if(!q||q.t!=="losa")return;
+    var o=N().losas[key(q.i,q.j)]; if(!esEscalera(o))return;
+    var d=datosEsc(o);
+    if(a==="desc")escGuarda(q.i,q.j,"sube",d.sube==="-"?"+":"-");
+    else if(a==="lado")escGuarda(q.i,q.j,"lado",d.lado==="b"?"a":"b");
+    else if(a==="tramos")escGuarda(q.i,q.j,"tramos",+d.tramos===1?2:1);
+    else if(a==="girar")escGira(q.i,q.j);
   }
   /* EL INSPECTOR de la escalera: sus datos, lo que sale y lo que no cumple */
   function inspEscalera(q,T,B,m,nm){
-    var c=calculoEscalera(q.i,q.j,m), d=c.d, g=c.g, pr=c.pr, cod=nm.L[key(q.i,q.j)].cod;
+    var c=calculoEscalera(q.i,q.j,m), d=c.d, g=c.g, pr=c.pr, cod=nm.L[key(q.i,q.j)].cod, ej=ejesEscalera(q.i,q.j,m,c.o);
+    /* botones de a dos o tres con el nombre de TUS ejes: se ve donde queda cada cosa */
+    function seg(etq,clave,ops,act){
+      return '<div class="esc-seg"><span class="pfe">'+etq+'</span><span class="esc-seg-b">'+ops.map(function(o){
+        return '<button class="sopt" data-esc-seg="'+clave+'" data-v="'+o[0]+'" aria-pressed="'+(o[0]===act)+'">'+o[1]+'</button>';
+      }).join("")+'</span></div>';
+    }
     function campo(id,etq,val,unid,extra){
       return '<label class="pf"><span class="pfe">'+etq+'</span><input id="'+id+'" class="pfi" type="number" '+extra+
              ' value="'+val+'"><span class="pfu">'+unid+'</span></label>';
@@ -11463,27 +11660,28 @@ var TT={script:performance.now()};
     B.innerHTML='<div class="name">'+cod+'</div><span class="tag" style="color:var(--esc)">Escalera · '+
       (g.tramos===2?"2 tramos en U":"1 tramo recto")+' · tramos en '+dirLosa(c.o).toUpperCase()+'</span>'+
       '<div style="margin-top:9px">'+
-      '<label class="pf"><span class="pfe">Tramos</span><select id="eTr" class="pfi"><option value="2"'+(g.tramos===2?" selected":"")+
-        '>2 en U</option><option value="1"'+(g.tramos===1?" selected":"")+'>1 recto</option></select><span class="pfu"></span></label>'+
+      seg("Tramos","tramos",[["2","2 en U"],["1","1 recto"]],String(g.tramos))+
+      seg("Tramos a lo largo de","dir",[["x","X"],["y","Y"]],dirLosa(c.o))+
+      seg(g.tramos===2?"Descanso junto al eje":"Llega al piso por el eje","sube",[["-",ej.u[0]],["+",ej.u[1]]],d.sube==="-"?"-":"+")+
+      (g.tramos===2?seg("Primer tramo junto al eje","lado",[["a",ej.v[0]],["b",ej.v[1]]],d.lado==="b"?"b":"a"):'')+
       campo("ePa","Paso",d.paso,"cm",'min="20" max="40" step="0.5"')+
       campo("eCp","Contrapaso",d.cp,"cm",'min="12" max="20" step="0.1" placeholder="'+cmEsc(g.cp)+'"')+
-      (g.tramos===2?campo("eOj","Ojo entre tramos",d.ojo,"cm",'min="0" max="100" step="1"'):'')+
-      campo("eDe","Descanso",d.descanso,"cm",'min="0" max="800" step="1" placeholder="'+cmEsc(g.descanso)+'"')+
-      '<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><button class="btn" id="eSube">Arranca del otro borde</button>'+
-      (g.tramos===2?'<button class="btn" id="eLado">Primer tramo al otro lado</button>':'')+
-      '<button class="btn" id="girar">Girar tramos</button></div></div>'+
+      (g.tramos===2?campo("eOj","Ojo entre tramos",d.ojo,"cm",'min="0" max="100" step="1"')+
+        campo("eDe","Descanso",d.descanso,"cm",'min="0" max="800" step="1" placeholder="'+cmEsc(g.descanso)+'"'):'')+
+      '<p class="calcnote" style="margin-top:4px">Con la escalera seleccionada, estos cambios también salen como botones sobre la planta.</p></div>'+
       '<dl class="kv" style="margin-top:9px">'+
       kv("Entrepiso",g.h.toFixed(2)+" m",1)+
       kv("Contrapasos",g.nCp+" de "+cmEsc(g.cp)+" cm"+(g.tramos===2?" · "+g.n.join(" + "):""),1)+
       kv("Pasos por tramo",g.n.map(function(k){return k-1}).join(" y ")+" de "+cmEsc(g.paso)+" cm",1)+
       kv("Ancho de tramo",cmEsc(g.bt)+" cm",1)+
       kv("Largo de tramo",g.Lt.map(cmEsc).join(" y ")+" cm",1)+
-      kv("Descanso",cmEsc(g.descanso)+" cm",1)+
+      (g.tramos===2?kv("Descanso",cmEsc(g.descanso)+" cm"+(g.descansoPropio?"":" · el ancho del tramo"),1):'')+
+      kv("Llegada al piso",cmEsc(g.llegada)+" cm",1)+
       kv("Luz libre Ln",c.Ln.toFixed(2)+" m",1)+
       kv("Garganta",cmEsc(pr.t25)+" a "+cmEsc(pr.t20)+" cm → <b>"+cmEsc(pr.t)+" cm</b>"+(pr.propia?"  (tuya)":""),1)+
       kv("Espesor medio hm",cmEsc(pr.hm)+" cm",1)+
       kv("Tramo",Math.round(pr.tramo.pp)+" + "+Math.round(pr.tramo.acab)+" kg/m² en planta",1)+
-      kv("Descanso",Math.round(pr.descanso.pp)+" + "+Math.round(pr.descanso.acab)+" kg/m²",1)+
+      kv("Descanso y llegada",Math.round(pr.descanso.pp)+" + "+Math.round(pr.descanso.acab)+" kg/m²",1)+
       kv("Carga viva",Math.round(c.cv.w)+" kg/m²"+(c.cv.delPano?" · uso del paño":" · E.020, corredores y escaleras"+
          (c.cv.grupo?" de "+c.cv.grupo.toLowerCase():"")+(c.cv.supuesto?" (supuesta)":"")),1)+
       '</dl>'+
@@ -11492,11 +11690,7 @@ var TT={script:performance.now()};
       '<p class="calcnote">Garganta t = Ln/25 a Ln/20, al múltiplo de 5 cm (Oviedo no trata escaleras); con t ≥ ℓ/20 = '+
       cmEsc(pr.t20)+' cm la E.060 (Tabla 9.1) no pide calcular deflexiones. hm = t/cos θ + cp/2. En ETABS el paño va como '+
       'hueco: el peso de la escalera y su carga viva van a las vigas de sus bordes. La garganta se decide en Predimensionamiento.</p>';
-    function guarda(clave,val){
-      snap(); var o=N().losas[key(q.i,q.j)]; o.esc=(o.esc&&typeof o.esc==="object")?o.esc:{};
-      if(val===null)delete o.esc[clave]; else o.esc[clave]=val;
-      render();
-    }
+    function guarda(clave,val){ escGuarda(q.i,q.j,clave,val); }
     function num(id,clave,min,max){
       var e=$("#"+id); if(!e)return;
       e.onchange=function(){
@@ -11506,11 +11700,14 @@ var TT={script:performance.now()};
         if(isFinite(v)&&v>=min&&v<=max)guarda(clave,v); else { toast("Fuera de rango: de "+min+" a "+max+" cm."); render(); }
       };
     }
-    var tr=$("#eTr"); if(tr)tr.onchange=function(){ guarda("tramos",+this.value); };
     num("ePa","paso",20,40); num("eCp","cp",12,20); num("eOj","ojo",0,100); num("eDe","descanso",0,800);
-    var su=$("#eSube"); if(su)su.onclick=function(){ guarda("sube",d.sube==="-"?"+":"-"); };
-    var la=$("#eLado"); if(la)la.onclick=function(){ guarda("lado",d.lado==="b"?"a":"b"); };
-    var gb=$("#girar"); if(gb)gb.onclick=function(){ snap(); var o=N().losas[key(q.i,q.j)]; o.dir=o.dir==="y"?"x":"y"; render(); };
+    Array.prototype.forEach.call(document.querySelectorAll("[data-esc-seg]")||[],function(b){
+      b.onclick=function(){
+        var k=b.getAttribute("data-esc-seg"), v=b.getAttribute("data-v");
+        if(k==="dir"){ if(dirLosa(c.o)!==v)escGira(q.i,q.j); }
+        else escGuarda(q.i,q.j,k,k==="tramos"?+v:v);
+      };
+    });
   }
   /* A ETABS: la escalera como dato para el 3D y la firma, y lo que carga sobre las vigas de sus bordes -abajo y
      arriba-.  Cada carga va SOLO sobre el tramo del borde (d1-d2 relativos a la barra: una viga unida es una
@@ -15476,7 +15673,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
