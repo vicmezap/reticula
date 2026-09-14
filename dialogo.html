@@ -841,6 +841,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="ejesAdopta" hidden
           title="Compara los ejes del AutoCAD de fondo con los del modelo y los adopta, eje por eje">Adoptar ejes del plano</button>
       </div>
+      <div id="ejesPisos"></div>
       <h2>Ejes ↔</h2>
       <div class="ejes" id="ejesX"></div>
       <h2>Ejes ↕</h2>
@@ -8301,7 +8302,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v196 · 14-09-2026";
+  var BUILD="v197 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8484,6 +8485,11 @@ var TT={script:performance.now()};
     if(mc)mc[kc]={x:r.x,y:r.y};
     return r;
   }
+  /* DONDE ESTA EL PISO EN EL EDIFICIO.  Cada nivel mide sus ejes desde SU primer eje; ox/oy dicen donde cae ese
+     primer eje respecto al cero del edificio.  Sin esto nada ataba un piso con otro: un eje creado antes del
+     primero corria el piso entero, con su plano y sus elementos, y en pantalla se veia perfecto.  El piso 2 de
+     Victor quedo 1,83 m corrido del piso 1 asi. */
+  function origenNivel(m){ return {x:+(m&&m.ox)||0, y:+(m&&m.oy)||0}; }
   function dist(a,b){var dx=b.x-a.x,dy=b.y-a.y;return Math.sqrt(dx*dx+dy*dy)}
   function med(u,v){return {x:(u.x+v.x)/2,y:(u.y+v.y)/2}}
   function centro(A){var c={x:0,y:0},k;
@@ -11461,6 +11467,8 @@ var TT={script:performance.now()};
     if(pos<0){
       var d0=+(-pos).toFixed(4); arr.unshift(d0); if(op)op.unshift(d0); p.splice(0,0,false); nms.splice(0,0,null);
       remap(ejeX,function(kk){return kk+1},-1);
+      /* el piso crece hacia afuera y NO se mueve en el edificio: su cero pasa al eje nuevo */
+      if(ejeX)m.ox=+(origenNivel(m).x-d0).toFixed(4); else m.oy=+(origenNivel(m).y-d0).toFixed(4);
       var c=calco(); if(c){ if(ejeX)c.dx=+(c.dx+d0).toFixed(4); else c.dy=+(c.dy+d0).toFixed(4); guardarCalco(S.act,c); }
       return {ok:true,idx:0,borde:true,corrido:d0};
     }
@@ -11986,7 +11994,7 @@ var TT={script:performance.now()};
       m.dx=dx.slice(); m.dy=dy.slice();
       if(dx2)m.dx2=dx2.slice(); else delete m.dx2;
       if(dy2)m.dy2=dy2.slice(); else delete m.dy2;
-      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY;
+      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY; delete m.ox; delete m.oy;
       var nv=plantaLlena(dx,dy,m.h);
       m.cols=nv.cols; m.vigas=nv.vigas; m.losas=nv.losas; m.placas={};
       m.zapatas=m.zapatas||{};
@@ -12326,7 +12334,7 @@ var TT={script:performance.now()};
     S.niveles.forEach(function(m){
       m.dx=dx.slice(); m.dy=dy.slice();
       delete m.dx2; delete m.dy2;
-      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY;     /* del plano salen ejes principales */
+      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY; delete m.ox; delete m.oy;     /* del plano salen ejes principales */
       if(conCols){
         var nv=plantaLlena(dx,dy,m.h);
         m.cols=nv.cols; m.vigas=nv.vigas; m.losas=nv.losas; m.placas={};
@@ -12748,7 +12756,8 @@ var TT={script:performance.now()};
     if(S.modo==="decisiones")a.hidden=true;
     c.appendChild(a);
     $("#nAdd").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
-      snap();S.niveles.push(plantaLlena(N().dx,N().dy,N().h));S.act=S.niveles.length-1;S.sel=null;render()};
+      snap();var nvN=plantaLlena(N().dx,N().dy,N().h),oN=origenNivel(N());if(oN.x)nvN.ox=oN.x;if(oN.y)nvN.oy=oN.y;
+      S.niveles.push(nvN);S.act=S.niveles.length-1;S.sel=null;render()};
     $("#nDup").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
       snap();S.niveles.splice(S.act+1,0,JSON.parse(JSON.stringify(N())));S.act++;S.sel=null;render();
       toast("Nivel duplicado")};
@@ -12816,7 +12825,10 @@ var TT={script:performance.now()};
     snap();
     var pr=primas(ejeX,m), nms=nomsEje(ejeX,m);
     var op=ejeX?m.dx2:m.dy2;
-    if(p===0){arr.splice(0,1);if(op)op.splice(0,1);}
+    if(p===0){var L0=arr[0];arr.splice(0,1);if(op)op.splice(0,1);
+      /* el segundo eje pasa a ser el primero: el piso no se mueve en el edificio, ni su plano de fondo */
+      if(ejeX)m.ox=+(origenNivel(m).x+L0).toFixed(4); else m.oy=+(origenNivel(m).y+L0).toFixed(4);
+      var cB=calco(); if(cB){ if(ejeX)cB.dx=+(cB.dx-L0).toFixed(4); else cB.dy=+(cB.dy-L0).toFixed(4); guardarCalco(S.act,cB); }}
     else if(p===n-1){arr.splice(p-1,1);if(op)op.splice(p-1,1);}
     else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(4);arr.splice(p,1);
          if(op){op[p-1]=+(op[p-1]+op[p]).toFixed(4);op.splice(p,1);}}
@@ -12847,6 +12859,68 @@ var TT={script:performance.now()};
        tabla, que es donde se lee junto a lo que suma. */
     tablaLuces($("#ejesX"),true);
     tablaLuces($("#ejesY"),false);
+    avisoPisos();
+  }
+
+  /* ¿ESTE PISO ESTA CORRIDO RESPECTO AL DE ABAJO?  Con el cero de cada piso en su sitio, los ejes que se repiten de
+     un piso a otro caen en la misma posicion.  Si corriendo el piso una distancia fija coinciden bastantes mas ejes
+     que ahora, el piso esta corrido: en el modelo de Victor, 9 de 17 ejes del piso 2 caen sobre los del piso 1
+     corriendolo 1,83 m en Y, y hoy no coincide casi ninguno. */
+  function desfaseNiveles(k){
+    var m=S.niveles[k], a=S.niveles[k-1], out={};
+    if(!m||!a)return out;
+    ["x","y"].forEach(function(d){
+      var ejeX=d==="x", am=ejeX?m.dx:m.dy, aa=ejeX?a.dx:a.dy, oM=origenNivel(m)[d], oA=origenNivel(a)[d], P=[], Q=[], i;
+      for(i=0;i<=am.length;i++)P.push(acum(am,i)+oM);
+      for(i=0;i<=aa.length;i++)Q.push(acum(aa,i)+oA);
+      if(P.length<3||Q.length<3)return;
+      function casan(s){
+        var r=[];
+        P.forEach(function(p){ var q=null;
+          Q.forEach(function(v){ if(Math.abs(p+s-v)<=0.01&&(q===null||Math.abs(p+s-v)<Math.abs(p+s-q)))q=v; });
+          if(q!==null)r.push(q-p); });
+        return r;
+      }
+      var base=casan(0).length, mejor={s:0,n:base};
+      P.forEach(function(p){ Q.forEach(function(v){
+        var s=+(v-p).toFixed(4); if(Math.abs(s)<0.01)return;
+        var n=casan(s).length;
+        if(n>mejor.n||(n===mejor.n&&mejor.s!==0&&Math.abs(s)<Math.abs(mejor.s)))mejor={s:s,n:n};
+      }); });
+      if(mejor.s===0||mejor.n<3||mejor.n<base+2||mejor.n<Math.ceil(0.4*Math.min(P.length,Q.length)))return;
+      var dif=casan(mejor.s), media=dif.reduce(function(t,v){return t+v},0)/dif.length;
+      out[d]={s:+media.toFixed(4), n:mejor.n, de:P.length, ahora:base, abajo:k};
+    });
+    return out;
+  }
+  /* correr el piso k en el edificio: sus ejes, elementos y plano de fondo no cambian entre si */
+  function alinearNivel(k,d,s){
+    var m=S.niveles[k]; if(!m||!(Math.abs(s)>0))return {ok:false};
+    snap();
+    if(d==="x")m.ox=+(origenNivel(m).x+s).toFixed(4); else m.oy=+(origenNivel(m).y+s).toFixed(4);
+    render();
+    return {ok:true};
+  }
+  function avisoPisos(){
+    var el=$("#ejesPisos"); if(!el)return;
+    var k=S.act, D=k>0?desfaseNiveles(k):{}, h="";
+    ["x","y"].forEach(function(d){
+      var z=D[d]; if(!z)return;
+      h+='<p class="aviso" style="margin:0 0 8px">Este piso está <b>corrido '+nm(Math.abs(z.s))+' m en '+d.toUpperCase()+
+        '</b> respecto al piso '+z.abajo+': corriéndolo, '+z.n+' de '+z.de+' ejes caen sobre los del piso '+z.abajo+
+        ' (hoy coinciden '+z.ahora+'). <button class="btn" data-alinea="'+d+'" data-s="'+z.s+'">Alinear con el piso '+z.abajo+
+        '</button></p>';
+    });
+    el.innerHTML=h;
+    if(!el.querySelectorAll)return;
+    Array.prototype.forEach.call(el.querySelectorAll("button[data-alinea]"),function(b){
+      b.onclick=function(){
+        var d=b.dataset.alinea, s=+b.dataset.s, k2=S.act;
+        alinearNivel(k2,d,s);
+        toast("Piso "+(k2+1)+" alineado con el piso "+k2+" ("+nm(Math.abs(s))+" m en "+d.toUpperCase()+
+              "). Sus ejes, elementos y plano no cambian entre sí. Ctrl+Z lo deshace.");
+      };
+    });
   }
 
   /* Hasta CUATRO decimales, minimo dos.
@@ -14615,9 +14689,9 @@ var TT={script:performance.now()};
         var mp=S.niveles[c.nivel], a=null, b=null, i, j, t=cm(c.t);
         if(!mp||!dentro("t",t)){faltan.push("placa en N"+(c.nivel+1));return}
         for(i=0;i<mp.dx.length+1;i++)for(j=0;j<mp.dy.length+1;j++){
-          var nd=nodo(i,j,mp);
-          if(Math.abs(nd.x-c.x1)<TOLp&&Math.abs(-nd.y-c.y1)<TOLp)a={i:i,j:j};
-          if(Math.abs(nd.x-c.x2)<TOLp&&Math.abs(-nd.y-c.y2)<TOLp)b={i:i,j:j};
+          var nd=nodo(i,j,mp), oN=origenNivel(mp);
+          if(Math.abs(nd.x+oN.x-c.x1)<TOLp&&Math.abs(-(nd.y+oN.y)-c.y1)<TOLp)a={i:i,j:j};
+          if(Math.abs(nd.x+oN.x-c.x2)<TOLp&&Math.abs(-(nd.y+oN.y)-c.y2)<TOLp)b={i:i,j:j};
         }
         if(a&&b&&a.j===b.j&&a.i!==b.i){for(i=Math.min(a.i,b.i);i<Math.max(a.i,b.i);i++)mp.placas[key("h",i,a.j)]={t:t}; n++;}
         else if(a&&b&&a.i===b.i&&a.j!==b.j){for(j=Math.min(a.j,b.j);j<Math.max(a.j,b.j);j++)mp.placas[key("v",a.i,j)]={t:t}; n++;}
@@ -15781,7 +15855,7 @@ var TT={script:performance.now()};
     /* el +0 convierte el -0 en 0: al darle la vuelta a Y, el eje 1 salia
        como y=-0.0, que no molesta a ETABS pero ensucia la exportacion */
     function r4(v){return Math.round(v*10000)/10000+0}
-    function pt(m,i,j){var n=nodo(i,j,m);return [r4(n.x),r4(-n.y)]}
+    function pt(m,i,j){var n=nodo(i,j,m),o=origenNivel(m);return [r4(n.x+o.x),r4(-(n.y+o.y))]}
     var m0=S.niveles[0], nX0=m0.dx.length+1, nY0=m0.dy.length+1, i, j, z=0;
     var out={v:1, build:BUILD, unidades:"m", fc:(+S.fc||210),
              categoria:(S.categoria||"comun"), ejes:[], niveles:[], avisos:[]};
@@ -16037,11 +16111,16 @@ var TT={script:performance.now()};
     var out=[];
     S.niveles.forEach(function(m,k){
       if(!k)return;
-      var a=medidasPlanta(S.niveles[k-1]), b=medidasPlanta(m), q=[];
-      if(b.X>a.X+0.01)q.push("mide "+nm(b.X)+" m en X y el de abajo "+nm(a.X)+
-                             " ("+nm(b.X-a.X)+" m mas)");
-      if(b.Y>a.Y+0.01)q.push("mide "+nm(b.Y)+" m en Y y el de abajo "+nm(a.Y)+
-                             " ("+nm(b.Y-a.Y)+" m mas)");
+      var a=medidasPlanta(S.niveles[k-1]), b=medidasPlanta(m), q=[],
+          oa=origenNivel(S.niveles[k-1]), ob=origenNivel(m);
+      /* con el cero de cada piso: lo que sale por delante del de abajo y lo que sale por detras */
+      ["X","Y"].forEach(function(D){
+        var d=D.toLowerCase(), fuera=Math.max(0,oa[d]-ob[d])+Math.max(0,(ob[d]+b[D])-(oa[d]+a[D]));
+        if(fuera<=0.01)return;
+        q.push(Math.abs(oa[d]-ob[d])<0.0005
+          ? "mide "+nm(b[D])+" m en "+D+" y el de abajo "+nm(a[D])+" ("+nm(b[D]-a[D])+" m mas)"
+          : "sale "+nm(fuera)+" m fuera del de abajo en "+D);
+      });
       if(q.length)out.push({nivel:k+1, texto:"la planta sobresale del piso de abajo: "+
         q.join(" y ")+". En ETABS esa parte queda sin nada debajo; si no es a "+
         "proposito, revisa sus vanos."});
@@ -16061,6 +16140,13 @@ var TT={script:performance.now()};
       /* nombres de eje del NIVEL k, no del activo */
       function ex(a){return nomEje(true,a,m)}
       function ey(a){return nomEje(false,a,m)}
+      /* un piso corrido respecto al de abajo: sus elementos no quedan encima de los del otro piso */
+      var DZ=k>0?desfaseNiveles(k):{};
+      ["x","y"].forEach(function(d){
+        var z=DZ[d]; if(!z)return;
+        mete("ejes","grave","el piso está corrido "+Math.abs(z.s).toFixed(2)+" m en "+d.toUpperCase()+" respecto al nivel "+k+
+             ": corriéndolo, "+z.n+" de "+z.de+" ejes caen sobre los del nivel "+k+". Alinéalo con el botón de la pestaña de ejes.",nv,null);
+      });
       function panosDe(i,j){
         var r=[];
         [[i-1,j-1],[i,j-1],[i-1,j],[i,j]].forEach(function(p){
@@ -17571,7 +17657,13 @@ var TT={script:performance.now()};
     if(String(el.innerHTML||"").indexOf('id="c3d"')<0)montar3D(el);
     var ex, zs=[];
     try{ ex=exportaEtabs(); }catch(e){ info3D('<span class="deci-no">No se pudo armar el edificio: '+esc3(e&&e.message)+'</span>'); return; }
-    try{ zs=zapatasDelNivel(); }catch(e){ zs=[]; }
+    try{
+      zs=zapatasDelNivel();
+      /* las zapatas salen en coordenadas del primer piso: al edificio, con su cero */
+      var o0=origenNivel(S.niveles[0]);
+      if(o0.x||o0.y)zs=zs.map(function(z){ var q={}, kz; for(kz in z)q[kz]=z[kz];
+        q.x0+=o0.x; q.x1+=o0.x; q.y0+=o0.y; q.y1+=o0.y; return q; });
+    }catch(e){ zs=[]; }
     var n=ex.niveles.length, mt=/^(hasta|solo):(\d+)$/.exec(V3D.niveles);
     if(mt&&+mt[2]>=n)V3D.niveles="todos";
     var sn=$("#n3d");
@@ -17726,7 +17818,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
