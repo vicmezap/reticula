@@ -130,8 +130,17 @@
     baseViga:         0.25,   /* b >= 0.25 en todas las vigas con recuadro */
     almaT:            0.25,   /* bw >= 0.25 (pag. 54) */
     anchoColumna:     0.25,   /* b >= 0.25 (pags. 82, 83) */
-    espesorPlaca:     0.15    /* t >= 0.15 (pag. 165) */
+    espesorPlaca:     0.15,   /* t >= 0.15 (pag. 165) */
+    /* NO es del libro: el aligerado mas delgado que existe es el de 17 cm, el
+       primero de la tabla de pesos de la E.020 (280 kg/m², sismo.js).  Sin el,
+       un pano chico entre dos chatas salia de 5 cm y la chata lo heredaba */
+    espesorAligerada: 0.17
   };
+  /* E.060, Tabla 9.1: peralte minimo de vigas y losas nervadas en una direccion
+     para no calcular deflexiones, h >= L / k.  La chata lo usa al reves: la luz
+     que alcanza su peralte (el de la losa) es h × k.  Solo exime si no sostiene
+     tabiques que se danen con la deflexion (Art. 9.6.2.1). */
+  var TABLA_9_1 = { simple: 16, unExtremo: 18.5, ambos: 21, voladizo: 8 };
 
   var PROPORCION = {
     viguetaAligerada: 2.5,    /* b = h/2.5 */
@@ -216,7 +225,7 @@
 
   return {
     CATEGORIA: CATEGORIA, ALFA_LOSA: ALFA_LOSA, ALFA_VIGA: ALFA_VIGA,
-    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA,
+    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA, TABLA_9_1: TABLA_9_1,
     ZAPATA: ZAPATA, PLACA: PLACA, SOBRECARGA: SOBRECARGA,
     alfaLosa: alfaLosa, alfaViga: alfaViga
   };
@@ -4704,7 +4713,8 @@
       function (f, i) {
         return [f[0], f[1], +f[2], +f[3],
           "=IFERROR(E" + i + "/F" + i + ',"")',
-          "=IF(N(G" + i + ')=0,"",CEILING(G' + i + "*100,5))",
+          "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "*100,5),"
+            + Math.round(C.MINIMOS.espesorAligerada * 100) + "))",
           /* en cm, como el resto de anchos del libro: una vigueta de 10 cm
              junto a una viga de 25 cm, no 0.10 junto a 25 */
           "=IF(N(G" + i + ')=0,"",MAX(CEILING(G' + i + "/"
@@ -4718,7 +4728,8 @@
         "La losa que manda", { 2: "0.00", 4: "0.000", 6: "0" });
 
     r = h.nota(r, "h = Ln / α   |   espesor = h redondeado hacia arriba al múltiplo "
-      + "de 5 cm   |   b = h / " + C.PROPORCION.viguetaAligerada + ", TAMBIÉN al "
+      + "de 5 cm, con mínimo " + Math.round(C.MINIMOS.espesorAligerada * 100) + " cm (el aligerado "
+      + "más delgado de la tabla de pesos de la E.020)   |   b = h / " + C.PROPORCION.viguetaAligerada + ", TAMBIÉN al "
       + "múltiplo de 5 cm superior, con mínimo "
       + C.MINIMOS.viguetaAligerada.toFixed(2) + " m. La luz libre Ln ya lleva "
       + "descontado el ancho de las vigas que la limitan: la calcula el modelador, "
@@ -4884,23 +4895,25 @@
     h.titulo("PREDIMENSIONAMIENTO DE VIGA CHATA");
 
     r = h.seccion(r, "1. VIGA CHATA");
-    r = h.subtitulo(r, "1.1   Factor de predimensionamiento (α)");
-    r = h.tabla(r, [[3,6],[7,8],[9,10]], ["Función de la viga chata", "α", "Ln máx"],
-      [["Secundaria (no recibe otras vigas)", C.ALFA_VIGA.chata.alfa, "h × " + C.ALFA_VIGA.chata.alfa],
-       ["Trabajando como principal", C.ALFA_VIGA.chata.alfaPrincipal,
-        "h × " + C.ALFA_VIGA.chata.alfaPrincipal]],
+    var T91 = C.TABLA_9_1;
+    r = h.subtitulo(r, "1.1   Factor k de la E.060, Tabla 9.1");
+    r = h.tabla(r, [[3,6],[7,8],[9,10]], ["Continuidad de la viga chata", "k", "Ln máx"],
+      [["Simplemente apoyada", T91.simple, "h × " + T91.simple],
+       ["Con un extremo continuo", T91.unExtremo, "h × " + T91.unExtremo],
+       ["Con ambos extremos continuos", T91.ambos, "h × " + T91.ambos]],
       null, null, { alinear: ["Left","Center","Center"] });
-    r = h.nota(r, "La chata NO usa la tabla α de las vigas principales: lleva factor "
-      + "fijo. El modelador no sabe si una chata recibe otras vigas, así que adopta "
-      + "α = " + C.ALFA_VIGA.chata.alfaPrincipal + ", que es el conservador: da la luz "
-      + "máxima más corta y por tanto rechaza antes. Si la chata es claramente "
-      + "secundaria puedes subirla a " + C.ALFA_VIGA.chata.alfa + " en la columna α y "
-      + "el resto de la fila se recalcula solo.");
+    r = h.nota(r, "Peralte mínimo de vigas en una dirección para no calcular deflexiones "
+      + "(E.060, Art. 9.6.2.1 y Tabla 9.1): h ≥ L / k. La chata no descuelga, así que se usa al "
+      + "revés: la luz que alcanza el espesor de su losa es h × k. El modelador pone k según la "
+      + "continuidad de cada chata -continua es la que sigue al otro lado de su apoyo-. Si la chata "
+      + "sostiene tabiques, la tabla no exime: hay que calcular la deflexión. Como referencia, el "
+      + "libro de Oviedo usa α = " + C.ALFA_VIGA.chata.alfa + " (secundaria) o "
+      + C.ALFA_VIGA.chata.alfaPrincipal + " (trabajando como principal).");
 
     r = h.subtitulo(r, "1.2   Criterios de predimensionamiento");
     r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
       ["Peralte", "h = espesor de la losa   (la viga chata no descuelga)"],
-      ["Luz libre máxima", "Ln máx = h × α"],
+      ["Luz libre máxima", "Ln máx = h × k"],
       ["Ancho", "b = h / " + C.PROPORCION.baseViga + " ≥ "
         + C.MINIMOS.baseViga.toFixed(2) + " m"]
     ], null, null, { alinear: DFIN });
@@ -4915,7 +4928,7 @@
     r = seccion(h, r, "1.3   Sección típica de la viga chata", "vigaChata", arg, q && q[0]);
     r = h.seccion(r, "2. PREDIMENSIONAMIENTO");
     var L = lista(h, r, L8,
-      ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
+      ["Código", "Eje", "Ln (m)", "h losa (cm)", "k", "Ln máx (m)", "b (cm)", "Estado"],
       fs,
       function (f, i) {
         return [f[0], f[1], +f[2], +f[4], +f[3],
@@ -4927,13 +4940,13 @@
       }, { 2: "0.00", 5: "0.00" });
     r = L.fin + 1;
     r = manda(h, r, L8,
-        ["Código", "Eje", "Ln (m)", "h losa (cm)", "α", "Ln máx (m)", "b (cm)", "Estado"],
+        ["Código", "Eje", "Ln (m)", "h losa (cm)", "k", "Ln máx (m)", "b (cm)", "Estado"],
         L, function (i) { return M.formula("vigaChata", i); },
         "La viga chata que manda", { 2: "0.00", 5: "0.00" });
 
     r = h.nota(r, "El peralte de una viga chata NO se calcula: es el espesor de la "
       + "losa en la que se apoya, y el complemento lo trae ya resuelto de la hoja de "
-      + "losas. Aquí la pregunta es la contraria: Ln máx = h × α es la luz que ese "
+      + "losas. Aquí la pregunta es la contraria: Ln máx = h × k es la luz que ese "
       + "espesor alcanza. Si Ln la supera, la chata no es viable y hay que peraltar.");
     r = h.nota(r, fs.length + " viga(s) chata(s) en " + P.niveles + " nivel(es). "
       + "b = h / " + C.PROPORCION.baseViga + " al múltiplo de 5 cm superior, con "
@@ -6712,6 +6725,70 @@
     return h.cerrar(r);
   }
 
+  /* =====================================================================
+     DISENO_VIGAS — el diseño de cada viga con la E.060 (D2), tal como sale
+     de Diseño E.060 › Vigas: φMn frente a Mu en las caras y al centro, el
+     armado -el propuesto o el que cambiaste- y los estribos.  Son los
+     resultados de oviedo/vigas.js; la hoja no recalcula.
+     ===================================================================== */
+  function disenoVigas(P) {
+    var DV = P && P.disenoVigas, FZ = P && P.fuerzas, K = P && P.diseno;
+    if (!DV || !DV.lista || !DV.lista.length || !FZ) throw sinResultados("fuerzas de vigas para diseñarlas");
+    function coma(x) { return (+x).toFixed(2).replace(".", ","); }
+    var h = F.hoja("DISENO_VIGAS"), r = 6, sec = 2, RS = DV.resumen || {};
+    h.titulo("DISEÑO DE VIGAS · E.060");
+    r = origenFuerzas(h, r, FZ, "Flexión: φMn con φ = 0,90 y el acero colocado, frente al Mu de la "
+      + (FZ.envolvente || "envolvente") + " en cada cara y al centro. Cortante: la de diseño es la mayor entre la de "
+      + "ETABS y, en las vigas sismorresistentes, la de capacidad con la isostática de 1,25 (CM + CV) (Art. 21.4.3 o "
+      + "21.5.4.1). Los bastones se miden desde la cara; los anclajes y empalmes se detallan después.");
+    if (K && K.recub && K.barras && K.regimen) {
+      var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
+      r = h.seccion(r, (sec++) + ". CON QUÉ SE DISEÑA");
+      r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+      r = h.fila(r, LD, ["f'c (kg/cm²)", K.fc, "de Criterios de diseño"], null, IZQ3);
+      r = h.fila(r, LD, ["fy (kg/cm²)", K.fy, "acero de refuerzo"], null, IZQ3);
+      r = h.fila(r, LD, ["Recubrimiento de vigas (cm)", K.recub.viga.cm, "hasta el estribo"], null, IZQ3);
+      r = h.fila(r, LD, ["Barras", (K.barras.viga.long || []).join(", "), "estribo " + K.barras.viga.estribo], null, IZQ3);
+      r = h.fila(r, LD, ["Capítulo 21 en X · en Y", (K.regimen.x.vigas ? "Art. " + K.regimen.x.vigas : "—") + " · " +
+                         (K.regimen.y.vigas ? "Art. " + K.regimen.y.vigas : "—"),
+                         "según el sistema de cada dirección; las vigas chatas van sin él"], null, IZQ3);
+      r = h.fila(r, LD, ["Vigas", RS.total || DV.lista.length, (RS.ok || 0) + " cumplen · " + (RS.revisar || 0) +
+                         " por revisar · " + (RS["no cumple"] || 0) + " no cumplen" + (RS.falta ? " · " + RS.falta +
+                         " sin datos" : "")], null, IZQ3);
+      r++;
+    }
+    var fmt = { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00" },
+        al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] },
+        LT = [[3, 4], [5, 10]], alT = { alinear: ["Left", "Left"], negrita: false },
+        EST = { ok: "CUMPLE", revisar: "REVISAR", "no cumple": "NO CUMPLE", falta: "SIN DATOS" },
+        LUG = { izq: "cara izq.", centro: "centro", der: "cara der." };
+    nivelesDe(DV.lista).forEach(function (nv) {
+      r = h.seccion(r, (sec++) + ". VIGAS DEL NIVEL " + (nv || "-"));
+      r = h.encabezado(r, F8, ["Viga · sección", "Mu⁻ (t·m)", "φMn⁻ (t·m)", "Mu⁺ (t·m)", "φMn⁺ (t·m)", "As⁻ (cm²)",
+                               "As⁺ (cm²)", "φMn ≥ Mu"], 34.0);
+      DV.lista.filter(function (d) { return d.nivel === nv; }).forEach(function (d) {
+        r = h.fila(r, LT, [EST[d.estado] || String(d.estado).toUpperCase(),
+                           d.cod + " · " + (d.eje ? d.eje + " · " : "") + Math.round(d.b) + " × " + Math.round(d.h) +
+                           " cm · ln = " + coma(d.ln) + " m" + (d.regimen ? " · Art. " + d.regimen : "") +
+                           (d.propio ? " · armado cambiado a mano" : "")], null, { alinear: ["Left", "Left"] });
+        (d.secciones || []).forEach(function (s) {
+          r = h.fila(r, F8, ["   " + LUG[s.k], s.sup.Mu, s.sup.phiMn, s.inf.Mu, s.inf.phiMn, s.sup.As, s.inf.As,
+                             s.sup.ok && s.inf.ok ? "SÍ" : "NO"], fmt, al);
+        });
+        if (d.texto) {
+          r = h.fila(r, LT, ["   Arriba", d.texto.arriba], null, alT);
+          r = h.fila(r, LT, ["   Abajo", d.texto.abajo], null, alT);
+        }
+        if (d.cortante)
+          r = h.fila(r, LT, ["   Estribos", d.cortante.texto + " · Vu de diseño " + coma(d.cortante.Vdes) + " t"], null, alT);
+        if (d.avisos && d.avisos.length)
+          r = h.fila(r, LT, ["   Avisos", d.avisos.map(function (a) { return a.texto; }).join(" ")], null, alT);
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
   function fuerzasColumnas(P) {
     var FZ = P && P.fuerzas;
     if (!FZ || !FZ.columnas || !FZ.columnas.length) throw sinResultados("fuerzas de columnas");
@@ -6914,7 +6991,7 @@
            cuadrosE030: cuadrosE030, datos: datos, modelo: modelo,
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
-           reacciones: reacciones, criteriosDiseno: criteriosDiseno };
+           reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas };
 });
 </script>
 <script>
@@ -6929,7 +7006,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v180 · 14-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v186 · 14-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7342,7 +7419,8 @@ var REGISTRO = {
   "FUERZAS_COLUMNAS":   function(p){ return HOJAS.fuerzasColumnas(p); },
   "FUERZAS_PLACAS":     function(p){ return HOJAS.fuerzasPlacas(p); },
   "REACCIONES":         function(p){ return HOJAS.reacciones(p); },
-  "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); }
+  "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); },
+  "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en

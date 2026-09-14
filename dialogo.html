@@ -380,6 +380,27 @@
 .dis-est{display:inline-flex;align-items:center;gap:6px;font:600 11px "IBM Plex Sans",sans-serif;white-space:nowrap}
 .dis-est::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
 .dis-ok{color:#2e7d32}.dis-falta{color:#c62828}.dis-luego{color:#b26a00}.dis-na{color:var(--ink-3)}
+.dis-resumen{margin-left:14px;font:500 12px "IBM Plex Sans",sans-serif;color:var(--ink-2);align-self:center}
+.sis-t.dis-vigas td.sis-n{white-space:normal;min-width:170px}
+.sis-t.dis-vigas small{display:block;margin-top:1px}
+.sis-t.dis-vigas th.dis-izq{text-align:left}
+.dis-fila{cursor:pointer}
+.dis-fila:hover td{background:var(--sheet)}
+.dis-fila.sel td{background:var(--acc-soft)}
+.dis-fila:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.dis-ficha{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
+.dis-ficha h4{margin:0 0 8px;font:600 14px "IBM Plex Sans",sans-serif}
+.dis-ficha h4 small{font-weight:400;color:var(--ink-2);margin-left:6px}
+.dis-ficha h5{margin:12px 0 6px;font:600 12.5px "IBM Plex Sans",sans-serif}
+.dis-ficha h5 small{font-weight:400;color:var(--ink-3);margin-left:4px}
+.dis-arm .pf{grid-template-columns:minmax(0,190px) 64px 116px minmax(0,1fr);gap:6px;max-width:640px}
+.dis-arm .pfn{grid-column:auto;align-self:center;margin:0}
+.pfi.dis-n{width:64px}
+.dis-cort .kv{max-width:560px}
+.dis-figw{margin:2px 0 10px}
+.dis-figw svg{display:block;max-width:none}
+.aviso.dis-no{background:var(--sheet);border-color:#c62828;color:var(--ink)}
+@media (max-width:560px){.dis-arm .pf{grid-template-columns:1fr 64px 116px}.dis-arm .pfn{grid-column:1/-1}}
 .sis-ok,.sis-no{font:700 11px "IBM Plex Sans",sans-serif}
 .sis-ok{color:#2e7d32}
 .sis-no{color:#c62828}
@@ -901,8 +922,17 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     baseViga:         0.25,   /* b >= 0.25 en todas las vigas con recuadro */
     almaT:            0.25,   /* bw >= 0.25 (pag. 54) */
     anchoColumna:     0.25,   /* b >= 0.25 (pags. 82, 83) */
-    espesorPlaca:     0.15    /* t >= 0.15 (pag. 165) */
+    espesorPlaca:     0.15,   /* t >= 0.15 (pag. 165) */
+    /* NO es del libro: el aligerado mas delgado que existe es el de 17 cm, el
+       primero de la tabla de pesos de la E.020 (280 kg/m², sismo.js).  Sin el,
+       un pano chico entre dos chatas salia de 5 cm y la chata lo heredaba */
+    espesorAligerada: 0.17
   };
+  /* E.060, Tabla 9.1: peralte minimo de vigas y losas nervadas en una direccion
+     para no calcular deflexiones, h >= L / k.  La chata lo usa al reves: la luz
+     que alcanza su peralte (el de la losa) es h × k.  Solo exime si no sostiene
+     tabiques que se danen con la deflexion (Art. 9.6.2.1). */
+  var TABLA_9_1 = { simple: 16, unExtremo: 18.5, ambos: 21, voladizo: 8 };
 
   var PROPORCION = {
     viguetaAligerada: 2.5,    /* b = h/2.5 */
@@ -987,7 +1017,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 
   return {
     CATEGORIA: CATEGORIA, ALFA_LOSA: ALFA_LOSA, ALFA_VIGA: ALFA_VIGA,
-    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA,
+    MINIMOS: MINIMOS, PROPORCION: PROPORCION, COLUMNA: COLUMNA, TABLA_9_1: TABLA_9_1,
     ZAPATA: ZAPATA, PLACA: PLACA, SOBRECARGA: SOBRECARGA,
     alfaLosa: alfaLosa, alfaViga: alfaViga
   };
@@ -4810,6 +4840,492 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== vigas.js (inlinado) ===== */
+/* =====================================================================
+   vigas.js — D2 · EL DISEÑO DE LAS VIGAS CON LA E.060.  Sin interfaz: lo
+   usan Diseño E.060 › Vigas y la hoja DISENO_VIGAS.
+
+   Entra lo que ya ordena Fuerzas (fuerzas.js): la envolvente ENVOLVENTE
+   E060 de cara a cara -Mu⁻ y Mu⁺ en las dos caras y en el centro, Vu en
+   las caras y a d-, sus estaciones -para cortar los bastones- y, para la
+   cortante por capacidad, los casos de gravedad de la viga (Dead, CM, CV y
+   CVT, parte D0b).  Entrada en t, t·m y m; se calcula en kg y cm con
+   1 MPa = 10 kg/cm²: las formulas de la E.060 estan en MPa.
+
+   Cotejado con el texto de la E.060:
+     φ flexion 0,90, cortante 0,85 ............... Art. 9.3.2
+     U = 1,25 (CM + CV) ± CS ...................... Art. 9.2.3
+     acero minimo: 1,2 Mcr con fr = 0,62 √f'c ..... Art. 10.5.1
+                   0,22 √f'c / fy · bw d ......... Art. 10.5.2
+       sin la excepcion de 10.5.3 en las vigas sismorresistentes: 21.4.4.1 y 21.5.2.1
+     acero maximo: 0,75 Asb ....................... Art. 10.3.4
+                   ρ ≤ 0,025 en porticos y dual II  Art. 21.5.2.1
+     Vc = 0,17 √f'c bw d .......................... Art. 11.3.1.1
+     s ≤ d/2 y 600 mm, la mitad si Vs > 0,33 √f'c bw d ... Art. 11.5.5.1 y 11.5.5.3
+     Av min = 0,062 √f'c bw s / fyt ≥ 0,35 bw s / fyt .... Art. 11.5.6.2
+     Vs = Av fyt d / s ≤ 0,66 √f'c bw d ............. Art. 11.5.7.2 y 11.5.7.9
+     distancia libre entre barras ≥ db y 25 mm ...... Art. 7.6.1
+     corte de barras: d o 12 db mas alla ............ Art. 12.10.3
+     1/3 del negativo pasa el punto de inflexion d, 12 db o ln/16 ... Art. 12.12.3
+     1/3 del positivo llega al apoyo ................ Art. 12.11.1
+     vigas de muros y dual I (21.4): Vu (21.4.3), dos barras corridas (21.4.4.1), M⁺ ≥ M⁻/3 y 1/4
+       (21.4.4.3), estribos 2h, 100 mm, d/4 ≥ 150 mm, 10 db, 24 de, 300 mm, 0,5 d (21.4.4.4 y 21.4.4.5)
+     vigas de porticos y dual II (21.5): ln ≥ 4h, bw ≥ 0,25 h y 250 mm (21.5.1), ρ ≤ 0,025 (21.5.2.1),
+       M⁺ ≥ M⁻/2 y 1/4 (21.5.2.2), estribos 2h, 50 mm, d/4, 8 db, 24 de, 300 mm, ramas a 300 mm, d/2
+       (21.5.3), Vu con Mpr = 1,25 Mn (21.5.4.1)
+
+   Lo que no dice la norma y se toma:
+     · la cortante isostatica de gravedad sale de los casos de ETABS quitando lo que ponen los momentos de
+       los extremos: V0 = V2 + (Mj − Mi) / L, y se amplifica con 1,25 (CM + CV) de 9.2.3;
+     · en 21.4.3 (b) la parte del sismo es lo que la envolvente pasa de 1,25 (CM + CV) en la cara, x 2,5;
+     · el armado: dos barras corridas arriba y abajo, bastones arriba en las caras y abajo al centro, todo
+       en una capa, con las barras que Criterios deja usar.  Tu lo puedes cambiar y se vuelve a verificar;
+     · espaciamientos al 2,5 cm de abajo (al cm si bajan de 10 cm); bastones al 5 cm de arriba.
+
+     node scripts/complemento/oviedo/probar_vigas.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir(require("./diseno.js"));
+  else raiz.VIGAS = definir(raiz.DISENO);
+})(typeof self !== "undefined" ? self : this, function (DISENO) {
+  "use strict";
+
+  var ART = {
+    phi: "Art. 9.3.2", combos: "Art. 9.2.3", min1: "Art. 10.5.1", min2: "Art. 10.5.2", min3: "Art. 10.5.3",
+    max: "Art. 10.3.4", vc: "Art. 11.3.1.1", smax: "Art. 11.5.5.1", smitad: "Art. 11.5.5.3",
+    avmin: "Art. 11.5.6.2", vs: "Art. 11.5.7.2", vsmax: "Art. 11.5.7.9", libre: "Art. 7.6.1",
+    corte: "Art. 12.10.3", inflexion: "Art. 12.12.3", positivo: "Art. 12.11.1"
+  };
+  var PHI_F = 0.90, PHI_V = 0.85, SEP_MIN = 2.5, GRAV = 1.25;
+  var PARTES = ["sup", "inf", "bSI", "bSD", "bIC"];
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function raizMPa(fc) { return Math.sqrt(fc / 10); }
+  function barra(n) { return DISENO.barra(n); }
+  function redArriba(v, p) { return Math.ceil(v / p - 1e-9) * p; }
+  function redAbajo(v, p) { return Math.floor(v / p + 1e-9) * p; }
+  function coma(v, n) { return (+v).toFixed(n == null ? 2 : n).replace(".", ","); }
+  function repite(n, k) { var a = []; for (var i = 0; i < k; i++) a.push(n); return a; }
+
+  /* --- flexion -------------------------------------------------------------- */
+  /* el acero en traccion para Mu (t·m) en una seccion rectangular b x d (cm), sin acero en compresion */
+  function asRequerida(Mu, b, d, fc, fy) {
+    var M = Math.max(0, num(Mu) || 0) * 1e5;
+    if (!(M > 0)) return { As: 0, cabe: true };
+    var k = 2 * M / (PHI_F * 0.85 * fc * b * d * d);
+    if (k >= 1) return { As: null, cabe: false };
+    return { As: 0.85 * fc * b * d / fy * (1 - Math.sqrt(1 - k)), cabe: true };
+  }
+  /* la resistencia nominal (t·m) de As en traccion */
+  function mn(As, b, d, fc, fy) {
+    if (!(As > 0)) return 0;
+    var a = As * fy / (0.85 * fc * b);
+    return As * fy * (d - a / 2) / 1e5;
+  }
+  function asMinimo(b, h, d, fc, fy) {
+    var a2 = 0.22 * raizMPa(fc) / (fy / 10) * b * d;                    /* 10.5.2 */
+    var fr = 0.62 * raizMPa(fc) * 10, Mcr = fr * b * h * h / 6 / 1e5;   /* 10.5.1, en t·m */
+    var a1 = asRequerida(1.2 * Mcr, b, d, fc, fy).As || 0;
+    return { As: Math.max(a1, a2), por: a2 >= a1 ? ART.min2 : ART.min1, a1051: a1, a1052: a2, Mcr: Mcr };
+  }
+  function asMaximo(b, d, fc, fy, regimen) {
+    var rb = 0.85 * DISENO.beta1(fc) * fc / fy * (DISENO.ES * DISENO.ECU / (DISENO.ES * DISENO.ECU + fy));
+    var r = 0.75 * rb, por = ART.max + " (0,75 ρb)";
+    if (regimen === "21.5" && 0.025 < r) { r = 0.025; por = "Art. 21.5.2.1 (ρ ≤ 0,025)"; }
+    return { As: r * b * d, rho: r, rhob: rb, por: por };
+  }
+  function vc(b, d, fc) { return 0.17 * raizMPa(fc) * 10 * b * d / 1000; }          /* t */
+
+  /* --- barras en una capa ----------------------------------------------------- */
+  function grupo(n, bar) {
+    var b = barra(bar);
+    return (n > 0 && b) ? { n: n, bar: bar, As: n * b.a, db: b.d } : null;
+  }
+  function barrasDe(gs) {
+    var l = [];
+    gs.forEach(function (g) { if (g) l = l.concat(repite(g.bar, g.n)); });
+    return l;
+  }
+  function entran(gs, libre) {
+    var l = barrasDe(gs);
+    if (!l.length) return true;
+    var s = 0, dm = 0;
+    l.forEach(function (n) { var d = barra(n).d; s += d; dm = Math.max(dm, d); });
+    return s + (l.length - 1) * Math.max(dm, SEP_MIN) <= libre + 1e-9;
+  }
+  function menorClave(a, b) {
+    for (var i = 0; i < a.length; i++) { if (a[i] < b[i] - 1e-9) return true; if (a[i] > b[i] + 1e-9) return false; }
+    return false;
+  }
+  /* las barras corridas posibles: de cada diametro, dos -o las que hagan falta- que den As y entren */
+  function corridos(As, lista, libre) {
+    var out = [];
+    lista.forEach(function (bar) {
+      var g = grupo(Math.max(2, Math.ceil(As / barra(bar).a - 1e-9)), bar);
+      if (g && entran([g], libre)) out.push(g);
+    });
+    return out;
+  }
+  /* el baston que falta sobre unas corridas: de todos los diametros que entran, el que da menos acero sin pasar
+     el maximo.  null: no hace falta; undefined: no entra en una capa */
+  function baston(falta, cont, lista, libre, AsMax) {
+    if (!(falta > 1e-9) || !cont) return null;
+    var mejor = null;
+    lista.forEach(function (bar) {
+      var g = grupo(Math.ceil(falta / barra(bar).a - 1e-9), bar);
+      if (!g || !entran([cont, g], libre)) return;
+      var clave = [cont.As + g.As > AsMax + 1e-9 ? 1 : 0, g.As, g.n, bar === cont.bar ? 0 : 1];
+      if (!mejor || menorClave(clave, mejor.clave)) mejor = { g: g, clave: clave };
+    });
+    return mejor ? mejor.g : undefined;
+  }
+  /* EL ARMADO PROPUESTO para el acero requerido q = {sI, sC, sD, iI, iC, iD} (cm²).  Se prueban todas las
+     corridas de arriba y de abajo con sus bastones y se queda la de menos acero -las corridas pesan el doble
+     que los bastones, que son mas cortos- que entra en una capa y no pasa el maximo.  Las corridas cubren el
+     minimo y el momento del otro lado del centro; las de abajo, M⁺ ≥ ratio · M⁻ en la cara; y en una viga
+     sismorresistente, las dos, un cuarto de la mayor resistencia de las caras. */
+  function propone(q, o) {
+    var L = o.lista, cuarto = o.sismico ? 0.25 : 0, mejor = null, alguna = null;
+    corridos(Math.max(o.AsMin, q.sC), L, o.libre).forEach(function (sup) {
+      var bSI = baston(q.sI - sup.As, sup, L, o.libre, o.AsMax), bSD = baston(q.sD - sup.As, sup, L, o.libre, o.AsMax);
+      if (bSI === undefined || bSD === undefined) { alguna = alguna || { sup: sup }; return; }
+      var AsSI = sup.As + (bSI ? bSI.As : 0), AsSD = sup.As + (bSD ? bSD.As : 0);
+      corridos(Math.max(o.AsMin, q.iI, q.iD, o.ratio * Math.max(AsSI, AsSD)), L, o.libre).forEach(function (inf) {
+        var bIC = baston(q.iC - inf.As, inf, L, o.libre, o.AsMax);
+        if (bIC === undefined) { alguna = alguna || { sup: sup, inf: inf }; return; }
+        var mayorCara = Math.max(AsSI, AsSD, inf.As);
+        if (sup.As < cuarto * mayorCara - 1e-9 || inf.As < cuarto * mayorCara - 1e-9) return;
+        var AsIC = inf.As + (bIC ? bIC.As : 0);
+        var sobre = Math.max(AsSI, AsSD, AsIC) > o.AsMax + 1e-9 ? 1 : 0;
+        var costo = 2 * (sup.As + inf.As) + (bSI ? bSI.As : 0) + (bSD ? bSD.As : 0) + (bIC ? bIC.As : 0);
+        var nb = sup.n + inf.n + (bSI ? bSI.n : 0) + (bSD ? bSD.n : 0) + (bIC ? bIC.n : 0);
+        var clave = [sobre, costo, nb];
+        if (!mejor || menorClave(clave, mejor.clave))
+          mejor = { clave: clave, sup: sup, inf: inf, bSI: bSI, bSD: bSD, bIC: bIC };
+      });
+    });
+    if (!mejor) return { noEntra: true, sup: alguna && alguna.sup || null, inf: alguna && alguna.inf || null };
+    return { sup: mejor.sup, inf: mejor.inf, bSI: mejor.bSI, bSD: mejor.bSD, bIC: mejor.bIC };
+  }
+  function asEn(arm) {
+    function s(gs) { return gs.reduce(function (t, g) { return t + (g ? g.As : 0); }, 0); }
+    return { izq: { sup: s([arm.sup, arm.bSI]), inf: s([arm.inf]) },
+             centro: { sup: s([arm.sup]), inf: s([arm.inf, arm.bIC]) },
+             der: { sup: s([arm.sup, arm.bSD]), inf: s([arm.inf]) } };
+  }
+
+  /* --- la cortante isostatica de gravedad ---------------------------------------
+     casos: {Dead, CM, CV, CVT}: [[x, V2, M3], ...] de cara a cara.  En ETABS dM3/dx = −V2, asi que la de una
+     viga simplemente apoyada con la misma carga es V0 = V2 + (Mj − Mi) / L en cada extremo. */
+  function isostatica(casos) {
+    if (!casos || typeof casos !== "object") return null;
+    function una(t) {
+      if (!Array.isArray(t)) return null;
+      var e = t.filter(function (x) { return x && num(x[0]) !== null; }).slice()
+        .sort(function (a, b) { return a[0] - b[0]; });
+      if (e.length < 2) return null;
+      var a = e[0], z = e[e.length - 1], L = z[0] - a[0];
+      if (!(L > 0)) return null;
+      var corr = ((num(z[2]) || 0) - (num(a[2]) || 0)) / L;
+      return { i: Math.abs((num(a[1]) || 0) + corr), j: Math.abs((num(z[1]) || 0) + corr),
+               ci: Math.abs(num(a[1]) || 0), cj: Math.abs(num(z[1]) || 0) };
+    }
+    var r = { cmI: 0, cmJ: 0, cvI: 0, cvJ: 0, cmCi: 0, cmCj: 0, cvCi: 0, cvCj: 0 }, hay = false;
+    [["Dead", "cm"], ["CM", "cm"], ["CV", "cv"], ["CVT", "cv"]].forEach(function (p) {
+      var u = una(casos[p[0]]);
+      if (!u) return;
+      if (p[1] === "cm") hay = true;
+      r[p[1] + "I"] += u.i; r[p[1] + "J"] += u.j; r[p[1] + "Ci"] += u.ci; r[p[1] + "Cj"] += u.cj;
+    });
+    if (!hay) return null;
+    r.Viso = GRAV * Math.max(r.cmI + r.cvI, r.cmJ + r.cvJ);          /* 1,25 (CM + CV) isostatica */
+    r.Vcara = GRAV * Math.max(r.cmCi + r.cvCi, r.cmCj + r.cvCj);     /* 1,25 (CM + CV) del analisis, en la cara */
+    return r;
+  }
+
+  /* --- donde se cortan los bastones --------------------------------------------
+     est: la envolvente [[x, Mmax, Mmin, ...]] con x desde la cara izquierda (m). */
+  function cruce(est, f, cap, desdeDer) {
+    var seq = desdeDer ? est.slice().reverse() : est, prev = null;
+    for (var i = 0; i < seq.length; i++) {
+      var e = seq[i], m = f(e);
+      if (m <= cap + 1e-9) {
+        if (!prev) return e[0];
+        var mp = f(prev), t = (mp - cap) / ((mp - m) || 1);
+        return prev[0] + t * (e[0] - prev[0]);
+      }
+      prev = e;
+    }
+    return null;
+  }
+  /* el primer punto, desde un extremo, donde f pasa de cap (el positivo sube desde las caras) */
+  function sube(est, f, cap, desdeDer) {
+    var seq = desdeDer ? est.slice().reverse() : est, prev = null;
+    for (var i = 0; i < seq.length; i++) {
+      var e = seq[i], m = f(e);
+      if (m > cap + 1e-9) {
+        if (!prev) return e[0];
+        var mp = f(prev), t = (cap - mp) / ((m - mp) || 1);
+        return prev[0] + t * (e[0] - prev[0]);
+      }
+      prev = e;
+    }
+    return null;
+  }
+  function cm5(x) { return Math.round(x * 100) / 100; }
+  function negativo(e) { return Math.max(0, -(num(e[2]) || 0)); }
+  function positivo(e) { return Math.max(0, num(e[1]) || 0); }
+
+  /* --- el diseño de una viga ------------------------------------------------------
+     v: una viga de FUERZAS.vigas {cod, nivel, eje, tipo, b, h (m), ln (m), izq, centro, der}.
+     o: {fc, fy, recub (cm), estribo, lista (barras longitudinales), regimen: "21.4" | "21.5" | null,
+         falta: por que no se sabe el regimen, vuAd, estaciones: R.vigas[cod].estaciones,
+         casos: R.vigasCasos[cod], armado: {sup, inf, bSI, bSD, bIC: {n, bar} o null} lo que cambio el usuario} */
+  function disenar(v, o) {
+    o = o || {};
+    var fc = +o.fc || 210, fy = +o.fy || 4200, recub = num(o.recub) === null ? 4 : +o.recub, reg = o.regimen || null;
+    var b = Math.round((num(v.b) || 0) * 1000) / 10, h = Math.round((num(v.h) || 0) * 1000) / 10;
+    var d = Math.round((h - DISENO.D_MENOS * 100) * 10) / 10, ln = num(v.ln) || 0;
+    var av = [], estado = "ok", sismico = (reg === "21.4" || reg === "21.5");
+    var ratio = reg === "21.5" ? 0.5 : (reg === "21.4" ? 1 / 3 : 0);
+    var artR = reg === "21.5" ? "Art. 21.5.2.2" : "Art. 21.4.4.3", artC = reg === "21.5" ? "Art. 21.5.2.1" : "Art. 21.4.4.1";
+    function aviso(nivel, t) {
+      av.push({ nivel: nivel, texto: t });
+      if (nivel === "no") estado = "no cumple";
+      else if (nivel === "revisar" && estado === "ok") estado = "revisar";
+    }
+    var base = { cod: v.cod, nivel: v.nivel || "", eje: v.eje || "", tipo: v.tipo || "", b: b, h: h, d: d, ln: ln,
+                 regimen: reg, fc: fc, fy: fy, recub: recub };
+    if (!(b > 0 && h > 0 && ln > 0 && d > 0)) {
+      base.estado = "falta"; base.avisos = [{ nivel: "falta", texto: "Sin b, h o luz libre: vuelve a traer los resultados." }];
+      return base;
+    }
+    if (!sismico && o.falta) aviso("revisar", o.falta);
+    var lista = (o.lista && o.lista.length ? o.lista : DISENO.BARRAS_DEFECTO.viga.long)
+      .filter(function (n) { return !!barra(n); }).sort(function (p, q) { return barra(p).d - barra(q).d; });
+    var est0 = (o.estribo && barra(o.estribo)) ? o.estribo : '3/8"';
+    var M = {};
+    ["izq", "centro", "der"].forEach(function (k) {
+      var s = v[k] || {};
+      M[k] = { Mneg: Math.max(0, num(s.Mneg) || 0), Mpos: Math.max(0, num(s.Mpos) || 0) };
+    });
+    var AsMin = asMinimo(b, h, d, fc, fy), AsMax = asMaximo(b, d, fc, fy, reg);
+
+    /* lo que pide cada seccion */
+    var req = {}, insuf = [];
+    [["sI", "izq", "Mneg", "arriba en la cara izquierda"], ["sC", "centro", "Mneg", "arriba al centro"],
+     ["sD", "der", "Mneg", "arriba en la cara derecha"], ["iI", "izq", "Mpos", "abajo en la cara izquierda"],
+     ["iC", "centro", "Mpos", "abajo al centro"], ["iD", "der", "Mpos", "abajo en la cara derecha"]].forEach(function (p) {
+      var r = asRequerida(M[p[1]][p[2]], b, d, fc, fy);
+      if (!r.cabe || r.As > AsMax.As + 1e-9) insuf.push(p[3]);
+      req[p[0]] = { Mu: M[p[1]][p[2]], As: r.cabe ? Math.min(r.As, AsMax.As) : AsMax.As, cabe: r.cabe && r.As <= AsMax.As + 1e-9 };
+    });
+    if (insuf.length)
+      aviso("no", "La sección no alcanza sin acero en compresión " + insuf.join(", ") + " (" + AsMax.por + "): aumenta el peralte o el ancho.");
+
+    /* el armado: el propuesto y lo que cambiaste */
+    var libre0 = b - 2 * recub - 2 * barra(est0).d;
+    var prop = propone({ sI: req.sI.As, sC: req.sC.As, sD: req.sD.As, iI: req.iI.As, iC: req.iC.As, iD: req.iD.As },
+                       { lista: lista, libre: libre0, ratio: ratio, AsMin: AsMin.As, AsMax: AsMax.As, sismico: sismico });
+    var arm = {}, propio = false;
+    PARTES.forEach(function (k) { arm[k] = prop[k] || null; });
+    if (o.armado && typeof o.armado === "object") PARTES.forEach(function (k) {
+      if (!(k in o.armado)) return;
+      var x = o.armado[k];
+      propio = true;
+      arm[k] = (x && +x.n > 0 && barra(x.bar)) ? grupo(Math.round(+x.n), x.bar) : null;
+    });
+    if (prop.noEntra && !propio)
+      aviso("no", "El acero no entra en una capa en " + coma(b, 0) + " cm de ancho con las barras de " + lista.join(", ") +
+            " (" + ART.libre + "): aumenta el ancho o arma a mano en dos capas.");
+    if (!arm.sup || !arm.inf) {
+      if (!prop.noEntra || propio) aviso("no", "Faltan las barras corridas de arriba o de abajo.");
+      base.estado = "no cumple"; base.avisos = av; base.armado = arm; base.propio = propio;
+      base.AsMin = AsMin; base.AsMax = AsMax; base.requerido = req;
+      return base;
+    }
+    var usadas = barrasDe(PARTES.map(function (k) { return arm[k]; }));
+    usadas.sort(function (p, q) { return barra(p).d - barra(q).d; });
+    var menor = usadas[0], mayor = usadas[usadas.length - 1];
+
+    /* el estribo: el de Criterios, o el minimo por la mayor barra */
+    var estMin = DISENO.estriboMinimo(mayor);
+    if (reg === "21.5" && barra(estMin).d < barra('3/8"').d) estMin = '3/8"';
+    var estB = est0;
+    if (barra(estB).d < barra(estMin).d - 1e-9) {
+      aviso("revisar", "Con barras de " + mayor + " el estribo va de " + estMin + " como mínimo (" +
+            (reg === "21.5" ? "Art. 21.5.3.2" : (reg === "21.4" ? "Art. 21.4.4.4" : "Art. 7.10.5.1")) + "): se usa " + estMin + ".");
+      estB = estMin;
+    }
+    var libre = b - 2 * recub - 2 * barra(estB).d;
+    [["arriba en la cara izquierda", [arm.sup, arm.bSI]], ["arriba en la cara derecha", [arm.sup, arm.bSD]],
+     ["abajo al centro", [arm.inf, arm.bIC]]].forEach(function (p) {
+      if (!entran(p[1], libre))
+        aviso("no", "Las barras de " + p[0] + " no entran en una capa en " + coma(libre, 1) + " cm libres (" + ART.libre + ").");
+    });
+    var dReal = h - recub - barra(estB).d - barra(mayor).d / 2;
+    if (dReal < d - 0.5)
+      aviso("revisar", "Con estribo de " + estB + " y barras de " + mayor + " el peralte efectivo real es " + coma(dReal, 1) +
+            " cm, menor que h − 6 = " + coma(d, 1) + " cm con el que se diseñó.");
+
+    /* la verificacion de cada seccion */
+    var A = asEn(arm), secciones = [], Mn = {};
+    ["izq", "centro", "der"].forEach(function (k) {
+      var ms = mn(A[k].sup, b, d, fc, fy), mi = mn(A[k].inf, b, d, fc, fy);
+      Mn[k] = { sup: ms, inf: mi };
+      var f = { k: k,
+        sup: { Mu: M[k].Mneg, As: A[k].sup, asReq: req[k === "izq" ? "sI" : (k === "der" ? "sD" : "sC")].As, phiMn: PHI_F * ms },
+        inf: { Mu: M[k].Mpos, As: A[k].inf, asReq: req[k === "izq" ? "iI" : (k === "der" ? "iD" : "iC")].As, phiMn: PHI_F * mi } };
+      f.sup.ok = f.sup.phiMn >= f.sup.Mu - 1e-6;
+      f.inf.ok = f.inf.phiMn >= f.inf.Mu - 1e-6;
+      secciones.push(f);
+      var lugar = { izq: "en la cara izquierda", centro: "al centro", der: "en la cara derecha" }[k];
+      if (!f.sup.ok) aviso("no", "Arriba " + lugar + " φMn = " + coma(f.sup.phiMn) + " t·m < Mu = " + coma(f.sup.Mu) + " t·m.");
+      if (!f.inf.ok) aviso("no", "Abajo " + lugar + " φMn = " + coma(f.inf.phiMn) + " t·m < Mu = " + coma(f.inf.Mu) + " t·m.");
+    });
+    if (arm.sup.As < AsMin.As - 1e-9 || arm.inf.As < AsMin.As - 1e-9)
+      aviso(sismico ? "no" : "revisar", "Las barras corridas dan menos que el mínimo de " + coma(AsMin.As) + " cm² (" + AsMin.por +
+            (sismico ? "; en una viga sismorresistente sin la excepción de " + ART.min3 + ", " + artC : "") + ").");
+    if (sismico && (arm.sup.n < 2 || arm.inf.n < 2))
+      aviso("no", "Una viga sismorresistente lleva al menos dos barras corridas arriba y abajo (" + artC + ").");
+    var AsMayor = Math.max(A.izq.sup, A.der.sup, A.centro.inf, A.izq.inf, A.der.inf);
+    if (AsMayor > AsMax.As + 1e-9)
+      aviso("no", "Hay " + coma(AsMayor) + " cm² en una sección y el máximo es " + coma(AsMax.As) + " cm² (" + AsMax.por + ").");
+    if (sismico) {
+      [["izquierda", Mn.izq], ["derecha", Mn.der]].forEach(function (p) {
+        if (p[1].inf < ratio * p[1].sup - 1e-6)
+          aviso("no", "En la cara " + p[0] + " la resistencia a momento positivo (Mn = " + coma(p[1].inf) + " t·m) es menor que " +
+                (reg === "21.5" ? "la mitad" : "un tercio") + " de la negativa (" + coma(p[1].sup) + " t·m) (" + artR + ").");
+      });
+      var mayorCara = Math.max(Mn.izq.sup, Mn.izq.inf, Mn.der.sup, Mn.der.inf);
+      var menorSecc = Math.min(mn(arm.sup.As, b, d, fc, fy), mn(arm.inf.As, b, d, fc, fy));
+      if (menorSecc < mayorCara / 4 - 1e-6)
+        aviso("no", "Las barras corridas resisten " + coma(menorSecc) + " t·m, menos de un cuarto de la mayor resistencia en las caras (" +
+              coma(mayorCara) + " t·m) (" + artR + ").");
+    }
+    if (reg === "21.5") {
+      if (ln * 100 < 4 * h - 1e-9) aviso("revisar", "Luz libre de " + coma(ln) + " m, menor que cuatro veces el peralte (Art. 21.5.1.2).");
+      if (b < 25 - 1e-9 || b < 0.25 * h - 1e-9) aviso("revisar", "Ancho de " + coma(b, 0) + " cm, menor que 25 cm o que 0,25 h (Art. 21.5.1.3).");
+    }
+
+    /* --- los bastones: donde ya no hacen falta, mas d o 12 db (12.10.3) --- */
+    var est = (Array.isArray(o.estaciones) ? o.estaciones : []).filter(function (e) { return e && num(e[0]) !== null; })
+      .slice().sort(function (p, q) { return p[0] - q[0]; });
+    var largos = { bSI: null, bSD: null, bIC: null };
+    if (est.length >= 2) {
+      var x0 = est[0][0], xn = est[est.length - 1][0], esc = ln / ((xn - x0) || ln);
+      est = est.map(function (e) { return [(e[0] - x0) * esc, e[1], e[2]]; });
+    }
+    var dm = d / 100;
+    function largoSup(g, lado) {
+      if (!g) return null;
+      var ext = Math.max(dm, 12 * g.db / 100), cap = PHI_F * mn(arm.sup.As, b, d, fc, fy), L;
+      if (est.length < 2) L = ln / 3;
+      else {
+        var x = cruce(est, negativo, cap, lado === "der");
+        var dist = x === null ? ln : (lado === "der" ? ln - x : x);
+        L = dist + ext;
+        if (arm.sup.As < (arm.sup.As + g.As) / 3 - 1e-9) {           /* 12.12.3 */
+          var xi = cruce(est, negativo, 0, lado === "der"), di = xi === null ? ln : (lado === "der" ? ln - xi : xi);
+          L = Math.max(L, di + Math.max(dm, 12 * g.db / 100, ln / 16));
+        }
+      }
+      return cm5(Math.min(redArriba(L, 0.05), ln));
+    }
+    largos.bSI = largoSup(arm.bSI, "izq");
+    largos.bSD = largoSup(arm.bSD, "der");
+    if (arm.bIC) {
+      var extI = Math.max(dm, 12 * arm.bIC.db / 100), capI = PHI_F * mn(arm.inf.As, b, d, fc, fy), x1, x2;
+      if (est.length < 2) { x1 = 0.15 * ln + extI; x2 = 0.85 * ln - extI; }
+      else { x1 = sube(est, positivo, capI, false); x2 = sube(est, positivo, capI, true); }
+      if (x1 === null || x2 === null || x2 < x1) { x1 = extI; x2 = ln - extI; }
+      largos.bIC = [cm5(Math.max(0, redAbajo(x1 - extI, 0.05))), cm5(Math.min(ln, redArriba(x2 + extI, 0.05)))];
+    }
+    if (est.length < 2 && (arm.bSI || arm.bSD || arm.bIC))
+      aviso("revisar", "Sin las estaciones de la envolvente los bastones van por la práctica (ln/3 arriba): vuelve a traer los resultados.");
+    if (largos.bSI !== null && largos.bSD !== null && largos.bSI + largos.bSD > ln - 0.30)
+      aviso("revisar", "Los bastones de arriba casi se juntan: conviene correrlos de cara a cara.");
+    if (arm.bIC && arm.inf.As < (arm.inf.As + arm.bIC.As) / 3 - 1e-9)
+      aviso("no", "Las barras corridas de abajo son menos de un tercio del acero positivo al centro (" + ART.positivo + ").");
+
+    /* --- la cortante --- */
+    var iso = isostatica(o.casos), Vc = vc(b, d, fc);
+    var VsMax = 0.66 * raizMPa(fc) * 10 * b * d / 1000, VsLim = 0.33 * raizMPa(fc) * 10 * b * d / 1000;
+    var sI = v.izq || {}, sD = v.der || {};
+    var Venv = Math.max(num(sI.V) || 0, num(sD.V) || 0);
+    var VenvD = (num(sI.Vd) !== null || num(sD.Vd) !== null) ? Math.max(num(sI.Vd) || 0, num(sD.Vd) || 0) : null;
+    var Vcap = null, Vb = null, Vdes = Venv, wu = 0, fMpr = reg === "21.5" ? 1.25 : 1;
+    if (iso) wu = 2 * iso.Viso / ln;
+    if (sismico && iso) {
+      Vcap = fMpr * Math.max(Mn.izq.sup + Mn.der.inf, Mn.izq.inf + Mn.der.sup) / ln + iso.Viso;
+      if (reg === "21.5") Vdes = Math.max(Vcap, Venv);
+      else {
+        Vb = iso.Vcara + 2.5 * Math.max(0, Venv - iso.Vcara);
+        Vdes = Math.max(Venv, Math.min(Vcap, Vb));
+      }
+    } else if (sismico)
+      aviso("revisar", "Faltan los casos de gravedad de esta viga: la cortante por capacidad (" +
+            (reg === "21.5" ? "Art. 21.5.4.1" : "Art. 21.4.3") + ") no se pudo calcular y va la de ETABS. Vuelve a traer los resultados.");
+    var Vd = Vdes;
+    if (o.vuAd !== false) Vd = iso ? Math.max(0, Vdes - wu * dm) : (VenvD !== null && !sismico ? VenvD : Vdes);
+    var Av = 2 * barra(estB).a;
+    function sPara(Vu) {
+      var Vs = Math.max(0, Vu / PHI_V - Vc);
+      return { Vs: Vs, s: Vs > 1e-9 ? Av * fy * d / (Vs * 1000) : Infinity, mitad: Vs > VsLim + 1e-9, pasa: Vs > VsMax + 1e-9 };
+    }
+    var sd = sPara(Vd);
+    if (sd.pasa)
+      aviso("no", "Vs = " + coma(sd.Vs) + " t pasa el máximo 0,66 √f'c bw d = " + coma(VsMax) + " t (" + ART.vsmax + "): aumenta la sección.");
+    var sAvMin = Av * fy / (Math.max(0.62 * raizMPa(fc), 3.5) * b);
+    var sGen = (sd.mitad ? 0.5 : 1) * Math.min(d / 2, 60);
+    var dbe = barra(estB).d, dbMenor = barra(menor).d, conf = null, texto, sFuera;
+    if (sismico) {
+      var Lo = 2 * h, primero = reg === "21.5" ? 5 : 10;
+      var limC = reg === "21.5" ? Math.min(d / 4, 8 * dbMenor, 24 * dbe, 30)
+                                : Math.min(Math.max(d / 4, 15), 10 * dbMenor, 24 * dbe, 30);
+      /* al cm de abajo si baja de 10 cm -en vigas chicas d/4 da 7,25-, y si no al 2,5 cm */
+      var soL = Math.min(limC, sd.s, sAvMin, sGen), so = Math.max(5, soL < 10 ? redAbajo(soL, 1) : redAbajo(soL, 2.5));
+      var sl = sPara(Math.max(0, Vdes - wu * Lo / 100));
+      sFuera = Math.max(so, redAbajo(Math.min(d / 2, sl.s, sAvMin, (sl.mitad ? 0.5 : 1) * Math.min(d / 2, 60)), 2.5));
+      var nC = 1 + Math.ceil((Lo - primero) / so - 1e-9);
+      conf = { Lo: Lo, primero: primero, s: so, n: nC, lim: limC };
+      texto = "□ " + estB + ": 1@" + coma(primero, 0) + ", " + (nC - 1) + "@" + String(so).replace(".", ",") + ", resto @" +
+              String(sFuera).replace(".", ",") + " cm desde cada cara";
+      if (reg === "21.5" && b - 2 * recub > 30 + 1e-9)
+        aviso("revisar", "Entre las ramas del estribo quedan más de 30 cm: añade una grapa (Art. 21.5.3.3).");
+    } else {
+      sFuera = Math.max(5, redAbajo(Math.min(sd.s, sGen, sAvMin), 2.5));
+      texto = "□ " + estB + ": 1@5, resto @" + String(sFuera).replace(".", ",") + " cm";
+    }
+
+    function g(x) { return x ? x.n + " Ø" + x.bar : ""; }
+    var tArriba = g(arm.sup) + " corridas" + (arm.bSI ? " + " + g(arm.bSI) + " a la izquierda (" + coma(largos.bSI) + " m)" : "") +
+                  (arm.bSD ? " + " + g(arm.bSD) + " a la derecha (" + coma(largos.bSD) + " m)" : "");
+    var tAbajo = g(arm.inf) + " corridas" + (arm.bIC ? " + " + g(arm.bIC) + " al centro (de " + coma(largos.bIC[0]) + " a " +
+                 coma(largos.bIC[1]) + " m)" : "");
+    base.AsMin = AsMin; base.AsMax = AsMax; base.requerido = req; base.propuesto = prop; base.armado = arm; base.propio = propio;
+    base.As = A; base.Mn = Mn; base.secciones = secciones; base.largos = largos; base.estribo = estB; base.dReal = dReal;
+    base.cortante = { Venv: Venv, VenvD: VenvD, iso: iso, Vcap: Vcap, Vb: Vb, Vdes: Vdes, Vd: Vd, wu: wu, Vc: Vc, Vs: sd.Vs,
+                      VsMax: VsMax, sReq: sd.s, sAvMin: sAvMin, conf: conf, sFuera: sFuera, Av: Av, texto: texto };
+    base.texto = { arriba: tArriba, abajo: tAbajo, estribos: texto };
+    base.avisos = av; base.estado = estado;
+    return base;
+  }
+
+  /* cuantas cumplen, hay que revisar, no cumplen o faltan */
+  function resumen(lista) {
+    var r = { ok: 0, revisar: 0, "no cumple": 0, falta: 0, total: 0 };
+    (lista || []).forEach(function (x) { r[x.estado] = (r[x.estado] || 0) + 1; r.total++; });
+    return r;
+  }
+
+  return { ART: ART, PHI_F: PHI_F, PHI_V: PHI_V, GRAV: GRAV, PARTES: PARTES,
+           asRequerida: asRequerida, mn: mn, asMinimo: asMinimo, asMaximo: asMaximo, vc: vc,
+           grupo: grupo, entran: entran, corridos: corridos, baston: baston, propone: propone,
+           isostatica: isostatica, disenar: disenar, resumen: resumen };
+});
+</script>
+<script>
 /* ===== tablas_bat.js (inlinado) ===== */
 /* =====================================================================
    tablas_bat.js — LAS TABLAS DE RETICULA.bat [3], iguales en el complemento
@@ -7756,7 +8272,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v180 · 14-09-2026";
+  var BUILD="v186 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7859,7 +8375,7 @@ var TT={script:performance.now()};
     verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"]],
     fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
-    diseno:[["criterios","Criterios"],["datos","Datos para diseño"]],
+    diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["vigas","Vigas"]],
     hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
            ["resultados","Resultados y diseño"]]
   };
@@ -9030,8 +9546,9 @@ var TT={script:performance.now()};
   var SVG="http://www.w3.org/2000/svg";
   function el(n,a){var e=document.createElementNS(SVG,n);for(var k in a)e.setAttribute(k,a[k]);return e}
   function txt(g,x,y,s,col,size,anchor,halo){
+    /* un rotulo se lee, no se pincha: en un vano chico el «25×40» de la viga tapaba el tramo */
     var at={x:x,y:y,"text-anchor":anchor||"middle","font-size":size||10,
-            fill:col||"var(--ink-3)","font-family":"IBM Plex Mono, monospace"};
+            fill:col||"var(--ink-3)","font-family":"IBM Plex Mono, monospace","pointer-events":"none"};
     /* HALO.  Las cotas de la zona tributaria caian encima de los rotulos de
        las secciones -«25x35» partido por una linea de cota- y no se leia ni
        una cosa ni la otra.  Un borde blanco por debajo del trazo las separa
@@ -9116,7 +9633,8 @@ var TT={script:performance.now()};
       }else{
         txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);
       }
-      var hit=el("polygon",{points:pts(encoge(Q,5)),"class":"hit"});
+      /* en un pano angosto la zona encogida 5 desaparecia: se encoge con el pano */
+      var hit=el("polygon",{points:pts(encoge(Q,Math.min(5,0.2*Math.min(an,Math.max.apply(null,ys)-y)))),"class":"hit"});
       hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
     }
     /* estructura en gris: contexto, no protagonista */
@@ -9415,11 +9933,13 @@ var TT={script:performance.now()};
            (chv?"--chata":"--viga")+')">Viga '+(chv?"chata":"principal")+' · '+nmx.V[kk].eje+'</span>';
         if(chv){
           h+=bloque("Predimensionamiento",'<dl class="kv">'+kv("Luz libre Ln",n2(pv.Ln)+" m",1)+
-            kv("Peralte h (= losa)",pv.hLosaCm+" cm",1)+kv("Luz libre máxima",n2(pv.LnMax)+" m",1)+
+            kv("Peralte h (= losa)",pv.hLosaCm+" cm",1)+
+            kv("k · E.060 Tabla 9.1",String(pv.k).replace(".",",")+"  ("+pv.continuidad+")",1)+
+            kv("Luz libre máxima h × k",n2(pv.LnMax)+" m",1)+
             kv("Ancho calculado",Math.round(pv.bCalc*100)+" cm",1)+'</dl>');
           h+=bloque("Decisión",entrada("viga","b",Math.round(pv.b*100),"b")+
             '<p class="calcnote">El peralte de una chata es el espesor de la losa: se decide en la losa.</p>'+
-            '<div>'+estado(pv.cumple,"Ln ≤ Ln máx")+'</div>'+borra("viga",pv.propia));
+            '<div>'+estado(pv.cumple,"Ln ≤ h × k")+'</div>'+borra("viga",pv.propia));
         }else{
           h+=bloque("Predimensionamiento",'<dl class="kv">'+kv("Luz libre Ln",n2(pv.Ln)+" m",1)+
             kv("Ancho tributario B",pv.B.toFixed(3)+" m",1)+kv("α",pv.alfa,1)+
@@ -9789,6 +10309,31 @@ var TT={script:performance.now()};
         Y=function(j,i){return XY(i,j).y};
     var lp=lapiz(m,mg,esc), q4p=lp.q4, pts=lp.pts,
         aPant=lp.aPant, encoge=lp.encoge;
+    /* LA ZONA DE CLIC CABE EN SU SITIO.  Con medidas fijas -un circulo de 11 en
+       cada nudo, una franja de 13 en cada viga y la losa encogida 7- un vano de
+       0,31 m quedaba tapado entero por los circulos de sus dos nudos: el clic
+       caia en el nudo y ponia una columna en vez de la viga.  Ahora cada zona se
+       achica con el vano mas corto que la toca. */
+    function hueco(a,b){var p=XY(a[0],a[1]),r=XY(b[0],b[1]);return Math.hypot(r.x-p.x,r.y-p.y)}
+    function dentroRet(n){return n[0]>=0&&n[1]>=0&&n[0]<nx()&&n[1]<ny()}
+    function radioNudo(i,j){
+      var d=Infinity;
+      [[i-1,j],[i+1,j],[i,j-1],[i,j+1]].forEach(function(n){ if(dentroRet(n))d=Math.min(d,hueco([i,j],n)); });
+      return Math.max(3,Math.min(11,0.35*d));
+    }
+    function anchoFranja(o,i,j){
+      var d=Infinity, ext=(o==="h")?[[i,j],[i+1,j]]:[[i,j],[i,j+1]];
+      ext.forEach(function(p){
+        (o==="h"?[[p[0],p[1]-1],[p[0],p[1]+1]]:[[p[0]-1,p[1]],[p[0]+1,p[1]]]).forEach(function(n){
+          if(dentroRet(n))d=Math.min(d,hueco(p,n)); });
+      });
+      return Math.max(4,Math.min(13,0.7*d));
+    }
+    function encogeLosa(Q,max){
+      var xs=Q.map(function(p){return p.x}), ys=Q.map(function(p){return p.y});
+      var lado=Math.min(Math.max.apply(null,xs)-Math.min.apply(null,xs),Math.max.apply(null,ys)-Math.min.apply(null,ys));
+      return encoge(Q,Math.min(max,0.2*lado));
+    }
     var defs=el("defs",{});
     var mk=el("marker",{id:"ar",viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"5",markerHeight:"5",orient:"auto"});
     mk.appendChild(el("path",{d:"M0,0 L8,4 L0,8 z",fill:"currentColor"}));defs.appendChild(mk);
@@ -9856,7 +10401,7 @@ var TT={script:performance.now()};
          planta sesgada deja fuera una punta del paño y se mete en el de al
          lado: pinchabas uno y se seleccionaba el vecino. */
       if(ve("losa")){
-        var hit=el("polygon",{points:pts(encoge(q4p(i,j),7)),"class":"hit"});
+        var hit=el("polygon",{points:pts(encogeLosa(q4p(i,j),7)),"class":"hit"});
         hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
       }
     }
@@ -9943,7 +10488,7 @@ var TT={script:performance.now()};
             (pp2.propia&&!pp2.cumple)?"#c62828":"var(--acc-ink)",9.5);
       }
       if(!FV||(m.vigas[k]&&ve("viga"))||(m.placas[k]&&ve("placa"))){
-        var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":13,"class":"hit"});
+        var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":anchoFranja(o,i,j),"class":"hit"});
         hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
       }
     }
@@ -9974,7 +10519,9 @@ var TT={script:performance.now()};
     for(i=0;i<nx();i++)for(j=0;j<ny();j++){
       if(m.cols[key(i,j)]&&ve("col")){
         var sel=S.sel&&S.sel.t==="col"&&S.sel.i===i&&S.sel.j===j,lado=sel?15:12;
-        var pin={fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1};
+        /* el cuadrado se ve pero no se pincha: en un vano chico tapaba el tramo de al lado y el clic
+           se perdia; la columna se pincha con su circulo de clic, que va encima */
+        var pin={fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1,"pointer-events":"none"};
         if(formaDe(m.cols[key(i,j)])==="circular"){
           pin.cx=X(i,j);pin.cy=Y(j,i);pin.r=lado/2;
           g.appendChild(el("circle",pin));
@@ -9989,7 +10536,7 @@ var TT={script:performance.now()};
             pc2.forma==="circular"?("Ø"+pc2.D):(pc2.b+"×"+pc2.h),
             (pc2.propia&&!pc2.cumple)?"#c62828":"var(--acc-ink)",9.5);
       if(!FV||(m.cols[key(i,j)]&&(ve("col")||(ve("zapata")&&S.act===0&&m.zapatas&&m.zapatas[key(i,j)])))){
-        var hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:11,"class":"hit"});
+        var hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:radioNudo(i,j),"class":"hit"});
         hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
       }
     }
@@ -11707,10 +12254,11 @@ var TT={script:performance.now()};
           kv("Luz libre Ln",v.L.toFixed(2)+" − "+v.desc.toFixed(2)+" = "+v.Ln.toFixed(2)+" m",1)+
           (ch?"":kv("Ancho tributario B",v.B.toFixed(3)+" m",1))+
           kv("S/C que carga",scViga(q.o,q.i,q.j)+" kg/m²",1)+
-          kv("α",alfaViga(q.o,q.i,q.j),1)+
+          (ch?kv("k · E.060 Tabla 9.1",String(pv.k).replace(".",",")+"  ("+pv.continuidad+")",1)
+             :kv("α",alfaViga(q.o,q.i,q.j),1))+
           (ch
             ? kv("Peralte h (= losa)",pv.hLosaCm+" cm",1)+
-              kv("Luz libre máxima",pv.LnMax.toFixed(2)+" m",1)+
+              kv("Luz libre máxima h × k",pv.LnMax.toFixed(2)+" m",1)+
               kv("Estado",'<b style="color:'+(pv.cumple?"#2e7d32":"#c62828")+'">'+
                  (pv.cumple?"CUMPLE":"NO CUMPLE")+"</b>",1)
             : kv("Peralte h",'<b>'+Math.round(pv.h*100)+" cm</b>  ("+
@@ -11722,11 +12270,14 @@ var TT={script:performance.now()};
           (ch&&!pv.cumple
             ? '<p class="aviso" style="margin-top:8px">La luz libre de '+
               pv.Ln.toFixed(2)+" m pasa de los "+pv.LnMax.toFixed(2)+
-              " m que alcanza una chata de "+pv.hLosaCm+
-              " cm. Aquí hace falta una viga peraltada.</p>"
+              " m que alcanza una chata de "+pv.hLosaCm+" cm "+pv.continuidad+
+              ". Aquí hace falta una viga peraltada, o calcular su deflexión.</p>"
             : "")+
-          (ch?'<p class="calcnote">La chata no descuelga: su peralte es el espesor de la losa, '+
-              'y α = '+pv.alfa+' es el fijo del libro, no el de la tabla de sobrecarga.</p>'
+          (ch?'<p class="calcnote">La chata no descuelga: su peralte es el espesor de la losa. Ln máx = h × k, '+
+              'con el peralte mínimo de la E.060 (Tabla 9.1): k = 16 simplemente apoyada, 18,5 con un extremo '+
+              'continuo y 21 con los dos; continua es la que sigue al otro lado de su apoyo. Si sostiene '+
+              'tabiques, la tabla no exime de calcular la deflexión (Art. 9.6.2.1). Como referencia: Oviedo '+
+              '(α = '+pv.alfa+') da '+pv.LnMaxOviedo.toFixed(2)+' m y la práctica usual, 3,50 m.</p>'
              :'<p class="calcnote">h = Ln / α, al múltiplo de 5 cm superior   |   b = B / '+
               CRITERIOS.PROPORCION.baseVigaPrincipal+', con mínimo '+
               Math.round(CRITERIOS.MINIMOS.baseViga*100)+' cm.</p>');
@@ -12129,7 +12680,9 @@ var TT={script:performance.now()};
     /* el espesor DECIDIDO es el que tiene la losa, y el que hereda la chata */
     var od=losaDuena(i,j,m); if(od&&od.sec&&od.sec.e>0)return od.sec.e;
     var a=alfaLosa(o); if(!(a>0))return null;
-    return Math.ceil(medLosa(i,j,m).Ln/a*100/5)*5;
+    var ec=Math.ceil(medLosa(i,j,m).Ln/a*100/5)*5;
+    /* un aligerado no baja de 17 cm: un pano chico entre dos chatas salia de 5 y la chata lo heredaba */
+    return ((o.tipo||"aligerada")==="aligerada")?Math.max(ec,Math.round(CRITERIOS.MINIMOS.espesorAligerada*100)):ec;
   }
   /* La chata corre sobre una linea de reticula: mira los panos de sus dos
      lados y se queda con el espesor mayor, que es el que manda. */
@@ -12238,6 +12791,18 @@ var TT={script:performance.now()};
     return r;
   }
 
+  /* E.060, Tabla 9.1 para la chata: k = 16 simplemente apoyada, 18,5 con un
+     extremo continuo y 21 con los dos.  Un extremo es continuo si la viga
+     -chata o principal- sigue en linea al otro lado de su apoyo. */
+  function coefChata(o,i,j,m){
+    m=m||N();
+    var t=tramoViga(o,i,j,m), T=CRITERIOS.TABLA_9_1;
+    var izq=(o==="h")?!!m.vigas[key("h",t.desde-1,j)]:!!m.vigas[key("v",i,t.desde-1)];
+    var der=(o==="h")?!!m.vigas[key("h",t.hasta,j)]:!!m.vigas[key("v",i,t.hasta)];
+    var n=(izq?1:0)+(der?1:0);
+    return {k:n===2?T.ambos:(n===1?T.unExtremo:T.simple), continuos:n,
+            texto:n===2?"con ambos extremos continuos":(n===1?"con un extremo continuo":"simplemente apoyada")};
+  }
   /* Viga ya predimensionada.  La chata no calcula peralte: lo hereda de la
      losa, y lo que se comprueba es al reves -si la luz cabe en ese espesor-. */
   function predimViga(o,i,j,m){
@@ -12249,10 +12814,14 @@ var TT={script:performance.now()};
       var e = espesorParaChata(o,i,j,m);
       var qc = CALCULO.viga({subtipo:"chata", h_losa:e/100, principal:true});
       var sdc=secDe(vigaDuena(o,i,j,m)), bch=(sdc&&sdc.b>0)?sdc.b/100:qc.b;
+      /* LA LUZ QUE ALCANZA la manda la E.060 (Tabla 9.1, con su continuidad); el α del
+         libro queda de referencia: con α = 12 una chata en losa de 20 cm no pasaba de
+         2,40 m, y la norma llega a 3,20-4,20 m */
+      var ct=coefChata(o,i,j,m), lnMax=Math.round(e*ct.k)/100;
       return {tipo:"chata", Ln:mv.Ln, L:mv.L, desc:mv.desc, apoyoReal:mv.real,
               alfa:qc.alfa, h:qc.h, b:bch, hCalc:qc.h, bCalc:qc.b, propia:!!(sdc&&sdc.b>0),
-              hLosaCm:e, LnMax:qc.Ln_max,
-              cumple:(mv.Ln <= qc.Ln_max + 1e-9)};
+              hLosaCm:e, k:ct.k, continuidad:ct.texto, LnMax:lnMax, LnMaxOviedo:qc.Ln_max,
+              cumple:(mv.Ln <= lnMax + 1e-9)};
     }
     var q = CALCULO.viga({subtipo:"principal", Ln:mv.Ln, B:mv.B,
                           sc:scViga(o,i,j,m)});
@@ -12275,8 +12844,10 @@ var TT={script:performance.now()};
     if(!o || esEscalera(o)) return null;          /* la escalera va por calculoEscalera */
     var lo = medLosa(i,j,m);
     var q = CALCULO.losa({subtipo:lo.tipo, Ln:lo.Ln, sc:scTramoLosa(i,j,m)});
-    var sdl=secDe(losaDuena(i,j,m)), eCalc=Math.round(q.h*100),
-        eAd=(sdl&&sdl.e>0)?sdl.e:eCalc;
+    var sdl=secDe(losaDuena(i,j,m)), eCalc=Math.round(q.h*100);
+    /* el libro no pone piso al aligerado; la obra si: 17 cm, el menor de la E.020 (igual en la hoja) */
+    if(lo.tipo==="aligerada")eCalc=Math.max(eCalc,Math.round(CRITERIOS.MINIMOS.espesorAligerada*100));
+    var eAd=(sdl&&sdl.e>0)?sdl.e:eCalc;
     return {tipo:lo.tipo, dir:lo.dir, L:lo.L, Ln:lo.Ln, desc:lo.desc,
             alfa:q.alfa, h:eAd/100, e:eAd, hTeorico:q.h_teorico,
             hCalc:q.h, eCalc:eCalc, propia:!!(sdl&&sdl.e>0),
@@ -12409,7 +12980,7 @@ var TT={script:performance.now()};
       /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
          que lo pone Excel. Van 4 datos, no 5. */
       var av=alfaViga(o,i,j,m);
-      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),av,
+      if(b.tipo==="chata")VCH.push([b.cod,b.eje,vv.Ln.toFixed(2),coefChata(o,i,j,m).k,
                                      espesorParaChata(o,i,j,m)]);
       else V.push([b.cod,b.eje,vv.Ln.toFixed(2),vv.B.toFixed(3),av]);
     }
@@ -13712,6 +14283,232 @@ var TT={script:performance.now()};
       gravedad:FZ?FZ.gravedad:0, murosSismo:FZ?FZ.murosSismo:null,
       ejes:{leidos:FZ?FZ.ejesLeidos:null, girados:FZ?FZ.girados:[]}});
   }
+  /* =====================================================================
+     D2 · EL DISEÑO DE LAS VIGAS.  La norma vive en oviedo/vigas.js; aqui se
+     le da cada viga de Fuerzas con el regimen del Cap. 21 de la direccion en
+     la que corre, las barras y el recubrimiento de Criterios y el armado que
+     cambiaste, que se guarda en S.proy.diseno.vigas y viaja con el modelo.
+     Una viga chata va sin el Cap. 21: no es de un portico.
+     ===================================================================== */
+  var DVC={p:-1,v:null};
+  var ESTADO_VIGA={ok:["Cumple","dis-ok"],revisar:["Revisar","dis-luego"],"no cumple":["No cumple","dis-falta"],
+                   falta:["Sin datos","dis-na"]};
+  function disenoVigas(){
+    if(DVC.p===PASADA)return DVC.v;
+    var r=resultadosEtabs(), K=criteriosDiseno(), FZ=null, ex=null,
+        out={lista:[], hay:!!(r&&!r.error&&r.R), alDia:!!(r&&r.alDia)};
+    if(out.hay){ try{ FZ=fuerzasEtabs(); }catch(e){} try{ ex=exportaEtabs(); }catch(e){} }
+    if(FZ&&ex){
+      var geo={}, R=r.R, tuyo=(S.proy.diseno&&S.proy.diseno.vigas&&typeof S.proy.diseno.vigas==="object")?S.proy.diseno.vigas:{};
+      ex.niveles.forEach(function(L){ L.vigas.forEach(function(v){ geo[v.cod]=v; }); });
+      out.lista=FZ.vigas.map(function(v){
+        var gv=geo[v.cod]||{}, dir=Math.abs((+gv.x2||0)-(+gv.x1||0))>=Math.abs((+gv.y2||0)-(+gv.y1||0))?"x":"y";
+        var g=K.regimen[dir], chata=(v.tipo==="chata"), reg=chata?null:g.vigas, falta=null;
+        if(!chata&&!reg)falta=g.falta||("Dirección "+dir.toUpperCase()+": el sistema «"+(g.sistema||"sin sistema")+
+          "» no tiene vigas del Capítulo 21 y se diseña sin él.");
+        var d=VIGAS.disenar(v,{fc:K.fc, fy:K.fy, recub:K.recub.viga.cm, estribo:K.barras.viga.estribo,
+          lista:K.barras.viga.long, regimen:reg, falta:falta, vuAd:K.convenciones.vuAd,
+          estaciones:((R.vigas||{})[v.cod]||{}).estaciones, casos:(R.vigasCasos||{})[v.cod], armado:tuyo[v.cod]});
+        d.dir=dir; d.chata=chata;
+        return d;
+      });
+    }
+    out.resumen=VIGAS.resumen(out.lista);
+    DVC.p=PASADA; DVC.v=out;
+    return out;
+  }
+  function tarjetaDisenoVigas(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function f(x,n){return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",",")}
+    var r=resultadosEtabs(), h='<section class="pbox sis-ancha"><h3>Vigas · diseño con la E.060</h3>'+estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
+    var DV=disenoVigas();
+    if(!DV.lista.length)
+      return h+'<p class="aviso">Los resultados no traen fuerzas de vigas: vuelve a traerlos con RETICULA.bat [2].</p></section>';
+    var niveles=[];
+    DV.lista.forEach(function(d){ if(d.nivel&&niveles.indexOf(d.nivel)<0)niveles.push(d.nivel); });
+    var nivel=(S.disNivel&&niveles.indexOf(S.disNivel)>=0)?S.disNivel:"", R=DV.resumen;
+    var vs=DV.lista.filter(function(d){return !nivel||d.nivel===nivel});
+    h+='<div class="sis-ct fz-filtro"><label class="sis-sel"><span>Nivel</span><select id="disNivel"><option value="">Todos</option>'+
+      niveles.map(function(n){return '<option value="'+esc(n)+'"'+(n===nivel?" selected":"")+'>'+esc(n)+'</option>'}).join("")+
+      '</select></label><span class="dis-resumen">'+R.ok+' cumplen · '+R.revisar+' por revisar · '+R["no cumple"]+' no cumplen'+
+      (R.falta?' · '+R.falta+' sin datos':'')+'</span></div>';
+    h+='<div class="etb-scroll"><table class="sis-t fz-t dis-vigas"><thead><tr><th>Viga</th><th>b × h</th><th>ln (m)</th>'+
+      '<th>Cap. 21</th><th>Mu⁻ izq · Mu⁺ centro · Mu⁻ der</th><th class="dis-izq">Arriba</th><th class="dis-izq">Abajo</th>'+
+      '<th class="dis-izq">Estribos</th><th>Vu (t)</th>'+
+      '<th>Estado</th></tr></thead><tbody>'+
+      vs.map(function(d){
+        var e=ESTADO_VIGA[d.estado]||[d.estado,""], q=d.requerido;
+        return '<tr class="dis-fila'+(S.disViga===d.cod?' sel':'')+'" data-viga="'+esc(d.cod)+'" tabindex="0">'+
+          '<td>'+esc(d.cod)+'<small>'+esc(d.eje)+'</small></td><td>'+f(d.b,0)+' × '+f(d.h,0)+'</td><td>'+f(d.ln)+'</td>'+
+          '<td>'+(d.regimen?'Art. '+d.regimen:(d.chata?'chata':'—'))+'</td>'+
+          '<td>'+(q?f(q.sI.Mu)+' · '+f(q.iC.Mu)+' · '+f(q.sD.Mu):'—')+'</td>'+
+          '<td class="sis-n">'+esc(d.texto?d.texto.arriba:'—')+'</td><td class="sis-n">'+esc(d.texto?d.texto.abajo:'—')+'</td>'+
+          '<td class="sis-n">'+esc(d.cortante?d.cortante.texto:'—')+'</td><td>'+(d.cortante?f(d.cortante.Vdes):'—')+'</td>'+
+          '<td><span class="dis-est '+e[1]+'">'+e[0]+'</span>'+(d.propio?'<small>armado tuyo</small>':'')+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+    var sel=DV.lista.filter(function(d){return d.cod===S.disViga})[0];
+    h+=sel?fichaViga(sel,esc,f):'<p class="nota">Toca una viga para ver cada sección, cambiar su armado y ver de dónde sale su cortante.</p>';
+    return h+'<p class="nota">'+vs.length+' de '+DV.lista.length+' vigas. El armado lo propone el complemento con las barras de '+
+      '<b>Criterios</b>: dos corridas arriba y abajo, bastones arriba en las caras y abajo al centro, en una capa y con el menor '+
+      'acero. Flexión con As mínimo (Art. 10.5.1 y 10.5.2) y máximo 0,75 ρb (Art. 10.3.4). Cortante: la de ETABS y, en las vigas '+
+      'sismorresistentes, la de capacidad con la isostática de 1,25 (CM + CV) (Art. 21.4.3 o 21.5.4.1). Los bastones se cortan '+
+      'donde ya no hacen falta más d o 12 db (Art. 12.10.3); el despiece con empalmes y anclajes llega en D8.</p></section>';
+  }
+  /* D2c · LA VIGA A ESCALA, dibujada desde su diseño: la elevacion de cara a
+     cara con las corridas, los bastones hasta donde se cortan y cada estribo
+     -con el largo y el alto a la misma escala- y las secciones en las caras y
+     al centro con sus barras.  Los anclajes y empalmes los detalla D8. */
+  function figuraViga(d){
+    if(!d||!d.secciones||!d.armado||!d.armado.sup||!d.armado.inf||!(d.ln>0))return "";
+    var A=d.armado, C=d.cortante||{}, Lg=d.largos||{}, cf=C.conf, ln=d.ln, hm=d.h/100, rec=d.recub, ap=0.25;
+    var dbE=(DISENO.barra(d.estribo||'3/8"')||{d:0.95}).d;
+    var W=760, mx=16, k=Math.min((W-2*mx)/(ln+2*ap),110/hm), kc=k/100;
+    var x0=(W-ln*k)/2, yT=44, yB=yT+hm*k, s=[], nE=0;
+    var TX=' font-family="IBM Plex Mono, monospace"', TS=' font-family="IBM Plex Sans, sans-serif"';
+    function c(x,n){return (+x).toFixed(n==null?2:n).replace(".",",")}
+    function X(m){return x0+m*k}
+    function g(q){return q.n+' Ø'+q.bar}
+    function linea(x1,y1,x2,y2,col,w){
+      s.push('<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+
+             '" stroke="'+col+'" stroke-width="'+w+'" stroke-linecap="round"/>'); }
+    function texto(x,y,t,anc,col,tam,fam){
+      s.push('<text x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" text-anchor="'+(anc||"middle")+'" font-size="'+(tam||10)+
+             '" fill="'+(col||"var(--ink-2)")+'"'+(fam||TS)+'>'+String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;")+'</text>'); }
+    function cota(a,b,y,t){
+      linea(a,y,b,y,"var(--ink-3)",1); linea(a,y-4,a,y+4,"var(--ink-3)",1); linea(b,y-4,b,y+4,"var(--ink-3)",1);
+      texto((a+b)/2,y-5,t,"middle","var(--ink-3)",9.5,TX); }
+    texto(mx,14,"Elevación de cara a cara · largo y alto a la misma escala","start","var(--ink)",11);
+    /* la leyenda: el color dice que barra es y el texto de al lado lo repite */
+    s.push('<circle cx="'+(W-mx-176)+'" cy="10" r="3.5" fill="var(--ink)"/>'); texto(W-mx-169,14,"corridas","start");
+    s.push('<circle cx="'+(W-mx-116)+'" cy="10" r="3.5" fill="var(--viga)"/>'); texto(W-mx-109,14,"bastones","start");
+    linea(W-mx-56,6,W-mx-56,15,"var(--ink-3)",1); texto(W-mx-50,14,"estribos","start");
+    /* los apoyos y la viga */
+    [[X(-ap),X(0)],[X(ln),X(ln+ap)]].forEach(function(p){
+      s.push('<rect x="'+p[0].toFixed(1)+'" y="'+(yT-8)+'" width="'+(p[1]-p[0]).toFixed(1)+'" height="'+(yB-yT+16).toFixed(1)+
+             '" fill="var(--line-soft)"/>');
+      linea(p[0],yT-8,p[0],yB+8,"var(--line)",1); linea(p[1],yT-8,p[1],yB+8,"var(--line)",1);
+    });
+    s.push('<rect x="'+x0.toFixed(1)+'" y="'+yT+'" width="'+(ln*k).toFixed(1)+'" height="'+(yB-yT).toFixed(1)+
+           '" fill="none" stroke="var(--ink-2)" stroke-width="1.2"/>');
+    /* los estribos: desde cada cara, los de la zona confinada y despues el resto */
+    var off=Math.max(4,(rec+dbE)*kc+1), ySup=yT+off, yInf=yB-off, xa=X(-ap*0.8), xb=X(ln+ap*0.8);
+    var sF=Math.max(0.05,(C.sFuera||20)/100), mitad=ln/2;
+    function lado(){
+      var p=[], x, i;
+      if(cf){ for(i=0;i<cf.n;i++)p.push((cf.primero+i*cf.s)/100); x=p[p.length-1]+sF; }
+      else{ p.push(0.05); x=0.05+sF; }
+      for(;x<=ln+1e-9;x+=sF)p.push(x);
+      return p;
+    }
+    var izq=lado().filter(function(p){return p<=mitad+1e-9}), maxI=izq.length?izq[izq.length-1]:0;
+    var der=lado().map(function(p){return ln-p}).filter(function(x){return x>maxI+0.04});
+    izq.concat(der).forEach(function(x){ if(x>0&&x<ln){ linea(X(x),ySup-2,X(x),yInf+2,"var(--ink-3)",0.9); nE++; } });
+    /* las barras, encima */
+    linea(xa,ySup,xb,ySup,"var(--ink)",1.8);
+    linea(xa,yInf,xb,yInf,"var(--ink)",1.8);
+    if(A.bSI&&Lg.bSI!=null)linea(xa,ySup+3.5,X(Lg.bSI),ySup+3.5,"var(--viga)",1.8);
+    if(A.bSD&&Lg.bSD!=null)linea(X(ln-Lg.bSD),ySup+3.5,xb,ySup+3.5,"var(--viga)",1.8);
+    if(A.bIC&&Lg.bIC)linea(X(Lg.bIC[0]),yInf-3.5,X(Lg.bIC[1]),yInf-3.5,"var(--viga)",1.8);
+    texto(X(mitad),yT-12,g(A.sup)+" corridas","middle","var(--ink)");
+    if(A.bSI&&Lg.bSI!=null)texto(xa,yT-12,g(A.bSI)+" · "+c(Lg.bSI)+" m","start");
+    if(A.bSD&&Lg.bSD!=null)texto(xb,yT-12,g(A.bSD)+" · "+c(Lg.bSD)+" m","end");
+    texto(x0+4,yB+20,g(A.inf)+" corridas","start","var(--ink)");
+    if(A.bIC&&Lg.bIC)texto(X((Lg.bIC[0]+Lg.bIC[1])/2),yB+20,g(A.bIC)+" de "+c(Lg.bIC[0])+" a "+c(Lg.bIC[1])+" m");
+    if(cf){
+      cota(X(0),X(cf.Lo/100),yB+44,"2h = "+c(cf.Lo,0)+" cm");
+      cota(X(ln-cf.Lo/100),X(ln),yB+44,"2h = "+c(cf.Lo,0)+" cm");
+    }
+    texto(X(mitad),yB+64,C.texto||"","middle","var(--ink-2)");
+    cota(X(0),X(ln),yB+92,"ln = "+c(ln)+" m");
+    /* las secciones, ampliadas y a una misma escala entre ellas */
+    var ys=yB+122, sc=Math.min(3,130/d.h), hS=d.h*sc, bS=d.b*sc, yS=ys+14;
+    texto(mx,ys,"Secciones · ampliadas, las tres a la misma escala","start","var(--ink)",11);
+    [["Cara izquierda",[A.sup,A.bSI],[A.inf,null]],["Centro",[A.sup,null],[A.inf,A.bIC]],
+     ["Cara derecha",[A.sup,A.bSD],[A.inf,null]]].forEach(function(q,i){
+      var cx=W*(2*i+1)/6, rx=cx-bS/2, ie=(rec+dbE/2)*sc;
+      s.push('<rect data-fig="seccion" x="'+rx.toFixed(1)+'" y="'+yS+'" width="'+bS.toFixed(1)+'" height="'+hS.toFixed(1)+
+             '" fill="var(--panel)" stroke="var(--ink-2)" stroke-width="1.2"/>');
+      s.push('<rect x="'+(rx+ie).toFixed(1)+'" y="'+(yS+ie).toFixed(1)+'" width="'+(bS-2*ie).toFixed(1)+'" height="'+
+             (hS-2*ie).toFixed(1)+'" rx="'+(2*dbE*sc).toFixed(1)+'" fill="none" stroke="var(--ink-3)" stroke-width="'+
+             Math.max(1,dbE*sc).toFixed(1)+'"/>');
+      [[q[1],true],[q[2],false]].forEach(function(cp){
+        var cor=cp[0][0], bas=cp[0][1], N=cor.n+(bas?bas.n:0), dm=Math.max(cor.db,bas?bas.db:0),
+            cen=(rec+dbE+dm/2)*sc, y=cp[1]?yS+cen:yS+hS-cen, xl=rx+cen, xr=rx+bS-cen, ic=[], j;
+        /* las corridas en las esquinas y repartidas; los bastones, entre ellas */
+        for(j=0;j<cor.n;j++)ic.push(cor.n===1?0:Math.round(j*(N-1)/(cor.n-1)));
+        for(j=0;j<N;j++){
+          var esC=ic.indexOf(j)>=0, q2=esC?cor:bas, x=N===1?cx:xl+(xr-xl)*j/(N-1);
+          s.push('<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+Math.max(2.2,q2.db*sc/2).toFixed(1)+
+                 '" fill="'+(esC?"var(--ink)":"var(--viga)")+'"/>');
+        }
+      });
+      texto(cx,yS+hS+15,q[0],"middle","var(--ink)",10.5);
+      texto(cx,yS+hS+28,c(d.b,0)+" × "+c(d.h,0)+" cm","middle","var(--ink-3)",9.5,TX);
+    });
+    var H=Math.ceil(yS+hS+36);
+    return '<div class="etb-scroll dis-figw"><svg data-fig="elevacion" data-estribos="'+nE+'" viewBox="0 0 '+W+' '+H+
+      '" width="'+W+'" height="'+H+'" role="img" aria-label="Elevación y secciones de la viga '+
+      String(d.cod).replace(/[<"&]/g,"")+'">'+s.join("")+'</svg></div>';
+  }
+  function fichaViga(d,esc,f){
+    var K=criteriosDiseno(), C=d.cortante||{};
+    var h='<div class="dis-ficha"><h4>'+esc(d.cod)+'<small>'+esc(d.nivel)+' · '+esc(d.eje)+' · '+f(d.b,0)+' × '+f(d.h,0)+
+      ' cm · d = '+f(d.d,1)+' cm · ln = '+f(d.ln)+' m · '+(d.regimen?'Art. '+d.regimen+': '+esc(DISENO.CAP21[d.regimen])
+      :(d.chata?'viga chata, sin el Capítulo 21':'sin el Capítulo 21'))+'</small></h4>';
+    if(d.estado==="falta"||!d.secciones)
+      return h+'<p class="aviso'+(d.estado==="no cumple"?' dis-no':'')+'">'+
+        (d.avisos||[]).map(function(a){return esc(a.texto)}).join("<br>")+'</p></div>';
+    h+=figuraViga(d);
+    var LUG={izq:"Cara izquierda",centro:"Centro",der:"Cara derecha"};
+    h+='<div class="etb-scroll"><table class="sis-t fz-t"><thead><tr><th>Sección</th><th>Mu (t·m)</th><th>As requerido (cm²)</th>'+
+      '<th>As colocado (cm²)</th><th>φMn (t·m)</th><th>φMn ≥ Mu</th></tr></thead><tbody>'+
+      d.secciones.map(function(s){
+        return ["sup","inf"].map(function(k){
+          var x=s[k];
+          return '<tr><td>'+LUG[s.k]+(k==="sup"?' · arriba (Mu⁻)':' · abajo (Mu⁺)')+'</td><td>'+f(x.Mu)+'</td><td>'+f(x.asReq)+
+            '</td><td>'+f(x.As)+'</td><td>'+f(x.phiMn)+'</td><td>'+(x.ok?'<span class="dis-est dis-ok">sí</span>'
+            :'<span class="dis-est dis-falta">no</span>')+'</td></tr>';
+        }).join("");
+      }).join("")+'</tbody></table></div>'+
+      '<p class="nota">As mínimo '+f(d.AsMin.As)+' cm² ('+esc(d.AsMin.por)+') · As máximo '+f(d.AsMax.As)+' cm² ('+
+      esc(d.AsMax.por)+').</p>';
+    var PART=[["sup","Corridas arriba"],["inf","Corridas abajo"],["bSI","Bastón arriba, cara izquierda"],
+              ["bSD","Bastón arriba, cara derecha"],["bIC","Bastón abajo, al centro"]], lista=K.barras.viga.long, L=d.largos||{};
+    h+='<div class="dis-arm"><h5>Armado<small>'+(d.propio?'el tuyo':'el propuesto')+'</small></h5>'+
+      PART.map(function(p){
+        var g=d.armado[p[0]], largo="", barras=(g&&lista.indexOf(g.bar)<0)?lista.concat([g.bar]):lista,
+            elegida=g?g.bar:(d.armado.sup?d.armado.sup.bar:lista[0]);
+        if(g&&p[0]==="bSI")largo=f(L.bSI)+' m desde la cara';
+        if(g&&p[0]==="bSD")largo=f(L.bSD)+' m desde la cara';
+        if(g&&p[0]==="bIC"&&L.bIC)largo='de '+f(L.bIC[0])+' a '+f(L.bIC[1])+' m';
+        return '<label class="pf"><span class="pfe">'+p[1]+'</span>'+
+          '<input id="dArmN_'+p[0]+'" class="pfi dis-n" type="number" min="0" max="12" step="1" data-parte="'+p[0]+
+          '" data-campo="n" value="'+(g?g.n:0)+'">'+
+          '<select id="dArmB_'+p[0]+'" class="pfi dis-sel" data-parte="'+p[0]+'" data-campo="bar">'+
+          barras.map(function(n){return '<option value="'+esc(n)+'"'+(n===elegida?' selected':'')+'>Ø '+esc(n)+'</option>'}).join("")+
+          '</select><span class="pfn">'+largo+'</span></label>';
+      }).join("")+
+      (d.propio?'<button class="btn" data-vprop="1">Volver al propuesto</button>':'')+
+      '<p class="nota">Estribos: '+esc(C.texto||"—")+'.</p></div>';
+    h+='<div class="dis-cort"><h5>Cortante</h5><dl class="kv">'+
+      kv("Vu de ETABS en la cara",f(C.Venv)+" t")+
+      (C.iso?kv("Isostática, 1,25 (CM + CV)",f(C.iso.Viso)+" t"):"")+
+      (C.Vcap!=null?kv(d.regimen==="21.5"?"Por capacidad, Mpr = 1,25 Mn (Art. 21.5.4.1)":"Por capacidad, con Mn (Art. 21.4.3 a)",f(C.Vcap)+" t"):"")+
+      (C.Vb!=null?kv("Con el sismo × 2,5 (Art. 21.4.3 b)",f(C.Vb)+" t"):"")+
+      kv("Vu de diseño","<b>"+f(C.Vdes)+" t</b>",1)+
+      kv(K.convenciones.vuAd?"Vu a d de la cara":"Vu en la cara",f(C.Vd)+" t")+
+      kv("φVc = 0,85 · 0,17 √f'c bw d",f(0.85*C.Vc)+" t")+
+      kv("Vs = Vu/φ − Vc",f(C.Vs)+" t (máx. "+f(C.VsMax)+")")+
+      kv("s que pide la cortante",isFinite(C.sReq)?f(C.sReq,1)+" cm":"no hace falta")+
+      (C.conf?kv("Zona confinada","2h = "+f(C.conf.Lo,0)+" cm · s ≤ "+f(C.conf.lim,1)+" cm → "+
+        String(C.conf.s).replace(".",",")+" cm"):"")+
+      kv("Fuera de ella",String(C.sFuera).replace(".",",")+" cm")+
+      '</dl></div>';
+    if(d.avisos&&d.avisos.length)h+='<p class="aviso'+(d.estado==="no cumple"?' dis-no':'')+'">'+
+      d.avisos.map(function(a){return esc(a.texto)}).join("<br>")+'</p>';
+    return h+'</div>';
+  }
   function pintaDiseno(){
     var el=$("#panelDis"); if(!el)return;
     var sub=subDe("diseno"), K=criteriosDiseno(), A=DISENO.ART,
@@ -13803,6 +14600,8 @@ var TT={script:performance.now()};
         '<p class="nota">Con estas barras el complemento propondrá el armado de cada elemento, y lo podrás cambiar '+
         'elemento por elemento. Estribos: 8 mm hasta barras de 5/8", 3/8" hasta 1" y 1/2" para las mayores '+
         '(Art. 7.10.5.1); el de confinamiento no baja de 8 mm (Art. 21.1).</p></section>';
+    }else if(sub==="vigas"){
+      h+=tarjetaDisenoVigas();
     }else{
       var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,revisar:0,luego:0},
           EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],revisar:["Revisar","dis-falta"],
@@ -13845,6 +14644,31 @@ var TT={script:performance.now()};
     al("select[data-est]",function(){ disenoProy().barras[this.dataset.est].estribo=this.value; guardar(); render(); });
     al("select[data-dual]",function(){ disenoProy().tipoDual[this.dataset.dual]=this.value; guardar(); render(); });
     al("#dVuAd",function(){ disenoProy().vuAd=!!this.checked; guardar(); render(); });
+    /* D2 · Vigas: el nivel, la viga que se mira y su armado */
+    al("#disNivel",function(){ S.disNivel=this.value; render(); });
+    try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis tr[data-viga]"),function(tr){
+      function toca(){ S.disViga=(S.disViga===tr.dataset.viga)?null:tr.dataset.viga; render(); }
+      tr.onclick=toca;
+      tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toca(); } };
+    }); }catch(e){}
+    al("[data-parte]",function(){
+      /* al repintar, el campo que se va pierde el foco y el navegador vuelve a
+         lanzar su change: el mismo valor no repinta dos veces */
+      if(this._visto===this.value)return;
+      this._visto=this.value;
+      var cod=S.disViga, sel=disenoVigas().lista.filter(function(x){return x.cod===cod})[0];
+      if(!sel)return;
+      var d=disenoProy(), k=this.dataset.parte, n=null, bar=null;
+      d.vigas=(d.vigas&&typeof d.vigas==="object")?d.vigas:{};
+      var a=d.vigas[cod]||{};
+      /* se parte del armado de ahora: cambiar una parte no toca las demas */
+      VIGAS.PARTES.forEach(function(p){ if(!(p in a)){ var g=sel.armado[p]; a[p]=g?{n:g.n,bar:g.bar}:null; } });
+      Array.prototype.forEach.call(document.querySelectorAll('#panelDis [data-parte="'+k+'"]'),function(x){
+        if(x.dataset.campo==="n")n=+x.value; else bar=x.value; });
+      a[k]=(n>0&&bar)?{n:Math.min(12,Math.round(n)),bar:bar}:null;
+      d.vigas[cod]=a; guardar(); render(); });
+    try{ var vp=document.querySelector("#panelDis [data-vprop]");
+      if(vp)vp.onclick=function(){ var d=disenoProy(); if(d.vigas)delete d.vigas[S.disViga]; guardar(); render(); }; }catch(e){}
   }
 
   /* PARTE B3 · COMBINACIONES DE LA E.060 (Art. 9.2).  CM es el peso propio
@@ -14278,7 +15102,17 @@ var TT={script:performance.now()};
             /* C3: las fuerzas de diseno por elemento, para las hojas FUERZAS_ y REACCIONES */
             fuerzas:fuerzasEtabs(),
             /* D0: los criterios de diseño resueltos, para CRITERIOS_DISENO */
-            diseno:criteriosDiseno()};
+            diseno:criteriosDiseno(),
+            /* D2: el diseño de las vigas, para DISENO_VIGAS: solo lo que la hoja escribe */
+            disenoVigas:(function(){
+              var D=disenoVigas();
+              return {resumen:D.resumen, lista:D.lista.map(function(d){
+                return {cod:d.cod, nivel:d.nivel, eje:d.eje, b:d.b, h:d.h, ln:d.ln, regimen:d.regimen, estado:d.estado,
+                        propio:!!d.propio, secciones:d.secciones||null, texto:d.texto||null,
+                        cortante:d.cortante?{Vdes:d.cortante.Vdes, texto:d.cortante.texto}:null,
+                        avisos:(d.avisos||[]).map(function(a){return {nivel:a.nivel, texto:a.texto}})};
+              })};
+            })()};
   }
 
   function tabla(){
@@ -15512,7 +16346,9 @@ var TT={script:performance.now()};
     {n:"FUERZAS_PLACAS",       tit:"Fuerzas en placas",    t:"res", fz:"placas"},
     {n:"REACCIONES",           tit:"Reacciones",           t:"res", fz:"reacciones"},
     /* D0: la base del diseño E.060; sale siempre, con los criterios del proyecto */
-    {n:"CRITERIOS_DISENO",     tit:"Criterios de diseño",  t:"dis"}
+    {n:"CRITERIOS_DISENO",     tit:"Criterios de diseño",  t:"dis"},
+    /* D2: el diseño de las vigas, con resultados */
+    {n:"DISENO_VIGAS",         tit:"Diseño de vigas",      t:"res", fz:"vigas"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -15523,7 +16359,7 @@ var TT={script:performance.now()};
     PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
     VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true,
-    CRITERIOS_DISENO:true};
+    CRITERIOS_DISENO:true,DISENO_VIGAS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
@@ -16055,7 +16891,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
