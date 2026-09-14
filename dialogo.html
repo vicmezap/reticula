@@ -7714,7 +7714,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 var TT={script:performance.now()};
 (function(){
   "use strict";
-  var LETRAS="ABCDEFGHIJKLMN".split("");
+  /* los ejes en X se llaman A..Z y luego AA, AB... como las columnas de Excel: antes la lista llegaba solo a N */
+  function letraEje(n){var s="";while(n>0){var r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=(n-1-r)/26;}return s;}
+  var MAX_EJES=50;                 /* ejes por direccion (eran 13) */
   /* Suelo de la luz libre.  No es un criterio: es lo unico que impide dividir
      entre cero cuando el vano queda mas corto que los apoyos que lo cierran.
      Cuando actua, el numero deja de ser una luz, asi que Revisar lo denuncia
@@ -7754,7 +7756,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v175 · 14-09-2026";
+  var BUILD="v180 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -7867,7 +7869,28 @@ var TT={script:performance.now()};
   var UNDO=[],REDO=[];
   function N(){return S.niveles[S.act]}
   function nx(){return N().dx.length+1} function ny(){return N().dy.length+1}
-  function key(){return Array.prototype.join.call(arguments,":")}
+  function key(a,b,c){
+    var n=arguments.length;
+    return n===2?a+":"+b:(n===3?a+":"+b+":"+c:Array.prototype.join.call(arguments,":"));
+  }
+  /* MEMORIA DE UN CALCULO LARGO.  Mientras dura un dibujo, la exportacion a ETABS, las hojas, la revision o el
+     sismo, el modelo no cambia: lo que se pregunta miles de veces -el nudo, el tramo de una losa o de una viga,
+     los codigos, el peso de la estructura- se calcula una vez.  Con 30 x 30 ejes la exportacion tardaba 2,9 s y
+     se hace cada vez que se guarda.  Fuera de esos calculos no hay memoria: quien cambia el modelo lee lo de
+     ahora.  Lo que se guarda en memoria se devuelve copiado, para que nadie lo toque. */
+  var MEMO=null;
+  function memoNueva(){return {g:{}, n:(typeof WeakMap==="function")?new WeakMap():null}}
+  function conMemo(f,nueva){
+    if(MEMO&&!nueva)return f();
+    var antes=MEMO; MEMO=memoNueva();
+    try{ return f(); } finally{ MEMO=antes?memoNueva():null; }
+  }
+  function memoG(k,calc){ if(!MEMO)return calc(); var v=MEMO.g[k]; if(v===undefined){v=calc();MEMO.g[k]=v;} return v; }
+  function cacheDe(m){
+    if(!MEMO||!MEMO.n||!m||typeof m!=="object")return null;
+    var c=MEMO.n.get(m); if(!c){c={};MEMO.n.set(m,c);} return c;
+  }
+  function copia1(o){var r={},k;for(k in o)r[k]=o[k];return r}
   function posX(i,m){var s=0,d=(m||N()).dx;for(var k=0;k<i;k++)s+=d[k];return s}
   function posY(j,m){var s=0,d=(m||N()).dy;for(var k=0;k<j;k++)s+=d[k];return s}
 
@@ -7904,12 +7927,17 @@ var TT={script:performance.now()};
   }
   function nodo(i,j,m){
     m=m||N();
+    /* sin la memoria -una prueba que saca esta funcion sola- se calcula como siempre */
+    var mc=(typeof MEMO!=="undefined")?cacheDe(m):null, kc="n:"+i+":"+j, v=mc&&mc[kc];
+    if(v)return {x:v.x,y:v.y};
     var dx=m.dx, dx2=ladoX2(m), dy=m.dy, dy2=ladoY2(m);
     var Lx=acum(dx,dx.length), Ly=acum(dy,dy.length);
     var t=Lx?acum(dx,i)/Lx:0;      /* cuanto se ha avanzado en X, 0..1 */
     var s=Ly?acum(dy,j)/Ly:0;      /* cuanto se ha bajado en Y, 0..1 */
-    return { x:(1-s)*acum(dx,i)+s*acum(dx2,i),
-             y:(1-t)*acum(dy,j)+t*acum(dy2,j) };
+    var r={ x:(1-s)*acum(dx,i)+s*acum(dx2,i),
+            y:(1-t)*acum(dy,j)+t*acum(dy2,j) };
+    if(mc)mc[kc]={x:r.x,y:r.y};
+    return r;
   }
   function dist(a,b){var dx=b.x-a.x,dy=b.y-a.y;return Math.sqrt(dx*dx+dy*dy)}
   function med(u,v){return {x:(u.x+v.x)/2,y:(u.y+v.y)/2}}
@@ -7965,7 +7993,7 @@ var TT={script:performance.now()};
   function nomEje(ejeX,a,m){
     var p=primas(ejeX,m),k=0,pr=0,i;
     for(i=0;i<=a;i++){if(p[i])pr++;else{k++;pr=0;}}
-    return (ejeX?LETRAS[k-1]:String(k))+(pr?new Array(pr+1).join("′"):"");
+    return (ejeX?letraEje(k):String(k))+(pr?new Array(pr+1).join("′"):"");
   }
   /* Tramo continuo al que pertenece el vano (i,j).
        hay(k)   : ¿el vano contiguo k tiene el mismo elemento?  Un tramo solo
@@ -8337,8 +8365,9 @@ var TT={script:performance.now()};
 
   /* La viga se interrumpe donde hay COLUMNA */
   function tramoViga(o,i,j,m){
-    m=m||N();var ejeX=(o==="h");
-    return tramo(ejeX,i,j,m,
+    m=m||N();var ejeX=(o==="h"), mc=cacheDe(m), kc="tv:"+o+":"+i+":"+j;
+    if(mc&&mc[kc])return copia1(mc[kc]);
+    var t=tramo(ejeX,i,j,m,
       function(k){return !!m.vigas[ejeX?("h:"+k+":"+j):("v:"+i+":"+k)]},
       function(a){
         /* una COLUMNA siempre es apoyo.  Sin columna manda la junta, si la
@@ -8354,11 +8383,15 @@ var TT={script:performance.now()};
         if(jt===false)return true;
         return !esPrima(ejeX,a,m);
       });
+    if(mc)mc[kc]=copia1(t);
+    return t;
   }
   /* La losa se estira en la direccion de su armado, que es la que da su luz,
      y se interrumpe donde hay VIGA, que es lo que la sostiene */
   function tramoLosaEje(dir,i,j,m){
     m=m||N();var ejeX=(dir==="x");
+    var mc=(typeof MEMO!=="undefined")?cacheDe(m):null, kc="te:"+dir+":"+i+":"+j;
+    if(mc&&mc[kc])return copia1(mc[kc]);
     var o0=m.losas[i+":"+j], esc0=esEscalera(o0), propia=!!o0&&dirLosa(o0)===dir;
     var t=tramo(ejeX,i,j,m,
       /* una escalera es un paño suelto: ni se une a una losa ni una losa pasa por ella.  Y a lo largo de SU
@@ -8409,6 +8442,7 @@ var TT={script:performance.now()};
     t.L2=dist(A2,B2);
     t.Lcorto=Math.min(t.L1,t.L2);
     t.L=Math.max(t.L1,t.L2);
+    if(mc)mc[kc]=copia1(t);
     return t;
   }
   /* LA LOSA DE COSTADO.  Una losa armada en Y tambien sigue a la columna de al
@@ -8455,6 +8489,8 @@ var TT={script:performance.now()};
      es el borde MAS LARGO de todas sus lineas, que es el que manda el peralte. */
   function tramoLosa(dir,i,j,m){
     m=m||N();
+    var mc=cacheDe(m), kc="tl:"+dir+":"+i+":"+j;
+    if(mc&&mc[kc])return copia1(mc[kc]);
     var t=tramoLosaEje(dir,i,j,m), y=(dir==="y"), ld=ladoLosa(dir,i,j,m,t);
     t.lat0=ld.lat0; t.lat1=ld.lat1;
     t.dueno=t.dueno&&(y?i:j)===t.lat0;
@@ -8464,6 +8500,7 @@ var TT={script:performance.now()};
         t.L=Math.max(t.L,dc); t.Lcorto=Math.min(t.Lcorto,dc);
       }
     }
+    if(mc)mc[kc]=copia1(t);
     return t;
   }
   /* la losa (i,j) sigue de costado por su borde de la izquierda (en Y) o de arriba (en X) */
@@ -8894,7 +8931,7 @@ var TT={script:performance.now()};
   /* Oviedo 2.3 (pag. 25): tabla alfa de LOSAS aligeradas segun sobrecarga. */
   /* Las tablas alfa ya NO viven aqui: estan en oviedo/criterios.js, que es
      la unica copia y la que prueban los 60 ejemplos del libro. */
-  function scDefecto(){return +$("#sc").value}
+  function scDefecto(){return memoG("sc",function(){return +$("#sc").value})}
 
   /* Sobrecarga que gobierna un paño: la de su ambiente si ya lo asignaste,
      y si no la sobrecarga por defecto del selector de arriba. */
@@ -8953,7 +8990,8 @@ var TT={script:performance.now()};
   function ejeVigaV(i,j,m){var t=tramoViga("v",i,j,m||N());
     return eX(i)+" / "+eY(t.desde)+"-"+eY(t.hasta)}
   function ejeLosa(i,j){return eX(i)+"-"+eX(i+1)+" / "+eY(j)+"-"+eY(j+1)}
-  function nombres(niv){
+  function nombres(niv){return memoG("nm:"+niv,function(){return nombresCalc(niv)})}
+  function nombresCalc(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
         C={},V={},L={},P={},c=0,v={principal:0,chata:0},pl=0,
         l={aligerada:0,maciza:0,nervada:0,escalera:0},i,j;
@@ -10636,8 +10674,8 @@ var TT={script:performance.now()};
         dy2=MARCA.igual.der  ?null:tramosDe(MARCA.pts.der);
     if(dx.length<1||dy.length<1)
       return toast("Faltan ejes: hacen falta al menos dos por dirección.");
-    if(dx.length>12||dy.length>12)
-      return toast("Máximo 13 ejes por dirección.");
+    if(dx.length>MAX_EJES-1||dy.length>MAX_EJES-1)
+      return toast("Máximo "+MAX_EJES+" ejes por dirección.");
     if(dx.concat(dy,dx2||[],dy2||[]).some(function(v){return !(v>0)}))
       return toast("Hay dos ejes marcados en el mismo sitio: quita uno.");
 
@@ -10718,7 +10756,7 @@ var TT={script:performance.now()};
             "stroke-width":act?2:1.2,opacity:op}));
           if(act)txt(g,(ax+bx)/2,(ay+by)/2-6,dist(A,B).toFixed(2),col,11);
         }
-        if(act)txt(g,ax,ay-11,p.ejeX?(LET.charAt(i)||("X"+i)):String(i+1),col,11);
+        if(act)txt(g,ax,ay-11,p.ejeX?letraEje(i+1):String(i+1),col,11);
       }
     });
     cont.appendChild(g);
@@ -10824,11 +10862,11 @@ var TT={script:performance.now()};
       return h+"</ul>";
     }
     var LET="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    var mal=!hayEsc||a.x.length<2||a.y.length<2||a.x.length>13||a.y.length>13;
+    var mal=!hayEsc||a.x.length<2||a.y.length<2||a.x.length>MAX_EJES||a.y.length>MAX_EJES;
     var aviso=!hayEsc
       ? "Sin escala no se puede aplicar nada: escribe un total real."
       : (a.x.length<2||a.y.length<2) ? "Hacen falta al menos dos ejes en cada dirección."
-      : (a.x.length>13||a.y.length>13) ? "El modelador admite 13 ejes por dirección como mucho. Quita los que sobren."
+      : (a.x.length>MAX_EJES||a.y.length>MAX_EJES) ? "El modelador admite "+MAX_EJES+" ejes por dirección como mucho. Quita los que sobren."
       : "";
 
     /* El selector de fuente es lo que convierte una lectura mala en un
@@ -10863,7 +10901,7 @@ var TT={script:performance.now()};
       sel+
       '<div class="cols">'+
         '<div><div class="lbl">Ejes ↔ · '+a.x.length+'</div>'+
-          lista("x",PROP.x,PROP.onX,dx,function(i){return LET.charAt(i)||("X"+i)})+
+          lista("x",PROP.x,PROP.onX,dx,function(i){return letraEje(i+1)})+
           '<label class="pf" style="margin:8px 0 0"><span class="pfe">Total ↔ (m)</span>'+
           '<input type="text" inputmode="decimal" id="ejTotX" value="'+
           (hayEsc?tx.toFixed(3):"")+'" placeholder="escríbelo"></label></div>'+
@@ -10975,8 +11013,8 @@ var TT={script:performance.now()};
                    "total real del plano y todo se ajusta a él.");
     if(a.x.length<2||a.y.length<2)
       return toast("Hacen falta al menos dos ejes en cada dirección.");
-    if(a.x.length>13||a.y.length>13)
-      return toast("Máximo 13 ejes por dirección: quita los que sobren.");
+    if(a.x.length>MAX_EJES||a.y.length>MAX_EJES)
+      return toast("Máximo "+MAX_EJES+" ejes por dirección: quita los que sobren.");
     var dx=TRAZAS.vanos(a.x,esc), dy=TRAZAS.vanos(a.y,esc);
     if(dx.some(function(v){return !(v>0)})||dy.some(function(v){return !(v>0)}))
       return toast("Algún vano sale en cero: revisa la escala.");
@@ -11404,7 +11442,7 @@ var TT={script:performance.now()};
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
-    if(arr.length>=12)return toast("Máximo 13 ejes por dirección.");
+    if(arr.length>=MAX_EJES-1)return toast("Máximo "+MAX_EJES+" ejes por dirección.");
     snap();
     var p=primas(ejeX,m);
     var d=+(arr[t]/2).toFixed(4);arr.splice(t,1,d,d);
@@ -11560,7 +11598,7 @@ var TT={script:performance.now()};
         if(op==="q")return partir(ejeX,t,true);
         if(op==="x")return borrarEje(ejeX,t+1);
         var arr=ejeX?N().dx:N().dy;
-        if(arr.length>=12)return toast("Máximo 13 ejes.");
+        if(arr.length>=MAX_EJES-1)return toast("Máximo "+MAX_EJES+" ejes por dirección.");
         snap(); arr.push(ejeX?5:6);
         var o2=ejeX?N().dx2:N().dy2; if(o2)o2.push(ejeX?5:6);
         render();
@@ -11751,7 +11789,7 @@ var TT={script:performance.now()};
      acabados y la carga viva, y se pinta.  La escalera de un nivel es la
      que LLEGA a ese piso: arranca en el de abajo.
      ===================================================================== */
-  var ESC_DEF={tramos:2, paso:25, cp:"", ojo:10, descanso:"", lado:"a", sube:"+"};
+  var ESC_DEF={tramos:2, paso:25, cp:"", ojo:10, descanso:"", lado:"a", sube:"+", etabs:"losa", apoyoDesc:""};
   function datosEsc(o){
     var d={}, k, e=(o&&o.esc&&typeof o.esc==="object")?o.esc:{};
     for(k in ESC_DEF)d[k]=(e[k]===undefined||e[k]===null)?ESC_DEF[k]:e[k];
@@ -11776,9 +11814,15 @@ var TT={script:performance.now()};
     if(o.uso){ var w=pesoAmb(o.uso,o.amb||""); if(w>0)cv={w:w, grupo:o.amb||o.uso, supuesto:false, delPano:true}; }
     var pr=ESCALERA.predim(g,{Ln:Ln, t:(o.sec&&o.sec.e>0)?o.sec.e/100:null, gamma:gamma, acabados:acab, cv:cv.w});
     var trz=ESCALERA.trazado(g,{lado:d.lado}), pm=ESCALERA.pasoMinimo(S.proy.uso);
+    /* EN ETABS: losa inclinada (por defecto) o solo cargas; y el descanso de una U, en viga -por defecto si las dos
+       esquinas de su borde tienen columna- o autoportante */
+    var esqE2=(e2[0]==="h")?[key(e2[1],e2[2]),key(e2[1]+1,e2[2])]:[key(e2[1],e2[2]),key(e2[1],e2[2]+1)],
+        colsE2=esqE2.every(function(k2){return !!m.cols[k2]});
+    var apoyoDesc=(g.tramos!==2)?null:((d.apoyoDesc==="viga"||d.apoyoDesc==="libre")?d.apoyoDesc:(colsE2?"viga":"libre"));
     return {o:o, d:d, esquinas:E, g:g, pr:pr, trazado:trz, apoyos:ESCALERA.cargasApoyos(g,pr,trz), pasoMin:pm, cv:cv,
             avisos:ESCALERA.comprobar(g,pr,{uso:S.proy.uso, pasoMin:pm}), bordes:{E1:e1,E2:e2}, Ln:Ln,
-            largo:largo, ancho:ancho, acabados:acab};
+            largo:largo, ancho:ancho, acabados:acab, gamma:gamma,
+            modo:(d.etabs==="cargas")?"cargas":"losa", apoyoDesc:apoyoDesc, esqE2:esqE2, colsE2:colsE2};
   }
   function cmEsc(v){return String(Math.round(v*1000)/10).replace(".",",")}
   /* EL SIMBOLO EN LA PLANTA, a escala: el contorno y los pasos de cada tramo, su flecha de subida y el descanso */
@@ -11881,7 +11925,8 @@ var TT={script:performance.now()};
   }
   /* EL INSPECTOR de la escalera: sus datos, lo que sale y lo que no cumple */
   function inspEscalera(q,T,B,m,nm){
-    var c=calculoEscalera(q.i,q.j,m), d=c.d, g=c.g, pr=c.pr, cod=nm.L[key(q.i,q.j)].cod, ej=ejesEscalera(q.i,q.j,m,c.o);
+    var c=calculoEscalera(q.i,q.j,m,S.act), d=c.d, g=c.g, pr=c.pr, cod=nm.L[key(q.i,q.j)].cod, ej=ejesEscalera(q.i,q.j,m,c.o),
+        fal=faltasEscalera(q.i,q.j,m,S.act);
     /* botones de a dos o tres con el nombre de TUS ejes: se ve donde queda cada cosa */
     function seg(etq,clave,ops,act){
       return '<div class="esc-seg"><span class="pfe">'+etq+'</span><span class="esc-seg-b">'+ops.map(function(o){
@@ -11897,6 +11942,8 @@ var TT={script:performance.now()};
       (g.tramos===2?"2 tramos en U":"1 tramo recto")+' · tramos en '+dirLosa(c.o).toUpperCase()+'</span>'+
       '<div style="margin-top:9px">'+
       seg("Tramos","tramos",[["2","2 en U"],["1","1 recto"]],String(g.tramos))+
+      seg("En ETABS","etabs",[["losa","Losa inclinada"],["cargas","Solo cargas"]],c.modo)+
+      (g.tramos===2&&c.modo==="losa"?seg("Descanso apoyado en","apoyoDesc",[["viga","Viga de descanso"],["libre","Autoportante"]],c.apoyoDesc):'')+
       seg("Tramos a lo largo de","dir",[["x","X"],["y","Y"]],dirLosa(c.o))+
       seg(g.tramos===2?"Descanso junto al eje":"Llega al piso por el eje","sube",[["-",ej.u[0]],["+",ej.u[1]]],d.sube==="-"?"-":"+")+
       (g.tramos===2?seg("Primer tramo junto al eje","lado",[["a",ej.v[0]],["b",ej.v[1]]],d.lado==="b"?"b":"a"):'')+
@@ -11921,11 +11968,14 @@ var TT={script:performance.now()};
       kv("Carga viva",Math.round(c.cv.w)+" kg/m²"+(c.cv.delPano?" · uso del paño":" · E.020, corredores y escaleras"+
          (c.cv.grupo?" de "+c.cv.grupo.toLowerCase():"")+(c.cv.supuesto?" (supuesta)":"")),1)+
       '</dl>'+
+      (fal.length?'<p class="aviso" style="margin-top:8px"><b>Apoyos:</b> '+fal.join("; ")+'.</p>':'')+
       (c.avisos.length?'<p class="aviso" style="margin-top:8px">'+c.avisos.map(function(a){return a.texto}).join("<br>")+'</p>'
         :'<p class="calcnote">Cumple el A.010 (Art. 23.2): paso ≥ '+cmEsc(c.pasoMin.min)+' cm, contrapaso ≤ 18 cm y hasta 17 pasos por tramo.</p>')+
       '<p class="calcnote">Garganta t = Ln/25 a Ln/20, al múltiplo de 5 cm (Oviedo no trata escaleras); con t ≥ ℓ/20 = '+
       cmEsc(pr.t20)+' cm la E.060 (Tabla 9.1) no pide calcular deflexiones. hm = t/cos θ + cp/2. En ETABS el paño va como '+
-      'hueco: el peso de la escalera y su carga viva van a las vigas de sus bordes. La garganta se decide en Predimensionamiento.</p>';
+      (c.modo==="losa"?'losa inclinada: shell delgado de espesor t, sin diafragma, apoyado en sus vigas; pasos, acabados y carga viva '+
+        'como carga en planta.':'hueco: el peso de la escalera y su carga viva van a las vigas de sus bordes.')+
+      ' La garganta se decide en Predimensionamiento.</p>';
     function guarda(clave,val){ escGuarda(q.i,q.j,clave,val); }
     function num(id,clave,min,max){
       var e=$("#"+id); if(!e)return;
@@ -11945,30 +11995,65 @@ var TT={script:performance.now()};
       };
     });
   }
-  /* A ETABS: la escalera como dato para el 3D y la firma, y lo que carga sobre las vigas de sus bordes -abajo y
-     arriba-.  Cada carga va SOLO sobre el tramo del borde (d1-d2 relativos a la barra: una viga unida es una
-     barra mas larga que la escalera) y con la fuerza total de la reaccion: q · ancho repartido en ese tramo.
-     Donde no hay viga se avisa: esa parte del peso no llega */
-  function escaleraEtabs(out,L,k,i,j,m,nm,pt,r4){
-    var c=calculoEscalera(i,j,m,k), cod=nm.L[key(i,j)].cod, G=c.g, n=S.niveles.length;
-    L.escaleras=L.escaleras||[];
-    L.escaleras.push({cod:cod, dir:dirLosa(c.o), esquinas:c.esquinas.map(function(q){return pt(m,q[0],q[1])}),
-      largo:r4(c.largo), ancho:r4(c.ancho), tramos:G.tramos, nCp:G.nCp, paso:r4(G.paso), cp:r4(G.cp),
-      t:r4(c.pr.t), e:r4(c.pr.t), trazado:c.trazado,
-      detalle:(G.tramos===2?"2 tramos en U":"1 tramo")+" · "+G.nCp+" contrapasos de "+cmEsc(G.cp)+" cm · paso "+
-              cmEsc(G.paso)+" cm · garganta "+cmEsc(c.pr.t)+" cm"});
-    c.avisos.filter(function(a){return a.nivel==="grave"}).forEach(function(a){ out.avisos.push(cod+": "+a.texto); });
-    function borde(b,mm){
-      return b[0]==="h"?("eje "+eY(b[2],mm)+" entre "+eX(b[1],mm)+" y "+eX(b[1]+1,mm))
-                       :("eje "+eX(b[1],mm)+" entre "+eY(b[2],mm)+" y "+eY(b[2]+1,mm));
+  function bordeTxt(b,mm){
+    return b[0]==="h"?("eje "+eY(b[2],mm)+" entre "+eX(b[1],mm)+" y "+eX(b[1]+1,mm))
+                     :("eje "+eX(b[1],mm)+" entre "+eY(b[2],mm)+" y "+eY(b[2]+1,mm));
+  }
+  /* LOS APOYOS QUE LE FALTAN a la escalera del nivel k.  Como losa inclinada: el tramo de abajo arranca en la viga
+     de E1 del piso de abajo (en el primer piso, el suelo), el de arriba llega a la de E1 de su piso -en un tramo
+     recto, a la de E2- y la viga de descanso necesita columna en sus dos esquinas.  Como cargas: cada borde que
+     recibe carga necesita su viga, o esa carga no llega a ETABS. */
+  function faltasEscalera(i,j,m,k){
+    var c=calculoEscalera(i,j,m,k), G=c.g, out=[];
+    function viga(kk,b){
+      if(kk<0)return;
+      var mm=S.niveles[kk];
+      if(!mm||!mm.vigas||!mm.vigas[key(b[0],b[1],b[2])])
+        out.push("se apoya en el "+bordeTxt(b,m)+" del nivel "+(kk+1)+" y ahí no hay viga");
     }
+    if(c.modo==="losa"){
+      viga(k-1,c.bordes.E1);
+      viga(k,G.tramos===2?c.bordes.E1:c.bordes.E2);
+      if(c.apoyoDesc==="viga")c.esqE2.forEach(function(k2){
+        if(!m.cols[k2]){var p=k2.split(":");out.push("la viga de descanso no tiene columna en "+eX(+p[0],m)+"-"+eY(+p[1],m));}
+      });
+    }else{
+      [["abajo",k-1],["arriba",k]].forEach(function(p){["E1","E2"].forEach(function(e){
+        var q=c.apoyos[p[0]][e]; if(q.cm>0||q.cv>0)viga(p[1],c.bordes[e]);
+      });});
+    }
+    return out;
+  }
+  /* A ETABS.  La escalera va como dato para el 3D y la firma y, segun su opcion:
+       LOSA INCLINADA (por defecto): paneles de shell con la garganta, ya en coordenadas.  Cada tramo es un plano
+         del borde E1 al descanso -el de abajo desde su piso, el de arriba desde el suyo- partido donde empiezan los
+         pasos: la parte de los pasos lleva en CM su peso (γ·cp/2) y los acabados; la de llegada, solo acabados; la
+         de arranque -que es el piso de abajo- nada.  El descanso, en franjas que casan con los tramos.  Cargas por
+         m² EN PLANTA (gravedad proyectada): el peso de la garganta lo pone ETABS.  Lo de la llegada que ningun
+         tramo sostiene va como carga en la viga de E1 de su piso.  Un tramo recto: el tramo y la llegada
+         horizontal, que va con el diafragma.  Si el descanso va en viga, esa viga a media altura.
+       SOLO CARGAS: el paño es un hueco y su peso va a las vigas de sus bordes.
+     Cada carga en viga va SOLO sobre el tramo del borde (d1-d2 relativos a la barra) con la fuerza total. */
+  function escaleraEtabs(out,L,k,i,j,m,nm,pt,r4){
+    var c=calculoEscalera(i,j,m,k), cod=nm.L[key(i,j)].cod, G=c.g, n=S.niveles.length, T=c.trazado,
+        losa=(c.modo==="losa"), vd=losa&&G.tramos===2&&c.apoyoDesc==="viga";
+    var ent={cod:cod, dir:dirLosa(c.o), esquinas:c.esquinas.map(function(q){return pt(m,q[0],q[1])}),
+      largo:r4(c.largo), ancho:r4(c.ancho), tramos:G.tramos, nCp:G.nCp, paso:r4(G.paso), cp:r4(G.cp),
+      t:r4(c.pr.t), e:r4(c.pr.t), trazado:T, modo:c.modo, losa:losa?1:0, vd:vd?1:0,
+      patCV:(k===n-1)?PAT_ETABS.cvt:PAT_ETABS.cv,
+      detalle:(G.tramos===2?"2 tramos en U":"1 tramo")+" · "+G.nCp+" contrapasos de "+cmEsc(G.cp)+" cm · paso "+
+              cmEsc(G.paso)+" cm · garganta "+cmEsc(c.pr.t)+" cm · "+
+              (losa?"losa inclinada"+(G.tramos===2?(vd?", descanso en viga":", autoportante"):""):"solo cargas")};
+    L.escaleras=L.escaleras||[];
+    L.escaleras.push(ent);
+    c.avisos.filter(function(a){return a.nivel==="grave"}).forEach(function(a){ out.avisos.push(cod+": "+a.texto); });
+    faltasEscalera(i,j,m,k).forEach(function(t){
+      out.avisos.push(cod+": "+t+(losa?": ese borde de la losa inclinada queda sin apoyo.":": esa parte de su peso no llega a ETABS."));
+    });
     function carga(kk,b,q){
       if(kk<0||!(q.cm>0||q.cv>0))return;          /* el arranque del primer piso va al cimiento */
       var mm=S.niveles[kk], kv=key(b[0],b[1],b[2]);
-      if(!mm||!mm.vigas||!mm.vigas[kv]){
-        out.avisos.push(cod+": se apoya en el "+borde(b,m)+" del nivel "+(kk+1)+" y ahí no hay viga: esa parte de su peso no llega a ETABS.");
-        return;
-      }
+      if(!mm||!mm.vigas||!mm.vigas[kv])return;     /* ya avisado por faltasEscalera */
       var LL=(kk===k)?L:out.niveles[kk], vc=nombres(kk).V[kv].cod;
       var bar=LL.vigas.filter(function(z){return z.cod===vc})[0]; if(!bar)return;
       /* el tramo del borde sobre la barra, en distancias relativas */
@@ -11981,8 +12066,58 @@ var TT={script:performance.now()};
         cm:r4(q.cm*c.ancho/Le/1000), cv:r4(q.cv*c.ancho/Le/1000),
         patCV:(kk===n-1)?PAT_ETABS.cvt:PAT_ETABS.cv, escalera:cod});
     }
-    carga(k-1,c.bordes.E1,c.apoyos.abajo.E1); carga(k-1,c.bordes.E2,c.apoyos.abajo.E2);
-    carga(k,c.bordes.E1,c.apoyos.arriba.E1); carga(k,c.bordes.E2,c.apoyos.arriba.E2);
+    if(!losa){
+      carga(k-1,c.bordes.E1,c.apoyos.abajo.E1); carga(k-1,c.bordes.E2,c.apoyos.abajo.E2);
+      carga(k,c.bordes.E1,c.apoyos.arriba.E1); carga(k,c.bordes.E2,c.apoyos.arriba.E2);
+      return;
+    }
+    var Q=ent.esquinas, La=c.largo, An=c.ancho, z0=+L.z0, z1=+L.z1, pan=[];
+    function xy(u,v){
+      var s=u/La, r=v/An;
+      return [(1-s)*(1-r)*Q[0][0]+s*(1-r)*Q[1][0]+s*r*Q[2][0]+(1-s)*r*Q[3][0],
+              (1-s)*(1-r)*Q[0][1]+s*(1-r)*Q[1][1]+s*r*Q[2][1]+(1-s)*r*Q[3][1]];
+    }
+    var CM={tramo:(c.gamma*G.cp/2+c.acabados)/1000, llegada:c.acabados/1000, descanso:c.acabados/1000, arranque:0},
+        CV={tramo:c.cv.w/1000, llegada:c.cv.w/1000, descanso:c.cv.w/1000, arranque:0};
+    function panel(zona,u0,u1,v0,v1,zf){
+      if(u1-u0<0.01||v1-v0<0.01)return;
+      function p(u,v){var a=xy(u,v);return [r4(a[0]),r4(a[1]),r4(zf(u))]}
+      pan.push({cod:cod+"-"+(pan.length+1), zona:zona, pts:[p(u0,v0),p(u1,v0),p(u1,v1),p(u0,v1)],
+                cm:r4(CM[zona]), cv:r4(CV[zona]), diaf:(G.tramos===1&&zona==="llegada")?1:0,
+                /* el arranque es el piso de abajo, que ya pesa por su losa: da continuidad, no peso ni masa */
+                sinPeso:(zona==="arranque")?1:0});
+    }
+    if(G.tramos===1){
+      var uT=Math.min(G.Lt[0],La);
+      if(uT>0.01)panel("tramo",0,uT,0,An,function(u){return z0+(z1-z0)*u/uT});
+      panel("llegada",uT,La,0,An,function(){return z1});
+    }else{
+      var uD=La-G.descanso, zD=z0+T.descanso.z;
+      if(uD>0.01){
+        T.tramos.forEach(function(f,t){
+          var abajo=(t===0), zf=function(u){return abajo?(z0+(zD-z0)*u/uD):(z1+(zD-z1)*u/uD)};
+          var uS=Math.max(0,Math.min(uD,abajo?f.uBase:f.uBase+f.sentido*(f.n-1)*G.paso));
+          panel(abajo?"arranque":"llegada",0,uS,f.v0,f.v1,zf);
+          panel("tramo",uS,uD,f.v0,f.v1,zf);
+        });
+        [0,G.bt,An-G.bt,An].filter(function(v,x,A){return x===0||v-A[x-1]>0.01}).forEach(function(v,x,A){
+          if(x>0)panel("descanso",uD,La,A[x-1],v,function(){return zD});
+        });
+      }
+      /* lo de la llegada que ningun tramo sostiene -sobre el arranque del de abajo y sobre el ojo- a la viga de E1 */
+      var ap={cm:0,cv:0};
+      (T.llegadas||[]).forEach(function(q){
+        if(!q.aparte)return;
+        var A2=(q.u1-q.u0)*(q.v1-q.v0); ap.cm+=c.pr.descanso.cm*A2; ap.cv+=c.pr.descanso.cv*A2;
+      });
+      carga(k,c.bordes.E1,{cm:ap.cm/An, cv:ap.cv/An});
+      if(vd){
+        var a0=xy(La,0), a1=xy(La,An);
+        ent.vigaDescanso={cod:cod+"-VD", tipo:"principal", x1:r4(a0[0]), y1:r4(a0[1]), x2:r4(a1[0]), y2:r4(a1[1]),
+                          z:r4(zD), b:0.25, h:0.40};
+      }
+    }
+    ent.paneles=pan;
   }
 
   /* Espesor adoptado de un pano, en cm.  Lo necesita la viga chata: su
@@ -12638,7 +12773,7 @@ var TT={script:performance.now()};
   /* Y con sus MEDIDAS, en m con 4 decimales: los nombres se reparten por
      tamano, y agrandar todas las columnas de 25×25 a 65×25 las dejaba en C1
      con la misma firma -resultados viejos «al dia»-.  Visto en C4d. */
-  var DIM_FIRMA=["b","h","D","e","t","paso","cp"];
+  var DIM_FIRMA=["b","h","D","e","t","paso","cp","losa","vd"];
   function firmaModelo(ex){
     var partes=[];
     (ex||exportaEtabs()).niveles.forEach(function(L){
@@ -13982,7 +14117,8 @@ var TT={script:performance.now()};
     });
   }
 
-  function exportaEtabs(){
+  function exportaEtabs(){return conMemo(exportaEtabsCalc)}
+  function exportaEtabsCalc(){
     /* el +0 convierte el -0 en 0: al darle la vuelta a Y, el eje 1 salia
        como y=-0.0, que no molesta a ETABS pero ensucia la exportacion */
     function r4(v){return Math.round(v*10000)/10000+0}
@@ -14101,7 +14237,8 @@ var TT={script:performance.now()};
     return out;
   }
 
-  function paquete(){
+  function paquete(){return conMemo(paqueteCalc)}
+  function paqueteCalc(){
     PASADA++;                      /* se exporta con el modelo de AHORA */
     var C=[],V=[],VCH=[],PL=[],M=[],A=[],Z=[],
         L={aligerada:[],maciza:[],nervada:[]},area=0;
@@ -14243,7 +14380,8 @@ var TT={script:performance.now()};
     return out;
   }
 
-  function revisarModelo(){
+  function revisarModelo(){return conMemo(revisarModeloCalc)}
+  function revisarModeloCalc(){
     var av=[],nn0;
     function mete(familia,gravedad,texto,nivel,ir){
       av.push({familia:familia,gravedad:gravedad,texto:texto,
@@ -14298,6 +14436,9 @@ var TT={script:performance.now()};
       }
       /* la escalera: lo que el A.010 no deja pasar y lo que no cabe en su paño */
       for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(esEscalera(m.losas[key(i,j)])){
+        faltasEscalera(i,j,m,k).forEach(function(t){
+          mete("escalera","grave","escalera "+ex(i)+ex(i+1)+"-"+ey(j)+ey(j+1)+": "+t,nv,{t:"losa",i:i,j:j});
+        });
         calculoEscalera(i,j,m,k).avisos.forEach(function(a){
           mete("escalera",a.nivel==="grave"?"grave":"revisar","escalera "+ex(i)+ex(i+1)+"-"+ey(j)+ey(j+1)+": "+
                a.texto.charAt(0).toLowerCase()+a.texto.slice(1),nv,{t:"losa",i:i,j:j});
@@ -14524,7 +14665,8 @@ var TT={script:performance.now()};
        columnas -> la altura libre, entrepiso menos el espesor de la losa
        placas   -> el volumen entero, lm x hm x t
      ===================================================================== */
-  function pesoEstructura(){
+  function pesoEstructura(){return memoG("pe",pesoEstructuraCalc)}
+  function pesoEstructuraCalc(){
     var vol=0, area=0, porNivel=[];
     S.niveles.forEach(function(m,niv){
       var nX=m.dx.length+1, nY=m.dy.length+1, i, j, v0=vol;
@@ -14576,7 +14718,8 @@ var TT={script:performance.now()};
   /* Las cuatro cargas permanentes, con su origen.  Tres se CALCULAN; la
      tabiqueria es la unica que sigue siendo un numero que pone el
      proyectista, porque los tabiques no se dibujan. */
-  function cargasPermanentes(){
+  function cargasPermanentes(){return copia1(memoG("cp",cargasPermanentesCalc))}
+  function cargasPermanentesCalc(){
     var P=S.proy, pe=pesoEstructura();
     var piso=Math.round((+P.morteroPeso||2000)*(+P.pisoEsp||5)/100);
     var cielo=Math.round((+P.yesoPeso||1000)*(+P.cieloEsp||2)/100);
@@ -14631,7 +14774,8 @@ var TT={script:performance.now()};
               azotea:azotea, P:cm+pct*cvt, dimX:dim.X, dimY:dim.Y};
     });
   }
-  function calculoSismo(){
+  function calculoSismo(){return conMemo(calculoSismoCalc)}
+  function calculoSismoCalc(){
     var P=S.proy, st=sitio(), niv=pesoSismico(),
         Ia=SISMO.factorIrregularidad(SISMO.IRREG_ALTURA,P.irrAltura),
         Ip=SISMO.factorIrregularidad(SISMO.IRREG_PLANTA,P.irrPlanta),
@@ -15831,7 +15975,9 @@ var TT={script:performance.now()};
       if(v>0){snap();S.ladoCol=v;render();}};
   }
 
-  function render(){
+  /* cada dibujo con su memoria nueva: el modelo pudo cambiar desde el anterior */
+  function render(){return conMemo(dibujaTodo,true)}
+  function dibujaTodo(){
     PASADA++;                      /* cada dibujo es una pasada nueva */
     sincronizaCategoria();         /* la categoria SIEMPRE sigue al uso */
     avisaIrregular();              /* el dibujo recto no debe enganiar */
