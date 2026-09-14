@@ -6927,7 +6927,9 @@ var HOJA_ETABS = "RETICULA_ETABS";
 /* Los resultados de ETABS: los escribe scripts/etabs/a_excel.py y la ventana
    los pide para verificar la estructura y disenar. */
 var HOJA_RES = "RETICULA_RESULTADOS";
-var BUILD = "v162 · 13-09-2026";                 /* lo sella gen_complemento.py */
+/* La copia de la biblioteca de proyectos y plantillas del modelador */
+var HOJA_BIB = "RETICULA_BIBLIOTECA";
+var BUILD = "v165 · 13-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7086,6 +7088,26 @@ function guardarEtabs(s){
   }); });
 }
 
+/* La biblioteca de proyectos, troceada igual.  Vacia quiere decir que ya no se
+   copia en los libros: se borra lo que hubiera, y si no habia hoja no se crea. */
+function guardarBiblioteca(s){
+  var trozos = [], i;
+  s = String(s || "");
+  for(i = 0; i < s.length; i += TROZO) trozos.push([s.substr(i, TROZO)]);
+  if(trozos.length > 200)
+    return Promise.reject(new Error("la biblioteca no cabe en la hoja oculta"));
+  var antes = trozos.length ? comoTexto(HOJA_BIB) : Promise.resolve();
+  return antes.then(function(){ return Excel.run(function(context){
+    return hojaModelo(context, trozos.length > 0, HOJA_BIB).then(function(ws){
+      if(!ws) return null;
+      ws.getRange("A1:A200").clear(Excel.ClearApplyTo.contents);
+      if(trozos.length) ws.getRangeByIndexes(0, 0, trozos.length, 1).values = trozos;
+      try{ ws.visibility = Excel.SheetVisibility.veryHidden; }catch(e){}
+      return context.sync();
+    });
+  }); });
+}
+
 /* ---------------- arranque ---------------- */
 Office.onReady(function(){
   var a = document.getElementById("btnAbrir");
@@ -7208,6 +7230,27 @@ function alRecibir(arg){
       if(!s){ responde({ a: "res", n: 0 }); return; }
       respondeLargo("res", s);
     }).catch(function(e){ responde({ a: "res", n: 0 }); estado("Error: " + e.message, "err"); });
+    return;
+  }
+
+  /* la ventana pide la copia de la biblioteca de proyectos que tenga el libro */
+  if(msg.a === "pideBib"){
+    leerModelo(HOJA_BIB).then(function(s){
+      if(!s){ responde({ a: "bib", n: 0 }); return; }
+      respondeLargo("bib", s);
+    }).catch(function(){ responde({ a: "bib", n: 0 }); });
+    return;
+  }
+
+  /* y la manda para que el libro guarde su copia -vacia: quitarla- */
+  if(msg.a === "bib"){
+    var bj = juntaTrozos(msg);
+    if(bj === null) return;
+    guardarBiblioteca(bj).then(function(){
+      responde({ a: "bibGuardada", ok: true });
+    }).catch(function(e){
+      responde({ a: "bibGuardada", ok: false, msg: e.message });
+    });
     return;
   }
 

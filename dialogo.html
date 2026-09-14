@@ -50,6 +50,9 @@
   h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:31px;
      letter-spacing:.02em;margin:0}
   .sub{color:var(--ink-2);font-size:12.5px;max-width:58ch}
+  /* la descripcion cede sitio; guardar y proyectos van juntos y a la derecha, sin partirse */
+  header.bar>p.sub{flex:1 1 240px;min-width:0}
+  .bar-acc{margin-left:auto;display:flex;align-items:baseline;gap:8px;white-space:nowrap}
   .chip{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.1em;
         font-size:11px;font-weight:600;color:var(--acc-ink);background:var(--acc-soft);
         border:1px solid var(--acc);border-radius:2px;padding:2px 7px;white-space:nowrap}
@@ -425,6 +428,15 @@
 .sis-t.it-t td:first-child{min-width:220px;white-space:normal;font-family:"IBM Plex Sans",sans-serif}
 .sis-t.it-t small{display:block}
 .sis-t.it-t tr.it-act td{background:var(--acc-soft)}
+.bib-b{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
+/* un nombre es texto, no un numero: el campo ocupa lo que haya y se lee de izquierda a derecha */
+.pf.pf-txt{grid-template-columns:auto minmax(0,1fr)}
+.pf.pf-txt .pfi{text-align:left;font-family:"IBM Plex Sans",sans-serif;max-width:420px}
+.pf.pf-txt .pfu{display:none}
+.sis-t.bib-t td:first-child{min-width:180px;white-space:normal;font-family:"IBM Plex Sans",sans-serif}
+.sis-t.bib-t small{display:block}
+.sis-t.bib-t tr.bib-act td{background:var(--acc-soft)}
+.sis-t.bib-t td.bib-acc{white-space:nowrap;text-align:right;font-family:"IBM Plex Sans",sans-serif}
 /* INICIO: donde va el proyecto, un paso por fila */
 .ini-l{display:grid;border-top:1px solid var(--line-soft)}
 .ini-p{display:grid;grid-template-columns:minmax(160px,210px) 104px 1fr;gap:4px 14px;align-items:baseline;
@@ -570,9 +582,13 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     <span class="chip">Prototipo · panel de Excel</span>
     <span class="chip" id="sello" title="Versión de este archivo. Debe coincidir con la del panel." style="border-color:var(--acc);color:var(--acc-ink)">dev</span>
     <p class="sub">Modela la planta de cada nivel y mide lo que Excel no puede saber solo. El cálculo se queda en las hojas.</p>
-    <span class="lbl" id="selloGuar" style="margin-left:auto;white-space:nowrap">Guardado</span>
-    <button class="btn" id="btnGuardar" style="margin-left:8px;white-space:nowrap"
-      title="Guarda ahora. El modelo se guarda solo con cada cambio; esto es por si quieres asegurarte.">Guardar proyecto</button>
+    <div class="bar-acc">
+      <span class="lbl" id="selloGuar">Guardado</span>
+      <button class="btn" id="btnProyectos"
+        title="Los proyectos guardados con nombre y las plantillas de retícula">Proyectos</button>
+      <button class="btn" id="btnGuardar"
+        title="Guarda ahora. El modelo se guarda solo con cada cambio; esto es por si quieres asegurarte.">Guardar proyecto</button>
+    </div>
   </header>
 
   <div class="modos" role="group" aria-label="Modo de trabajo">
@@ -6116,6 +6132,185 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== biblioteca.js (inlinado) ===== */
+/* =====================================================================
+   biblioteca.js — LOS PROYECTOS GUARDADOS Y LAS PLANTILLAS DE RETICULA.
+   Sin interfaz: lo usa Paso 1 · Datos › Proyectos guardados.
+
+   Un PROYECTO es todo lo que guarda el complemento -planta, pisos, vanos,
+   alturas, datos, decisiones, intentos-, con un nombre.  Una PLANTILLA es
+   solo la reticula: vanos, alturas, numero de pisos, ejes prima y los lados
+   de una planta sesgada, sin columnas, vigas, losas ni placas.
+
+   La biblioteca vive en el complemento y, si se quiere, se copia en los
+   libros donde se abre.  Dos copias se JUNTAN: de cada proyecto queda el
+   guardado mas reciente, y lo borrado deja una marca con su fecha para que
+   una copia vieja no lo resucite.
+
+     node scripts/complemento/oviedo/probar_biblioteca.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.BIBLIOTECA = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var V = 1;
+  /* lo que un nivel tiene de elementos; el resto es reticula */
+  var ELEMENTOS = ["cols", "vigas", "losas", "placas", "zapatas", "juntas"];
+  var CUENTA = 0;
+
+  function nueva() { return { v: V, copiaEnLibro: true, proyectos: [], plantillas: [], borrados: {} }; }
+  function esObj(o) { return !!o && typeof o === "object" && !Array.isArray(o); }
+  function copia(o) { return JSON.parse(JSON.stringify(o)); }
+  function limpiaNombre(s) { return String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, 80); }
+  function suma(l) { return (l || []).reduce(function (s, v) { return s + (+v || 0); }, 0); }
+  function r2(v) { return Math.round(v * 100) / 100; }
+  function nuevoId(fecha) {
+    CUENTA++;
+    var t = Date.parse(fecha || "") || Date.now();
+    return "p" + t.toString(36) + Math.random().toString(36).slice(2, 7) + CUENTA.toString(36);
+  }
+
+  function ordenar(b) {
+    b.proyectos.sort(function (p, q) { return p.fecha < q.fecha ? 1 : (p.fecha > q.fecha ? -1 : 0); });
+    b.plantillas.sort(function (p, q) { return String(p.nombre).localeCompare(String(q.nombre)); });
+    return b;
+  }
+
+  /* de texto o de objeto, y lo que no tenga forma se descarta */
+  function leer(t) {
+    var b = t, out = nueva();
+    if (typeof t === "string") { try { b = JSON.parse(t); } catch (e) { b = null; } }
+    if (!esObj(b)) return out;
+    if (b.copiaEnLibro === false) out.copiaEnLibro = false;
+    out.proyectos = (Array.isArray(b.proyectos) ? b.proyectos : []).filter(function (p) {
+      return esObj(p) && typeof p.id === "string" && p.id && esObj(p.datos) && Array.isArray(p.datos.n);
+    });
+    out.plantillas = (Array.isArray(b.plantillas) ? b.plantillas : []).filter(function (p) {
+      return esObj(p) && typeof p.id === "string" && p.id && Array.isArray(p.reticula) && p.reticula.length > 0;
+    });
+    if (esObj(b.borrados))
+      Object.keys(b.borrados).forEach(function (k) { if (typeof b.borrados[k] === "string") out.borrados[k] = b.borrados[k]; });
+    return ordenar(out);
+  }
+
+  /* dos copias, una: la mas reciente de cada cosa; lo borrado despues de su ultimo guardado no vuelve.
+     El interruptor de la copia en el libro es el de la primera: la del complemento */
+  function juntar(a, b) {
+    a = leer(a); b = leer(b);
+    var out = nueva();
+    out.copiaEnLibro = a.copiaEnLibro;
+    [a.borrados, b.borrados].forEach(function (m) {
+      Object.keys(m).forEach(function (k) { if (!out.borrados[k] || m[k] > out.borrados[k]) out.borrados[k] = m[k]; });
+    });
+    ["proyectos", "plantillas"].forEach(function (tipo) {
+      var por = {};
+      a[tipo].concat(b[tipo]).forEach(function (x) {
+        var y = por[x.id];
+        if (!y || String(x.fecha) > String(y.fecha)) por[x.id] = x;
+      });
+      out[tipo] = Object.keys(por).map(function (k) { return por[k]; }).filter(function (x) {
+        var m = out.borrados[x.id];
+        return !m || String(x.fecha) > m;
+      });
+    });
+    return ordenar(out);
+  }
+
+  /* lo que se lee de un proyecto sin abrirlo */
+  function resumen(niveles, proy) {
+    niveles = Array.isArray(niveles) ? niveles : [];
+    var m = niveles[0] || {}, alturas = niveles.map(function (x) { return +x.h || 2.8; }), cols = 0, placas = 0;
+    niveles.forEach(function (x) {
+      cols += Object.keys((x && x.cols) || {}).length;
+      placas += Object.keys((x && x.placas) || {}).length;
+    });
+    return { niveles: niveles.length, vanosX: (m.dx || []).length, vanosY: (m.dy || []).length,
+             largoX: r2(suma(m.dx)), largoY: r2(suma(m.dy)), alturas: alturas, alturaTotal: r2(suma(alturas)),
+             columnas: cols, placas: placas, uso: (proy && proy.uso) || "", distrito: (proy && proy.distrito) || "" };
+  }
+
+  function nombreLibre(lista, base) {
+    base = limpiaNombre(base) || "Sin nombre";
+    var usados = {}, n = 2, s = base;
+    (lista || []).forEach(function (x) { usados[String(x.nombre).toLowerCase()] = 1; });
+    while (usados[s.toLowerCase()]) s = base + " (" + (n++) + ")";
+    return s;
+  }
+
+  /* o: {id, nombre, datos (lo que guarda el complemento), fecha}.  Con un id que ya esta, lo actualiza */
+  function guardarProyecto(bib, o) {
+    bib = leer(bib); o = o || {};
+    var fecha = o.fecha || new Date().toISOString();
+    var p = o.id ? bib.proyectos.filter(function (x) { return x.id === o.id; })[0] : null;
+    var nombre = limpiaNombre(o.nombre) || (p && p.nombre) || ("Proyecto " + fecha.slice(0, 10));
+    if (!p) { p = { id: o.id || nuevoId(fecha), creado: fecha }; bib.proyectos.push(p); }
+    p.nombre = nombre; p.fecha = fecha;
+    p.datos = copia(o.datos || { n: [] });
+    p.datos.bib = p.id;
+    p.resumen = resumen(p.datos.n, p.datos.pr);
+    delete bib.borrados[p.id];
+    return { bib: ordenar(bib), entrada: p };
+  }
+
+  /* la reticula de un modelo: cada nivel sin sus elementos */
+  function reticulaDe(niveles) {
+    return (niveles || []).map(function (m) {
+      var r = {};
+      Object.keys(m || {}).forEach(function (k) { if (ELEMENTOS.indexOf(k) < 0) r[k] = copia(m[k]); });
+      return r;
+    });
+  }
+  function nombrePlantilla(ret) {
+    var m = ret[0] || {};
+    return ret.length + (ret.length === 1 ? " piso" : " pisos") + " · " + (m.dx || []).length + " × " + (m.dy || []).length + " vanos";
+  }
+  /* o: {id, nombre, niveles, fecha} */
+  function guardarPlantilla(bib, o) {
+    bib = leer(bib); o = o || {};
+    var ret = reticulaDe(o.niveles);
+    if (!ret.length) return { bib: bib, entrada: null, error: "El modelo no tiene niveles." };
+    var fecha = o.fecha || new Date().toISOString();
+    var p = o.id ? bib.plantillas.filter(function (x) { return x.id === o.id; })[0] : null;
+    if (!p) {
+      p = { id: o.id || nuevoId(fecha), creado: fecha,
+            nombre: limpiaNombre(o.nombre) || nombreLibre(bib.plantillas, nombrePlantilla(ret)) };
+      bib.plantillas.push(p);
+    } else if (limpiaNombre(o.nombre)) p.nombre = limpiaNombre(o.nombre);
+    p.fecha = fecha; p.reticula = ret; p.resumen = resumen(ret, null);
+    delete bib.borrados[p.id];
+    return { bib: ordenar(bib), entrada: p };
+  }
+
+  /* los niveles de un proyecto nuevo con esta reticula.  llena(dx, dy, h) es la planta llena del complemento;
+     se le quitan las columnas de los ejes prima, que son ejes de apoyo de vigas y losas */
+  function nivelesDesde(pl, llena) {
+    return ((pl && pl.reticula) || []).map(function (r) {
+      var m = llena(r.dx || [], r.dy || [], +r.h || 2.8), px = r.primaX || [], py = r.primaY || [];
+      Object.keys(r).forEach(function (q) { if (q !== "dx" && q !== "dy" && q !== "h") m[q] = copia(r[q]); });
+      Object.keys(m.cols || {}).forEach(function (c) {
+        var ij = c.split(":");
+        if (px[+ij[0]] || py[+ij[1]]) delete m.cols[c];
+      });
+      return m;
+    });
+  }
+
+  /* tipo: "proyectos" o "plantillas" */
+  function borrar(bib, tipo, id, fecha) {
+    bib = leer(bib);
+    bib[tipo] = bib[tipo].filter(function (x) { return x.id !== id; });
+    bib.borrados[id] = fecha || new Date().toISOString();
+    return bib;
+  }
+
+  return { V: V, ELEMENTOS: ELEMENTOS, nueva: nueva, leer: leer, juntar: juntar, resumen: resumen,
+           nombreLibre: nombreLibre, guardarProyecto: guardarProyecto, reticulaDe: reticulaDe,
+           guardarPlantilla: guardarPlantilla, nivelesDesde: nivelesDesde, borrar: borrar };
+});
+</script>
+<script>
 /* ===== calculo.js (inlinado) ===== */
 /* =====================================================================
    calculo.js — el predimensionamiento, en el complemento.
@@ -6908,7 +7103,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v162 · 13-09-2026";
+  var BUILD="v165 · 13-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -6992,13 +7187,17 @@ var TT={script:performance.now()};
   /* C4d · LOS INTENTOS de Corregir la estructura.  Estos SI son del modelo:
      se guardan y viajan con el al libro */
   S.intentos=[];
+  /* el proyecto de la biblioteca que es este modelo -null si no esta guardado en ella- */
+  S.pid=null;
+  try{ $("#btnProyectos").onclick=function(){ irAPaso("proyecto","biblioteca"); }; }catch(e){}
   /* LAS SUB-PESTANAS.  Solo las tienen las pestanas que hacen cosas distintas;
      Planta, Cargas y Comprobacion hacen una sola y se quedan enteras.  La
      primera de cada lista es la que se abre la primera vez; despues cada
      pestana recuerda la ultima.  Tampoco es del modelo: se guarda aparte, en
      «reticula_sub», y no viaja al libro. */
   var SUBMODOS={
-    proyecto:[["sitio","Proyecto y sitio"],["materiales","Materiales"],["permanentes","Cargas permanentes"]],
+    proyecto:[["sitio","Proyecto y sitio"],["materiales","Materiales"],["permanentes","Cargas permanentes"],
+              ["biblioteca","Proyectos guardados"]],
     decisiones:[["plano","Plano"],["cuadro","Cuadro"]],
     sismo:[["parametros","Parámetros"],["estatico","Estático"],["dinamico","Dinámico"]],
     etabs:[["pisos","Material y pisos"],["secciones","Secciones"],["cargas","Cargas y sismo"],
@@ -7346,12 +7545,15 @@ var TT={script:performance.now()};
      Ahora el guardado cuelga de render(), que es por donde pasa todo cambio
      visible, y no hay forma de mover algo sin que quede guardado. */
   var GUARDADO={sello:null,ultimo:0,pend:0};
+  /* TODO lo que es del proyecto: lo que se guarda en el libro y en la biblioteca */
+  function payloadActual(){
+    return {n:S.niveles,sc:($("#sc")||{}).value,man:S.manual,lc:S.ladoCol,
+            vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
+            pr:S.proy,et:S.etabs,in:S.intentos,bib:S.pid||null};
+  }
   function guardar(){
     try{
-      localStorage.setItem("reticula",
-        JSON.stringify({n:S.niveles,sc:$("#sc").value,man:S.manual,lc:S.ladoCol,
-                        vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
-                        pr:S.proy,et:S.etabs,in:S.intentos}));
+      localStorage.setItem("reticula",JSON.stringify(payloadActual()));
       GUARDADO.ultimo=Date.now();
       selloGuardado();
       /* y se empuja al libro, espaciado: cerrar la ventana con la X no
@@ -7399,6 +7601,7 @@ var TT={script:performance.now()};
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
       if(d.et&&typeof d.et==="object")S.etabs=d.et;
       if(Array.isArray(d.in))S.intentos=d.in;
+      S.pid=(typeof d.bib==="string"&&d.bib)?d.bib:null;
       if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
       /* Un modelo guardado ANTES de la E.030 trae categoria pero no uso.
          Como ahora la categoria sigue al uso, dejarlo asi le cambiaria la
@@ -13470,6 +13673,216 @@ var TT={script:performance.now()};
     return false;
   }
 
+  /* =====================================================================
+     PROYECTOS GUARDADOS Y PLANTILLAS DE RETICULA (Paso 1 · Datos).  La
+     cuenta vive en oviedo/biblioteca.js.  La biblioteca se guarda en el
+     complemento -«reticula_biblioteca»- y, con el interruptor encendido, en
+     la hoja oculta RETICULA_BIBLIOTECA de cada libro donde se abre: vaciar
+     la cache de Office borra lo primero, no lo segundo.  Al abrir otro
+     proyecto, el de ahora se guarda antes en la biblioteca: nada se pierde.
+     ===================================================================== */
+  var BIB_CLAVE="reticula_biblioteca", BIB_UI={confirma:null, msg:""};
+  function bibLeer(){ var t=null; try{ t=localStorage.getItem(BIB_CLAVE); }catch(e){} return BIBLIOTECA.leer(t); }
+  function bibEscribir(b){
+    var s=JSON.stringify(b);
+    try{ localStorage.setItem(BIB_CLAVE,s); }
+    catch(e){ return {ok:false, msg:"No se pudo guardar la biblioteca: "+((e&&e.name)||"error")+"."}; }
+    if(window.ENVIAR_BIBLIOTECA&&b.copiaEnLibro)window.ENVIAR_BIBLIOTECA(s);
+    return {ok:true};
+  }
+  /* la copia que traiga el libro al abrir: se junta con la del complemento y, si falta algo en el libro, se le manda */
+  function bibDelLibro(texto){
+    var loc=bibLeer(), j=texto?BIBLIOTECA.juntar(loc,texto):loc, s=JSON.stringify(j);
+    try{ localStorage.setItem(BIB_CLAVE,s); }catch(e){}
+    if(window.ENVIAR_BIBLIOTECA&&j.copiaEnLibro&&(j.proyectos.length||j.plantillas.length)&&
+       (!texto||s!==JSON.stringify(BIBLIOTECA.leer(texto))))window.ENVIAR_BIBLIOTECA(s);
+    if(S.modo==="proyecto"&&subDe("proyecto")==="biblioteca")render();
+    return j;
+  }
+  function entradaActual(b){
+    return S.pid?(b||bibLeer()).proyectos.filter(function(p){return p.id===S.pid})[0]||null:null;
+  }
+  function guardarEnBiblioteca(comoCopia,nombre){
+    var b=bibLeer(), f=new Date().toISOString(), e=comoCopia?null:entradaActual(b),
+        nom=String(nombre==null?"":nombre).trim()||(e?e.nombre:String(S.proy.nombre||"").trim());
+    if(comoCopia)nom=BIBLIOTECA.nombreLibre(b.proyectos,(nom||"Proyecto")+(nombre&&String(nombre).trim()?"":" (copia)"));
+    /* la fecha del nombre es la de aqui: la ISO es UTC y en Lima, de noche, ya es manana */
+    else if(!e){
+      var hoy=new Date(), dd=function(n){return (n<10?"0":"")+n};
+      nom=BIBLIOTECA.nombreLibre(b.proyectos,nom||("Proyecto "+dd(hoy.getDate())+"-"+dd(hoy.getMonth()+1)+"-"+hoy.getFullYear()));
+    }
+    var z=BIBLIOTECA.guardarProyecto(b,{id:e?e.id:null, nombre:nom, datos:payloadActual(), fecha:f});
+    var w=bibEscribir(z.bib);
+    if(!w.ok)return w;
+    S.pid=z.entrada.id;
+    guardar();
+    return {ok:true, entrada:z.entrada, msg:"Guardado en la biblioteca como «"+z.entrada.nombre+"»."};
+  }
+  /* antes de cambiar de proyecto: el de ahora queda en la biblioteca, salvo que ya este igual */
+  function asegurarActual(){
+    var e=entradaActual();
+    if(e&&JSON.stringify(e.datos)===JSON.stringify(payloadActual()))return null;
+    return guardarEnBiblioteca(false,null);
+  }
+  function reemplazaModelo(d,pid){
+    try{ localStorage.setItem("reticula",JSON.stringify(d)); }catch(e){ return false; }
+    UNDO.length=0; REDO.length=0;
+    S.intentos=[]; S.etabs={}; S.manual={};
+    cargar();
+    S.pid=pid||null; S.act=0; S.sel=null; PASADA++;
+    guardar();
+    return true;
+  }
+  function abrirProyecto(id){
+    var p=bibLeer().proyectos.filter(function(x){return x.id===id})[0];
+    if(!p)return {ok:false, msg:"Ese proyecto ya no está en la biblioteca."};
+    if(p.id===S.pid)return {ok:false, msg:"«"+p.nombre+"» ya es el proyecto abierto."};
+    var z=asegurarActual();
+    if(z&&!z.ok)return z;
+    p=bibLeer().proyectos.filter(function(x){return x.id===id})[0];
+    var d=JSON.parse(JSON.stringify(p.datos)); d.bib=p.id;
+    if(!reemplazaModelo(d,p.id))return {ok:false, msg:"No se pudo abrir: el almacenamiento del complemento no respondió."};
+    return {ok:true, msg:"Abierto «"+p.nombre+"»."+(z?" El anterior quedó guardado como «"+z.entrada.nombre+"».":"")};
+  }
+  function guardarPlantillaActual(nombre){
+    var b=bibLeer(), nom=String(nombre||"").trim();
+    var z=BIBLIOTECA.guardarPlantilla(b,{nombre:nom?BIBLIOTECA.nombreLibre(b.plantillas,nom):"", niveles:S.niveles,
+                                        fecha:new Date().toISOString()});
+    if(z.error)return {ok:false, msg:z.error};
+    var w=bibEscribir(z.bib);
+    return w.ok?{ok:true, entrada:z.entrada, msg:"Plantilla guardada: «"+z.entrada.nombre+"»."}:w;
+  }
+  /* un proyecto nuevo: la reticula de la plantilla -o la de siempre, en blanco- con los datos de sitio y materiales
+     del proyecto de ahora, sin su nombre, sus irregularidades, sus secciones de ETABS ni sus intentos */
+  function nuevoDesdePlantilla(id){
+    var pl=(id==="blanco")?{nombre:"en blanco", reticula:[{h:2.80, dx:[5,5,5], dy:[7,7,7,7]}]}
+          :bibLeer().plantillas.filter(function(x){return x.id===id})[0];
+    if(!pl)return {ok:false, msg:"Esa plantilla ya no está en la biblioteca."};
+    var z=asegurarActual();
+    if(z&&!z.ok)return z;
+    var d=JSON.parse(JSON.stringify(payloadActual()));
+    d.n=BIBLIOTECA.nivelesDesde(pl,plantaLlena).map(migrar);
+    d.in=[]; d.et={}; d.man={}; d.bib=null;
+    ["nombre","ubicacion","proyectista","fecha","ctX","ctY"].forEach(function(k){ d.pr[k]=""; });
+    d.pr.irrAltura=[]; d.pr.irrPlanta=[];
+    if(!reemplazaModelo(d,null))return {ok:false, msg:"No se pudo crear: el almacenamiento del complemento no respondió."};
+    zapatasEnTodas(); guardar();
+    return {ok:true, msg:"Proyecto nuevo con la retícula «"+pl.nombre+"»."+
+            (z?" El anterior quedó guardado como «"+z.entrada.nombre+"».":"")};
+  }
+  function borrarDeBiblioteca(tipo,id){
+    var b=bibLeer(), lista=(tipo==="plantilla")?b.plantillas:b.proyectos,
+        e=lista.filter(function(x){return x.id===id})[0];
+    if(!e)return {ok:false, msg:"Ya no está en la biblioteca."};
+    var w=bibEscribir(BIBLIOTECA.borrar(b,tipo==="plantilla"?"plantillas":"proyectos",id,new Date().toISOString()));
+    if(!w.ok)return w;
+    if(tipo!=="plantilla"&&S.pid===id){ S.pid=null; guardar(); }
+    return {ok:true, msg:"Borrado de la biblioteca: «"+e.nombre+"»."};
+  }
+  function copiaEnLibro(si){
+    var b=bibLeer(); b.copiaEnLibro=!!si;
+    try{ localStorage.setItem(BIB_CLAVE,JSON.stringify(b)); }catch(e){}
+    if(window.ENVIAR_BIBLIOTECA)window.ENVIAR_BIBLIOTECA(si?JSON.stringify(b):"");
+    return {ok:true, msg:si?"La biblioteca se copia en este libro y en los que abras.":
+                        "La biblioteca ya no se copia en los libros; la copia de este libro se quitó."};
+  }
+  function tarjetaBiblioteca(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function dos(n){return (n<10?"0":"")+n}
+    function fecha(iso){var d=new Date(iso); return isNaN(d.getTime())?"—":
+      dos(d.getDate())+"/"+dos(d.getMonth()+1)+"/"+d.getFullYear()+" "+dos(d.getHours())+":"+dos(d.getMinutes())}
+    function m2(v){return (+v||0).toFixed(2)}
+    function alturas(l){ l=l||[]; if(!l.length)return "—";
+      return l.every(function(x){return x===l[0]})?l.length+" × "+m2(l[0]):l.map(m2).join(" / "); }
+    var b=bibLeer(), act=entradaActual(b), rs=BIBLIOTECA.resumen(S.niveles,S.proy), C=BIB_UI.confirma,
+        cambios=act?JSON.stringify(act.datos)!==JSON.stringify(payloadActual()):true;
+    var h='<section class="pbox ancha"><h3>Este proyecto</h3>'+
+      '<label class="pf pf-txt"><span class="pfe">Nombre en la biblioteca</span><input id="bibNom" class="pfi" type="text" '+
+      'maxlength="80" value="'+esc(act?act.nombre:(S.proy.nombre||""))+'" placeholder="Proyecto sin nombre">'+
+      '<span class="pfu"></span></label>'+
+      '<p class="nota">'+rs.niveles+(rs.niveles===1?' piso':' pisos')+' · '+rs.vanosX+' × '+rs.vanosY+' vanos · planta de '+
+      m2(rs.largoX)+' × '+m2(rs.largoY)+' m · alturas '+alturas(rs.alturas)+' m. '+
+      (act?(cambios?'<b>Tiene cambios que no están en la biblioteca</b> (la guardada es del '+fecha(act.fecha)+').':
+                    'Así está guardado en la biblioteca desde el '+fecha(act.fecha)+'.'):
+           'Todavía no está en la biblioteca.')+'</p>'+
+      '<div class="bib-b"><button type="button" class="btn pri" id="bibGuardar">'+
+      (act?'Guardar los cambios':'Guardar en la biblioteca')+'</button>'+
+      '<button type="button" class="btn" id="bibCopia">Guardar como copia</button></div>'+
+      (BIB_UI.msg?'<p class="aviso">'+esc(BIB_UI.msg)+'</p>':'')+'</section>';
+
+    function acciones(tipo,x,principal){
+      if(C&&C.id===x.id)return '¿Borrar? <button type="button" class="mini" data-bib-si="'+tipo+'|'+
+        esc(x.id)+'">Sí</button> <button type="button" class="mini" data-bib-no="1">No</button>';
+      return principal+' <button type="button" class="mini" data-bib-borrar="'+tipo+'|'+esc(x.id)+'">Borrar</button>';
+    }
+    h+='<section class="pbox ancha"><h3>Proyectos guardados · '+b.proyectos.length+'</h3>';
+    if(!b.proyectos.length)h+='<p class="nota">Todavía no hay proyectos guardados. «Guardar en la biblioteca» guarda '+
+      'este con su planta, pisos, vanos, alturas, datos, decisiones e intentos.</p>';
+    else h+='<div class="etb-scroll"><table class="sis-t bib-t"><thead><tr><th>Proyecto</th><th>Pisos</th>'+
+      '<th>Vanos X × Y</th><th>Planta (m)</th><th>Alturas (m)</th><th>Uso · distrito</th><th>Guardado</th><th></th>'+
+      '</tr></thead><tbody>'+b.proyectos.map(function(p){
+        var r=p.resumen||{}, esAct=(p.id===S.pid);
+        return '<tr'+(esAct?' class="bib-act"':'')+'><td><b>'+esc(p.nombre)+'</b>'+(esAct?'<small>abierto ahora</small>':'')+
+          '</td><td>'+r.niveles+'</td><td>'+r.vanosX+' × '+r.vanosY+'</td><td>'+m2(r.largoX)+' × '+m2(r.largoY)+'</td><td>'+
+          alturas(r.alturas)+'</td><td>'+esc([r.uso,r.distrito].filter(Boolean).join(" · "))+'</td><td>'+fecha(p.fecha)+
+          '</td><td class="bib-acc">'+acciones("proyecto",p,esAct?'':'<button type="button" class="mini" data-bib-abrir="'+
+          esc(p.id)+'">Abrir</button>')+'</td></tr>';
+      }).join("")+'</tbody></table></div>'+
+      '<p class="nota">Al abrir otro proyecto, el de ahora se guarda antes en la biblioteca: no se pierde nada. Los '+
+      'resultados de ETABS son del libro: con otro proyecto salen desactualizados hasta llevarlo y traerlos.</p>';
+    h+='</section>';
+
+    var sug=BIBLIOTECA.guardarPlantilla(null,{niveles:S.niveles}).entrada;
+    h+='<section class="pbox ancha"><h3>Plantillas de retícula · '+b.plantillas.length+'</h3>'+
+      '<p class="nota">Solo la retícula: vanos, alturas, número de pisos y ejes prima. Un proyecto nuevo con una plantilla '+
+      'empieza con columnas en los ejes principales y vigas y losas en todos los paños, y con el sitio y los materiales '+
+      'del proyecto de ahora; lo ajustas en Planta y en Datos.</p>'+
+      '<label class="pf pf-txt"><span class="pfe">Nombre de la plantilla</span><input id="bibPlNom" class="pfi" type="text" '+
+      'maxlength="80" placeholder="'+esc(sug?sug.nombre:"")+'"><span class="pfu"></span></label>'+
+      '<div class="bib-b"><button type="button" class="btn" id="bibPlantilla">Guardar la retícula de este proyecto como plantilla'+
+      '</button><button type="button" class="btn" data-bib-nuevo="blanco">Proyecto nuevo en blanco</button></div>';
+    if(b.plantillas.length)h+='<div class="etb-scroll"><table class="sis-t bib-t"><thead><tr><th>Plantilla</th><th>Pisos</th>'+
+      '<th>Vanos en X (m)</th><th>Vanos en Y (m)</th><th>Alturas (m)</th><th></th></tr></thead><tbody>'+
+      b.plantillas.map(function(p){
+        var r=p.resumen||{}, n0=p.reticula[0]||{};
+        return '<tr><td><b>'+esc(p.nombre)+'</b></td><td>'+r.niveles+'</td><td>'+(n0.dx||[]).map(m2).join(" · ")+'</td><td>'+
+          (n0.dy||[]).map(m2).join(" · ")+'</td><td>'+alturas(r.alturas)+'</td><td class="bib-acc">'+
+          acciones("plantilla",p,'<button type="button" class="mini" data-bib-nuevo="'+esc(p.id)+'">Proyecto nuevo con esta</button>')+
+          '</td></tr>';
+      }).join("")+'</tbody></table></div>';
+    h+='</section>';
+
+    h+='<section class="pbox ancha"><h3>Dónde se guarda</h3>'+
+      '<label class="etb-ch"><input id="bibCopiaLibro" type="checkbox"'+(b.copiaEnLibro?' checked':'')+'><span>Guardar '+
+      'también una copia de la biblioteca en cada libro donde abras el complemento</span></label>'+
+      '<p class="nota">La biblioteca vive en el complemento, en esta computadora. Si se vacía la caché de Office se borra; '+
+      'con la copia encendida vuelve sola al abrir un libro que la tenga. Si vas a compartir un libro, apágala antes: '+
+      'la copia va dentro del libro, con todos tus proyectos.</p></section>';
+    return h;
+  }
+  function bindBiblioteca(){
+    var el=$("#panelProy"); if(!el)return;
+    function hecho(z){ BIB_UI.msg=(z&&z.msg)||""; BIB_UI.confirma=null; render(); }
+    function val(id){ var e=$("#"+id); return e?e.value:null; }
+    var g=$("#bibGuardar"); if(g)g.onclick=function(){ hecho(guardarEnBiblioteca(false,val("bibNom"))); };
+    var c=$("#bibCopia"); if(c)c.onclick=function(){
+      var n=val("bibNom"), e=entradaActual();
+      hecho(guardarEnBiblioteca(true,(e&&n===e.nombre)?null:n)); };
+    var p=$("#bibPlantilla"); if(p)p.onclick=function(){ hecho(guardarPlantillaActual(val("bibPlNom"))); };
+    var t=$("#bibCopiaLibro"); if(t)t.onchange=function(){ hecho(copiaEnLibro(this.checked)); };
+    el.querySelectorAll("[data-bib-abrir]").forEach(function(x){
+      x.onclick=function(){ var z=abrirProyecto(this.getAttribute("data-bib-abrir")); toast(z.msg); hecho(z); }; });
+    el.querySelectorAll("[data-bib-nuevo]").forEach(function(x){
+      x.onclick=function(){ var z=nuevoDesdePlantilla(this.getAttribute("data-bib-nuevo")); toast(z.msg); hecho(z); }; });
+    el.querySelectorAll("[data-bib-borrar]").forEach(function(x){
+      x.onclick=function(){ var q=this.getAttribute("data-bib-borrar").split("|");
+        BIB_UI.confirma={tipo:q[0], id:q[1]}; BIB_UI.msg=""; render(); }; });
+    el.querySelectorAll("[data-bib-si]").forEach(function(x){
+      x.onclick=function(){ var q=this.getAttribute("data-bib-si").split("|"); hecho(borrarDeBiblioteca(q[0],q[1])); }; });
+    el.querySelectorAll("[data-bib-no]").forEach(function(x){
+      x.onclick=function(){ BIB_UI.confirma=null; render(); }; });
+  }
+
   function pintaProyecto(){
     var P=S.proy, cp=cargasPermanentes(), C=CRITERIOS.CATEGORIA[S.categoria];
     var tot=0,i; S.niveles.forEach(function(m){tot+=areaNivel(m)});
@@ -13594,8 +14007,11 @@ var TT={script:performance.now()};
       'ser la misma en todos.</p>'+
       '</section>';
 
+    if(sub==="biblioteca")h+=tarjetaBiblioteca();
+
     h+='</div>';
     $("#panelProy").innerHTML=h;
+    if(sub==="biblioteca")bindBiblioteca();
 
     function txtCampo(id,clave){
       var e=$("#"+id); if(!e)return;
@@ -14047,7 +14463,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
@@ -14132,6 +14548,15 @@ var TT={script:performance.now()};
         pidioRes=false;
         di(m.n?"Resultados de ETABS traídos del libro.":"El libro no tiene resultados de ETABS: ejecuta a_excel.bat.");
       }
+    }else if(m.a==="bib"){
+      /* la biblioteca de proyectos que guarda este libro: se junta con la del complemento */
+      if(!m.n){ if(window.RET&&RET.bibDelLibro)RET.bibDelLibro(null); }
+      else{
+        var bt=junta(m); if(bt===null)return;
+        if(window.RET&&RET.bibDelLibro)RET.bibDelLibro(bt||null);
+      }
+    }else if(m.a==="bibGuardada"){
+      if(!m.ok)di("No se pudo copiar la biblioteca en el libro: "+(m.msg||""));
     }else if(m.a==="guardado"){
       di(m.ok?"Guardado en el libro.":("No se pudo guardar: "+(m.msg||"")));
     }else if(m.a==="etabsGuardado"){
@@ -14189,6 +14614,11 @@ var TT={script:performance.now()};
     if(!listo){ di("Excel todavía no respondió: inténtalo en un segundo."); return false; }
     return enviarModelo(true);
   };
+  /* la biblioteca de proyectos, para su copia en el libro; vacia la quita */
+  window.ENVIAR_BIBLIOTECA=function(s){
+    if(!listo)return false;
+    return mandaLargo("bib",String(s||""));
+  };
   /* Y ademas se manda solo, espaciado, para que cerrar la ventana con la X
      no cueste el trabajo de la ultima media hora. */
   window.EMPUJAR_MODELO=function(){
@@ -14210,6 +14640,8 @@ var TT={script:performance.now()};
       manda({a:"pide"});
       /* y los resultados de ETABS, si a_excel.py ya los dejo */
       manda({a:"pideRes"});
+      /* y la copia de la biblioteca de proyectos que tenga este libro */
+      manda({a:"pideBib"});
     });
   }
 
