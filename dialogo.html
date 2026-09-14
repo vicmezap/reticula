@@ -400,6 +400,9 @@
 .dis-figw{margin:2px 0 10px}
 .dis-figw svg{display:block;max-width:none}
 .ejes-acc{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.luces .eje-nom{width:4.1em;padding:0 2px;font:inherit;font-size:.88em;font-style:normal;color:inherit;background:var(--sheet);
+  border:1px solid var(--line);border-radius:3px}
+.luces .eje-nom:focus{outline:2px solid var(--acc);outline-offset:-1px}
 #ejesPonEje.on,#calcoPonEje.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .calco-capas{max-height:190px;overflow:auto;margin:4px 2px 0;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
 .calco-capa{display:grid;grid-template-columns:auto 12px minmax(0,1fr) auto;gap:6px;align-items:center;
@@ -738,7 +741,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div id="calcoCtl" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
-          title="Clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto">1 · Anclar en A-1</button>
+          title="Clic en el eje A del dibujo (u otro con nombre): queda encima de tu eje con ese nombre. Solo corre el plano en X">Anclar en A-A</button>
+        <button class="btn" id="calcoAnclaY" hidden style="margin:4px 2px 0"
+          title="Clic en el eje 1 del dibujo (u otro con nombre): queda encima de tu eje con ese nombre. Solo corre el plano en Y">Anclar en 1-1</button>
         <button class="btn" id="calcoAdopta" hidden style="margin:4px 2px 0"
           title="Compara los ejes del AutoCAD con los del modelo y los adopta: mover, crear o dejar, eje por eje">Adoptar ejes del plano</button>
         <button class="btn" id="calcoPonEje" style="margin:4px 2px 0"
@@ -8296,7 +8301,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v194 · 14-09-2026";
+  var BUILD="v196 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8529,11 +8534,69 @@ var TT={script:performance.now()};
     return a;
   }
   function esPrima(ejeX,a,m){return !!primas(ejeX,m)[a]}
-  /* A, A′, A″, B, C…  El prima hereda la letra del eje principal anterior */
-  function nomEje(ejeX,a,m){
-    var p=primas(ejeX,m),k=0,pr=0,i;
-    for(i=0;i<=a;i++){if(p[i])pr++;else{k++;pr=0;}}
-    return (ejeX?letraEje(k):String(k))+(pr?new Array(pr+1).join("′"):"");
+  /* A, A′, A″, B, C…  El prima hereda el nombre del eje principal anterior.
+     NOMBRES PUESTOS A MANO (m.nomX / m.nomY, alineados con los ejes, como los primas):
+     un principal con nombre fijo ANCLA la serie -los principales que siguen cuentan desde
+     el y los de antes cuentan hacia atras- y los primas se renombran solos.  Victor tenia
+     dieciseis primas seguidos del 1 (1′′′′…) porque todo lo que creaba colgaba del 1:
+     escribiendo «2» en el eje que toca, los de antes son 1′, 1″ y los de despues 2′, 2″.
+     Sin ningun nombre puesto esto da exactamente los nombres de siempre. */
+  function nomsEje(ejeX,m){
+    m=m||N();
+    var n=(ejeX?m.dx:m.dy).length+1, a=ejeX?m.nomX:m.nomY;
+    if(!Array.isArray(a)){a=[];if(ejeX)m.nomX=a;else m.nomY=a;}
+    while(a.length<n)a.push(null);
+    a.length=n;
+    return a;
+  }
+  function numLetra(s){var n=0,i;for(i=0;i<s.length;i++)n=n*26+(s.charCodeAt(i)-64);return n}
+  /* el lugar de un nombre en su serie: 3 para «3» y para «C»; null si no es de serie («P1») */
+  function valorNombre(t){
+    if(/^\d{1,3}$/.test(t))return {v:+t,letra:false};
+    if(/^[A-Z]{1,2}$/.test(t))return {v:numLetra(t),letra:true};
+    return null;
+  }
+  function nombresEje(ejeX,m){
+    m=m||N();
+    var p=primas(ejeX,m), fijos=(ejeX?m.nomX:m.nomY)||[], n=p.length, P=[], i, j;
+    for(i=0;i<n;i++)if(!p[i])P.push(i);
+    var val=P.map(function(k){ var f=fijos[k]; return f?{t:String(f),s:valorNombre(String(f))}:null; });
+    var primero=-1;
+    for(j=0;j<P.length;j++)if(val[j]&&val[j].s){primero=j;break;}
+    var v=primero>=0?val[primero].s.v-primero-1:0, letra=primero>=0?val[primero].s.letra:ejeX, base=[];
+    for(j=0;j<P.length;j++){
+      if(val[j]){ base.push(val[j].t); if(val[j].s){v=val[j].s.v; letra=val[j].s.letra;} else v++; continue; }
+      v++;
+      base.push(letra&&v>=1?letraEje(v):String(v));
+    }
+    var out=[], b="", pr=0, jj=-1;
+    for(i=0;i<n;i++){
+      if(p[i]){ pr++; out.push(b+new Array(pr+1).join("′")); }
+      else{ jj++; b=base[jj]; pr=0; out.push(b); }
+    }
+    return out;
+  }
+  function nomEje(ejeX,a,m){ return nombresEje(ejeX,m)[a]; }
+  /* PONER EL NOMBRE DE UN EJE: un numero o una letra lo vuelve principal con ese nombre; en blanco o con ′,
+     prima del anterior.  Dos ejes no pueden llamarse igual: si pasaria, no se cambia nada y se dice por que. */
+  function ponNombreEje(ejeX,idx,texto){
+    var m=N(), p=primas(ejeX,m), nom=nomsEje(ejeX,m), n=p.length;
+    if(!(idx>=0&&idx<n))return {ok:false,msg:"Ese eje no existe."};
+    var t=String(texto==null?"":texto).trim().replace(/['´’]/g,"′").toUpperCase(), antes={p:p[idx],n:nom[idx]};
+    if(!t||/′$/.test(t)){
+      if(idx===0||idx===n-1)return {ok:false,msg:"El primer y el último eje son de borde: no pueden ser prima."};
+      p[idx]=true; nom[idx]=null;
+    }else{
+      p[idx]=false; nom[idx]=null;
+      if(nombresEje(ejeX,m)[idx]!==t)nom[idx]=t;
+    }
+    var todos=nombresEje(ejeX,m), rep=null;
+    todos.forEach(function(x,i){ if(!rep&&todos.indexOf(x)!==i)rep=x; });
+    if(rep){
+      p[idx]=antes.p; nom[idx]=antes.n;
+      return {ok:false,msg:"Quedarían dos ejes llamados «"+rep+"»: ponle otro nombre o vuelve prima (′) el que sobra."};
+    }
+    return {ok:true,nombre:todos[idx]};
   }
   /* Tramo continuo al que pertenece el vano (i,j).
        hay(k)   : ¿el vano contiguo k tiene el mismo elemento?  Un tramo solo
@@ -11097,7 +11160,7 @@ var TT={script:performance.now()};
     guardarCalco(S.act,c);
     render();
     toast("Plano de AutoCAD de fondo: "+(cad.l.length+cad.c.length+cad.t.length)+" trazos en "+cad.capas.length+
-          " capas, "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m. Pulsa «Anclar en A-1» y haz clic en ese cruce del dibujo.");
+          " capas, "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m. Ánclalo con «Anclar en A-A» y «Anclar en 1-1».");
     return true;
   }
   /* el amarillo o el blanco de AutoCAD no se ven sobre la planta clara: se oscurecen lo justo */
@@ -11334,6 +11397,33 @@ var TT={script:performance.now()};
     var s=snapCad(c,(q.x-c.dx)/c.esc,(q.y-c.dy)/c.esc,tolPantalla(12)/c.esc,true);
     return s?{x:s.x*c.esc+c.dx, y:s.y*c.esc+c.dy}:q;
   }
+  /* ANCLAR UNA DIRECCION («Anclar en A-A» / «Anclar en 1-1»).  El eje del dibujo que se toca -una burbuja
+     prolongada o, si no, una linea- queda encima del eje del modelo QUE SE LLAMA IGUAL: con los nombres puestos
+     a mano, el 1 del AutoCAD cae sobre el eje que tu llamaste 1 aunque no sea el primero.  Sin nombre, o sin ese
+     nombre en el modelo, sobre el A (o el 1).  Solo corre el plano en esa direccion. */
+  function anclarEje(dir,q,tol){
+    var c=calco(); if(!c||c.tipo!=="cad")return null;
+    var cad=c.cad, ejeX=dir==="x", w=ejeX?(q.x-c.dx)/c.esc:(q.y-c.dy)/c.esc, a=ejeX?(q.y-c.dy)/c.esc:(q.x-c.dx)/c.esc,
+        t=tol/c.esc, mejor=null;
+    if(!cad.ejes)cad.ejes=ejesDeCad(cad);
+    cad.ejes.forEach(function(e){
+      if(e.dir!==(ejeX?"v":"h"))return;
+      var d=Math.abs(e.pos-w); if(d<=t&&(!mejor||d<mejor.d))mejor={pos:e.pos,d:d,nombre:e.nombre};
+    });
+    if(!mejor){
+      var SG=segsCad(cad);
+      (ejeX?SG.v:SG.h).forEach(function(s){
+        var d=Math.abs(s.p-w); if(d<=t&&a>=s.a-t&&a<=s.b+t&&(!mejor||d<mejor.d))mejor={pos:s.p,d:d,nombre:null};
+      });
+    }
+    if(!mejor)return null;
+    var m=N(), noms=nombresEje(ejeX,m), idx=mejor.nombre?noms.indexOf(mejor.nombre):-1;
+    if(idx<0)idx=Math.max(0,noms.indexOf(ejeX?"A":"1"));
+    var destino=acum(ejeX?m.dx:m.dy,idx);
+    if(ejeX)c.dx=+(destino-mejor.pos*c.esc).toFixed(4); else c.dy=+(destino-mejor.pos*c.esc).toFixed(4);
+    guardarCalco(S.act,c);
+    return {que:mejor.nombre?"eje "+mejor.nombre:"línea", plano:mejor.nombre, modelo:noms[idx]};
+  }
   /* ANCLAR: el punto del dibujo que se toco pasa al cruce A-1 del modelo, que es el origen */
   function anclarEn(q,tol){
     var c=calco(); if(!c||c.tipo!=="cad")return null;
@@ -11359,16 +11449,17 @@ var TT={script:performance.now()};
      despues del ultimo o antes del primero añade un tramo, que es de borde y por eso principal.  Si el nuevo
      va antes del primero, el origen del modelo se corre y el plano de fondo se corre con el. */
   function insertarEjeEn(ejeX,pos,prima){
-    var m=N(), arr=ejeX?m.dx:m.dy, op=ejeX?m.dx2:m.dy2, n=arr.length, tot=acum(arr,n), p=primas(ejeX,m), k, cum=0;
+    var m=N(), arr=ejeX?m.dx:m.dy, op=ejeX?m.dx2:m.dy2, n=arr.length, tot=acum(arr,n), p=primas(ejeX,m), k, cum=0,
+        nms=nomsEje(ejeX,m);
     if(n>=MAX_EJES-1)return {ok:false,msg:"Máximo "+MAX_EJES+" ejes por dirección."};
     pos=Math.round(pos*10000)/10000;
     for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-pos)<0.005)return {ok:false,msg:"Ya hay un eje ahí: el "+nomEje(ejeX,k,m)+"."};
     if(pos>tot){
-      var dF=+(pos-tot).toFixed(4); arr.push(dF); if(op)op.push(dF); p.push(false);
+      var dF=+(pos-tot).toFixed(4); arr.push(dF); if(op)op.push(dF); p.push(false); nms.push(null);
       return {ok:true,idx:n+1,borde:true};
     }
     if(pos<0){
-      var d0=+(-pos).toFixed(4); arr.unshift(d0); if(op)op.unshift(d0); p.splice(0,0,false);
+      var d0=+(-pos).toFixed(4); arr.unshift(d0); if(op)op.unshift(d0); p.splice(0,0,false); nms.splice(0,0,null);
       remap(ejeX,function(kk){return kk+1},-1);
       var c=calco(); if(c){ if(ejeX)c.dx=+(c.dx+d0).toFixed(4); else c.dy=+(c.dy+d0).toFixed(4); guardarCalco(S.act,c); }
       return {ok:true,idx:0,borde:true,corrido:d0};
@@ -11377,7 +11468,7 @@ var TT={script:performance.now()};
     var a=+(pos-cum).toFixed(4), b=+(arr[k]-a).toFixed(4);
     if(op){ var a2=+(op[k]*a/arr[k]).toFixed(4); op.splice(k,1,a2,+(op[k]-a2).toFixed(4)); }
     arr.splice(k,1,a,b);
-    p.splice(k+1,0,!!prima);
+    p.splice(k+1,0,!!prima); nms.splice(k+1,0,null);
     remap(ejeX,function(kk){return kk>k?kk+1:kk},k);
     return {ok:true,idx:k+1};
   }
@@ -11395,7 +11486,8 @@ var TT={script:performance.now()};
       for(k=0;k<=n;k++){ var d=Math.abs(acum(arr,k)-pos); if(d<dmin){dmin=d;cerca=k;} if(nomEje(ejeX,k,m)===e.nombre)mismo=k; }
       var f={nombre:e.nombre, ejeX:ejeX, pos:pos, cerca:{idx:cerca,nombre:nomEje(ejeX,cerca,m),pos:+acum(arr,cerca).toFixed(4)},
              dif:+(pos-acum(arr,cerca)).toFixed(4)};
-      if(dmin<=0.005){ f.opciones=["nada"]; }
+      /* coincide: si el eje del modelo se llama distinto, se propone darle el nombre del plano */
+      if(dmin<=0.005){ f.opciones=(f.cerca.nombre!==e.nombre)?["nombrar","nada"]:["nada"]; }
       else{
         var borde=pos<0||pos>acum(arr,n);
         f.opciones=borde?["crear","nada"]:["prima","crear","nada"];
@@ -11452,6 +11544,17 @@ var TT={script:performance.now()};
         if(r.corrido){ if(f.ejeX)corr.x+=r.corrido; else corr.y+=r.corrido; }
         hechos.crear++;
       });
+    /* los nombres del plano, de menor a mayor: el eje del modelo que coincide con cada burbuja -y el principal
+       recien creado- se llama como ella; los demas se renombran solos */
+    hechos.nombrar=0;
+    filas.filter(function(f){return f.accion==="nombrar"||f.accion==="crear"}).sort(function(a,b){return a.pos-b.pos})
+      .forEach(function(f){
+        var arr=f.ejeX?m.dx:m.dy, pos=f.pos+(f.ejeX?corr.x:corr.y), k, idx=-1;
+        for(k=0;k<=arr.length;k++)if(Math.abs(acum(arr,k)-pos)<=0.005)idx=k;
+        if(idx<0||nomEje(f.ejeX,idx,m)===f.nombre)return;
+        var r=ponNombreEje(f.ejeX,idx,f.nombre);
+        if(r.ok)hechos.nombrar++; else fallos.push(f.nombre+": "+r.msg);
+      });
     return {hechos:hechos, fallos:fallos};
   }
   function pintaAdopta(){
@@ -11464,7 +11567,8 @@ var TT={script:performance.now()};
       var sel=f.opciones.length>1
         ? '<select id="adopta'+i+'" data-adopta="'+i+'">'+f.opciones.map(function(o){
             return '<option value="'+o+'"'+(o===f.accion?' selected':'')+'>'+
-              (o==="mover"?"Mover su eje "+h(f.mover.nombre)+" aquí":NOMB[o])+'</option>'; }).join("")+'</select>'
+              (o==="mover"?"Mover su eje "+h(f.mover.nombre)+" aquí":(o==="nombrar"?"Llamarlo «"+h(f.nombre)+"»":NOMB[o]))+
+              '</option>'; }).join("")+'</select>'
         : '—';
       return '<tr><td>'+h(f.nombre)+' <small>'+(f.ejeX?"X":"Y")+'</small></td><td>'+nm(f.pos)+'</td><td>'+
         h(f.cerca.nombre)+' · '+nm(f.cerca.pos)+'</td><td>'+dif+'</td><td class="sis-n">'+sel+'</td></tr>';
@@ -11480,8 +11584,8 @@ var TT={script:performance.now()};
     pe.innerHTML='<h3>Adoptar los ejes del plano</h3>'+aviso+
       '<p class="nota" style="margin:4px 0 0">Medidas en metros desde el eje A-1 del modelo, con el plano anclado. '+
       '<b>Mover</b> corre ese eje del modelo y sus columnas y vigas lo siguen; un <b>prima</b> no corta las vigas ni '+
-      'las losas que cruza; un <b>principal</b> sí. El modelo nombra los ejes por su orden: uno nuevo entre otros cambia '+
-      'los nombres de los que siguen.</p>'+
+      'las losas que cruza; un <b>principal</b> sí. <b>Llamarlo</b> le pone al eje del modelo el nombre de la burbuja '+
+      '(y lo vuelve principal); los que no tienen nombre puesto se renombran solos.</p>'+
       '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Eje del plano</th><th>Posición</th>'+
       '<th>El más cercano del modelo</th><th>Diferencia</th><th>Qué hacer</th></tr></thead><tbody>'+cuerpo+'</tbody></table></div>'+
       '<div class="row" style="margin:10px 0 0;gap:6px;flex-wrap:wrap">'+
@@ -11504,7 +11608,7 @@ var TT={script:performance.now()};
       if(!ADOPTA)return;
       snap();
       var r=adoptarEjesCad(ADOPTA); ADOPTA=null; ver(pe,false); render();
-      toast("Ejes del plano: "+r.hechos.mover+" movido(s) y "+r.hechos.crear+" creado(s)"+
+      toast("Ejes del plano: "+r.hechos.mover+" movido(s), "+r.hechos.crear+" creado(s) y "+r.hechos.nombrar+" nombrado(s)"+
             (r.fallos.length?". No se pudo: "+r.fallos.join("; "):".")+" Ctrl+Z lo deshace.");
     };
     if(bC)bC.onclick=function(){ ADOPTA=null; ver(pe,false); render(); toast("No se cambió nada."); };
@@ -11712,7 +11816,7 @@ var TT={script:performance.now()};
     ver(ctl,!!c);
     ver("#calcoEjes",!!(c&&(VECT[S.act]||c.ejes)));
     /* el plano de AutoCAD ya viene a escala real: no se calibra, se ancla */
-    ver("#calcoCal",!esCad); ver("#calcoAncla",esCad); ver("#calcoColor",esCad); ver("#calcoCapas",esCad);
+    ver("#calcoCal",!esCad); ver("#calcoAncla",esCad); ver("#calcoAnclaY",esCad); ver("#calcoColor",esCad); ver("#calcoCapas",esCad);
     if(esCad&&!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
     ver("#calcoAdopta",esCad&&!!c.cad.ejes.length); ver("#ejesAdopta",esCad&&!!c.cad.ejes.length);
     Array.prototype.forEach.call(document.querySelectorAll("#calcoPonEje,#ejesPonEje"),function(b){
@@ -11727,7 +11831,7 @@ var TT={script:performance.now()};
       var cc=$("#calcoColores"); if(cc)cc.checked=c.colores!==false;
       var om=Object.keys(c.cad.omitidos||{}).map(function(k){return c.cad.omitidos[k]+" "+k});
       inf.textContent=anclando
-        ? "Haz clic en el cruce de los ejes A y 1 del dibujo."
+        ? (anclando==="y"?"Haz clic en el eje 1 del dibujo (u otro con nombre).":"Haz clic en el eje A del dibujo (u otro con nombre).")
         : "AutoCAD · "+(c.cad.dibujo||"dibujo")+" · "+c.w.toFixed(2)+" × "+c.h.toFixed(2)+" m, leído en "+
           (c.cad.unidades||"m")+(om.length?" · sin dibujar: "+om.join(", "):"");
       pintaCapasCad(c);
@@ -11882,7 +11986,7 @@ var TT={script:performance.now()};
       m.dx=dx.slice(); m.dy=dy.slice();
       if(dx2)m.dx2=dx2.slice(); else delete m.dx2;
       if(dy2)m.dy2=dy2.slice(); else delete m.dy2;
-      m.primaX=[]; m.primaY=[];
+      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY;
       var nv=plantaLlena(dx,dy,m.h);
       m.cols=nv.cols; m.vigas=nv.vigas; m.losas=nv.losas; m.placas={};
       m.zapatas=m.zapatas||{};
@@ -12222,7 +12326,7 @@ var TT={script:performance.now()};
     S.niveles.forEach(function(m){
       m.dx=dx.slice(); m.dy=dy.slice();
       delete m.dx2; delete m.dy2;
-      m.primaX=[]; m.primaY=[];     /* del plano salen ejes principales */
+      m.primaX=[]; m.primaY=[]; delete m.nomX; delete m.nomY;     /* del plano salen ejes principales */
       if(conCols){
         var nv=plantaLlena(dx,dy,m.h);
         m.cols=nv.cols; m.vigas=nv.vigas; m.losas=nv.losas; m.placas={};
@@ -12282,10 +12386,10 @@ var TT={script:performance.now()};
     }
     /* Anclando el plano de AutoCAD: el clic se pega al cruce del dibujo y ese punto pasa al A-1 */
     if(anclando&&!e.altKey){
-      var sA=anclarEn(xyModelo(e),tolPantalla(16));
+      var dirA=anclando, sA=anclarEje(dirA,xyModelo(e),tolPantalla(16));
       if(sA)anclando=false;
-      toast(sA?"Plano anclado: el "+sA.que+" que tocaste cae en el cruce A-1 del modelo."
-              :"Ahí no hay un punto del dibujo: acerca la vista y haz clic justo en el cruce de los ejes A y 1.");
+      toast(sA?"Plano anclado en "+(dirA==="x"?"X":"Y")+": el "+sA.que+" del dibujo quedó sobre tu eje "+sA.modelo+"."
+              :"Ahí no hay un eje ni una línea "+(dirA==="x"?"vertical":"horizontal")+" del dibujo: acerca la vista y haz clic justo encima.");
       pintaCalcoCtl(); render(); e.preventDefault();
       return;
     }
@@ -12403,12 +12507,16 @@ var TT={script:performance.now()};
   });
 
   $("#calcoEjes").onclick=leerEjes;
-  $("#calcoAncla").onclick=function(){
+  function modoAncla(dir){
     var c=calco(); if(!c||c.tipo!=="cad")return;
-    anclando=!anclando;
-    toast(anclando?"Haz clic en el cruce de los ejes A y 1 del dibujo: se pega al punto exacto.":"Anclaje cancelado.");
+    anclando=(anclando===dir)?false:dir;
+    toast(!anclando?"Anclaje cancelado.":(dir==="x"
+      ? "Haz clic en el eje A del dibujo (u otro con nombre): queda encima de tu eje con ese nombre."
+      : "Haz clic en el eje 1 del dibujo (u otro con nombre): queda encima de tu eje con ese nombre."));
     pintaCalcoCtl();
-  };
+  }
+  $("#calcoAncla").onclick=function(){ modoAncla("x"); };
+  $("#calcoAnclaY").onclick=function(){ modoAncla("y"); };
   $("#calcoAdopta").onclick=function(){
     var c=calco(); if(!c||c.tipo!=="cad")return;
     ADOPTA=compararEjesCad();
@@ -12692,26 +12800,27 @@ var TT={script:performance.now()};
   function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
     if(arr.length>=MAX_EJES-1)return toast("Máximo "+MAX_EJES+" ejes por dirección.");
     snap();
-    var p=primas(ejeX,m);
+    var p=primas(ejeX,m), nms=nomsEje(ejeX,m);
     var d=+(arr[t]/2).toFixed(4);arr.splice(t,1,d,d);
     /* el borde opuesto se parte igual: las dos listas tienen que tener
        SIEMPRE el mismo numero de vanos o el nudo (i,j) queda sin sitio */
     var op=ejeX?m.dx2:m.dy2;
     if(op){var e=+(op[t]/2).toFixed(4);op.splice(t,1,e,e);}
     p.splice(t+1,0,!!comoPrima);          /* el eje nuevo nace en t+1 */
+    nms.splice(t+1,0,null);               /* y sin nombre propio: los puestos a mano siguen a su eje */
     remap(ejeX,function(k){return k>t?k+1:k},t);render();
     if(comoPrima)toast("Eje "+nomEje(ejeX,t+1,N())+" añadido. No parte las "+
       "vigas ni las losas que lo cruzan: solo donde le pongas columna.");}
   function borrarEje(ejeX,p){var m=N(),arr=ejeX?m.dx:m.dy,n=arr.length+1;
     if(n<=2)return toast("Debe quedar al menos un tramo.");
     snap();
-    var pr=primas(ejeX,m);
+    var pr=primas(ejeX,m), nms=nomsEje(ejeX,m);
     var op=ejeX?m.dx2:m.dy2;
     if(p===0){arr.splice(0,1);if(op)op.splice(0,1);}
     else if(p===n-1){arr.splice(p-1,1);if(op)op.splice(p-1,1);}
     else{arr[p-1]=+(arr[p-1]+arr[p]).toFixed(4);arr.splice(p,1);
          if(op){op[p-1]=+(op[p-1]+op[p]).toFixed(4);op.splice(p,1);}}
-    pr.splice(p,1);
+    pr.splice(p,1); nms.splice(p,1);
     remap(ejeX,function(k){return k===p?null:(k>p?k-1:k)},-1);limpiarSueltos();render();}
   /* =====================================================================
      1.1 LUCES · la tabla de la hoja, dentro del complemento
@@ -12777,10 +12886,17 @@ var TT={script:performance.now()};
       (otro?" checked":"")+'><span>'+nom[1]+'</span></label></th>'+
       '<th class="ops"></th></tr></thead><tbody>';
 
+    /* el nombre de cada eje se escribe aqui: en la primera fila los dos, en las demas el de donde termina el vano */
+    var NOMS=nombresEje(ejeX,m);
+    function casNom(k){
+      return '<input class="eje-nom" type="text" size="3" data-nom="'+k+'" value="'+String(NOMS[k]).replace(/"/g,"&quot;")+
+             '" title="Escribe un número o una letra para volverlo principal con ese nombre; en blanco o con ′, prima" '+
+             'aria-label="Nombre del eje '+(k+1)+'">';
+    }
     for(i=0;i<base.length;i++){
       h+='<tr><th class="lab">Vano '+(i+1)+'<em'+
          (esPrima(ejeX,i+1)?' class="pr"':'')+'>'+
-         nomEje(ejeX,i,m)+"–"+nomEje(ejeX,i+1,m)+'</em></th>'+
+         (i===0?casNom(0):NOMS[i])+"–"+casNom(i+1)+'</em></th>'+
          '<td class="val"><input type="text" size="1" inputmode="decimal" data-f="1" data-t="'+i+
          '" value="'+nm(base[i])+'" aria-label="'+nom[0]+' vano '+(i+1)+'"></td>'+
          '<td class="val"><input type="text" size="1" inputmode="decimal" data-f="2" data-t="'+i+
@@ -12826,6 +12942,23 @@ var TT={script:performance.now()};
       inp.addEventListener("blur",aplicar);
       inp.addEventListener("keydown",function(e){
         if(e.key==="Enter"){e.preventDefault();aplicar()}});
+    });
+
+    /* ---- el nombre de los ejes ---- */
+    cont.querySelectorAll("input[data-nom]").forEach(function(inp){
+      function aplicar(){
+        if(inp._visto===inp.value)return;
+        inp._visto=inp.value;
+        var k=+inp.dataset.nom, antes=nomEje(ejeX,k);
+        if(String(inp.value).trim().replace(/['´’]/g,"′").toUpperCase()===antes)return;
+        snap();
+        var r=ponNombreEje(ejeX,k,inp.value);
+        if(!r.ok){ UNDO.pop(); inp.value=antes; inp._visto=antes; return toast(r.msg); }
+        render();
+        toast("Eje "+antes+" → "+r.nombre+". Los demás se renombraron solos. Ctrl+Z lo deshace.");
+      }
+      inp.addEventListener("change",aplicar);
+      inp.addEventListener("keydown",function(e){ if(e.key==="Enter"){e.preventDefault();aplicar()} });
     });
 
     /* ---- la casilla del borde opuesto ---- */
@@ -17593,7 +17726,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
