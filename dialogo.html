@@ -8321,7 +8321,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v202 · 14-09-2026";
+  var BUILD="v203 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17822,14 +17822,80 @@ var TT={script:performance.now()};
       P.push(texto("RET-ESCALERAS",codAc(es.cod),c,H*1.2)); nRot++;
     });
 
-    /* VIGAS: dos lineas hasta la cara de sus apoyos; el rotulo solo si cabe */
-    var chatas=0;
+    /* VIGAS, PLACAS Y COLUMNAS COMO UN SOLO CONTORNO.  Cada viga eran dos lineas sueltas recortadas por reglas:
+       en una esquina sin columna quedaba un hueco y en una T las lineas se metian en la otra viga (Victor: «hay
+       trazos discontinuos»).  Ahora las piezas ortogonales son rectangulos en una cuadricula y se dibuja solo el
+       borde de su union: cada tramo en la capa de la viga que lo tiene; el de columnas y placas lo pone su propio
+       contorno.  Una viga que llega a otra se alarga media viga para cerrar la esquina.  Las inclinadas (lote
+       sesgado) siguen a dos lineas recortadas en la cara de sus apoyos. */
+    var chatas=0, rects=[], ORTO=1e-4;
+    function rectAc(x0,y0,x1,y1,tipo,capa){
+      rects.push({x0:Math.min(x0,x1),y0:Math.min(y0,y1),x1:Math.max(x0,x1),y1:Math.max(y0,y1),tipo:tipo,capa:capa});
+    }
+    function medioEn(p,propia){
+      if(colEn(p))return 0;
+      var m=0;
+      vigas.forEach(function(w){ if(w!==propia&&pasaPor(w,p))m=Math.max(m,w.b/2); });
+      placas.forEach(function(pl){ if(pasaPor(pl,p))m=Math.max(m,pl.t/2); });
+      return m;
+    }
+    cols.forEach(function(c){ var bb=c.forma==="circular"?(c.D||c.b):c.b, hh=c.forma==="circular"?(c.D||c.b):c.h;
+      rectAc(c.x-bb/2,c.y-hh/2,c.x+bb/2,c.y+hh/2,4,"RET-COLUMNAS"); });
+    placas.forEach(function(pl){
+      if(Math.abs(pl.y2-pl.y1)<=ORTO)rectAc(pl.x1,pl.y1-pl.t/2,pl.x2,pl.y1+pl.t/2,3,"RET-PLACAS");
+      else if(Math.abs(pl.x2-pl.x1)<=ORTO)rectAc(pl.x1-pl.t/2,pl.y1,pl.x1+pl.t/2,pl.y2,3,"RET-PLACAS");
+    });
     vigas.forEach(function(v){
       var a=[v.x1,v.y1], b=[v.x2,v.y2]; if(lar(res(b,a))<1e-6)return;
-      var lg=legible(a,b); a=lg[0]; b=lg[1]; var u=lg[2], n=nor(u), chata=v.tipo==="chata"; if(chata)chatas++;
-      var capa=chata?"RET-VIGAS-CHATAS":"RET-VIGAS", a2=sum(a,por(u,recorte(a,u,v))), b2=res(b,por(u,recorte(b,u,v)));
+      var chata=v.tipo==="chata", capa=chata?"RET-VIGAS-CHATAS":"RET-VIGAS"; if(chata)chatas++;
+      var hz=Math.abs(v.y2-v.y1)<=ORTO, vt=Math.abs(v.x2-v.x1)<=ORTO;
+      if(hz||vt){
+        var lo=hz?(v.x1<=v.x2?a:b):(v.y1<=v.y2?a:b), hi=(lo===a)?b:a, ml=medioEn(lo,v), mh=medioEn(hi,v);
+        if(hz)rectAc(lo[0]-ml,v.y1-v.b/2,hi[0]+mh,v.y1+v.b/2,chata?1:2,capa);
+        else rectAc(v.x1-v.b/2,lo[1]-ml,v.x1+v.b/2,hi[1]+mh,chata?1:2,capa);
+        return;
+      }
+      var lg=legible(a,b), u=lg[2], n=nor(u), a2=sum(lg[0],por(u,recorte(lg[0],u,v))), b2=res(lg[1],por(u,recorte(lg[1],u,v)));
       if((b2[0]-a2[0])*u[0]+(b2[1]-a2[1])*u[1]>0.005)[1,-1].forEach(function(s){
         var off=por(n,s*v.b/2); P.push({k:"linea",capa:capa,p:[sum(a2,off),sum(b2,off)]}); });
+    });
+    (function(){
+      if(!rects.length)return;
+      function uniq(A){ A.sort(function(p,q){return p-q}); var o=[]; A.forEach(function(x){ if(!o.length||x-o[o.length-1]>1e-6)o.push(x); }); return o; }
+      var XS=[], YS=[]; rects.forEach(function(r){ XS.push(r.x0,r.x1); YS.push(r.y0,r.y1); });
+      XS=uniq(XS); YS=uniq(YS);
+      function ix(A,x){ var lo=0,hi=A.length-1; while(lo<hi){ var md=(lo+hi)>>1; if(A[md]<x-1e-6)lo=md+1; else hi=md; } return lo; }
+      var nxC=XS.length-1, nyC=YS.length-1, dueno=[], i, j;
+      rects.forEach(function(r,k){
+        var i0=ix(XS,r.x0), i1=ix(XS,r.x1), j0=ix(YS,r.y0), j1=ix(YS,r.y1), a, b;
+        for(a=i0;a<i1;a++)for(b=j0;b<j1;b++){ var q=a*nyC+b, o=dueno[q]; if(o==null||rects[o].tipo<r.tipo)dueno[q]=k; }
+      });
+      function en(a,b){ return (a<0||b<0||a>=nxC||b>=nyC)?null:dueno[a*nyC+b]; }
+      var HZ={}, VT={};
+      function mete(M,capa,c,x0,x1){ var k=capa+"|"+c; (M[k]=M[k]||{capa:capa,c:c,iv:[]}).iv.push([x0,x1]); }
+      for(i=0;i<nxC;i++)for(j=0;j<nyC;j++){
+        var o=en(i,j); if(o==null)continue;
+        var r=rects[o]; if(r.tipo>=3)continue;
+        if(en(i,j+1)==null)mete(HZ,r.capa,YS[j+1],XS[i],XS[i+1]);
+        if(en(i,j-1)==null)mete(HZ,r.capa,YS[j],XS[i],XS[i+1]);
+        if(en(i-1,j)==null)mete(VT,r.capa,XS[i],YS[j],YS[j+1]);
+        if(en(i+1,j)==null)mete(VT,r.capa,XS[i+1],YS[j],YS[j+1]);
+      }
+      [[HZ,true],[VT,false]].forEach(function(par){
+        Object.keys(par[0]).forEach(function(k){
+          var g=par[0][k], iv=g.iv.sort(function(p,q){return p[0]-q[0]}), cur=null;
+          iv.concat([null]).forEach(function(s){
+            if(s&&cur&&s[0]<=cur[1]+1e-6){ cur[1]=Math.max(cur[1],s[1]); return; }
+            if(cur&&cur[1]-cur[0]>1e-4)P.push({k:"linea",capa:g.capa,p:par[1]?[[cur[0],g.c],[cur[1],g.c]]:[[g.c,cur[0]],[g.c,cur[1]]]});
+            cur=s?[s[0],s[1]]:null;
+          });
+        });
+      });
+    })();
+    /* el rotulo de cada viga, solo si cabe */
+    vigas.forEach(function(v){
+      var a=[v.x1,v.y1], b=[v.x2,v.y2]; if(lar(res(b,a))<1e-6)return;
+      var lg=legible(a,b); a=lg[0]; b=lg[1]; var u=lg[2], n=nor(u), chata=v.tipo==="chata";
       var t=usa(chata?"VCH":"VP",v.b+"x"+v.h); if(!t)return;
       var txt=rotulo(t);
       if(txt.length*0.75*H<=lar(res(b,a))*0.95){
@@ -17886,6 +17952,15 @@ var TT={script:performance.now()};
                     columnas:cols.length, vigas:vigas.length, chatas:chatas, placas:placas.length, losas:losas.length,
                     escaleras:escs.length}};
   }
+  /* las capas del plano: color ACI y grosor en centesimas de mm (Victor: «lineas mas gruesas para diferenciar
+     cada elemento» y la losa en negro, no en amarillo).  El .bat las crea tal cual. */
+  var CAPAS_ACAD=[
+    {n:"RET-EJES",color:1,lw:13,lt:"EJE"}, {n:"RET-BURBUJAS",color:1,lw:18}, {n:"RET-COTAS",color:3,lw:13},
+    {n:"RET-LOSAS",color:7,lw:18}, {n:"RET-ESCALERAS",color:30,lw:25}, {n:"RET-VIGAS",color:4,lw:35},
+    {n:"RET-VIGAS-CHATAS",color:6,lw:25}, {n:"RET-PLACAS",color:5,lw:50}, {n:"RET-COLUMNAS",color:7,lw:50},
+    {n:"RET-RELLENO",color:8,lw:0}, {n:"RET-TEXTOS",color:7,lw:18}, {n:"RET-TITULOS",color:7,lw:35},
+    {n:"RET-CUADRO",color:7,lw:25}];
+  var ACI_HEX={1:"#d32f2f",2:"#b8a100",3:"#2e7d32",4:"#0277bd",5:"#283593",6:"#8e24aa",7:"#111111",8:"#757575",30:"#e65100"};
   function planoAutocad(opc){
     opc=opc||opcAutocad();
     function tam(mm){ return mm*opc.escala/1000; }
@@ -17898,7 +17973,7 @@ var TT={script:performance.now()};
       var paso=Math.max.apply(null,plantas.map(function(p){return p.caja[2]-p.caja[0]}))+tam(160);
       plantas.forEach(function(p,q){ var dx=+(q*paso).toFixed(4); if(dx)correAc(p.prims,dx); p.dx=dx; p.caja=cajaAc(p.prims); });
     }
-    return {v:2, tipo:"autocad", build:BUILD, opc:opc, plantas:plantas,
+    return {v:2, tipo:"autocad", build:BUILD, opc:opc, plantas:plantas, capas:CAPAS_ACAD,
             estilo:{dimtxt:tam(2), dimasz:tam(1.2), dimexo:tam(0.8), dimexe:tam(1.2), dimgap:tam(0.6),
                     ltscale:+(0.02*opc.escala/50).toFixed(4)}};
   }
@@ -17907,9 +17982,8 @@ var TT={script:performance.now()};
     var cj=p.caja, pad=0.6, w=cj[2]-cj[0]+2*pad, h=cj[3]-cj[1]+2*pad;
     function X(x){return (x-cj[0]+pad).toFixed(3)} function Y(y){return (cj[3]-y+pad).toFixed(3)}
     function pts(q){return q.map(function(a){return X(a[0])+","+Y(a[1])}).join(" ")}
-    var COL={"RET-EJES":"#c62828","RET-BURBUJAS":"#c62828","RET-COTAS":"#2e7d32","RET-LOSAS":"#8a6d00",
-             "RET-ESCALERAS":"#e65100","RET-VIGAS":"#1565c0","RET-VIGAS-CHATAS":"#8e24aa","RET-PLACAS":"#283593",
-             "RET-COLUMNAS":"#212121","RET-RELLENO":"#6d6d6d","RET-TEXTOS":"#212121","RET-TITULOS":"#111","RET-CUADRO":"#212121"};
+    var COL={}, GR={};
+    CAPAS_ACAD.forEach(function(c){ COL[c.n]=ACI_HEX[c.color]||"#333"; GR[c.n]=Math.max(0.8,(c.lw||13)/14).toFixed(2); });
     var AN={9:["start","middle"],10:["middle","middle"],12:["start","auto"],13:["middle","auto"]};
     var s=[], NS=' vector-effect="non-scaling-stroke"';
     function esc2(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
@@ -17922,8 +17996,8 @@ var TT={script:performance.now()};
     p.prims.forEach(function(P){
       var c=COL[P.capa]||"#333";
       if(P.k==="linea")s.push('<line x1="'+X(P.p[0][0])+'" y1="'+Y(P.p[0][1])+'" x2="'+X(P.p[1][0])+'" y2="'+Y(P.p[1][1])+
-        '" stroke="'+c+'" stroke-width="1"'+NS+(P.capa==="RET-EJES"?' stroke-dasharray="9 3 2 3"':'')+'/>');
-      else if(P.k==="pol")s.push('<polygon points="'+pts(P.p)+'" fill="none" stroke="'+c+'" stroke-width="1"'+NS+'/>');
+        '" stroke="'+c+'" stroke-width="'+(GR[P.capa]||1)+'"'+NS+(P.capa==="RET-EJES"?' stroke-dasharray="9 3 2 3"':'')+'/>');
+      else if(P.k==="pol")s.push('<polygon points="'+pts(P.p)+'" fill="none" stroke="'+c+'" stroke-width="'+(GR[P.capa]||1)+'"'+NS+'/>');
       else if(P.k==="solido")s.push('<polygon points="'+pts([P.p[0],P.p[1],P.p[3],P.p[2]])+'" fill="'+c+'"/>');
       else if(P.k==="circulo")s.push('<circle cx="'+X(P.c[0])+'" cy="'+Y(P.c[1])+'" r="'+P.r.toFixed(3)+'" fill="#fff" stroke="'+c+'" stroke-width="1"'+NS+'/>');
       else if(P.k==="sombreado"){
