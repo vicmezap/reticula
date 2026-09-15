@@ -8302,7 +8302,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v198 · 14-09-2026";
+  var BUILD="v199 · 14-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15912,13 +15912,17 @@ var TT={script:performance.now()};
           lo=Math.min.apply(null,ts), hi=Math.max.apply(null,ts);
       a.x1=r4(x0+ux*lo); a.y1=r4(y0+uy*lo); a.x2=r4(x0+ux*hi); a.y2=r4(y0+uy*hi);
     }
-    var usados={};
+    var usados={}, ejesNivel=[];
     S.niveles.forEach(function(m,k){
       var nXk=m.dx.length+1, nYk=m.dy.length+1, cand=[], ii, jj;
       for(ii=0;ii<nXk;ii++){var a1=pt(m,ii,0),b1=pt(m,ii,nYk-1);
         cand.push({dir:"X",id:eX(ii,m),x1:a1[0],y1:a1[1],x2:b1[0],y2:b1[1]});}
       for(jj=0;jj<nYk;jj++){var c1=pt(m,0,jj),d1=pt(m,nXk-1,jj);
         cand.push({dir:"Y",id:eY(jj,m),x1:c1[0],y1:c1[1],x2:d1[0],y2:d1[1]});}
+      /* los ejes de ESTE piso, con su nombre y si son prima: la planta de MODELADO AUTOCAD.bat.  ETABS no los usa
+         -lleva los del edificio, abajo-; se copian antes de que un nombre repetido lleve el nivel */
+      ejesNivel[k]=cand.map(function(e,q){ var ejeX=e.dir==="X";
+        return {dir:e.dir, id:e.id, x1:e.x1, y1:e.y1, x2:e.x2, y2:e.y2, prima:esPrima(ejeX,ejeX?q:q-nXk,m)}; });
       cand.forEach(function(e){
         var ya=null;
         out.ejes.forEach(function(o){
@@ -15935,7 +15939,7 @@ var TT={script:performance.now()};
       var h=(+m.h||2.80), z0=r4(z), z1=r4(z+h); z+=h;
       var nm=nombres(k), nX=m.dx.length+1, nY=m.dy.length+1;
       var L={nombre:"N"+(k+1), h:h, z0:z0, z1:z1,
-             columnas:[], vigas:[], losas:[], placas:[]};
+             columnas:[], vigas:[], losas:[], placas:[], ejes:ejesNivel[k]};
 
       /* COLUMNAS: la seccion es la de ESTE nivel, que carga los pisos de
          encima; la del 1ro es la mayor. */
