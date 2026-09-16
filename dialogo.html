@@ -8327,7 +8327,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v211 · 15-09-2026";
+  var BUILD="v212 · 16-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17881,7 +17881,9 @@ var TT={script:performance.now()};
     var o=(S.proy&&S.proy.autocad)||{};
     return {primas:!!o.primas, burbujas:o.burbujas==="4"?"4":"2", cotas:o.cotas==="todas"?"todas":"principales",
             rotulos:o.rotulos==="seccion"?"seccion":"tipo", losas:o.losas==="cada"?"cada":"grupo",
-            viguetas:["banda","no"].indexOf(o.viguetas)>=0?o.viguetas:"todas",
+            /* POR DEFECTO NINGUNA.  El plano del ingeniero de Victor marca la losa con el rayado y la doble
+               flecha, sin viguetas a trazos.  El selector se queda por si algun dia hacen falta. */
+            viguetas:["todas","banda"].indexOf(o.viguetas)>=0?o.viguetas:"no",
             escala:[50,75,100].indexOf(+o.escala)>=0?+o.escala:50,
             fuera:Array.isArray(o.fuera)?o.fuera.filter(function(x){return +x>0}).map(Number):[]};
   }
@@ -18035,6 +18037,16 @@ var TT={script:performance.now()};
       /* la maciza se arma en dos direcciones: lleva las dos flechas aunque el modelo le guarde un sentido */
       var dirs=(lo.tipo==="maciza")?["x","y"]:((lo.dir==="x"||lo.dir==="y")?[lo.dir]:["x","y"]);
       var sep=+lo.s||0.40, esAlig=(lo.tipo!=="maciza"&&(lo.dir==="x"||lo.dir==="y")), nVig=0;
+      /* EL RAYADO DEL PAÑO, COPIADO DEL PLANO DE VICTOR (AVANCE LURIN.dwg, medido): el paño entero sombreado
+         a 45 grados y encima la doble flecha del sentido.  ANSI31 la aligerada, ANSI33 la maciza, las dos a
+         escala 0.08.  Ojo con la escala: en un dibujo METRICO AutoCAD usa acadiso.pat, donde ANSI31 separa
+         sus lineas 3.175 unidades y no 0.125, asi que 0.08 deja 0.254 m entre lineas -unos 5 mm en papel a
+         1:50-.  Antes se ponia 3.0 creyendo la base imperial: eso son 9.5 m, y en un paño de 4 m no salia
+         ni una raya.  La vista previa no lo delataba porque el SVG dibuja su propio rayado. */
+      P.push({k:"sombreado",capa:"RET-LOSAS-TRAMA",
+              patron:(lo.tipo==="maciza")?"ANSI33":"ANSI31",
+              escala:+(0.08*opc.escala/50).toFixed(4),
+              p:xs.map(function(v,kk){return [v,ys[kk]]})});
       if(esAlig){
         var vert=(lo.dir==="y"), AA=vert?xs:ys,
             ini0=Math.min.apply(null,AA), fin0=Math.max.apply(null,AA), anc=fin0-ini0;
@@ -18052,9 +18064,6 @@ var TT={script:performance.now()};
             }
           }
         }
-      }else if(lo.tipo==="maciza"&&opc.viguetas!=="no"){
-        P.push({k:"sombreado",capa:"RET-LOSAS-TRAMA",patron:"ANSI31",escala:+tam(60).toFixed(4),
-                p:xs.map(function(v,kk){return [v,ys[kk]]})});
       }
       dirs.forEach(function(d){
         var mx=Math.min((Math.max.apply(null,d==="x"?xs:ys)-Math.min.apply(null,d==="x"?xs:ys))*0.3,tam(24));
@@ -18065,9 +18074,9 @@ var TT={script:performance.now()};
       });
       var t=usa(T.PREF[lo.tipo]||"LA",String(lo.e)); if(!t)return;
       var area=0; for(var k=0;k<xs.length;k++){ var k2=(k+1)%xs.length; area+=xs[k]*ys[k2]-xs[k2]*ys[k]; } area=Math.abs(area)/2;
-      /* el rotulo dice tambien cuantas viguetas lleva el paño y a que separacion: es lo que se lee en un plano */
-      var pie=(esAlig&&nVig)?("  "+nVig+(lo.tipo==="nervada"?" NERVIOS @":" VIGUETAS @")+secAc(sep)):"";
-      var lab={t:rotulo(t)+pie,p:dirs.length===1&&dirs[0]==="y"?[cx+tam(1.6),cy]:[cx,cy+tam(1.6)],al:dirs.length===1&&dirs[0]==="y"?9:13};
+      /* EL ROTULO, COMO EL DE SU PLANO: «h= .25 m» y nada mas.  El codigo del tipo y la seccion siguen en el
+         cuadro de elementos de cada planta, que es donde se cruzan. */
+      var lab={t:"h= "+secAc(lo.e)+" m",p:dirs.length===1&&dirs[0]==="y"?[cx+tam(1.6),cy]:[cx,cy+tam(1.6)],al:dirs.length===1&&dirs[0]==="y"?9:13};
       if(opc.losas==="cada"){ P.push(texto("RET-LOSAS",lab.t,lab.p,H,0,lab.al)); nRot++; }
       else if(!mejorLosa[t.nombre]||area>mejorLosa[t.nombre].area)mejorLosa[t.nombre]={area:area,lab:lab};
     });
