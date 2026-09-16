@@ -403,7 +403,7 @@
 .luces .eje-nom{width:4.1em;padding:0 2px;font:inherit;font-size:.88em;font-style:normal;color:inherit;background:var(--sheet);
   border:1px solid var(--line);border-radius:3px}
 .luces .eje-nom:focus{outline:2px solid var(--acc);outline-offset:-1px}
-#ejesPonEje.on,#calcoPonEje.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#ejesPonEje.on,#calcoPonEje.on,#ejesPonEjeIncl.on,#calcoPonEjeIncl.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .calco-capas{max-height:190px;overflow:auto;margin:4px 2px 0;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
 .calco-capa{display:grid;grid-template-columns:auto 12px minmax(0,1fr) auto;gap:6px;align-items:center;
   padding:2px 6px;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-2);cursor:pointer}
@@ -766,6 +766,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           title="Compara los ejes del AutoCAD con los del modelo y los adopta: mover, crear o dejar, eje por eje">Adoptar ejes del plano</button>
         <button class="btn" id="calcoPonEje" style="margin:4px 2px 0"
           title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
+        <button class="btn" id="calcoPonEjeIncl" style="margin:4px 2px 0"
+          title="Para una planta sesgada: un clic en un borde y otro en el borde opuesto. El eje va inclinado, de un punto al otro. Shift: principal. Esc: cancelar">Eje inclinado (2 clics)</button>
         <button class="btn" id="marcarEjes" style="margin:4px 2px 0">2 · Marcar ejes sobre el plano</button>
         <div id="marcaCtl" hidden style="margin:4px 2px 0;padding:6px;border:1px solid var(--acc);border-radius:6px;background:var(--acc-soft)">
           <div class="lbl" id="marcaTit" style="padding:0 0 2px"></div>
@@ -857,6 +859,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="ejes-acc">
         <button class="btn" id="ejesPonEje"
           title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
+        <button class="btn" id="ejesPonEjeIncl"
+          title="Para una planta sesgada: un clic en un borde y otro en el borde opuesto. El eje va inclinado, de un punto al otro. Shift: principal. Esc: cancelar">Eje inclinado (2 clics)</button>
         <button class="btn" id="ejesAdopta" hidden
           title="Compara los ejes del AutoCAD de fondo con los del modelo y los adopta, eje por eje">Adoptar ejes del plano</button>
       </div>
@@ -8321,7 +8325,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v203 · 14-09-2026";
+  var BUILD="v206 · 15-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9147,7 +9151,10 @@ var TT={script:performance.now()};
     /* Esc termina la cadena de Unir */
     if(e.key==="Escape"&&UNIR&&!MARCA){e.preventDefault();UNIR=null;UNIR_CONFIRMA=null;S.sel=null;render();toast("Listo.");return}
     /* Esc termina de crear ejes */
-    if(e.key==="Escape"&&PONEJE){e.preventDefault();alternaPonerEje();return}
+    if(e.key==="Escape"&&PONEJE){e.preventDefault();
+      /* con un inclinado a medias, el primer Esc suelta ese punto y sigue el modo */
+      if(PONEJE.a){PONEJE.a=null;pintaGuiaEje(null);pintaCalcoCtl();toast("Eje inclinado cancelado.");return}
+      alternaPonerEje(!!PONEJE.incl);return}
     if(!(e.ctrlKey||e.metaKey))return;
     var k=e.key.toLowerCase();
     if(k==="z"){e.preventDefault();undo()}else if(k==="y"){e.preventDefault();redo()}});
@@ -9622,13 +9629,16 @@ var TT={script:performance.now()};
      A′ y no desplace las letras de todos los ejes que vienen detras. */
   function eX(i,m){return nomEje(true,i,m)}
   function eY(j,m){return nomEje(false,j,m)}
-  function ejeCol(i,j){return eX(i)+"-"+eY(j)}
+  /* EL NIVEL VIAJA CON EL NOMBRE.  eX/eY sin nivel usan el que esta abierto, y los pisos no tienen por que
+     tener los mismos ejes: nombrando una viga del 3er piso -9 ejes- mirando el 1ro -7- salia «C / 7-undefined»
+     en la hoja de Excel.  Ahora cada nombre se arma con el nivel de su elemento. */
+  function ejeCol(i,j,m){return eX(i,m)+"-"+eY(j,m)}
   /* la viga se nombra por su tramo REAL: de apoyo a apoyo */
-  function ejeVigaH(i,j,m){var t=tramoViga("h",i,j,m||N());
-    return eY(j)+" / "+eX(t.desde)+"-"+eX(t.hasta)}
-  function ejeVigaV(i,j,m){var t=tramoViga("v",i,j,m||N());
-    return eX(i)+" / "+eY(t.desde)+"-"+eY(t.hasta)}
-  function ejeLosa(i,j){return eX(i)+"-"+eX(i+1)+" / "+eY(j)+"-"+eY(j+1)}
+  function ejeVigaH(i,j,m){m=m||N();var t=tramoViga("h",i,j,m);
+    return eY(j,m)+" / "+eX(t.desde,m)+"-"+eX(t.hasta,m)}
+  function ejeVigaV(i,j,m){m=m||N();var t=tramoViga("v",i,j,m);
+    return eX(i,m)+" / "+eY(t.desde,m)+"-"+eY(t.hasta,m)}
+  function ejeLosa(i,j,m){return eX(i,m)+"-"+eX(i+1,m)+" / "+eY(j,m)+"-"+eY(j+1,m)}
   function nombres(niv){return memoG("nm:"+niv,function(){return nombresCalc(niv)})}
   function nombresCalc(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
@@ -9636,7 +9646,7 @@ var TT={script:performance.now()};
         l={aligerada:0,maciza:0,nervada:0,escalera:0},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){c++;
       var tp=medCol(i,j,m).tipo,sf=tp==="Interior"?"INT":(tp==="Exterior"?"EXT":"ESQ");
-      C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j)};}
+      C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j,m)};}
     function regViga(k,tv,ej){v[tv]++;
       V[k]={cod:p+"-"+(tv==="chata"?"VCH":"VP")+"-"+nn(v[tv]),eje:ej,tipo:tv};}
     /* UNA VIGA UNIDA ES UNA: sus tramos comparten el codigo del primero.
@@ -9650,9 +9660,9 @@ var TT={script:performance.now()};
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.vigas["h:"+i+":"+j])vigaUnida("h",i,j);
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.vigas["v:"+i+":"+j])vigaUnida("v",i,j);
     for(i=0;i<nX-1;i++)for(j=0;j<nY;j++)if(m.placas["h:"+i+":"+j]){pl++;
-      P["h:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaH(i,j)};}
+      P["h:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaH(i,j,m)};}
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)if(m.placas["v:"+i+":"+j]){pl++;
-      P["v:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaV(i,j)};}
+      P["v:"+i+":"+j]={cod:p+"-PL-"+nn(pl),eje:ejeVigaV(i,j,m)};}
     /* igual la losa, y su eje va de apoyo a apoyo: «A-B / 3-4», no «3-3′» */
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j]){
       var ol=m.losas[i+":"+j], dl=dirLosa(ol), tl=tramoLosa(dl,i,j,m),
@@ -11737,6 +11747,32 @@ var TT={script:performance.now()};
     remap(ejeX,function(kk){return kk>k?kk+1:kk},k);
     return {ok:true,idx:k+1};
   }
+  /* UN EJE INCLINADO: no cae en el mismo sitio en los dos bordes.  El modelo ya sabia dibujarlos -es el lote
+     sesgado, dx2/dy2- pero solo se podian escribir a mano en la tabla; con el clic todos salian perpendiculares
+     (Victor: «para secciones inclinadas no»).  pos es donde corta el borde de referencia y pos2 el opuesto; si el
+     nivel no tenia borde opuesto se activa aqui, copiando el de referencia. */
+  function insertarEjeInclinado(ejeX,pos,pos2,prima){
+    var m=N();
+    if(ejeX){ if(!m.dx2)m.dx2=m.dx.slice(); } else { if(!m.dy2)m.dy2=m.dy.slice(); }
+    var arr=ejeX?m.dx:m.dy, op=ejeX?m.dx2:m.dy2, n=arr.length, p=primas(ejeX,m), nms=nomsEje(ejeX,m), k, k2;
+    if(n>=MAX_EJES-1)return {ok:false,msg:"Máximo "+MAX_EJES+" ejes por dirección."};
+    pos=Math.round(pos*10000)/10000; pos2=Math.round(pos2*10000)/10000;
+    if(pos<=0.005||pos>=acum(arr,n)-0.005||pos2<=0.005||pos2>=acum(op,n)-0.005)
+      return {ok:false,msg:"Un eje inclinado va DENTRO de la planta: los dos clics, entre el primer y el último eje."};
+    for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-pos)<0.005)return {ok:false,msg:"Ya hay un eje ahí: el "+nomEje(ejeX,k,m)+"."};
+    for(k=0;k<n;k++)if(pos<acum(arr,k)+arr[k])break;
+    for(k2=0;k2<n;k2++)if(pos2<acum(op,k2)+op[k2])break;
+    if(k!==k2)return {ok:false,msg:"Los dos clics tienen que caer en el mismo vano: el de arriba entre "+
+      nomEje(ejeX,k,m)+" y "+nomEje(ejeX,k+1,m)+", y el de abajo también."};
+    var a=+(pos-acum(arr,k)).toFixed(4), b=+(arr[k]-a).toFixed(4),
+        a2=+(pos2-acum(op,k)).toFixed(4), b2=+(op[k]-a2).toFixed(4);
+    if(!(a>0.005&&b>0.005&&a2>0.005&&b2>0.005))
+      return {ok:false,msg:"El eje queda pegado a otro: sepáralo más de 1 cm."};
+    arr.splice(k,1,a,b); op.splice(k,1,a2,b2);
+    p.splice(k+1,0,!!prima); nms.splice(k+1,0,null);
+    remap(ejeX,function(kk){return kk>k?kk+1:kk},k);
+    return {ok:true,idx:k+1,inclinacion:+(pos2-pos).toFixed(4)};
+  }
 
   /* LOS EJES DEL PLANO FRENTE A LOS DEL MODELO: para cada eje del AutoCAD ya anclado, el del modelo mas cercano,
      la diferencia y lo que se propone.  Nada si coinciden; mover el del modelo si se llama igual y cabe entre sus
@@ -11966,13 +12002,31 @@ var TT={script:performance.now()};
       var mq=masCerca(q.x,q.y), ex2=mq.dX<=mq.dY;
       s={ejeX:ex2, coord:Math.round((ex2?q.x:q.y)*100)/100, que:"a mano, al centímetro"};
     }
-    s.coord=+s.coord.toFixed(4);
-    var arr=s.ejeX?m.dx:m.dy, n=arr.length, ref=0;
+    return datosEje(s.ejeX,s.coord,s.que);
+  }
+  /* un eje en esa direccion y esa posicion: de que eje cuelga, a que distancia, si es de borde y si ya existe */
+  function datosEje(ejeX,coord,que){
+    var m=N(), arr=ejeX?m.dx:m.dy, n=arr.length, ref=0, k,
+        s={ejeX:ejeX, coord:+(+coord).toFixed(4), que:que};
     for(k=0;k<=n;k++)if(acum(arr,k)<=s.coord+1e-9)ref=k;
-    s.ref={idx:ref, nombre:nomEje(s.ejeX,ref,m), dist:+(s.coord-acum(arr,ref)).toFixed(4)};
+    s.ref={idx:ref, nombre:nomEje(ejeX,ref,m), dist:+(s.coord-acum(arr,ref)).toFixed(4)};
     s.borde=s.coord<0||s.coord>acum(arr,n);
     s.existe=false;
-    for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-s.coord)<0.005){ s.existe=true; s.ref={idx:k,nombre:nomEje(s.ejeX,k,m),dist:0}; }
+    for(k=0;k<=n;k++)if(Math.abs(acum(arr,k)-s.coord)<0.005){ s.existe=true; s.ref={idx:k,nombre:nomEje(ejeX,k,m),dist:0}; }
+    return s;
+  }
+  /* EJE INCLINADO.  La direccion la decide EL BORDE QUE TOCAS -arriba o abajo, un eje en X; izquierda o derecha, uno
+     en Y-: sobre un borde el eje mas cercano es siempre el de ese borde, y con la regla de siempre no se podia ni
+     empezar («ahí ya hay un eje»).  «op» dice si lo marcaste en el borde opuesto, para saber cual es cual. */
+  function sugerirEjeIncl(q,ejeX){
+    var m=N(), anchoX=acum(m.dx,m.dx.length), altoY=acum(m.dy,m.dy.length);
+    if(ejeX==null)
+      ejeX=Math.min(Math.abs(q.y),Math.abs(q.y-altoY))<=Math.min(Math.abs(q.x),Math.abs(q.x-anchoX));
+    var s0=sugerirEje(q),
+        c=(s0&&s0.ejeX===ejeX&&!s0.existe)?{coord:s0.coord,que:s0.que}
+                                          :{coord:Math.round((ejeX?q.x:q.y)*100)/100,que:"a mano, al centímetro"};
+    var s=datosEje(ejeX,c.coord,c.que);
+    s.op=ejeX?(q.y>altoY/2):(q.x>anchoX/2);
     return s;
   }
   function textoGuia(s,prima){
@@ -11987,21 +12041,35 @@ var TT={script:performance.now()};
     if(!s)return;
     var L0=LIENZO||lienzo(S.verDims), mg=L0.mg, esc=L0.esc, kp=tolPantalla(1)*esc, P=mg+s.coord*esc,
         col=s.existe?"var(--ink-3)":"var(--trib)";
-    var g=el("g",{id:"guiaEje","pointer-events":"none"});
-    var ln=s.ejeX?{x1:P,y1:L0.vy,x2:P,y2:L0.vy+L0.vh}:{x1:L0.vx,y1:P,x2:L0.vx+L0.vw,y2:P};
-    ln.stroke=col; ln["stroke-width"]=(1.6*kp).toFixed(3); ln["stroke-dasharray"]=(9*kp).toFixed(2)+" "+(4*kp).toFixed(2);
+    var g=el("g",{id:"guiaEje","pointer-events":"none"}), incl=!!(PONEJE&&PONEJE.incl&&PONEJE.a&&PONEJE.a.ejeX===s.ejeX);
+    var ln;
+    if(incl){
+      /* el eje que va a quedar: del punto ya marcado en un borde al del cursor en el opuesto */
+      var mm=N(), anchoX=acum(mm.dx,mm.dx.length), altoY=acum(mm.dy,mm.dy.length);
+      /* el punto ya marcado va en SU borde: si fue el de abajo (o el de la derecha), ahí empieza la línea */
+      var cRef=PONEJE.a.op?s.coord:PONEJE.a.coord, cOp=PONEJE.a.op?PONEJE.a.coord:s.coord;
+      var p1=s.ejeX?{x:cRef,y:0}:{x:0,y:cRef},
+          p2=s.ejeX?{x:cOp,y:altoY}:{x:anchoX,y:cOp};
+      ln={x1:mg+p1.x*esc, y1:mg+p1.y*esc, x2:mg+p2.x*esc, y2:mg+p2.y*esc};
+    }else{
+      ln=s.ejeX?{x1:P,y1:L0.vy,x2:P,y2:L0.vy+L0.vh}:{x1:L0.vx,y1:P,x2:L0.vx+L0.vw,y2:P};
+    }
+    ln.stroke=col; ln["stroke-width"]=((incl?2.2:1.6)*kp).toFixed(3); ln["stroke-dasharray"]=(9*kp).toFixed(2)+" "+(4*kp).toFixed(2);
     g.appendChild(el("line",ln));
     var t=el("text",{x:mg+q.x*esc+14*kp, y:mg+q.y*esc-12*kp, "font-size":(12*kp).toFixed(2), "font-weight":600, fill:col,
       "paint-order":"stroke", stroke:"var(--sheet)", "stroke-width":(3*kp).toFixed(2), "font-family":"IBM Plex Sans, sans-serif"});
-    t.textContent=textoGuia(s,prima)+(prima&&!s.existe&&!s.borde?"   (Shift: principal)":"");
+    t.textContent=(incl?"Inclinado · corre "+nm(Math.abs(s.coord-PONEJE.a.coord))+" m · ":"")+
+      textoGuia(s,prima)+(prima&&!s.existe&&!s.borde&&!incl?"   (Shift: principal)":"");
     g.appendChild(t);
     sv.appendChild(g);
   }
-  function alternaPonerEje(){
-    PONEJE=PONEJE?null:{};
+  function alternaPonerEje(incl){
+    incl=!!incl;
+    PONEJE=(PONEJE&&!!PONEJE.incl===incl)?null:{incl:incl,a:null};
     if(!PONEJE)pintaGuiaEje(null);
-    toast(PONEJE?"Crear ejes: mueve el mouse sobre la planta y haz clic. Clic = prima · Shift+clic = principal · Esc para terminar."
-                :"Listo con los ejes.");
+    toast(!PONEJE?"Listo con los ejes."
+      :(incl?"Eje inclinado: haz clic en un borde y después en el borde opuesto. Clic = prima · Shift+clic = principal · Esc cancela."
+            :"Crear ejes: mueve el mouse sobre la planta y haz clic. Clic = prima · Shift+clic = principal · Esc para terminar."));
     pintaCalcoCtl(); render();
   }
   function traerCalco(f){
@@ -12085,8 +12153,14 @@ var TT={script:performance.now()};
     if(esCad&&!c.cad.ejes)c.cad.ejes=ejesDeCad(c.cad);
     ver("#calcoAdopta",esCad&&!!c.cad.ejes.length); ver("#ejesAdopta",esCad&&!!c.cad.ejes.length);
     Array.prototype.forEach.call(document.querySelectorAll("#calcoPonEje,#ejesPonEje"),function(b){
-      b.textContent=PONEJE?"Terminar ejes (Esc)":"Crear eje con clic";
-      if(b.classList)b.classList.toggle("on",!!PONEJE);
+      var activo=!!PONEJE&&!PONEJE.incl;
+      b.textContent=activo?"Terminar ejes (Esc)":"Crear eje con clic";
+      if(b.classList)b.classList.toggle("on",activo);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("#calcoPonEjeIncl,#ejesPonEjeIncl"),function(b){
+      var activo=!!PONEJE&&!!PONEJE.incl;
+      b.textContent=activo?(PONEJE.a?"Ahora el borde opuesto (Esc)":"Terminar inclinados (Esc)"):"Eje inclinado (2 clics)";
+      if(b.classList)b.classList.toggle("on",activo);
     });
     pintaMarcaCtl();
     ver("#panelEjes",(!!PROP||!!ADOPTA)&&S.vista==="plano");
@@ -12640,6 +12714,27 @@ var TT={script:performance.now()};
       e.preventDefault();
       var sP=sugerirEje(xyModelo(e));
       if(!sP)return;
+      /* INCLINADO: el primer clic pone el punto de un borde y el segundo, el del borde opuesto */
+      if(PONEJE.incl){
+        var sI=sugerirEjeIncl(xyModelo(e),PONEJE.a?PONEJE.a.ejeX:null);
+        if(!PONEJE.a){
+          if(sI.existe){ toast("Ahí ya hay un eje: para uno inclinado marca un punto libre del borde."); return; }
+          PONEJE.a={ejeX:sI.ejeX, coord:sI.coord, op:sI.op, prima:!e.shiftKey};
+          pintaGuiaEje(sI,xyModelo(e),!e.shiftKey); pintaCalcoCtl();
+          toast("Primer borde en "+nm(sI.coord)+" m. Ahora haz clic en el borde OPUESTO: ahí termina el eje. Esc cancela.");
+          return;
+        }
+        if(sI.op===PONEJE.a.op){
+          toast("El segundo clic va en el borde opuesto: si el primero fue arriba, este va abajo."); return; }
+        snap();
+        var rI=insertarEjeInclinado(PONEJE.a.ejeX, PONEJE.a.op?sI.coord:PONEJE.a.coord,
+                                                   PONEJE.a.op?PONEJE.a.coord:sI.coord, PONEJE.a.prima);
+        if(!rI.ok){ UNDO.pop(); toast(rI.msg); return; }
+        var nomI=nomEje(PONEJE.a.ejeX,rI.idx,N());
+        PONEJE.a=null; pintaGuiaEje(null); render();
+        toast("Eje "+nomI+" inclinado: corre "+nm(Math.abs(rI.inclinacion))+" m de un borde al otro. Ctrl+Z lo deshace.");
+        return;
+      }
       if(sP.existe){ toast("Ya hay un eje ahí: el "+sP.ref.nombre+"."); return; }
       snap();
       var rP=insertarEjeEn(sP.ejeX,sP.coord,!e.shiftKey);
@@ -12718,7 +12813,8 @@ var TT={script:performance.now()};
   /* la guia del eje que se va a crear sigue al cursor */
   svg.addEventListener("pointermove",function(e){
     if(!PONEJE||moviendo)return;
-    var q=xyModelo(e); pintaGuiaEje(sugerirEje(q),q,!e.shiftKey);
+    var q=xyModelo(e);
+    pintaGuiaEje(PONEJE.incl?sugerirEjeIncl(q,PONEJE.a?PONEJE.a.ejeX:null):sugerirEje(q),q,!e.shiftKey);
   });
   svg.addEventListener("pointerleave",function(){ if(PONEJE)pintaGuiaEje(null); });
   window.addEventListener("pointerup",function(){
@@ -12789,8 +12885,10 @@ var TT={script:performance.now()};
     if(!c.dx&&!c.dy)toast("¿Ya anclaste el plano en A-1? Las posiciones se miden desde ese cruce.");
     pintaAdopta();
   };
-  $("#calcoPonEje").onclick=alternaPonerEje;
-  $("#ejesPonEje").onclick=alternaPonerEje;
+  $("#calcoPonEje").onclick=function(){ alternaPonerEje(false); };
+  $("#ejesPonEje").onclick=function(){ alternaPonerEje(false); };
+  $("#calcoPonEjeIncl").onclick=function(){ alternaPonerEje(true); };
+  $("#ejesPonEjeIncl").onclick=function(){ alternaPonerEje(true); };
   $("#ejesAdopta").onclick=function(){ $("#calcoAdopta").onclick(); };
   $("#calcoColores").addEventListener("change",function(){
     var c=calco(); if(!c||c.tipo!=="cad")return;
@@ -17892,14 +17990,33 @@ var TT={script:performance.now()};
         });
       });
     })();
-    /* el rotulo de cada viga, solo si cabe */
+    /* EL ROTULO: uno por linea corrida del mismo tipo, en su tramo mas largo.  Antes iba uno por viga, y una linea
+       de chatas cortada por ejes o columnas repetia «VCH-1 .25x.20» en cada vano (Victor: «¿hay forma de que no se
+       repitan?»).  Un tramo sin rotulo es del tipo del rotulo de su linea; si el tipo cambia, empieza otra. */
+    var lineasV={}, corridas=[];
     vigas.forEach(function(v){
       var a=[v.x1,v.y1], b=[v.x2,v.y2]; if(lar(res(b,a))<1e-6)return;
-      var lg=legible(a,b); a=lg[0]; b=lg[1]; var u=lg[2], n=nor(u), chata=v.tipo==="chata";
-      var t=usa(chata?"VCH":"VP",v.b+"x"+v.h); if(!t)return;
-      var txt=rotulo(t);
-      if(txt.length*0.75*H<=lar(res(b,a))*0.95){
-        P.push(texto("RET-TEXTOS",txt,sum(por(sum(a,b),0.5),por(n,v.b/2+tam(0.8))),H,Math.atan2(u[1],u[0]),13)); nRot++; }
+      var t=usa(v.tipo==="chata"?"VCH":"VP",v.b+"x"+v.h); if(!t)return;
+      var lg=legible(a,b), sg={v:v,a:lg[0],b:lg[1],u:lg[2],t:t}, k=null;
+      if(Math.abs(v.y2-v.y1)<=ORTO){ k="h|"+v.y1.toFixed(3)+"|"+t.nombre; sg.s=lg[0][0]; sg.e=lg[1][0]; }
+      else if(Math.abs(v.x2-v.x1)<=ORTO){ k="v|"+v.x1.toFixed(3)+"|"+t.nombre; sg.s=lg[0][1]; sg.e=lg[1][1]; }
+      if(k)(lineasV[k]=lineasV[k]||[]).push(sg); else corridas.push([sg]);
+    });
+    Object.keys(lineasV).forEach(function(k){
+      var cur=null;
+      lineasV[k].sort(function(p,q){return p.s-q.s}).forEach(function(sg){
+        if(cur&&sg.s<=cur.fin+0.01){ cur.segs.push(sg); cur.fin=Math.max(cur.fin,sg.e); }
+        else{ cur={segs:[sg],fin:sg.e}; corridas.push(cur.segs); }
+      });
+    });
+    corridas.forEach(function(segs){
+      var sg=segs.reduce(function(m,x){ return lar(res(x.b,x.a))>lar(res(m.b,m.a))?x:m; }),
+          txt=rotulo(sg.t), n=nor(sg.u), a=sg.a, b=sg.b, largo=txt.length*0.75*H;
+      if(largo>lar(res(b,a))*0.95){                      /* no cabe en su tramo mas largo: al medio de la linea */
+        var f=segs[segs.length-1]; a=segs[0].a; b=f.b;
+        if(largo>lar(res(b,a))*0.95)return;
+      }
+      P.push(texto("RET-TEXTOS",txt,sum(por(sum(a,b),0.5),por(n,sg.v.b/2+tam(0.8))),H,Math.atan2(sg.u[1],sg.u[0]),13)); nRot++;
     });
 
     /* PLACAS */
@@ -18512,7 +18629,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 

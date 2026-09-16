@@ -4869,7 +4869,9 @@
         return [f[0], f[1], +f[2], +f[3], +f[4],
           "=IFERROR(E" + i + "/G" + i + ',"")',
           "=IF(N(H" + i + ')=0,"",CEILING(H' + i + "*100,5))",
-          "=IF(N(F" + i + ')=0,"",MAX(CEILING(F' + i + "/"
+          /* la condicion va sobre Ln, no sobre B: una viga sin losas a los lados tiene B = 0 y su ancho es el
+             minimo, no una celda en blanco (le pasaba a Victor en un modelo de solo columnas y vigas) */
+          "=IF(N(E" + i + ')=0,"",MAX(CEILING(F' + i + "/"
             + C.PROPORCION.baseVigaPrincipal + "*100,5)," + bmin + "))"];
       }, { 2: "0.00", 3: "0.000", 5: "0.000" });
     r = L.fin + 1;
@@ -4881,7 +4883,8 @@
     r = h.nota(r, "B es el ancho tributario: medio paño a cada lado que tenga losa. "
       + "h = Ln / α, redondeado hacia arriba al múltiplo de 5 cm   |   b = B / "
       + C.PROPORCION.baseVigaPrincipal + ", también al múltiplo de 5 cm superior, "
-      + "con mínimo " + bmin + " cm.");
+      + "con mínimo " + bmin + " cm. Si B sale 0 el modelo todavía no tiene losas a los lados de esa viga: "
+      + "el peralte se calcula igual y el ancho queda en el mínimo.");
     r = h.nota(r, fs.length + " viga(s) principal(es) en " + P.niveles + " nivel(es). "
       + "Las vigas chatas van en su propia hoja: no descuelgan y su peralte no se "
       + "calcula, se toma de la losa.");
@@ -7006,7 +7009,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v203 · 14-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v206 · 15-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
