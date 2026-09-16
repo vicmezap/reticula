@@ -7147,10 +7147,14 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   "use strict";
 
   var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
-                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", escalera: "#7C6FA8" };
-  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "escalera"];
+                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", escalera: "#7C6FA8",
+                  /* los ejes en el suelo, del rojo de las burbujas del plano; y el aviso, mas encendido */
+                  eje: "#C2443D", aviso: "#D23B2E" };
+  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "escalera", "eje"];
   /* la losa tapa la cara de arriba de vigas, columnas y placas: se bajan un pelo para que no parpadeen */
   var BAJA_VIGA = 0.003, BAJA_COL = 0.006, LADOS_CIRCULO = 20;
+  /* el eje sale un poco fuera de la planta y su burbuja va un poco mas alla; el prisma es plano y fino */
+  var EJE_FUERA = 0.60, EJE_BURB = 0.45, EJE_ANCHO = 0.04, EJE_ALTO = 0.01;
 
   /* --- vectores ------------------------------------------------------------ */
   function resta(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
@@ -7224,13 +7228,53 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   function cm(v) { return Math.round(+v * 100); }
   function m2(v) { return (+v).toFixed(2); }
 
+  /* DISCONTINUIDADES VERTICALES.  Una columna que NACE en un piso alto no tiene nada debajo: su carga cuelga
+     de la viga.  Una que MUERE teniendo pisos encima obliga a transferir esa carga.  Las dos son irregularidad
+     de rigidez y NO SE VEN EN LA PLANTA -cada piso se dibuja solo-; en el 3D saltan a la vista.
+
+     Se comparan por POSICION REAL, no por indice de nudo: cada piso puede tener su propia reticula -el 3er
+     piso de Victor tiene un eje mas que el 1ro-, asi que el nudo (i,j) de un piso no es el del de al lado.
+
+     ex: la exportacion a ETABS.  tol: metros (5 cm por defecto).
+     -> {lista: [{fam, cod, nivel, motivo, texto}], porCod: {"nivel|cod": {motivo, texto}}, nace, muere} */
+  function discontinuidades(ex, tol) {
+    tol = (tol > 0) ? tol : 0.05;
+    var niv = (ex && ex.niveles) || [], n = niv.length, lista = [], porCod = {};
+    function cerca(a, b) { return Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol; }
+    function puntos(L, fam) {
+      if (fam === "col") return (L.columnas || []).map(function (c) { return { cod: c.cod, p: [+c.x, +c.y] }; });
+      /* la placa se compara por su centro: si se corta, el centro de arriba no tiene pareja abajo */
+      return (L.placas || []).map(function (p) { return { cod: p.cod, p: [(+p.x1 + +p.x2) / 2, (+p.y1 + +p.y2) / 2] }; });
+    }
+    ["col", "placa"].forEach(function (fam) {
+      var porNivel = niv.map(function (L) { return puntos(L, fam); });
+      porNivel.forEach(function (aqui, k) {
+        aqui.forEach(function (q) {
+          var hayAbajo = k > 0 && porNivel[k - 1].some(function (x) { return cerca(x.p, q.p); });
+          var hayArriba = k < n - 1 && porNivel[k + 1].some(function (x) { return cerca(x.p, q.p); });
+          var motivo = (k > 0 && !hayAbajo) ? "nace" : ((k < n - 1 && !hayArriba) ? "muere" : null);
+          if (!motivo) return;
+          var nom = niv[k].nombre || ("N" + (k + 1)), que = (fam === "col") ? "columna" : "placa";
+          var texto = (motivo === "nace")
+            ? "esta " + que + " NACE en " + nom + ": no hay nada debajo y su carga cuelga de la viga"
+            : "esta " + que + " MUERE en " + nom + ", con " + (n - 1 - k) + " piso(s) encima: su carga tiene que transferirse";
+          lista.push({ fam: fam, cod: q.cod, nivel: k, motivo: motivo, texto: texto });
+          porCod[k + "|" + q.cod] = { motivo: motivo, texto: texto };
+        });
+      });
+    });
+    function cuantos(m) { return lista.filter(function (x) { return x.motivo === m; }).length; }
+    return { lista: lista, porCod: porCod, nace: cuantos("nace"), muere: cuantos("muere") };
+  }
+
   /* LA ESCENA.  ex: la exportacion a ETABS.  o: {zapatas: zapatasDelNivel(), colores, filtro: {familia: false},
      niveles: "todos" | "hasta:k" | "solo:k"}  ->  {solidos: [{fam, cod, nivel, titulo, detalle, color, tris, aristas,
      min, max}], caja: {min, max, centro, radio} | null, niveles: [{nombre, z0, z1}], avisos: {losasSinEspesor}} */
   function escena(ex, o) {
     o = o || {};
     var C = {}, filtro = o.filtro || {}, sel = o.niveles || "todos", niv = (ex && ex.niveles) || [], out = [],
-        avisos = { losasSinEspesor: 0 };
+        avisos = { losasSinEspesor: 0, discontinuas: 0 },
+        marcar = (o.marcar && o.marcar.porCod) || o.marcar || {};
     Object.keys(COLORES).forEach(function (q) { C[q] = rgb((o.colores && o.colores[q]) || COLORES[q]); });
     var mt = /^(hasta|solo):(\d+)$/.exec(sel);
     function mostrar(fam, k) {
@@ -7239,8 +7283,13 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       return mt[1] === "hasta" ? k <= +mt[2] : k === +mt[2];
     }
     function mete(fam, cod, k, titulo, detalle, color, g, extra) {
+      /* si la pieza esta marcada como discontinua se pinta con el color de aviso y lo dice en su detalle: se
+         ve en el dibujo Y al hacerle clic, sin tener que cruzarlo con una lista aparte */
+      var av = marcar[k + "|" + cod];
+      if (av) { color = C.aviso; detalle = detalle + " · " + av.texto; avisos.discontinuas++; }
       var lim = limitesDe(g.tris), s = { fam: fam, cod: cod, nivel: k, titulo: titulo, detalle: detalle, color: color,
                                          tris: g.tris, aristas: g.aristas, min: lim.min, max: lim.max };
+      if (av) { s.aviso = av.texto; s.motivo = av.motivo; }
       Object.keys(extra || {}).forEach(function (q) { s[q] = extra[q]; });
       out.push(s);
     }
@@ -7312,13 +7361,35 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       mete("zapata", z.cod, 0, "Zapata " + z.cod, (z.tipo ? z.tipo + " · " : "") + m2(z.B) + " × " + m2(z.L) + " × " + m2(z.H) + " m",
            C.zapata, prisma([[+z.x0, -z.y1], [+z.x1, -z.y1], [+z.x1, -z.y0], [+z.x0, -z.y0]], -z.H, 0), { ij: [z.i, z.j] });
     });
+    /* LOS EJES, tumbados en el suelo.  Sin ellos el edificio flota y no sabes si miras la fachada del A o la
+       del C.  Van como prismas planos y finos y NO como aristas, porque el visor dibuja todas las aristas del
+       mismo color y estas se perderian entre las de las piezas.  La burbuja sale aparte, en una lista: su
+       letra la pone el panel como etiqueta HTML sobre el lienzo, proyectando el punto con proyecta(). */
+    var burbujas = [];
+    if (filtro.eje !== false) {
+      var zb = niv.length ? +niv[0].z0 : 0;
+      var ejes = (ex && ex.ejes && ex.ejes.length) ? ex.ejes : ((niv[0] && niv[0].ejes) || []);
+      ejes.forEach(function (e) {
+        var ax = +e.x1, ay = +e.y1, bx = +e.x2, by = +e.y2;
+        var dx = bx - ax, dy = by - ay, L = Math.sqrt(dx * dx + dy * dy);
+        if (!(L > 1e-6)) return;
+        var ux = dx / L, uy = dy / L;
+        var a2x = ax - ux * EJE_FUERA, a2y = ay - uy * EJE_FUERA,
+            b2x = bx + ux * EJE_FUERA, b2y = by + uy * EJE_FUERA;
+        mete("eje", String(e.id), 0, "Eje " + e.id,
+             (e.prima ? "eje prima" : "eje principal") + " en " + (e.dir || "") + ", en el suelo",
+             C.eje, prisma(tira(a2x, a2y, b2x, b2y, EJE_ANCHO), zb, zb + EJE_ALTO, false));
+        burbujas.push({ id: String(e.id), prima: !!e.prima, dir: e.dir,
+                        p: [a2x - ux * EJE_BURB, a2y - uy * EJE_BURB, zb] });
+      });
+    }
     var caja = null;
     if (out.length) {
       var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
       out.forEach(function (s) { for (var q = 0; q < 3; q++) { mn[q] = Math.min(mn[q], s.min[q]); mx[q] = Math.max(mx[q], s.max[q]); } });
       caja = { min: mn, max: mx, centro: por(suma(mn, mx), 0.5), radio: Math.max(0.5, largo(resta(mx, mn)) / 2) };
     }
-    return { solidos: out, caja: caja, avisos: avisos,
+    return { solidos: out, caja: caja, avisos: avisos, burbujas: burbujas,
              niveles: niv.map(function (L, k) { return { nombre: L.nombre || ("N" + (k + 1)), z0: +L.z0, z1: +L.z1 }; }) };
   }
 
@@ -7525,7 +7596,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     };
   }
 
-  return { COLORES: COLORES, FAMILIAS: FAMILIAS, VISTAS: VISTAS, rgb: rgb, prisma: prisma, hexaedro: hexaedro, escena: escena, camara: camara,
+  return { COLORES: COLORES, FAMILIAS: FAMILIAS, VISTAS: VISTAS, rgb: rgb, prisma: prisma, hexaedro: hexaedro,
+           discontinuidades: discontinuidades, escena: escena, camara: camara,
            vista: vista, encuadrar: encuadrar, ajustaRadio: ajustaRadio, orbita: orbita, acerca: acerca, desplaza: desplaza,
            base: base, matrices: matrices, proyecta: proyecta, rayo: rayo, elegir: elegir, visor: visor };
 });
@@ -8327,7 +8399,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v212 · 16-09-2026";
+  var BUILD="v213 · 16-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -18502,7 +18574,8 @@ var TT={script:performance.now()};
      a ETABS -las secciones que se llevarian- y las zapatas dibujadas.  La
      camara, los filtros y lo elegido no son del modelo: no se guardan.
      ===================================================================== */
-  var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true,escalera:true}, niveles:"todos",
+  var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true,escalera:true,eje:true},
+           niveles:"todos", avisar:true,
            sel:null, selIdx:null, visor:null, esc:null, drag:null, sinGL:false, pedido:0};
   try{ window.addEventListener("resize",function(){ if(S.vista==="3d")dibuja3D(); }); }catch(e){}
   function esc3(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
@@ -18525,18 +18598,25 @@ var TT={script:performance.now()};
       '<button type="button" class="mini" data-v3="alejar" aria-label="Alejar">−</button>'+
       '<button type="button" class="mini" data-v3="encuadrar">Encuadrar</button></div>'+
       '<div class="v3d-g" role="group" aria-label="Qué se ve">'+
-      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"],["escalera","Escaleras"]].map(function(f){
+      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"],
+       ["escalera","Escaleras"],["eje","Ejes"]].map(function(f){
         return '<label class="v3d-ch"><input type="checkbox" id="f3'+f[0]+'" data-f3="'+f[0]+'"'+
           (V3D.filtro[f[0]]!==false?' checked':'')+'>'+f[1]+'</label>'}).join("")+'</div>'+
-      '<label class="v3d-ch">Niveles <select id="n3d" class="mini"></select></label></div>'+
-      '<div class="v3d-lienzo"><canvas id="c3d" tabindex="0" aria-label="El edificio en 3D: arrastra para girar, '+
-      'rueda para acercar"></canvas></div>'+
+      '<label class="v3d-ch">Niveles <select id="n3d" class="mini"></select></label>'+
+      '<label class="v3d-ch" title="Pinta de rojo las columnas y placas que nacen en un piso alto o que mueren '+
+      'teniendo pisos encima: su carga no baja seguida hasta la cimentación"><input type="checkbox" id="a3d"'+
+      (V3D.avisar?" checked":"")+'> Avisos</label></div>'+
+      /* el lienzo lleva encima una capa para las burbujas de eje: su letra va en HTML, que se lee nitida,
+         colocada proyectando el punto del mundo con VISTA3D.proyecta() */
+      '<div class="v3d-lienzo" style="position:relative"><canvas id="c3d" tabindex="0" aria-label="El edificio en 3D: arrastra para girar, '+
+      'rueda para acercar"></canvas><div id="b3d" style="position:absolute;inset:0;pointer-events:none"></div></div>'+
       '<div class="v3d-pie"><span class="v3d-info" id="i3d"></span><span>Arrastra para girar · clic derecho o Mayús + '+
       'arrastrar para mover · rueda para acercar · doble clic para encuadrar · clic en una pieza para ver qué es</span></div>';
     el.querySelectorAll("[data-v3]").forEach(function(b){ b.onclick=function(){ accion3D(this.getAttribute("data-v3")); }; });
     el.querySelectorAll("[data-f3]").forEach(function(c){
       c.onchange=function(){ V3D.filtro[this.getAttribute("data-f3")]=!!this.checked; pinta3D(); }; });
     var sn=$("#n3d"); if(sn)sn.onchange=function(){ V3D.niveles=this.value; pinta3D(); };
+    var sa=$("#a3d"); if(sa)sa.onchange=function(){ V3D.avisar=!!this.checked; pinta3D(); };
     var cv=$("#c3d"); if(cv&&cv.addEventListener)eventos3D(cv);
     V3D.visor=null; V3D.sinGL=false;
   }
@@ -18607,6 +18687,26 @@ var TT={script:performance.now()};
     V3D.cam.aspecto=w/h;               /* lo usa Encuadrar: en un lienzo angosto manda el ancho */
     var c=colores3D();
     try{ V3D.visor.dibujar(V3D.cam,{fondo:c.fondo, tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx}); }catch(e){}
+    burbujas3D();
+  }
+  /* LAS BURBUJAS DE LOS EJES, en HTML sobre el lienzo.  En WebGL el texto cuesta una textura por letra; aqui
+     basta con proyectar el punto y poner un <span>, que ademas se lee nitido en cualquier pantalla. */
+  function burbujas3D(){
+    var cont=$("#b3d"), cv=$("#c3d"); if(!cont)return;
+    if(!cv||!V3D.esc||!V3D.cam){ cont.innerHTML=""; return; }
+    var w=cv.clientWidth||1, h=cv.clientHeight||1, s=[];
+    (V3D.esc.burbujas||[]).forEach(function(b){
+      var p=VISTA3D.proyecta(V3D.cam,b.p,w,h);
+      /* detras de la camara o muy fuera del lienzo: no se pinta */
+      if(!(p[2]<1)||p[0]<-30||p[1]<-30||p[0]>w+30||p[1]>h+30)return;
+      var d=b.prima?15:18;
+      s.push('<span style="position:absolute;left:'+p[0].toFixed(1)+'px;top:'+p[1].toFixed(1)+
+        'px;transform:translate(-50%,-50%);width:'+d+'px;height:'+d+'px;line-height:'+(d-2)+
+        'px;border:1px solid #C2443D;border-radius:50%;background:var(--sheet,#fff);color:#C2443D;'+
+        'font:600 '+(b.prima?9:10)+'px/1 sans-serif;text-align:center;box-sizing:border-box">'+
+        esc3(b.id)+'</span>');
+    });
+    cont.innerHTML=s.join("");
   }
   function elige3D(cv,x,y){
     if(!V3D.esc||!V3D.cam)return;
@@ -18627,6 +18727,13 @@ var TT={script:performance.now()};
            return q[0]+" "+(q[0]===1?q[1]:q[2])}).join(" · ")||"Nada que ver con estos filtros";
       if(E.avisos.losasSinEspesor)t+=' · <span class="deci-no">'+E.avisos.losasSinEspesor+' losa(s) sin espesor calculado, '+
         'no se dibujan</span>';
+      /* lo que el 3D ve y la planta no: carga que no baja seguida hasta la cimentacion */
+      if(V3D.disc&&V3D.disc.lista.length)
+        t+=' · <span class="deci-no"><b>'+V3D.disc.lista.length+' en rojo</b>: '+
+          (V3D.disc.nace?V3D.disc.nace+' nace(n) sin nada debajo':'')+
+          (V3D.disc.nace&&V3D.disc.muere?' y ':'')+
+          (V3D.disc.muere?V3D.disc.muere+' muere(n) con pisos encima':'')+
+          ' · haz clic en una para ver cuál</span>';
     }
     i.innerHTML=t||"";
     var b=$("#ir3d"); if(b&&s)b.onclick=function(){ irAPlanta3D(V3D.sel); };
@@ -18666,8 +18773,13 @@ var TT={script:performance.now()};
       ex.niveles.forEach(function(L,k){ op+='<option value="solo:'+k+'">Solo '+esc3(L.nombre)+'</option>'; });
       sn.innerHTML=op; sn.value=V3D.niveles;
     }
-    ["col","viga","losa","placa","zapata","escalera"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
-    V3D.esc=VISTA3D.escena(ex,{zapatas:zs, colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles});
+    ["col","viga","losa","placa","zapata","escalera","eje"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
+    var ca=$("#a3d"); if(ca)ca.checked=!!V3D.avisar;
+    /* LAS DISCONTINUIDADES se calculan sobre la exportacion -posiciones reales-, no sobre los nudos: los
+       pisos no tienen por que compartir reticula.  Van como «marcar» para que la pieza se pinte de aviso. */
+    V3D.disc=V3D.avisar?VISTA3D.discontinuidades(ex):null;
+    V3D.esc=VISTA3D.escena(ex,{zapatas:zs, colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles,
+                               marcar:V3D.disc});
     if(!V3D.cam){
       var cv0=$("#c3d"), asp=(cv0&&cv0.clientWidth>0&&cv0.clientHeight>0)?cv0.clientWidth/cv0.clientHeight:1.4;
       V3D.cam=VISTA3D.camara(V3D.esc,"iso",asp); V3D.vistaNom="iso";
