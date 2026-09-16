@@ -8327,7 +8327,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v208 · 15-09-2026";
+  var BUILD="v210 · 15-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17881,6 +17881,7 @@ var TT={script:performance.now()};
     var o=(S.proy&&S.proy.autocad)||{};
     return {primas:!!o.primas, burbujas:o.burbujas==="4"?"4":"2", cotas:o.cotas==="todas"?"todas":"principales",
             rotulos:o.rotulos==="seccion"?"seccion":"tipo", losas:o.losas==="cada"?"cada":"grupo",
+            viguetas:["banda","no"].indexOf(o.viguetas)>=0?o.viguetas:"todas",
             escala:[50,75,100].indexOf(+o.escala)>=0?+o.escala:50,
             fuera:Array.isArray(o.fuera)?o.fuera.filter(function(x){return +x>0}).map(Number):[]};
   }
@@ -18008,12 +18009,53 @@ var TT={script:performance.now()};
       return anchos.length?Math.max.apply(null,anchos)/2:0;
     }
 
-    /* LOSAS: la flecha en cada paño; el rotulo una vez por tipo (en el paño mas grande) o en cada uno */
+    /* LOSAS: las viguetas a su separacion real, la flecha del sentido y el rotulo.  Antes era solo la flecha y el
+       nombre; el ingeniero de Victor pidio que la losa se dibujara como en un plano de encofrado.  La aligerada y
+       la nervada van con sus viguetas en linea discontinua, y la maciza con trama y flecha en las dos direcciones.
+       Las medidas salen de la losa exportada -s, vigueta, hf-, con los mismos valores por defecto que usa el peso
+       propio en ETABS: 0.40 de separacion y 0.05 de losa superior. */
+    function cortes(xs,ys,c,vert){
+      /* los trozos de la recta que caen DENTRO del paño: un paño unido puede ser en L y la vigueta no puede
+         cruzar el hueco.  Barrido de siempre: se cortan los lados, se ordenan y se toman de dos en dos. */
+      var A=vert?xs:ys, B=vert?ys:xs, out=[], k, n=A.length;
+      for(k=0;k<n;k++){
+        var k2=(k+1)%n, a=A[k], b=A[k2];
+        if(a===b)continue;
+        if((c>=a&&c<b)||(c>=b&&c<a))out.push(B[k]+(B[k2]-B[k])*(c-a)/(b-a));
+      }
+      return out.sort(function(p,q){return p-q});
+    }
+    /* la vigueta llega a la CARA de la viga, no hasta su eje: el paño se mide de eje a eje, asi que se recorta
+       media viga en cada extremo.  Sin esto las viguetas se dibujan por encima de las vigas y el paño se ensucia. */
+    var caraViga=0; vigas.forEach(function(v){ caraViga=Math.max(caraViga,(+v.b||0)/2); });
     var mejorLosa={};
     losas.forEach(function(lo){
       var xs=lo.xs||[], ys=lo.ys||[]; if(xs.length<3)return;
       var cx=xs.reduce(function(t,v){return t+v},0)/xs.length, cy=ys.reduce(function(t,v){return t+v},0)/ys.length;
-      var dirs=(lo.dir==="x"||lo.dir==="y")?[lo.dir]:["x","y"];
+      /* la maciza se arma en dos direcciones: lleva las dos flechas aunque el modelo le guarde un sentido */
+      var dirs=(lo.tipo==="maciza")?["x","y"]:((lo.dir==="x"||lo.dir==="y")?[lo.dir]:["x","y"]);
+      var sep=+lo.s||0.40, esAlig=(lo.tipo!=="maciza"&&(lo.dir==="x"||lo.dir==="y")), nVig=0;
+      if(esAlig){
+        var vert=(lo.dir==="y"), AA=vert?xs:ys,
+            ini0=Math.min.apply(null,AA), fin0=Math.max.apply(null,AA), anc=fin0-ini0;
+        /* a separacion EXACTA, con el sobrante repartido a los dos lados */
+        nVig=Math.max(1,Math.round(anc/sep));
+        if(opc.viguetas!=="no"){
+          var ini=ini0+(anc-(nVig-1)*sep)/2, lim=(opc.viguetas==="banda")?Math.min(nVig,3):nVig, kv, zz;
+          for(kv=0;kv<lim;kv++){
+            var cc=ini+kv*sep, tr=cortes(xs,ys,cc,vert);
+            for(zz=0;zz+1<tr.length;zz+=2){
+              var q1=tr[zz]+caraViga, q2=tr[zz+1]-caraViga;
+              if(q2-q1<=0.01)continue;           /* un paño mas angosto que sus dos vigas: no queda vigueta que ver */
+              P.push({k:"linea",capa:"RET-LOSAS-VIGUETAS",
+                      p:vert?[[cc,q1],[cc,q2]]:[[q1,cc],[q2,cc]]});
+            }
+          }
+        }
+      }else if(lo.tipo==="maciza"&&opc.viguetas!=="no"){
+        P.push({k:"sombreado",capa:"RET-LOSAS-TRAMA",patron:"ANSI31",escala:+tam(60).toFixed(4),
+                p:xs.map(function(v,kk){return [v,ys[kk]]})});
+      }
       dirs.forEach(function(d){
         var mx=Math.min((Math.max.apply(null,d==="x"?xs:ys)-Math.min.apply(null,d==="x"?xs:ys))*0.3,tam(24));
         var a=d==="x"?[cx-mx,cy]:[cx,cy-mx], b=d==="x"?[cx+mx,cy]:[cx,cy+mx], u=uni(res(b,a)), n=nor(u), pu=tam(2);
@@ -18023,7 +18065,9 @@ var TT={script:performance.now()};
       });
       var t=usa(T.PREF[lo.tipo]||"LA",String(lo.e)); if(!t)return;
       var area=0; for(var k=0;k<xs.length;k++){ var k2=(k+1)%xs.length; area+=xs[k]*ys[k2]-xs[k2]*ys[k]; } area=Math.abs(area)/2;
-      var lab={t:rotulo(t),p:dirs.length===1&&dirs[0]==="y"?[cx+tam(1.6),cy]:[cx,cy+tam(1.6)],al:dirs.length===1&&dirs[0]==="y"?9:13};
+      /* el rotulo dice tambien cuantas viguetas lleva el paño y a que separacion: es lo que se lee en un plano */
+      var pie=(esAlig&&nVig)?("  "+nVig+(lo.tipo==="nervada"?" NERVIOS @":" VIGUETAS @")+secAc(sep)):"";
+      var lab={t:rotulo(t)+pie,p:dirs.length===1&&dirs[0]==="y"?[cx+tam(1.6),cy]:[cx,cy+tam(1.6)],al:dirs.length===1&&dirs[0]==="y"?9:13};
       if(opc.losas==="cada"){ P.push(texto("RET-LOSAS",lab.t,lab.p,H,0,lab.al)); nRot++; }
       else if(!mejorLosa[t.nombre]||area>mejorLosa[t.nombre].area)mejorLosa[t.nombre]={area:area,lab:lab};
     });
@@ -18191,7 +18235,10 @@ var TT={script:performance.now()};
      cada elemento» y la losa en negro, no en amarillo).  El .bat las crea tal cual. */
   var CAPAS_ACAD=[
     {n:"RET-EJES",color:1,lw:13,lt:"EJE"}, {n:"RET-BURBUJAS",color:1,lw:18}, {n:"RET-COTAS",color:3,lw:13},
-    {n:"RET-LOSAS",color:7,lw:18}, {n:"RET-ESCALERAS",color:30,lw:25}, {n:"RET-VIGAS",color:4,lw:35},
+    {n:"RET-LOSAS",color:7,lw:18},
+    /* las viguetas en su capa, negro fino y discontinuo; la trama de la maciza en gris, para que no pese */
+    {n:"RET-LOSAS-VIGUETAS",color:7,lw:9,lt:"OCULTA"}, {n:"RET-LOSAS-TRAMA",color:8,lw:9},
+    {n:"RET-ESCALERAS",color:30,lw:25}, {n:"RET-VIGAS",color:4,lw:35},
     {n:"RET-VIGAS-CHATAS",color:6,lw:25}, {n:"RET-PLACAS",color:5,lw:50}, {n:"RET-COLUMNAS",color:7,lw:50},
     {n:"RET-RELLENO",color:8,lw:0}, {n:"RET-TEXTOS",color:7,lw:18}, {n:"RET-TITULOS",color:7,lw:35},
     {n:"RET-CUADRO",color:7,lw:25}];
@@ -18231,7 +18278,8 @@ var TT={script:performance.now()};
     p.prims.forEach(function(P){
       var c=COL[P.capa]||"#333";
       if(P.k==="linea")s.push('<line x1="'+X(P.p[0][0])+'" y1="'+Y(P.p[0][1])+'" x2="'+X(P.p[1][0])+'" y2="'+Y(P.p[1][1])+
-        '" stroke="'+c+'" stroke-width="'+(GR[P.capa]||1)+'"'+NS+(P.capa==="RET-EJES"?' stroke-dasharray="9 3 2 3"':'')+'/>');
+        '" stroke="'+c+'" stroke-width="'+(GR[P.capa]||1)+'"'+NS+
+        (P.capa==="RET-EJES"?' stroke-dasharray="9 3 2 3"':(P.capa==="RET-LOSAS-VIGUETAS"?' stroke-dasharray="6 4"':''))+'/>');
       else if(P.k==="pol")s.push('<polygon points="'+pts(P.p)+'" fill="none" stroke="'+c+'" stroke-width="'+(GR[P.capa]||1)+'"'+NS+'/>');
       else if(P.k==="solido")s.push('<polygon points="'+pts([P.p[0],P.p[1],P.p[3],P.p[2]])+'" fill="'+c+'"/>');
       else if(P.k==="circulo")s.push('<circle cx="'+X(P.c[0])+'" cy="'+Y(P.c[1])+'" r="'+P.r.toFixed(3)+'" fill="#fff" stroke="'+c+'" stroke-width="1"'+NS+'/>');
@@ -18275,6 +18323,9 @@ var TT={script:performance.now()};
         '<span><b>Cotas</b>'+radio("acCotP","acCot","principales",opc.cotas,"entre ejes principales")+radio("acCotT","acCot","todas",opc.cotas,"también primas")+'</span>'+
         '<span><b>Rótulos</b>'+radio("acRotT","acRot","tipo",opc.rotulos,"tipo + cuadro")+radio("acRotS","acRot","seccion",opc.rotulos,"sección en cada uno")+'</span>'+
         '<span><b>Losas</b>'+radio("acLosG","acLos","grupo",opc.losas,"un rótulo por tipo")+radio("acLosC","acLos","cada",opc.losas,"en cada paño")+'</span>'+
+        '<span><b>Viguetas</b>'+radio("acVigT","acVig","todas",opc.viguetas,"todas")+
+          radio("acVigB","acVig","banda",opc.viguetas,"una banda")+
+          radio("acVigN","acVig","no",opc.viguetas,"solo la flecha")+'</span>'+
         '<label class="crit-r"><b>Escala</b><select id="acEsc">'+[50,75,100].map(function(e){
           return '<option value="'+e+'"'+(e===opc.escala?" selected":"")+'>1/'+e+'</option>'}).join("")+'</select></label>'+
       '</div>'+
@@ -18300,7 +18351,7 @@ var TT={script:performance.now()};
     P.innerHTML=h;
     function cambia(o){ var a=opcAutocad(), k; for(k in o)a[k]=o[k]; S.proy.autocad=a; guardar(); render(); }
     var pr=P.querySelector("#acPrimas"); if(pr)pr.onchange=function(){ cambia({primas:!!this.checked}); };
-    [["acBurb","burbujas"],["acCot","cotas"],["acRot","rotulos"],["acLos","losas"]].forEach(function(q){
+    [["acBurb","burbujas"],["acCot","cotas"],["acRot","rotulos"],["acLos","losas"],["acVig","viguetas"]].forEach(function(q){
       P.querySelectorAll('input[name="'+q[0]+'"]').forEach(function(inp){ inp.onchange=function(){ var o={}; o[q[1]]=this.value; cambia(o); }; });
     });
     var se=P.querySelector("#acEsc"); if(se)se.onchange=function(){ cambia({escala:+this.value}); };
