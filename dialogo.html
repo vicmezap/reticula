@@ -403,7 +403,7 @@
 .luces .eje-nom{width:4.1em;padding:0 2px;font:inherit;font-size:.88em;font-style:normal;color:inherit;background:var(--sheet);
   border:1px solid var(--line);border-radius:3px}
 .luces .eje-nom:focus{outline:2px solid var(--acc);outline-offset:-1px}
-#ejesPonEje.on,#calcoPonEje.on,#ejesPonEjeIncl.on,#calcoPonEjeIncl.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#ejesPonEje.on,#calcoPonEje.on,#ejesPonEjeIncl.on,#calcoPonEjeIncl.on,#nEjes.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .calco-capas{max-height:190px;overflow:auto;margin:4px 2px 0;border:1px solid var(--line);border-radius:4px;background:var(--sheet)}
 .calco-capa{display:grid;grid-template-columns:auto 12px minmax(0,1fr) auto;gap:6px;align-items:center;
   padding:2px 6px;font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-2);cursor:pointer}
@@ -861,6 +861,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
         <button class="btn" id="ejesPonEjeIncl"
           title="Para una planta sesgada: arrastra de un borde al otro y suelta; el eje queda inclinado. Se topa solo dentro del vano. Shift: principal. Esc: cancelar">Eje inclinado (arrastra)</button>
+        <button class="btn" id="ejesACopiar"
+          title="Pasa los ejes de este piso a los demás: sus nombres, cuáles son prima y la inclinación. Solo a los pisos que tengan el mismo número de vanos, y no mueve ninguna columna">Copiar ejes a los demás pisos</button>
         <button class="btn" id="ejesAdopta" hidden
           title="Compara los ejes del AutoCAD de fondo con los del modelo y los adopta, eje por eje">Adoptar ejes del plano</button>
       </div>
@@ -8325,7 +8327,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v207 · 15-09-2026";
+  var BUILD="v208 · 15-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8338,6 +8340,46 @@ var TT={script:performance.now()};
     for(i=0;i<nX;i++)for(j=0;j<nY-1;j++)m.vigas["v:"+i+":"+j]={t:"principal"};
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)m.losas[i+":"+j]={dir:"y",tipo:"aligerada"};
     return m;
+  }
+  /* LOS EJES DE UN PISO, para pasarlos a otro.  Un eje no es solo su distancia: tiene su NOMBRE puesto a mano
+     (nomX/nomY), si es PRIMA (primaX/primaY) y, con la planta sesgada, donde corta el borde opuesto (dx2/dy2).
+     «+ Nivel» copiaba solo dx y dy, asi que el piso nuevo renumeraba desde cero: el A, A′, B de Victor salia
+     A, B, C arriba y sus planos «no correspondian» al de abajo. */
+  function ejesDe(m){
+    var e={dx:(m.dx||[]).slice(), dy:(m.dy||[]).slice()};
+    ["dx2","dy2","primaX","primaY","nomX","nomY"].forEach(function(k){ if(m[k])e[k]=m[k].slice(); });
+    if(m.ox)e.ox=m.ox; if(m.oy)e.oy=m.oy;
+    return e;
+  }
+  /* los mete en un piso que YA tiene los mismos vanos: no toca ni una columna */
+  function ponEjesEn(m,e){
+    ["dx2","dy2","primaX","primaY","nomX","nomY"].forEach(function(k){
+      if(e[k])m[k]=e[k].slice(); else delete m[k];
+    });
+    if(e.ox)m.ox=e.ox; else delete m.ox;
+    if(e.oy)m.oy=e.oy; else delete m.oy;
+    return m;
+  }
+  function mismosVanos(a,b){ return (a.dx||[]).length===(b.dx||[]).length&&(a.dy||[]).length===(b.dy||[]).length; }
+  function mismasLuces(a,b){
+    return mismosVanos(a,b)&&["dx","dy"].every(function(k){
+      return (a[k]||[]).every(function(v,i){ return Math.abs(v-(b[k]||[])[i])<1e-6; }); });
+  }
+  /* PASAR LOS EJES DE ESTE PISO A LOS DEMAS.  Nombres y primas a los que tengan el mismo numero de vanos; la
+     inclinacion solo a los que ademas tengan las mismas luces, porque se mide contra dx y cortaria por otro sitio.
+     No mueve ningun elemento: los indices (i,j) no cambian. */
+  function copiarEjesAPisos(){
+    var m=N(), e=ejesDe(m), r={hechos:[], soloNombres:[], saltados:[]};
+    S.niveles.forEach(function(q,k){
+      if(q===m)return;
+      if(!mismosVanos(m,q)){ r.saltados.push(k+1); return; }
+      ["primaX","primaY","nomX","nomY"].forEach(function(t){ if(e[t])q[t]=e[t].slice(); else delete q[t]; });
+      if(mismasLuces(m,q)){
+        ["dx2","dy2"].forEach(function(t){ if(e[t])q[t]=e[t].slice(); else delete q[t]; });
+        r.hechos.push(k+1);
+      } else r.soloNombres.push(k+1);
+    });
+    return r;
   }
   /* Los modelos guardados antes traian m.vigas[k]=1 y no tenian placas.
      Ahora cols y placas tambien son objetos, para poder colgarles la seccion
@@ -9173,6 +9215,7 @@ var TT={script:performance.now()};
   function payloadActual(){
     return {n:S.niveles,sc:($("#sc")||{}).value,man:S.manual,lc:S.ladoCol,
             vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
+            he:S.heredaEjes!==false,
             pr:S.proy,et:S.etabs,in:S.intentos,bib:S.pid||null};
   }
   function guardar(){
@@ -9222,6 +9265,7 @@ var TT={script:performance.now()};
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
       if(d.vd!==undefined)S.verDims=!!d.vd;
       if(d.vc!==undefined)S.verCim=!!d.vc;
+      if(d.he!==undefined)S.heredaEjes=!!d.he;
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
       if(d.et&&typeof d.et==="object")S.etabs=d.et;
       if(Array.isArray(d.in))S.intentos=d.in;
@@ -12940,6 +12984,17 @@ var TT={script:performance.now()};
   $("#calcoPonEjeIncl").onclick=function(){ alternaPonerEje(true); };
   $("#ejesPonEjeIncl").onclick=function(){ alternaPonerEje(true); };
   $("#ejesAdopta").onclick=function(){ $("#calcoAdopta").onclick(); };
+  $("#ejesACopiar").onclick=function(){
+    if(S.niveles.length<2)return toast("Solo hay un nivel: no hay a quién copiárselos.");
+    snap();
+    var r=copiarEjesAPisos(), n=r.hechos.length+r.soloNombres.length;
+    if(!n){ UNDO.pop();
+      return toast("Ningún otro piso tiene el mismo número de vanos que este: no se le pueden pasar los ejes sin moverle las columnas."); }
+    render();
+    toast("Ejes copiados a "+n+(n===1?" piso":" pisos")+
+      (r.soloNombres.length?" · en el "+r.soloNombres.join(", ")+" solo nombres y primas (tiene otras luces)":"")+
+      (r.saltados.length?" · sin tocar el "+r.saltados.join(", ")+" (otro número de vanos)":"")+". Ctrl+Z lo deshace.");
+  };
   $("#calcoColores").addEventListener("change",function(){
     var c=calco(); if(!c||c.tipo!=="cad")return;
     c.colores=!!this.checked; guardarCalco(S.act,c); render();
@@ -13156,13 +13211,26 @@ var TT={script:performance.now()};
     t3.onclick=function(){S.vista="3d";S.sel=null;render()};c.appendChild(t3);
     var a=document.createElement("div");a.className="acts";
     a.innerHTML='<button class="btn" id="nAdd">+ Nivel</button><button class="btn" id="nDup">Duplicar</button>'+
-      '<button class="btn" id="nDel">Eliminar</button>';
+      '<button class="btn" id="nDel">Eliminar</button>'+
+      '<button class="btn" id="nEjes" title="Al añadir un nivel, se lleva los ejes del piso anterior tal cual: '+
+      'sus nombres (A, A′, B), cuáles son prima y la inclinación. Apagado, el piso nuevo los renumera desde cero">Mantener ejes</button>';
     /* en DECISIONES no se crean, duplican ni borran niveles: se mira y se decide */
     if(S.modo==="decisiones")a.hidden=true;
     c.appendChild(a);
+    var bE=$("#nEjes"); if(bE&&bE.classList)bE.classList.toggle("on",S.heredaEjes!==false);
+    $("#nEjes").onclick=function(){
+      S.heredaEjes=(S.heredaEjes===false);
+      guardar(); pintaNiveles();
+      toast(S.heredaEjes!==false?"Los niveles nuevos se llevarán los ejes del piso anterior: nombres, primas e inclinación."
+                                :"Los niveles nuevos renumerarán sus ejes desde cero.")};
     $("#nAdd").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
-      snap();var nvN=plantaLlena(N().dx,N().dy,N().h),oN=origenNivel(N());if(oN.x)nvN.ox=oN.x;if(oN.y)nvN.oy=oN.y;
-      S.niveles.push(nvN);S.act=S.niveles.length-1;S.sel=null;render()};
+      snap();var ant=N(),nvN=plantaLlena(ant.dx,ant.dy,ant.h),oN=origenNivel(ant);
+      if(oN.x)nvN.ox=oN.x;if(oN.y)nvN.oy=oN.y;
+      /* el piso nuevo se lleva el EJE entero, no solo su distancia */
+      if(S.heredaEjes!==false)ponEjesEn(nvN,ejesDe(ant));
+      S.niveles.push(nvN);S.act=S.niveles.length-1;S.sel=null;render();
+      toast(S.heredaEjes!==false?"Nivel añadido con los ejes del piso anterior: mismos nombres, primas e inclinación."
+                                :"Nivel añadido. Sus ejes se renumeran desde cero («Mantener ejes» está apagado).")};
     $("#nDup").onclick=function(){if(S.niveles.length>=15)return toast("Máximo 15 niveles.");
       snap();S.niveles.splice(S.act+1,0,JSON.parse(JSON.stringify(N())));S.act++;S.sel=null;render();
       toast("Nivel duplicado")};
@@ -18679,7 +18747,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
