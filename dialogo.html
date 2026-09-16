@@ -8327,7 +8327,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v210 · 15-09-2026";
+  var BUILD="v211 · 15-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -18349,7 +18349,13 @@ var TT={script:performance.now()};
       }
     }
     P.innerHTML=h;
-    function cambia(o){ var a=opcAutocad(), k; for(k in o)a[k]=o[k]; S.proy.autocad=a; guardar(); render(); }
+    /* AL LIBRO AHORA, no dentro de cinco segundos.  guardar() solo escribe la cache de esta ventana y deja el
+       envio al empujon espaciado; el .bat lee del LIBRO.  Asi, marcar «dibujar los ejes prima» parecia aplicado
+       -la vista previa cambia al momento- pero el .bat seguia dibujando con lo de antes, sin decir nada.  A
+       Victor le costo una tarde: su libro no tenia ni una sola opcion de AutoCAD guardada. */
+    function cambia(o){ var a=opcAutocad(), k; for(k in o)a[k]=o[k]; S.proy.autocad=a; guardar();
+      if(window.ENVIAR_MODELO)ENVIAR_MODELO();
+      render(); }
     var pr=P.querySelector("#acPrimas"); if(pr)pr.onchange=function(){ cambia({primas:!!this.checked}); };
     [["acBurb","burbujas"],["acCot","cotas"],["acRot","rotulos"],["acLos","losas"],["acVig","viguetas"]].forEach(function(q){
       P.querySelectorAll('input[name="'+q[0]+'"]').forEach(function(inp){ inp.onchange=function(){ var o={}; o[q[1]]=this.value; cambia(o); }; });
