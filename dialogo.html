@@ -9040,7 +9040,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v218 · 17-09-2026";
+  var BUILD="v220 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17501,6 +17501,31 @@ var TT={script:performance.now()};
                         cortante:d.cortante?{Vdes:d.cortante.Vdes, texto:d.cortante.texto}:null,
                         avisos:(d.avisos||[]).map(function(a){return {nivel:a.nivel, texto:a.texto}})};
               })};
+            })(),
+            /* D3: el diseño de las columnas, para DISENO_COLUMNAS: solo lo que la hoja escribe */
+            disenoColumnas:(function(){
+              var D=disenoColumnas();
+              return {resumen:D.resumen, regimen:D.regimen, lista:D.lista.map(function(d){
+                return {cod:d.cod, nivel:d.nivel, eje:d.eje, forma:d.forma, b:d.b, h:d.h, D:d.D, estado:d.estado,
+                        rho:d.rho, Ast:d.Ast, Po:d.Po, fPnMax:d.fPnMax, Mn:d.Mn,
+                        armado:d.armado?{barras:d.armado.barras, bar:d.armado.bar, estribo:d.armado.estribo}:null,
+                        combos:(d.combos||[]).map(function(c){
+                          return {corto:c.corto, paso:c.paso, donde:c.donde, Pu:c.Pu, M2:c.M2, M3:c.M3,
+                                  fM:c.fM, ratio:c.ratio}; }),
+                        cortante:d.cortante?{Vu:d.cortante.Vu, Vc:d.cortante.Vc, Vs:d.cortante.Vs,
+                                             por:d.cortante.por}:null,
+                        estribos:d.estribos?{Lo:d.estribos.Lo, so:d.estribos.so, sFuera:d.estribos.sFuera,
+                                             art:d.estribos.art, artFuera:d.estribos.artFuera,
+                                             ash:d.estribos.ash?{b:d.estribos.ash.b.req, h:d.estribos.ash.h.req,
+                                                                 puestaB:d.estribos.ash.AshB,
+                                                                 puestaH:d.estribos.ash.AshH}:null,
+                                             zuncho:d.estribos.zuncho?{rho:d.estribos.zuncho.rho,
+                                                                       paso:d.estribos.zuncho.paso,
+                                                                       art:d.estribos.zuncho.art}:null}:null,
+                        esbeltez:d.esbeltez?{lambda:d.esbeltez.lambda, limite:d.esbeltez.limite,
+                                             despreciable:d.esbeltez.despreciable, art:d.esbeltez.art}:null,
+                        avisos:(d.avisos||[]).slice()};
+              })};
             })()};
   }
 
@@ -18749,7 +18774,9 @@ var TT={script:performance.now()};
     /* D0: la base del diseño E.060; sale siempre, con los criterios del proyecto */
     {n:"CRITERIOS_DISENO",     tit:"Criterios de diseño",  t:"dis"},
     /* D2: el diseño de las vigas, con resultados */
-    {n:"DISENO_VIGAS",         tit:"Diseño de vigas",      t:"res", fz:"vigas"}
+    {n:"DISENO_VIGAS",         tit:"Diseño de vigas",      t:"res", fz:"vigas"},
+    /* D3: el diseño de las columnas, con resultados */
+    {n:"DISENO_COLUMNAS",      tit:"Diseño de columnas",   t:"res", fz:"columnas"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -18760,7 +18787,7 @@ var TT={script:performance.now()};
     PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
     VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true,
-    CRITERIOS_DISENO:true,DISENO_VIGAS:true};
+    CRITERIOS_DISENO:true,DISENO_VIGAS:true,DISENO_COLUMNAS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */

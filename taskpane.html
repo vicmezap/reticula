@@ -6799,6 +6799,99 @@
     return h.cerrar(r);
   }
 
+  /* =====================================================================
+     DISENO_COLUMNAS — el diseño de cada columna con la E.060 (D3), tal como
+     sale de Diseño E.060 › Columnas: la flexocompresión biaxial contra la
+     superficie de interacción de la sección, combinación por combinación, el
+     armado propuesto, el cortante y los estribos de confinamiento.  Son los
+     resultados de oviedo/columnas.js; la hoja no recalcula.
+     ===================================================================== */
+  function disenoColumnas(P) {
+    var DC = P && P.disenoColumnas, FZ = P && P.fuerzas, K = P && P.diseno;
+    if (!DC || !DC.lista || !DC.lista.length || !FZ) throw sinResultados("fuerzas de columnas para diseñarlas");
+    function coma(x, n) { return (x == null || !isFinite(x)) ? "—" : (+x).toFixed(n == null ? 2 : n).replace(".", ","); }
+    var h = F.hoja("DISENO_COLUMNAS"), r = 6, sec = 2, RS = DC.resumen || {};
+    h.titulo("DISEÑO DE COLUMNAS · E.060");
+    r = origenFuerzas(h, r, FZ, "Flexocompresión biaxial: cada combinación, en el pie y en la cabeza, se compara con "
+      + "la SUPERFICIE DE INTERACCIÓN de la sección real (compatibilidad de deformaciones y bloque equivalente), en la "
+      + "dirección en la que actúa su momento. D/C ≤ 1 cumple. φ de compresión 0,70 con estribos y 0,75 con espiral, "
+      + "subiendo hasta 0,90 según el Art. 9.3.2.2; φPn máx = 0,80 φPo (Art. 10.3.6.2). El cortante de diseño es el "
+      + "mayor entre el de ETABS y el de capacidad con Mpr = 1,25 Mn (Art. 21.6.5.1) o, en edificios de muros y dual "
+      + "I, el menor de los dos caminos del Art. 21.4.3. La esbeltez se avisa, no se amplifica.");
+    if (K && K.recub && K.barras) {
+      var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
+      r = h.seccion(r, (sec++) + ". CON QUÉ SE DISEÑA");
+      r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+      r = h.fila(r, LD, ["f'c (kg/cm²)", K.fc, "de Criterios de diseño"], null, IZQ3);
+      r = h.fila(r, LD, ["fy (kg/cm²)", K.fy, "acero de refuerzo y estribos"], null, IZQ3);
+      r = h.fila(r, LD, ["Recubrimiento de columnas (cm)", K.recub.columna.cm, "hasta el estribo"], null, IZQ3);
+      r = h.fila(r, LD, ["Barras", (K.barras.columna.long || []).join(", "),
+                         "estribo " + K.barras.columna.estribo], null, IZQ3);
+      r = h.fila(r, LD, ["Capítulo 21", "Art. " + (DC.regimen || "21.6"),
+                         DC.regimen === "21.4" ? "edificios de muros estructurales o dual tipo I"
+                                               : "edificios de pórticos o dual tipo II"], null, IZQ3);
+      r = h.fila(r, LD, ["Cuantía admitida", "1 % ≤ ρ ≤ 6 %", "Art. 10.9.1 y 21.6.3.1; con ρ > 4 % hay que detallar "
+                         + "el nudo en los planos"], null, IZQ3);
+      r = h.fila(r, LD, ["Columnas", RS.total || DC.lista.length, (RS.ok || 0) + " cumplen · " + (RS.revisar || 0) +
+                         " por revisar · " + (RS["no cumple"] || 0) + " no cumplen" + (RS.falta ? " · " + RS.falta +
+                         " sin datos" : "")], null, IZQ3);
+      r++;
+    }
+    var fmt = { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00" },
+        al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] },
+        LT = [[3, 4], [5, 10]], alT = { alinear: ["Left", "Left"], negrita: false },
+        EST = { ok: "CUMPLE", revisar: "REVISAR", "no cumple": "NO CUMPLE", falta: "SIN DATOS" };
+    nivelesDe(DC.lista).forEach(function (nv) {
+      r = h.seccion(r, (sec++) + ". COLUMNAS DEL NIVEL " + (nv || "-"));
+      r = h.encabezado(r, F8, ["Columna · combinación", "Pu (t)", "M2 (t·m)", "M3 (t·m)", "Mu (t·m)", "φMn (t·m)",
+                               "D/C", "Cumple"], 34.0);
+      DC.lista.filter(function (d) { return d.nivel === nv; }).forEach(function (d) {
+        r = h.fila(r, LT, [EST[d.estado] || String(d.estado).toUpperCase(),
+                           d.cod + " · " + (d.eje ? d.eje + " · " : "") + (d.forma === "circular"
+                             ? ("D " + Math.round(d.D)) : (Math.round(d.b) + " × " + Math.round(d.h))) +
+                           " cm · " + (d.armado ? d.armado.barras + "φ" + d.armado.bar : "—") +
+                           " · ρ = " + coma(d.rho * 100) + " %"], null, { alinear: ["Left", "Left"] });
+        if (d.estado === "falta") {
+          r = h.fila(r, LT, ["   Sin datos", (d.avisos || []).join(" ")], null, alT);
+          return;
+        }
+        /* las cinco combinaciones que más piden, que es lo que se mira */
+        (d.combos || []).slice().sort(function (a, b) { return b.ratio - a.ratio; }).slice(0, 5)
+          .forEach(function (c) {
+            var Mu = Math.sqrt(c.M2 * c.M2 + c.M3 * c.M3);
+            r = h.fila(r, F8, ["   " + c.corto + (c.paso ? " " + c.paso : "") + " · " + c.donde, c.Pu, c.M2, c.M3,
+                               Mu, c.fM, c.ratio, c.ratio <= 1 ? "SÍ" : "NO"], fmt, al);
+          });
+        r = h.fila(r, LT, ["   Capacidad", "Po " + coma(d.Po, 1) + " t · φPn máx " + coma(d.fPnMax, 1) +
+                           " t · Mn máx " + coma(d.Mn) + " t·m"], null, alT);
+        if (d.cortante)
+          r = h.fila(r, LT, ["   Cortante", "Vu " + coma(d.cortante.Vu) + " t (" + d.cortante.por + ") · Vc " +
+                             coma(d.cortante.Vc) + " t · Vs " + coma(d.cortante.Vs) + " t"], null, alT);
+        if (d.estribos)
+          r = h.fila(r, LT, ["   Estribos", "φ" + d.armado.estribo + " · Lo " + coma(d.estribos.Lo, 0) +
+                             " cm · dentro @ " + coma(d.estribos.so, 0) + " cm · fuera @ " +
+                             coma(d.estribos.sFuera, 0) + " cm (" + d.estribos.art + " y " + d.estribos.artFuera + ")"],
+                     null, alT);
+        if (d.estribos && d.estribos.ash)
+          r = h.fila(r, LT, ["   Confinamiento", "Ash necesaria " + coma(d.estribos.ash.b) + " cm² en b y " +
+                             coma(d.estribos.ash.h) + " cm² en h; puesta " + coma(d.estribos.ash.puestaB) + " / " +
+                             coma(d.estribos.ash.puestaH) + " cm² (Art. 21.6.4.1 (b))"], null, alT);
+        if (d.estribos && d.estribos.zuncho)
+          r = h.fila(r, LT, ["   Zuncho", "ρs mínima " + coma(d.estribos.zuncho.rho * 100) + " % · paso ≤ " +
+                             coma(d.estribos.zuncho.paso, 1) + " cm (" + d.estribos.zuncho.art + ")"], null, alT);
+        if (d.esbeltez)
+          r = h.fila(r, LT, ["   Esbeltez", "k·lu/r = " + coma(d.esbeltez.lambda, 0) + " · límite " +
+                             coma(d.esbeltez.limite, 0) + " (" + d.esbeltez.art + ") → " +
+                             (d.esbeltez.despreciable ? "se puede despreciar" : "hay que amplificar los momentos")],
+                     null, alT);
+        if (d.avisos && d.avisos.length)
+          r = h.fila(r, LT, ["   Avisos", d.avisos.join(" ")], null, alT);
+      });
+      r++;
+    });
+    return h.cerrar(r);
+  }
+
   function fuerzasColumnas(P) {
     var FZ = P && P.fuerzas;
     if (!FZ || !FZ.columnas || !FZ.columnas.length) throw sinResultados("fuerzas de columnas");
@@ -7001,7 +7094,8 @@
            cuadrosE030: cuadrosE030, datos: datos, modelo: modelo,
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
-           reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas };
+           reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas,
+           disenoColumnas: disenoColumnas };
 });
 </script>
 <script>
@@ -7016,7 +7110,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v218 · 17-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v220 · 17-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7430,7 +7524,8 @@ var REGISTRO = {
   "FUERZAS_PLACAS":     function(p){ return HOJAS.fuerzasPlacas(p); },
   "REACCIONES":         function(p){ return HOJAS.reacciones(p); },
   "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); },
-  "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); }
+  "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); },
+  "DISENO_COLUMNAS":    function(p){ return HOJAS.disenoColumnas(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
