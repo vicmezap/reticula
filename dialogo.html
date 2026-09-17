@@ -756,6 +756,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <input type="file" id="calcoFile" accept=".pdf,image/*,.json" hidden>
       <button class="btn" id="calcoCargar" style="margin:0 2px"
         title="Un PDF, una imagen o el plano que deja AUTOCAD.bat en la carpeta autocad">Traer plano…</button>
+      <input type="file" id="ejesCadFile" accept=".json" hidden>
+      <button class="btn" id="ejesCad" style="margin:4px 2px 0"
+        title="El archivo que deja EJES AUTOCAD.bat: los ejes con su nombre de AutoCAD, sus luces exactas y los ejes prima">Traer ejes de AutoCAD…</button>
       <div id="calcoCtl" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
@@ -8399,7 +8402,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v213 · 16-09-2026";
+  var BUILD="v215 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12990,6 +12993,85 @@ var TT={script:performance.now()};
   $("#calcoCargar").onclick=function(){ $("#calcoFile").click() };
   $("#calcoFile").addEventListener("change",function(){
     traerCalco(this.files&&this.files[0]); this.value="";
+  });
+
+  /* =====================================================================
+     AUTOCAD › EJES
+
+     EJES AUTOCAD.bat lee el dibujo -solo lee- y deja un JSON con los ejes:
+     su nombre de AutoCAD, su posicion en metros y si es PRIMA.  Aqui no se
+     adivina nada: se comprueba y se aplica.  Los elementos los dibujas tu,
+     como hasta ahora.
+
+     La retica es del EDIFICIO: se aplica a todos los niveles, igual que al
+     traerla de un plano.  Y se deshace entero con Ctrl+Z.
+     ===================================================================== */
+  function ejesCadMal(d){
+    if(!d||!d.ejes||!Array.isArray(d.ejes.x)||!Array.isArray(d.ejes.y))
+      return "Ese archivo no trae ejes: usa el que deja EJES AUTOCAD.bat.";
+    if(d.ejes.x.length<2||d.ejes.y.length<2)
+      return "Hacen falta al menos dos ejes en cada dirección; el dibujo dio "+
+             d.ejes.x.length+" ↔ y "+d.ejes.y.length+" ↕.";
+    if(d.ejes.x.length>MAX_EJES||d.ejes.y.length>MAX_EJES)
+      return "Máximo "+MAX_EJES+" ejes por dirección.";
+    var mal=null;
+    ["x","y"].forEach(function(k){
+      var L=d.ejes[k];
+      for(var i=1;i<L.length;i++){
+        var v=+L[i].m-+L[i-1].m;
+        if(!(v>0.05))mal=mal||("Dos ejes en "+k.toUpperCase()+" a "+
+          (isFinite(v)?(v*100).toFixed(0)+" cm":"la misma posición")+
+          ": revisa el dibujo o la tolerancia del .bat.");
+      }
+    });
+    return mal;
+  }
+
+  function traeEjesCad(d){
+    var mal=ejesCadMal(d); if(mal)return toast(mal);
+    function vanos(L){
+      var r=[],i;
+      for(i=1;i<L.length;i++)r.push(+((+L[i].m-+L[i-1].m).toFixed(4)));
+      return r;
+    }
+    var dx=vanos(d.ejes.x), dy=vanos(d.ejes.y);
+    /* el nombre solo se fija en los ejes principales: los primas se nombran
+       solos a partir de ellos (A, A′, A″), que es justo lo que hace nomsEje */
+    function noms(L){ return L.map(function(e){ return e.prima?null:(e.nombre||null) }) }
+    function prim(L){
+      var a=L.map(function(e){ return !!e.prima });
+      a[0]=false; a[a.length-1]=false;     /* los bordes del edificio nunca son prima */
+      return a;
+    }
+    snap();
+    S.niveles.forEach(function(m){
+      m.dx=dx.slice(); m.dy=dy.slice();
+      delete m.dx2; delete m.dy2; delete m.ox; delete m.oy;
+      m.primaX=prim(d.ejes.x); m.primaY=prim(d.ejes.y);
+      m.nomX=noms(d.ejes.x);   m.nomY=noms(d.ejes.y);
+      m.zapatas=m.zapatas||{};
+      podar(m);
+    });
+    S.sel=null; render();
+    var np=d.ejes.x.filter(function(e){return e.prima}).length+
+           d.ejes.y.filter(function(e){return e.prima}).length;
+    toast("De AutoCAD: "+dx.length+" vanos ↔ y "+dy.length+" ↕"+
+          (np?", con "+np+" eje(s) prima":"")+" · Ctrl+Z lo devuelve.");
+    if(d.avisos&&d.avisos.length)
+      setTimeout(function(){ toast("AutoCAD: "+d.avisos.slice(0,2).join(" · ")) },3600);
+  }
+
+  $("#ejesCad").onclick=function(){ $("#ejesCadFile").click() };
+  $("#ejesCadFile").addEventListener("change",function(){
+    var f=this.files&&this.files[0]; this.value="";
+    if(!f)return;
+    var r=new FileReader();
+    r.onload=function(){
+      var d=null;
+      try{ d=JSON.parse(r.result) }catch(e){ return toast("Ese archivo no es el de EJES AUTOCAD.bat.") }
+      traeEjesCad(d);
+    };
+    r.readAsText(f);
   });
   /* LIMPIAR · deja el nivel en blanco.
      Va en dos clics a proposito: borrar el nivel entero de un toque, con el
@@ -18925,7 +19007,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
