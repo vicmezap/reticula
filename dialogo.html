@@ -5384,6 +5384,644 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== columnas.js (inlinado) ===== */
+/* =====================================================================
+   columnas.js — D3 · EL DISEÑO DE LAS COLUMNAS CON LA E.060.  Sin interfaz:
+   lo usan Diseño E.060 › Columnas y la hoja DISENO_COLUMNAS.
+
+   Entra lo que ordena Fuerzas (fuerzas.js): por columna, cada combinación
+   de resistencia con su Pu (positiva en compresión), y M2, M3, V2 y V3 en
+   el pie y en la cabeza.  Convención de fuerzas.js: M3 y V2 van con el eje
+   local 2 -en una columna sin girar, la X global- y M2 y V3 con la Y.  Aquí
+   la sección se define igual: b en la dirección de X (la que resiste M3) y
+   h en la de Y (la que resiste M2).
+
+   Entrada en t, t·m y m; se calcula en kg y cm, con 1 MPa = 10 kg/cm²:
+   las fórmulas de la E.060 están en MPa.
+
+   LA FLEXIÓN BIAXIAL SE COMPRUEBA CON LA SUPERFICIE DE INTERACCIÓN de la
+   sección real -compatibilidad de deformaciones y bloque equivalente-, no
+   con una fórmula aproximada.  El método de Bresler (carga recíproca) se
+   calcula también, pero solo para enseñarlo al lado: con carga axial baja
+   se queda corto y no manda.
+
+   Cotejado con el texto de la E.060 (DS 010-2009-VIVIENDA, la vigente; la
+   propuesta de 2019 no está en vigor):
+     φ compresión 0,75 espiral / 0,70 estribos ..... Art. 9.3.2.2 (b)
+     φPn máx = 0,85 φPo espiral, 0,80 φPo estribos . Art. 10.3.6.1 y 10.3.6.2
+     εcu = 0,003 · bloque 0,85 f'c · β1 ............ Art. 10.2.3 y 10.2.7
+     cuantía 1 % ≤ ρ ≤ 6 % ........................ Art. 10.9.1, 21.4.5.1 y 21.6.3.1
+       (con ρ > 4 %, detalle del nudo en los planos)  Art. 21.4.5.1 y 21.6.3.1
+     mínimo 4 barras en estribos rectangulares ..... Art. 10.9.2
+     esbeltez: se puede despreciar si k·lu/r ≤ 34 − 12 M1/M2 ≤ 40 (arriostrado,
+       Art. 10.12.2) o k·lu/r < 22 (no arriostrado, Art. 10.13.2)
+     Vc con compresión = 0,17 (1 + Nu/(14 Ag)) √f'c bw d ... Art. 11.3.1.2, ec. (11-4)
+     Vs = Av fyt d / s ≤ 0,66 √f'c bw d ........... Art. 11.5.7.2 y 11.5.7.9
+     s ≤ d/2 y 600 mm, la mitad si Vs > 0,33 √f'c bw d ... Art. 11.5.5.1 y 11.5.5.3
+
+   Columnas de edificios de MUROS y DUAL I (Art. 21.4.5):
+     So ≤ 8 db, la mitad de la menor dimensión y 100 mm ... 21.4.5.3
+     Lo ≥ ln/6, la mayor dimensión y 500 mm ............... 21.4.5.3
+     fuera de Lo: 7.10 y 11.5.5.1, y nunca más de 300 mm .. 21.4.5.4
+     Vu = el menor de (a) el de los Mn en los extremos más el isostático y
+          (b) el de las combinaciones con el sismo amplificado 2,5 ... 21.4.3
+
+   Columnas de edificios de PÓRTICOS y DUAL II (Art. 21.6):
+     s ≤ la tercera parte de la menor dimensión, 6 db y 100 mm ... 21.6.4.2
+     hx ≤ 350 mm entre ramas ..................................... 21.6.4.3
+     Lo ≥ la mayor dimensión, ln/6 y 500 mm ...................... 21.6.4.4
+     fuera de Lo: s ≤ 10 db y 250 mm ............................. 21.6.4.5
+     Ash ≥ 0,3 s bc (f'c/fyt) (Ag/Ach − 1)  y  0,09 s bc f'c/fyt . 21.6.4.1 (b)
+     con espiral: ρs ≥ 0,12 f'c/fyt y ec. (10-5) ................. 21.6.4.1 (a) y 10.9.3
+     Vu con Mpr = 1,25 Mn en los extremos, y nunca menor que el del
+       análisis ................................................... 21.6.5.1
+     Σ Mnc ≥ 1,2 Σ Mnv en el nudo (columna fuerte) — eso es D4 ... 21.6.2.2
+
+   Diámetro mínimo del estribo: 8 mm hasta barras de 5/8", 3/8" hasta 1" y
+   1/2" para mayores (Art. 21.4.4.4 y 21.4.5.3).
+
+   Lo que no dice la norma y se toma:
+     · el armado propuesto reparte barras iguales en el perímetro, empezando
+       por la cuantía 1 % y subiendo hasta que todas las combinaciones pasen;
+     · la esbeltez se avisa, no se amplifica: si el modelo de ETABS corrió con
+       P-Δ, los momentos ya vienen de segundo orden;
+     · Vc se calcula con la MENOR compresión de las combinaciones (lo seguro),
+       y se avisa si alguna combinación deja la columna en tracción.
+
+     node scripts/complemento/oviedo/probar_columnas.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir(require("./diseno.js"));
+  else raiz.COLUMNAS = definir(raiz.DISENO);
+})(typeof self !== "undefined" ? self : this, function (DISENO) {
+  "use strict";
+
+  var ART = {
+    phi: "Art. 9.3.2.2", pmax: "Art. 10.3.6", rho: "Art. 10.9.1", nBarras: "Art. 10.9.2",
+    rhoSismo: "Art. 21.6.3.1", rho214: "Art. 21.4.5.1", esbeltezArr: "Art. 10.12.2",
+    esbeltezNo: "Art. 10.13.2", vc: "Art. 11.3.1.2", vs: "Art. 11.5.7.2", vsmax: "Art. 11.5.7.9",
+    smax: "Art. 11.5.5.1", smitad: "Art. 11.5.5.3",
+    s216: "Art. 21.6.4.2", hx216: "Art. 21.6.4.3", lo216: "Art. 21.6.4.4", fuera216: "Art. 21.6.4.5",
+    ash: "Art. 21.6.4.1 (b)", zuncho: "Art. 21.6.4.1 (a) y 10.9.3, ec. (10-5)", vu216: "Art. 21.6.5.1",
+    s214: "Art. 21.4.5.3", fuera214: "Art. 21.4.5.4", vu214: "Art. 21.4.3",
+    nudo: "Art. 21.6.2.2"
+  };
+  var PHI_V = 0.85;                 /* cortante, Art. 9.3.2.3 */
+  var GRAV = 1.25;                  /* 1,25 (CM + CV), Art. 9.2.3 */
+  var MPR = 1.25;                   /* Mpr = 1,25 Mn, Art. 21.6.5.1 */
+  var SISMO_25 = 2.5;               /* Art. 21.4.3 (b) */
+  var BAR_DEF = '5/8"', BAR_34 = '3/4"', BAR_1 = '1"', EST_DEF = '3/8"';
+  var N_ANG = 24, N_C = 44;         /* cuántas direcciones y cuántos ejes neutros tiene la superficie */
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function raizMPa(fc) { return Math.sqrt(fc / 10); }
+  function barra(n) { return DISENO.barra(n); }
+  function redArriba(v, p) { return Math.ceil(v / p - 1e-9) * p; }
+  function redAbajo(v, p) { return Math.floor(v / p + 1e-9) * p; }
+
+  /* ---------------------------------------------------------------- la sección */
+  /* Barras iguales repartidas en el perímetro de un rectángulo: nb por cara de
+     arriba y de abajo (en la dirección de b), nh por cara lateral, esquinas incluidas. */
+  function rejilla(b, h, rec, de, nb, nh, bar) {
+    var db = barra(bar), r = rec + de + db.d / 2;
+    var x0 = -b / 2 + r, x1 = b / 2 - r, y0 = -h / 2 + r, y1 = h / 2 - r, i, t, L = [];
+    nb = Math.max(2, nb | 0); nh = Math.max(2, nh | 0);
+    for (i = 0; i < nb; i++) {
+      t = nb === 1 ? 0.5 : i / (nb - 1);
+      L.push({ x: x0 + (x1 - x0) * t, y: y0, As: db.a, db: db.d });
+      L.push({ x: x0 + (x1 - x0) * t, y: y1, As: db.a, db: db.d });
+    }
+    for (i = 1; i < nh - 1; i++) {                       /* las esquinas ya están puestas */
+      t = i / (nh - 1);
+      L.push({ x: x0, y: y0 + (y1 - y0) * t, As: db.a, db: db.d });
+      L.push({ x: x1, y: y0 + (y1 - y0) * t, As: db.a, db: db.d });
+    }
+    return L;
+  }
+
+  function circulares(D, rec, de, n, bar) {
+    var db = barra(bar), r = D / 2 - rec - de - db.d / 2, L = [], i, a;
+    n = Math.max(6, n | 0);
+    for (i = 0; i < n; i++) {
+      a = 2 * Math.PI * i / n;
+      L.push({ x: r * Math.cos(a), y: r * Math.sin(a), As: db.a, db: db.d });
+    }
+    return L;
+  }
+
+  /* el contorno de concreto, en cm.  El círculo va como polígono de 72 lados: el
+     mismo camino sirve para las dos formas y el error de área es del 0,1 %. */
+  function contorno(o) {
+    var P = [], i, a;
+    if (o.forma === "circular" || (o.D > 0 && !(o.b > 0))) {
+      for (i = 0; i < 72; i++) { a = 2 * Math.PI * i / 72; P.push([o.D / 2 * Math.cos(a), o.D / 2 * Math.sin(a)]); }
+    } else {
+      P = [[-o.b / 2, -o.h / 2], [o.b / 2, -o.h / 2], [o.b / 2, o.h / 2], [-o.b / 2, o.h / 2]];
+    }
+    return P;
+  }
+
+  function seccion(o) {
+    var s = {
+      forma: (o.forma === "circular" ? "circular" : "rectangular"),
+      b: num(o.b) || 0, h: num(o.h) || 0, D: num(o.D) || 0,
+      fc: num(o.fc) || 210, fy: num(o.fy) || 4200, fyt: num(o.fyt) || num(o.fy) || 4200,
+      rec: num(o.rec) == null ? 4 : num(o.rec), de: num(o.de) || 0.95,
+      espiral: !!o.espiral, bar: o.bar || BAR_DEF, nb: o.nb || 3, nh: o.nh || 3, n: o.n || 8
+    };
+    if (s.forma === "circular") {
+      s.Ag = Math.PI * s.D * s.D / 4;
+      s.barras = o.barras || circulares(s.D, s.rec, s.de, s.n, s.bar);
+      s.bMin = s.D; s.bMax = s.D;
+    } else {
+      s.Ag = s.b * s.h;
+      s.barras = o.barras || rejilla(s.b, s.h, s.rec, s.de, s.nb, s.nh, s.bar);
+      s.bMin = Math.min(s.b, s.h); s.bMax = Math.max(s.b, s.h);
+    }
+    s.poly = contorno(s);
+    s.Ast = 0;
+    s.barras.forEach(function (x) { s.Ast += x.As; });
+    s.rho = s.Ag > 0 ? s.Ast / s.Ag : 0;
+    s.beta1 = DISENO.beta1(s.fc);
+    return s;
+  }
+
+  /* ---------------------------------------------------------------- geometría */
+  /* la parte del polígono con u = x·cosα + y·senα ≥ u0 (el bloque comprimido) */
+  function recorta(P, ca, sa, u0) {
+    var R = [], n = P.length, i, a, b, ua, ub, t;
+    for (i = 0; i < n; i++) {
+      a = P[i]; b = P[(i + 1) % n];
+      ua = a[0] * ca + a[1] * sa - u0;
+      ub = b[0] * ca + b[1] * sa - u0;
+      if (ua >= 0) R.push(a);
+      if ((ua >= 0) !== (ub >= 0)) {
+        t = ua / (ua - ub);
+        R.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    return R;
+  }
+
+  function areaCentro(P) {
+    var A = 0, cx = 0, cy = 0, n = P.length, i, a, b, f;
+    if (n < 3) return { A: 0, x: 0, y: 0 };
+    for (i = 0; i < n; i++) {
+      a = P[i]; b = P[(i + 1) % n];
+      f = a[0] * b[1] - b[0] * a[1];
+      A += f; cx += (a[0] + b[0]) * f; cy += (a[1] + b[1]) * f;
+    }
+    A = A / 2;
+    if (Math.abs(A) < 1e-9) return { A: 0, x: 0, y: 0 };
+    return { A: Math.abs(A), x: cx / (6 * A), y: cy / (6 * A) };
+  }
+
+  /* ---------------------------------------------------------------- un punto (Pn, Mn) */
+  /* α es la dirección en la que varía la deformación: la fibra más comprimida es la
+     de u máximo.  c es la profundidad del eje neutro medida desde esa fibra.
+     Devuelve kg y kg·cm, con M3 el momento con brazo en x (el de b) y M2 el de y. */
+  function punto(sec, alfa, c) {
+    var ca = Math.cos(alfa), sa = Math.sin(alfa), P = sec.poly, i, u, umax = -1e18;
+    for (i = 0; i < P.length; i++) { u = P[i][0] * ca + P[i][1] * sa; if (u > umax) umax = u; }
+    var a = sec.beta1 * c, bloque = 0.85 * sec.fc;
+    var comp = c > 0 ? areaCentro(recorta(P, ca, sa, umax - a)) : { A: 0, x: 0, y: 0 };
+    var Pn = bloque * comp.A, M3 = bloque * comp.A * comp.x, M2 = bloque * comp.A * comp.y;
+    var et = 0, ec = DISENO.ECU, Es = DISENO.ES, dmax = 0;
+    sec.barras.forEach(function (bar) {
+      var ub = bar.x * ca + bar.y * sa, d = umax - ub;
+      var e = c > 0 ? ec * (c - d) / c : -sec.fy / Es;
+      var fs = Math.max(-sec.fy, Math.min(sec.fy, Es * e));
+      if (d <= a && c > 0) fs -= bloque;                       /* el concreto que la barra ocupa */
+      var F = fs * bar.As;
+      Pn += F; M3 += F * bar.x; M2 += F * bar.y;
+      if (d > dmax) { dmax = d; et = e; }                      /* la barra más lejos: la de tracción */
+    });
+    return { c: c, alfa: alfa, Pn: Pn, M2: M2, M3: M3, M: Math.sqrt(M2 * M2 + M3 * M3), et: et };
+  }
+
+  function po(sec) { return 0.85 * sec.fc * (sec.Ag - sec.Ast) + sec.fy * sec.Ast; }       /* kg */
+  function pnMax(sec) { return (sec.espiral ? 0.85 : 0.80) * po(sec); }                    /* Art. 10.3.6 */
+
+  /* el punto balanceado en esa dirección, para φ (Art. 9.3.2.2 según DISENO) */
+  function pBalanceado(sec, alfa) {
+    var ca = Math.cos(alfa), sa = Math.sin(alfa), umax = -1e18, umin = 1e18, u, i;
+    for (i = 0; i < sec.poly.length; i++) {
+      u = sec.poly[i][0] * ca + sec.poly[i][1] * sa;
+      if (u > umax) umax = u; if (u < umin) umin = u;
+    }
+    var dt = 0;
+    sec.barras.forEach(function (bar) { dt = Math.max(dt, umax - (bar.x * ca + bar.y * sa)); });
+    if (!(dt > 0)) dt = umax - umin;
+    var cb = DISENO.ECU / (DISENO.ECU + sec.fy / DISENO.ES) * dt;
+    return punto(sec, alfa, cb).Pn;
+  }
+
+  function phiDe(sec, Pn, Pb) {
+    return DISENO.phiFlexocompresion({ espiral: sec.espiral, fc: sec.fc, Ag: sec.Ag, Pn: Pn, Pb: Pb });
+  }
+
+  /* ---------------------------------------------------------------- la superficie */
+  /* Una curva por dirección del eje neutro; cada curva, de tracción pura a compresión
+     pura.  Se arma una vez por sección: lo demás es interpolar. */
+  function superficie(sec, o) {
+    o = o || {};
+    var nA = o.nAng || N_ANG, nC = o.nC || N_C, curvas = [], i, j;
+    var dmaxG = 0;
+    for (i = 0; i < sec.poly.length; i++)
+      dmaxG = Math.max(dmaxG, Math.sqrt(sec.poly[i][0] * sec.poly[i][0] + sec.poly[i][1] * sec.poly[i][1]));
+    var cMax = 3.2 * dmaxG;
+    for (i = 0; i < nA; i++) {
+      var alfa = 2 * Math.PI * i / nA, Pb = pBalanceado(sec, alfa), pts = [];
+      for (j = 0; j <= nC; j++) {
+        var c = cMax * Math.pow(j / nC, 2.2) + 1e-6;          /* más puntos donde la curva se dobla */
+        var p = punto(sec, alfa, c), phi = phiDe(sec, p.Pn, Pb);
+        pts.push({ c: c, Pn: p.Pn, phi: phi, fPn: phi * p.Pn, fM2: phi * p.M2, fM3: phi * p.M3,
+                   M2: p.M2, M3: p.M3, et: p.et });
+      }
+      curvas.push({ alfa: alfa, Pb: Pb, pts: pts });
+    }
+    return { sec: sec, curvas: curvas, Po: po(sec),
+             fPnMax: (sec.espiral ? DISENO.phi.compEspiral : DISENO.phi.compEstribos) * pnMax(sec) };
+  }
+
+  /* la capacidad de una curva para una carga axial dada: (φM2, φM3) donde φPn = Pu */
+  function enCurva(curva, Pu) {
+    var pts = curva.pts, i, a, b, t;
+    for (i = 0; i < pts.length - 1; i++) {
+      a = pts[i]; b = pts[i + 1];
+      if ((a.fPn - Pu) * (b.fPn - Pu) <= 0 && Math.abs(b.fPn - a.fPn) > 1e-9) {
+        t = (Pu - a.fPn) / (b.fPn - a.fPn);
+        return { fM2: a.fM2 + (b.fM2 - a.fM2) * t, fM3: a.fM3 + (b.fM3 - a.fM3) * t,
+                 et: a.et + (b.et - a.et) * t, fuera: false };
+      }
+    }
+    return { fM2: 0, fM3: 0, et: pts[pts.length - 1].et, fuera: true };    /* Pu por encima de la curva */
+  }
+
+  function angDif(a, b) {
+    var d = a - b;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+  }
+
+  /* LA COMPROBACIÓN: cuánto de la capacidad se usa con (Pu, M2u, M3u), en la dirección
+     en la que el momento realmente actúa.  ratio ≤ 1 cumple. */
+  function verifica(sup, Pu, M2u, M3u) {
+    var Mu = Math.sqrt(M2u * M2u + M3u * M3u), theta = Math.atan2(M2u, M3u);
+    if (Pu > sup.fPnMax) return { ratio: Pu / sup.fPnMax, por: "φPn máx", fM: 0, Mu: Mu, fPnMax: sup.fPnMax };
+    if (!(Mu > 0)) return { ratio: sup.fPnMax > 0 ? Math.max(0, Pu) / sup.fPnMax : 0, por: "solo axial", fM: 0, Mu: 0 };
+    /* de cada dirección de eje neutro sale un momento resistente con SU dirección:
+       se busca la que da la dirección del momento que actúa */
+    var cand = [], i, e, dir;
+    for (i = 0; i < sup.curvas.length; i++) {
+      e = enCurva(sup.curvas[i], Pu);
+      if (e.fuera) continue;
+      dir = Math.atan2(e.fM2, e.fM3);
+      cand.push({ i: i, dif: angDif(dir, theta), M: Math.sqrt(e.fM2 * e.fM2 + e.fM3 * e.fM3), et: e.et });
+    }
+    if (!cand.length) return { ratio: 99, por: "no hay capacidad para esa carga axial", fM: 0, Mu: Mu };
+    var mejor = null, segundo = null;
+    cand.forEach(function (x) {
+      if (!mejor || Math.abs(x.dif) < Math.abs(mejor.dif)) { segundo = mejor; mejor = x; }
+      else if (!segundo || Math.abs(x.dif) < Math.abs(segundo.dif)) segundo = x;
+    });
+    var fM = mejor.M, et = mejor.et;
+    if (segundo && mejor.dif * segundo.dif < 0 && Math.abs(mejor.dif - segundo.dif) > 1e-9) {
+      var t = Math.abs(mejor.dif) / (Math.abs(mejor.dif) + Math.abs(segundo.dif));
+      fM = mejor.M + (segundo.M - mejor.M) * t;
+      et = mejor.et + (segundo.et - mejor.et) * t;
+    }
+    return { ratio: fM > 0 ? Mu / fM : 99, por: "superficie de interacción", fM: fM, Mu: Mu,
+             theta: theta, et: et };
+  }
+
+  /* BRESLER (carga recíproca), solo para enseñarlo al lado:
+     1/Pn ≈ 1/Pnx + 1/Pny − 1/Po, donde Pnx y Pny son las capacidades UNIAXIALES con la
+     MISMA excentricidad que tiene la carga (e = M/P), no con el mismo momento. */
+  function bresler(sup, Pu, M2u, M3u) {
+    if (!(Pu > 0) || !(Math.abs(M2u) > 0 && Math.abs(M3u) > 0)) return null;
+    var ex = Math.abs(M3u) / Pu, ey = Math.abs(M2u) / Pu;
+    var pnx = pnConE(sup, 0, ex), pny = pnConE(sup, Math.PI / 2, ey), Po = sup.Po;
+    if (!(pnx > 0) || !(pny > 0)) return null;
+    var inv = 1 / pnx + 1 / pny - 1 / Po;
+    if (!(inv > 0)) return null;
+    var Pn = 1 / inv, fi = phiDe(sup.sec, Pn, null);
+    return { Pn: Pn, Pnx: pnx, Pny: pny, Po: Po, phi: fi, ex: ex, ey: ey,
+             ratio: fi * Pn > 0 ? Pu / (fi * Pn) : 99 };
+  }
+
+  /* la carga axial nominal de la curva uniaxial con esa excentricidad: donde Mn/Pn = e */
+  function pnConE(sup, alfa, e) {
+    var curva = null, mejor = 1e18, i;
+    for (i = 0; i < sup.curvas.length; i++) {
+      var d = Math.abs(angDif(sup.curvas[i].alfa, alfa));
+      if (d < mejor) { mejor = d; curva = sup.curvas[i]; }
+    }
+    var pts = curva.pts, a, b, ea, eb, t, Ma, Mb;
+    for (i = pts.length - 1; i > 0; i--) {
+      a = pts[i]; b = pts[i - 1];
+      if (!(a.Pn > 0) || !(b.Pn > 0)) break;
+      Ma = Math.sqrt(a.M2 * a.M2 + a.M3 * a.M3); Mb = Math.sqrt(b.M2 * b.M2 + b.M3 * b.M3);
+      ea = Ma / a.Pn - e; eb = Mb / b.Pn - e;
+      if (ea * eb <= 0 && Math.abs(eb - ea) > 1e-12) {
+        t = ea / (ea - eb);
+        return a.Pn + (b.Pn - a.Pn) * t;
+      }
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------- esbeltez */
+  /* No se amplifica nada: se dice si se puede despreciar o no.  Con P-Δ en ETABS los
+     momentos ya son de segundo orden. */
+  function esbeltez(o) {
+    var lu = num(o.lu) || 0, b = num(o.bDir) || 0, k = num(o.k) || 1;
+    var r = 0.3 * b;                                            /* rectangular, Art. 10.11.2 */
+    if (o.forma === "circular") r = 0.25 * (num(o.D) || 0);
+    if (!(r > 0)) return null;
+    var lam = k * lu * 100 / r, m1m2 = num(o.M1M2);
+    var lim = o.arriostrado ? Math.min(40, 34 - 12 * (m1m2 === null ? -1 : m1m2)) : 22;
+    return { lambda: lam, limite: lim, despreciable: lam <= lim, r: r, k: k,
+             art: o.arriostrado ? ART.esbeltezArr : ART.esbeltezNo };
+  }
+
+  /* ---------------------------------------------------------------- cortante */
+  function vc(b, d, fc, Nu, Ag) {                               /* t, ec. (11-4) */
+    var nu = Ag > 0 ? Math.max(0, Nu) * 1000 / Ag : 0;          /* kg/cm² */
+    return 0.17 * (1 + nu / 10 / 14) * raizMPa(fc) * 10 * b * d / 1000;
+  }
+  function vsMax(b, d, fc) { return 0.66 * raizMPa(fc) * 10 * b * d / 1000; }
+  function vcLim(b, d, fc) { return 0.33 * raizMPa(fc) * 10 * b * d / 1000; }
+
+  /* ---------------------------------------------------------------- estribos */
+  function estriboMinimo(barLong) { return DISENO.estriboMinimo(barLong); }
+
+  function confinamiento(o) {
+    var bMin = o.bMin, bMax = o.bMax, ln = o.ln * 100, dbL = o.dbLong, reg = o.regimen;
+    var Lo = Math.max(bMax, ln / 6, 50);                        /* 21.6.4.4 y 21.4.5.3, en cm */
+    var so, sFuera, artS, artF;
+    if (reg === "21.4") {
+      so = Math.min(8 * dbL, bMin / 2, 10);                     /* 21.4.5.3 */
+      sFuera = Math.min(30, 16 * dbL, 48 * o.dbEstribo, bMin);  /* 21.4.5.4 con 7.10.5.2 */
+      artS = ART.s214; artF = ART.fuera214;
+    } else {
+      so = Math.min(bMin / 3, 6 * dbL, 10);                     /* 21.6.4.2 */
+      sFuera = Math.min(10 * dbL, 25);                          /* 21.6.4.5 */
+      artS = ART.s216; artF = ART.fuera216;
+    }
+    return { Lo: Lo, so: so, sFuera: sFuera, art: artS, artFuera: artF };
+  }
+
+  /* EL ZUNCHO (columnas con espiral): cuantia volumetrica minima.
+     21.6.4.1 (a): ρs ≥ 0,12 f'c/fyt, y nunca menos que la ec. (10-5) del Art. 10.9.3:
+     ρs ≥ 0,45 (Ag/Ach − 1) f'c/fyt.  Con la barra de la espiral sale el paso maximo. */
+  function zuncho(o) {
+    var r1 = 0.12 * o.fc / o.fyt;
+    var r2 = 0.45 * (o.Ag / o.Ach - 1) * o.fc / o.fyt;
+    var req = Math.max(r1, r2);
+    var paso = (o.Asp > 0 && o.dc > 0 && req > 0) ? 4 * o.Asp / (o.dc * req) : null;
+    return { rho: req, r216: r1, e105: r2, paso: paso, art: ART.zuncho };
+  }
+
+  /* Ash de 21.6.4.1 (b): el área de estribos y grapas que hace falta en cada dirección */
+  function ash(o) {
+    var s = o.s, bc = o.bc, fc = o.fc, fyt = o.fyt, Ag = o.Ag, Ach = o.Ach;
+    var a1 = 0.3 * s * bc * (fc / fyt) * (Ag / Ach - 1);        /* ec. (21-3) */
+    var a2 = 0.09 * s * bc * (fc / fyt);                        /* ec. (21-4) */
+    return { req: Math.max(a1, a2), e213: a1, e214: a2, art: ART.ash };
+  }
+
+  /* ---------------------------------------------------------------- el diseño */
+  /* col: lo que da fuerzas.js para una columna.  cri: DISENO.criterios().
+     o: {regimen: "21.4"|"21.6", ln, arriostrado, k} */
+  function disenar(col, cri, o) {
+    o = o || {};
+    var fc = cri.fc, fy = cri.fy;
+    /* criterios() da el recubrimiento como objeto {n, cm, ...}: lo que se usa es su cm */
+    var recO = (cri.recub && cri.recub.columna) || null;
+    var rec = num(recO && typeof recO === "object" ? recO.cm : recO);
+    if (!(rec > 0)) rec = 4;
+    var reg = o.regimen === "21.4" ? "21.4" : "21.6";
+    var b = (num(col.b) || 0) * 100, h = (num(col.h) || 0) * 100, D = (num(col.D) || 0) * 100;
+    var circular = (col.forma === "circular") || (!(b > 0) && D > 0);
+    var base = { cod: col.cod, nivel: col.nivel, eje: col.eje, forma: circular ? "circular" : "rectangular",
+                 b: b, h: h, D: D, sec: col.sec, regimen: reg, avisos: [] };
+    if (!(circular ? D > 0 : (b > 0 && h > 0))) {
+      base.estado = "falta"; base.avisos.push("La columna no tiene sección: revisa el Predimensionamiento.");
+      return base;
+    }
+    var barrasOk = (cri.barras && cri.barras.columna && cri.barras.columna.long) || [BAR_DEF, BAR_34, BAR_1];
+    var estriboNom = (cri.barras && cri.barras.columna && cri.barras.columna.estribo) || EST_DEF;
+    var ln = num(o.ln) || 2.4;
+
+    /* las combinaciones, en kg y kg·cm */
+    var dem = [];
+    (col.filas || []).forEach(function (f) {
+      ["pie", "cabeza"].forEach(function (donde) {
+        var q = f[donde] || {}, Pu = num(donde === "pie" ? f.Pu : f.PuCabeza);
+        if (Pu === null) return;
+        dem.push({ combo: f.combo, corto: f.corto, paso: f.paso, donde: donde,
+                   Pu: Pu * 1000, M2: (num(q.M2) || 0) * 1e5, M3: (num(q.M3) || 0) * 1e5,
+                   PuT: Pu, M2T: num(q.M2) || 0, M3T: num(q.M3) || 0,
+                   V2: num(f.V2) || 0, V3: num(f.V3) || 0 });
+      });
+    });
+    if (!dem.length) {
+      base.estado = "falta"; base.avisos.push("Esa columna no trae fuerzas de ETABS.");
+      return base;
+    }
+
+    /* EL ARMADO: se propone y se sube hasta que todas las combinaciones pasen */
+    var prop = propone({ circular: circular, b: b, h: h, D: D, fc: fc, fy: fy, rec: rec,
+                         de: barra(estriboNom).d, barras: barrasOk, dem: dem, espiral: !!o.espiral });
+    var sec = prop.sec, sup = prop.sup;
+
+    /* la peor combinación */
+    var peor = null, porCombo = [];
+    dem.forEach(function (d) {
+      var v = verifica(sup, d.Pu, d.M2, d.M3);
+      var fila = { combo: d.combo, corto: d.corto, paso: d.paso, donde: d.donde, Pu: d.PuT,
+                   M2: d.M2T, M3: d.M3T, ratio: v.ratio, por: v.por, fM: v.fM / 1e5, Mu: v.Mu / 1e5,
+                   et: v.et, bresler: null };
+      var br = bresler(sup, d.Pu, d.M2, d.M3);
+      if (br) fila.bresler = br.ratio;
+      porCombo.push(fila);
+      if (!peor || fila.ratio > peor.ratio) peor = fila;
+    });
+
+    /* CORTANTE.  Vu de capacidad (21.6.5.1 con Mpr, o 21.4.3 para muros y dual I) */
+    var Mn = momentoMaximo(sup, dem);
+    /* Mn en kg·cm y ln en m: la luz libre va a cm (ln*100) y el resultado de kg a t */
+    var Vcap = (2 * MPR * Mn) / (ln * 100) / 1000;              /* t */
+    var Vana = 0, VanaS = 0, PuMin = 1e18, hayTrac = false;
+    dem.forEach(function (d) {
+      Vana = Math.max(Vana, Math.abs(d.V2), Math.abs(d.V3));
+      PuMin = Math.min(PuMin, d.PuT);
+      if (d.PuT < 0) hayTrac = true;
+    });
+    var Vu = Math.max(Vcap, Vana), porV = ART.vu216;
+    if (reg === "21.4") {
+      var VcapMn = (2 * Mn) / (ln * 100) / 1000;                 /* 21.4.3 (a): con Mn, no con 1,25 Mn */
+      var V25 = Vana * SISMO_25;                                 /* 21.4.3 (b), aproximado con el V del análisis */
+      Vu = Math.max(Math.min(VcapMn, V25), Vana);
+      porV = ART.vu214;
+    }
+    var bw = circular ? 0.8 * D : Math.min(b, h);
+    var hDir = circular ? D : Math.max(b, h);
+    var d = hDir - rec - barra(estriboNom).d - (sec.barras[0] ? sec.barras[0].db / 2 : 1);
+    var Vc = vc(bw, d, fc, Math.max(0, PuMin), sec.Ag);
+    var Vs = Math.max(0, Vu / PHI_V - Vc), VsM = vsMax(bw, d, fc);
+    var ramas = circular ? 2 : ramasDe(sec, "b");
+    var Av = ramas * barra(estriboNom).a;
+    var sReq = Vs > 0 ? Av * fy * d / (Vs * 1000) : null;
+    var conf = confinamiento({ bMin: circular ? D : Math.min(b, h), bMax: circular ? D : Math.max(b, h),
+                               ln: ln, dbLong: sec.barras[0] ? sec.barras[0].db : 1.6,
+                               dbEstribo: barra(estriboNom).d, regimen: reg });
+    var sMax = Math.min(d / 2, 60);                              /* 11.5.5.1 */
+    if (Vs > vcLim(bw, d, fc)) sMax = sMax / 2;                  /* 11.5.5.3 */
+    var sDentro = Math.min(conf.so, sReq || 1e9, sMax);
+    var sFuera = Math.min(conf.sFuera, sReq || 1e9, sMax);
+    var estZun = null;
+    if (circular) {
+      var dc = D - 2 * rec, Asp = barra(estriboNom).a;
+      estZun = zuncho({ fc: fc, fyt: fy, Ag: sec.Ag, Ach: Math.PI * dc * dc / 4, Asp: Asp, dc: dc });
+      estZun.dc = dc;
+      if (o.espiral && estZun.paso != null) sDentro = Math.min(sDentro, estZun.paso);
+    }
+    var estAsh = null;
+    if (reg === "21.6" && !circular) {
+      var bc = b - 2 * rec - barra(estriboNom).d, hc = h - 2 * rec - barra(estriboNom).d;
+      var Ach = (b - 2 * rec) * (h - 2 * rec);
+      estAsh = { b: ash({ s: redAbajo(sDentro, 1), bc: hc, fc: fc, fyt: fy, Ag: sec.Ag, Ach: Ach }),
+                 h: ash({ s: redAbajo(sDentro, 1), bc: bc, fc: fc, fyt: fy, Ag: sec.Ag, Ach: Ach }),
+                 Ach: Ach, bc: bc, hc: hc,
+                 AshB: ramasDe(sec, "b") * barra(estriboNom).a, AshH: ramasDe(sec, "h") * barra(estriboNom).a };
+    }
+
+    /* ESBELTEZ, solo aviso */
+    var esb = esbeltez({ lu: ln, bDir: circular ? D : Math.min(b, h), D: D, forma: base.forma,
+                         k: num(o.k) || 1, arriostrado: !!o.arriostrado, M1M2: null });
+
+    /* AVISOS */
+    var av = base.avisos;
+    if (sec.rho < 0.01) av.push("La cuantía es " + (sec.rho * 100).toFixed(2) + " %: el mínimo es 1 % (" +
+                                (reg === "21.4" ? ART.rho214 : ART.rhoSismo) + ").");
+    if (sec.rho > 0.06) av.push("La cuantía es " + (sec.rho * 100).toFixed(2) + " %: el máximo es 6 % (" +
+                                (reg === "21.4" ? ART.rho214 : ART.rhoSismo) + "). Sube la sección.");
+    else if (sec.rho > 0.04) av.push("La cuantía pasa del 4 %: los planos tienen que detallar el armado en el " +
+                                     "nudo (" + (reg === "21.4" ? ART.rho214 : ART.rhoSismo) + ").");
+    if (!circular && Math.min(b, h) < 25) av.push("La menor dimensión es " + Math.min(b, h).toFixed(0) +
+                                                  " cm: la E.060 pide 250 mm (Art. 21.6.1.2).");
+    if (!circular && Math.min(b, h) / Math.max(b, h) < 0.3)
+      av.push("La relación entre lados es menor que 0,3 (Art. 21.6.1.3).");
+    if (esb && !esb.despreciable)
+      av.push("Esbeltez k·lu/r = " + esb.lambda.toFixed(0) + " > " + esb.limite.toFixed(0) + " (" + esb.art +
+              "): hay que amplificar los momentos, o traerlos de un análisis con P-Δ.");
+    if (hayTrac) av.push("Alguna combinación deja la columna en tracción: Vc se ha tomado con Nu = 0 (" + ART.vc + ").");
+    if (Vs > VsM) av.push("Vs pasa el máximo de " + ART.vsmax + ": la sección no da para esa cortante.");
+    if (peor && peor.ratio > 1) av.push("La combinación " + peor.corto + " (" + peor.donde + ") pide " +
+                                        (peor.ratio * 100).toFixed(0) + " % de la capacidad.");
+    if (estAsh) {
+      if (estAsh.AshB < estAsh.b.req - 1e-6)
+        av.push("Faltan ramas o estribo más grueso: Ash en b es " + estAsh.AshB.toFixed(2) + " cm² y hacen falta " +
+                estAsh.b.req.toFixed(2) + " cm² (" + ART.ash + ").");
+      if (estAsh.AshH < estAsh.h.req - 1e-6)
+        av.push("Faltan ramas o estribo más grueso: Ash en h es " + estAsh.AshH.toFixed(2) + " cm² y hacen falta " +
+                estAsh.h.req.toFixed(2) + " cm² (" + ART.ash + ").");
+    }
+
+    var estado = "ok";
+    if (!prop.cumple || (peor && peor.ratio > 1) || Vs > VsM || sec.rho > 0.06) estado = "no cumple";
+    else if (av.length) estado = "revisar";
+
+    base.sec = sec; base.superficie = sup; base.rho = sec.rho; base.Ast = sec.Ast;
+    base.armado = { barras: sec.barras.length, bar: sec.bar, nb: sec.nb, nh: sec.nh, n: sec.n,
+                    estribo: estriboNom, estriboMin: estriboMinimo(sec.bar) };
+    base.combos = porCombo; base.peor = peor;
+    base.Po = po(sec) / 1000; base.fPnMax = sup.fPnMax / 1000; base.Mn = Mn / 1e5;
+    base.cortante = { Vu: Vu, Vcap: Vcap, Vana: Vana, Vc: Vc, Vs: Vs, VsMax: VsM, d: d, bw: bw,
+                      ramas: ramas, Av: Av, sReq: sReq, sMax: sMax, por: porV };
+    base.estribos = { Lo: conf.Lo, so: redAbajo(sDentro, 1), sFuera: redAbajo(sFuera, 1),
+                      art: conf.art, artFuera: conf.artFuera, ash: estAsh, zuncho: estZun };
+    base.esbeltez = esb;
+    base.estado = estado;
+    return base;
+  }
+
+  /* el mayor Mn de la sección en el rango de cargas axiales de las combinaciones (21.4.3 y 21.6.5.1) */
+  function momentoMaximo(sup, dem) {
+    var Pmin = 1e18, Pmax = -1e18, M = 0;
+    dem.forEach(function (d) { Pmin = Math.min(Pmin, d.Pu); Pmax = Math.max(Pmax, d.Pu); });
+    sup.curvas.forEach(function (cur) {
+      cur.pts.forEach(function (p) {
+        if (p.Pn >= Pmin - 1e-9 && p.Pn <= Pmax + 1e-9)
+          M = Math.max(M, Math.sqrt(p.M2 * p.M2 + p.M3 * p.M3));
+      });
+    });
+    if (!(M > 0)) sup.curvas.forEach(function (cur) {
+      cur.pts.forEach(function (p) { M = Math.max(M, Math.sqrt(p.M2 * p.M2 + p.M3 * p.M3)); });
+    });
+    return M;
+  }
+
+  function ramasDe(sec, dir) {
+    if (sec.forma === "circular") return 2;
+    /* el estribo exterior da dos ramas; cada barra intermedia de esa cara, una grapa más */
+    var n = dir === "b" ? sec.nb : sec.nh;
+    return 2 + Math.max(0, n - 2);
+  }
+
+  /* EL ARMADO PROPUESTO: de menos a más, hasta que todas las combinaciones pasen y la
+     cuantía esté entre el 1 % y el 6 %. */
+  function propone(o) {
+    var intentos = [], i, j, k;
+    var bars = o.barras.slice();
+    if (o.circular) {
+      for (k = 0; k < bars.length; k++)
+        for (i = 6; i <= 20; i += 2) intentos.push({ n: i, bar: bars[k] });
+    } else {
+      for (k = 0; k < bars.length; k++)
+        for (i = 2; i <= 6; i++)
+          for (j = 2; j <= 6; j++) intentos.push({ nb: i, nh: j, bar: bars[k] });
+    }
+    var mejor = null;
+    for (i = 0; i < intentos.length; i++) {
+      var t = intentos[i];
+      var sec = seccion({ forma: o.circular ? "circular" : "rectangular", b: o.b, h: o.h, D: o.D,
+                          fc: o.fc, fy: o.fy, rec: o.rec, de: o.de, espiral: !!o.espiral,
+                          bar: t.bar, nb: t.nb, nh: t.nh, n: t.n });
+      if (sec.rho < 0.01 || sec.rho > 0.06) continue;
+      var sup = superficie(sec), peor = 0;
+      for (j = 0; j < o.dem.length; j++) {
+        var v = verifica(sup, o.dem[j].Pu, o.dem[j].M2, o.dem[j].M3);
+        if (v.ratio > peor) peor = v.ratio;
+      }
+      if (!mejor || peor < mejor.peor) mejor = { sec: sec, sup: sup, peor: peor, cumple: peor <= 1 };
+      if (peor <= 1) return { sec: sec, sup: sup, peor: peor, cumple: true };
+    }
+    if (mejor) return mejor;
+    var s0 = seccion({ forma: o.circular ? "circular" : "rectangular", b: o.b, h: o.h, D: o.D,
+                       fc: o.fc, fy: o.fy, rec: o.rec, de: o.de, bar: bars[0], nb: 3, nh: 3, n: 8 });
+    return { sec: s0, sup: superficie(s0), peor: 99, cumple: false };
+  }
+
+  function resumen(lista) {
+    var r = { ok: 0, revisar: 0, "no cumple": 0, falta: 0, total: 0 };
+    (lista || []).forEach(function (x) { r[x.estado] = (r[x.estado] || 0) + 1; r.total++; });
+    return r;
+  }
+
+  return { ART: ART, PHI_V: PHI_V, GRAV: GRAV, MPR: MPR,
+           rejilla: rejilla, circulares: circulares, seccion: seccion, contorno: contorno,
+           recorta: recorta, areaCentro: areaCentro, punto: punto, po: po, pnMax: pnMax,
+           pBalanceado: pBalanceado, superficie: superficie, enCurva: enCurva, verifica: verifica,
+           bresler: bresler, pnConE: pnConE, esbeltez: esbeltez, vc: vc, vsMax: vsMax, confinamiento: confinamiento,
+           ash: ash, zuncho: zuncho, ramasDe: ramasDe, propone: propone, momentoMaximo: momentoMaximo,
+           disenar: disenar, resumen: resumen };
+});
+</script>
+<script>
 /* ===== tablas_bat.js (inlinado) ===== */
 /* =====================================================================
    tablas_bat.js — LAS TABLAS DE RETICULA.bat [3], iguales en el complemento
@@ -8402,7 +9040,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v215 · 17-09-2026";
+  var BUILD="v218 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -8545,7 +9183,7 @@ var TT={script:performance.now()};
     verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"]],
     fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
-    diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["vigas","Vigas"]],
+    diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["vigas","Vigas"],["columnas","Columnas"]],
     hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
            ["resultados","Resultados y diseño"]]
   };
@@ -15820,6 +16458,122 @@ var TT={script:performance.now()};
       ejes:{leidos:FZ?FZ.ejesLeidos:null, girados:FZ?FZ.girados:[]}});
   }
   /* =====================================================================
+     D3 · EL DISEÑO DE LAS COLUMNAS.  La norma vive en oviedo/columnas.js;
+     aqui se le da cada columna de Fuerzas con el regimen del Cap. 21 -el mas
+     exigente de las dos direcciones, porque una columna es la misma en las
+     dos-, las barras y el recubrimiento de Criterios, y la luz libre del
+     entrepiso (la altura menos el peralte de la viga mas alta que llega).
+
+     La flexocompresion biaxial se comprueba con la superficie de interaccion
+     de la seccion real.  Contrastado con la plantilla de Mathcad de Victor:
+     -1,6 % en la rectangular y -3,6 % en la circular.
+     ===================================================================== */
+  var DCC={p:-1,v:null};
+  var ESTADO_COL={ok:["Cumple","dis-ok"],revisar:["Revisar","dis-luego"],"no cumple":["No cumple","dis-falta"],
+                  falta:["Sin datos","dis-na"]};
+
+  function disenoColumnas(){
+    if(DCC.p===PASADA)return DCC.v;
+    var r=resultadosEtabs(), K=criteriosDiseno(), FZ=null, ex=null,
+        out={lista:[], hay:!!(r&&!r.error&&r.R), alDia:!!(r&&r.alDia)};
+    if(out.hay){ try{ FZ=fuerzasEtabs(); }catch(e){} try{ ex=exportaEtabs(); }catch(e){} }
+    if(FZ&&ex&&typeof COLUMNAS!=="undefined"){
+      /* la luz libre de cada columna: la altura de su nivel menos la viga mas alta que llega a el */
+      var alt={}, viga={};
+      ex.niveles.forEach(function(L){
+        var hv=0;
+        (L.vigas||[]).forEach(function(v){ hv=Math.max(hv,+v.h||0); });
+        (L.columnas||[]).forEach(function(c){ alt[c.cod]=+L.h||0; viga[c.cod]=hv; });
+      });
+      /* una columna es la misma en las dos direcciones: manda el capitulo mas exigente */
+      var rx=(K.regimen&&K.regimen.x&&K.regimen.x.columnas)||"21.6",
+          ry=(K.regimen&&K.regimen.y&&K.regimen.y.columnas)||"21.6",
+          reg=(rx==="21.4"||ry==="21.4")?"21.4":"21.6";
+      out.regimen=reg;
+      out.lista=(FZ.columnas||[]).map(function(col){
+        var h=alt[col.cod]||2.8, hv=viga[col.cod]||0;
+        return COLUMNAS.disenar(col, K, {regimen:reg, ln:Math.max(1.2,h-hv), arriostrado:false});
+      });
+    }
+    out.resumen=(typeof COLUMNAS!=="undefined")?COLUMNAS.resumen(out.lista):null;
+    DCC={p:PASADA,v:out};
+    return out;
+  }
+
+  /* D3c · EL DIAGRAMA DE INTERACCION, dibujado desde la propia superficie: la curva
+     de la direccion que manda y, encima, cada combinacion como un punto.  Asi se ve
+     si una combinacion cae dentro y por cuanto. */
+  function figuraColumna(d){
+    if(!d||!d.superficie)return "";
+    function esc(t){return String(t==null?"":t).replace(/[<"&]/g,"")}
+    var W=300, H=230, mg=34, sup=d.superficie;
+    /* la curva en la direccion del momento de la peor combinacion */
+    var th=Math.atan2(Math.abs(d.peor?d.peor.M2:0), Math.abs(d.peor?d.peor.M3:1));
+    var mejor=sup.curvas[0], dif=9;
+    sup.curvas.forEach(function(c){
+      var e=COLUMNAS.enCurva(c, 0), a=Math.atan2(Math.abs(e.fM2),Math.abs(e.fM3)||1e-9);
+      var q=Math.abs(a-th);
+      if(q<dif){dif=q;mejor=c;}
+    });
+    var pts=mejor.pts.map(function(p){
+      return {M:Math.sqrt(p.fM2*p.fM2+p.fM3*p.fM3)/1e5, P:Math.min(p.fPn,sup.fPnMax)/1000};
+    }).filter(function(p){return isFinite(p.M)&&isFinite(p.P)});
+    var Mx=0, Py=0, Pmin=0;
+    pts.forEach(function(p){ Mx=Math.max(Mx,p.M); Py=Math.max(Py,p.P); Pmin=Math.min(Pmin,p.P); });
+    (d.combos||[]).forEach(function(c){
+      Mx=Math.max(Mx,Math.sqrt(c.M2*c.M2+c.M3*c.M3)); Py=Math.max(Py,c.Pu); Pmin=Math.min(Pmin,c.Pu);
+    });
+    Mx=Mx*1.1||1; Py=Py*1.1||1; Pmin=Math.min(Pmin*1.1,-0.05*Py);
+    function X(m){ return mg+(W-mg-8)*(m/Mx) }
+    function Y(p){ return H-mg-(H-mg-12)*((p-Pmin)/(Py-Pmin)) }
+    var linea=pts.map(function(p,i){ return (i?"L":"M")+X(p.M).toFixed(1)+" "+Y(p.P).toFixed(1) }).join(" ");
+    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig" role="img" aria-label="Diagrama de interacción de '+esc(d.cod)+'">'];
+    s.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="none"/>');
+    /* ejes */
+    s.push('<path d="M'+mg+' '+Y(Py)+' L'+mg+' '+(H-mg)+' L'+(W-8)+' '+(H-mg)+'" fill="none" stroke="var(--ink-3)" stroke-width="1"/>');
+    if(Pmin<0)s.push('<path d="M'+mg+' '+Y(0)+' L'+(W-8)+' '+Y(0)+'" fill="none" stroke="var(--ink-3)" stroke-width="0.6" stroke-dasharray="3 3"/>');
+    s.push('<text x="'+(W-8)+'" y="'+(H-mg+16)+'" text-anchor="end" class="dis-figt">φMn (t·m)</text>');
+    s.push('<text x="'+(mg-6)+'" y="'+Y(Py)+'" text-anchor="end" class="dis-figt">'+Py.toFixed(0)+'</text>');
+    s.push('<text x="'+(mg-6)+'" y="'+(H-mg)+'" text-anchor="end" class="dis-figt">'+Pmin.toFixed(0)+'</text>');
+    s.push('<text x="'+(mg-26)+'" y="'+(H/2)+'" class="dis-figt" transform="rotate(-90 '+(mg-26)+' '+(H/2)+')" text-anchor="middle">φPn (t)</text>');
+    s.push('<text x="'+X(Mx)+'" y="'+(H-mg+16)+'" text-anchor="end" class="dis-figt">'+Mx.toFixed(1)+'</text>');
+    /* la curva y el tope de carga axial */
+    s.push('<path d="'+linea+'" fill="none" stroke="var(--acc)" stroke-width="1.8"/>');
+    s.push('<path d="M'+mg+' '+Y(sup.fPnMax/1000)+' L'+(W-8)+' '+Y(sup.fPnMax/1000)+'" fill="none" stroke="var(--acc)" stroke-width="0.8" stroke-dasharray="4 3"/>');
+    s.push('<text x="'+(W-10)+'" y="'+(Y(sup.fPnMax/1000)-4)+'" text-anchor="end" class="dis-figt">φPn máx</text>');
+    /* las combinaciones */
+    (d.combos||[]).forEach(function(c){
+      var m=Math.sqrt(c.M2*c.M2+c.M3*c.M3), col=c.ratio>1?"var(--trib)":"var(--ink-2)";
+      s.push('<circle cx="'+X(m).toFixed(1)+'" cy="'+Y(c.Pu).toFixed(1)+'" r="'+(c.ratio>1?3.2:2.4)+'" fill="'+col+'">'+
+             '<title>'+esc(c.corto+" "+c.paso+" · "+c.donde+" · Pu "+c.Pu.toFixed(1)+" t · M "+m.toFixed(2)+" t·m · D/C "+c.ratio.toFixed(2))+'</title></circle>');
+    });
+    s.push('</svg>');
+    return s.join("");
+  }
+
+  /* la seccion con sus barras y su estribo, a escala */
+  function figuraSeccionCol(d){
+    if(!d||!d.sec)return "";
+    var sec=d.sec, L=110, esc=L/Math.max(sec.b||sec.D,sec.h||sec.D,1), W=L+30, H=L+30, cx=W/2, cy=H/2;
+    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig" role="img" aria-label="Sección de la columna">'];
+    if(sec.forma==="circular"){
+      s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(sec.D/2*esc)+'" fill="var(--bg-2)" stroke="var(--ink-2)" stroke-width="1.2"/>');
+      s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+((sec.D/2-sec.rec)*esc)+'" fill="none" stroke="var(--acc)" stroke-width="0.9"/>');
+    }else{
+      s.push('<rect x="'+(cx-sec.b/2*esc)+'" y="'+(cy-sec.h/2*esc)+'" width="'+(sec.b*esc)+'" height="'+(sec.h*esc)+
+             '" fill="var(--bg-2)" stroke="var(--ink-2)" stroke-width="1.2"/>');
+      s.push('<rect x="'+(cx-(sec.b/2-sec.rec)*esc)+'" y="'+(cy-(sec.h/2-sec.rec)*esc)+'" width="'+((sec.b-2*sec.rec)*esc)+
+             '" height="'+((sec.h-2*sec.rec)*esc)+'" fill="none" stroke="var(--acc)" stroke-width="0.9" rx="2"/>');
+    }
+    sec.barras.forEach(function(b){
+      s.push('<circle cx="'+(cx+b.x*esc).toFixed(1)+'" cy="'+(cy-b.y*esc).toFixed(1)+'" r="'+Math.max(1.6,b.db*esc/2).toFixed(1)+
+             '" fill="var(--ink)"/>');
+    });
+    s.push('</svg>');
+    return s.join("");
+  }
+
+  /* =====================================================================
      D2 · EL DISEÑO DE LAS VIGAS.  La norma vive en oviedo/vigas.js; aqui se
      le da cada viga de Fuerzas con el regimen del Cap. 21 de la direccion en
      la que corre, las barras y el recubrimiento de Criterios y el armado que
@@ -15853,6 +16607,92 @@ var TT={script:performance.now()};
     DVC.p=PASADA; DVC.v=out;
     return out;
   }
+  /* D3c · LA PANTALLA DE COLUMNAS: la tabla de todas y, debajo, la ficha de la que elijas
+     con su diagrama de interacción, su sección y sus estribos. */
+  function tarjetaDisenoColumnas(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function f(x,n){return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",",")}
+    var r=resultadosEtabs(), h='<section class="pbox sis-ancha"><h3>Columnas · diseño con la E.060</h3>'+estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
+    var DC=disenoColumnas();
+    if(!DC.lista.length)
+      return h+'<p class="aviso">Los resultados no traen fuerzas de columnas: vuelve a traerlos con RETICULA.bat [2].</p></section>';
+    var niveles=[];
+    DC.lista.forEach(function(d){ if(d.nivel&&niveles.indexOf(d.nivel)<0)niveles.push(d.nivel); });
+    var nivel=(S.disNivelC&&niveles.indexOf(S.disNivelC)>=0)?S.disNivelC:"";
+    var cs=DC.lista.filter(function(d){return !nivel||d.nivel===nivel});
+    var R=DC.resumen||{};
+    h+='<p class="nota" style="margin:0 0 8px">Flexocompresión biaxial con la superficie de interacción de cada '+
+       'sección · Cap. 21 aplicado: <b>'+esc(DC.regimen||"21.6")+'</b> · '+
+       (R.ok||0)+' cumplen · '+(R.revisar||0)+' por revisar · '+(R["no cumple"]||0)+' no cumplen.</p>';
+    h+='<div class="sis-ct fz-filtro"><label class="sis-sel"><span>Nivel</span><select id="disNivelC">'+
+       '<option value="">Todos</option>'+
+       niveles.map(function(n){return '<option value="'+esc(n)+'"'+(n===nivel?" selected":"")+'>'+esc(n)+'</option>'}).join("")+
+       '</select></label></div>';
+    h+='<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Columna</th><th>Nivel</th><th>Sección</th>'+
+       '<th>Armado</th><th>ρ (%)</th><th>D/C</th><th>Combinación</th><th>Estribos</th><th>Estado</th></tr></thead><tbody>';
+    cs.forEach(function(d){
+      var e=ESTADO_COL[d.estado]||[d.estado,""];
+      var sec=(d.forma==="circular")?("D "+f(d.D,0)):(f(d.b,0)+"×"+f(d.h,0));
+      h+='<tr class="dis-fila'+(S.disCol===d.cod?" sel":"")+'" data-col="'+esc(d.cod)+'">'+
+         '<td><button type="button" class="mini" data-col="'+esc(d.cod)+'">'+esc(d.cod)+'</button></td>'+
+         '<td class="sis-n">'+esc(d.nivel||"")+'</td><td class="sis-n">'+sec+'</td>'+
+         '<td class="sis-n">'+(d.armado?esc(d.armado.barras+"φ"+d.armado.bar):"—")+'</td>'+
+         '<td class="sis-n">'+f(d.rho*100)+'</td>'+
+         '<td class="sis-n'+((d.peor&&d.peor.ratio>1)?" fz-mal":"")+'">'+f(d.peor?d.peor.ratio:null)+'</td>'+
+         '<td class="sis-n">'+esc(d.peor?(d.peor.corto+" "+d.peor.paso+" · "+d.peor.donde):"—")+'</td>'+
+         '<td class="sis-n">'+(d.estribos?('φ'+esc(d.armado.estribo)+' @'+f(d.estribos.so,0)+'/'+f(d.estribos.sFuera,0)):"—")+'</td>'+
+         '<td><span class="dis-est '+e[1]+'">'+e[0]+'</span></td></tr>';
+    });
+    h+='</tbody></table></div>';
+    /* la ficha de la columna elegida */
+    var sel=cs.filter(function(d){return d.cod===S.disCol})[0]||cs[0];
+    if(sel&&sel.superficie){
+      h+='<div class="dis-ficha"><h4>'+esc(sel.cod)+' · '+
+         ((sel.forma==="circular")?("D "+f(sel.D,0)):(f(sel.b,0)+"×"+f(sel.h,0)))+' cm</h4>';
+      h+='<div class="dis-figs">'+figuraColumna(sel)+figuraSeccionCol(sel)+'</div>';
+      h+='<table class="sis-t dis-datos"><tbody>'+
+         '<tr><td>Armado propuesto</td><td class="sis-n">'+esc(sel.armado.barras+"φ"+sel.armado.bar)+
+             ' · Ast '+f(sel.Ast)+' cm² · ρ '+f(sel.rho*100)+' %</td></tr>'+
+         '<tr><td>Capacidad</td><td class="sis-n">Po '+f(sel.Po,1)+' t · φPn máx '+f(sel.fPnMax,1)+
+             ' t · Mn máx '+f(sel.Mn)+' t·m</td></tr>'+
+         '<tr><td>Peor combinación</td><td class="sis-n">'+esc(sel.peor.corto+" "+sel.peor.paso+" ("+sel.peor.donde+")")+
+             ' · Pu '+f(sel.peor.Pu)+' t · M2 '+f(sel.peor.M2)+' · M3 '+f(sel.peor.M3)+' t·m → D/C <b>'+
+             f(sel.peor.ratio)+'</b>'+(sel.peor.bresler!=null?' (Bresler '+f(sel.peor.bresler)+')':'')+'</td></tr>'+
+         '<tr><td>Cortante</td><td class="sis-n">Vu '+f(sel.cortante.Vu)+' t ('+esc(sel.cortante.por)+') · Vc '+
+             f(sel.cortante.Vc)+' t · Vs '+f(sel.cortante.Vs)+' t</td></tr>'+
+         '<tr><td>Estribos</td><td class="sis-n">φ'+esc(sel.armado.estribo)+' · Lo '+f(sel.estribos.Lo,0)+
+             ' cm ('+esc(COLUMNAS.ART.lo216)+') · dentro @'+f(sel.estribos.so,0)+' cm ('+esc(sel.estribos.art)+
+             ') · fuera @'+f(sel.estribos.sFuera,0)+' cm ('+esc(sel.estribos.artFuera)+')</td></tr>';
+      if(sel.estribos.ash)
+        h+='<tr><td>Confinamiento</td><td class="sis-n">Ash necesaria '+f(sel.estribos.ash.b.req)+' cm² en b y '+
+           f(sel.estribos.ash.h.req)+' cm² en h; puesta '+f(sel.estribos.ash.AshB)+' / '+f(sel.estribos.ash.AshH)+
+           ' cm² ('+esc(COLUMNAS.ART.ash)+')</td></tr>';
+      if(sel.estribos.zuncho)
+        h+='<tr><td>Zuncho</td><td class="sis-n">ρs mínima '+f(sel.estribos.zuncho.rho*100)+
+           ' % → paso ≤ '+f(sel.estribos.zuncho.paso,1)+' cm ('+esc(sel.estribos.zuncho.art)+')</td></tr>';
+      if(sel.esbeltez)
+        h+='<tr><td>Esbeltez</td><td class="sis-n">k·lu/r = '+f(sel.esbeltez.lambda,0)+' · límite '+
+           f(sel.esbeltez.limite,0)+' ('+esc(sel.esbeltez.art)+') → '+
+           (sel.esbeltez.despreciable?"se puede despreciar":"<b>hay que amplificar los momentos</b>")+'</td></tr>';
+      h+='</tbody></table>';
+      if(sel.avisos&&sel.avisos.length)
+        h+='<ul class="dis-avisos">'+sel.avisos.map(function(a){return '<li>'+esc(a)+'</li>'}).join("")+'</ul>';
+      h+='<details class="dis-todas"><summary>Todas las combinaciones ('+sel.combos.length+')</summary>'+
+         '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Combinación</th><th>Cara</th><th>Pu (t)</th>'+
+         '<th>M2 (t·m)</th><th>M3 (t·m)</th><th>φMn (t·m)</th><th>D/C</th></tr></thead><tbody>'+
+         sel.combos.slice().sort(function(a,b){return b.ratio-a.ratio}).map(function(c){
+           return '<tr><td>'+esc(c.corto+" "+c.paso)+'</td><td class="sis-n">'+esc(c.donde)+'</td>'+
+             '<td class="sis-n">'+f(c.Pu)+'</td><td class="sis-n">'+f(c.M2)+'</td><td class="sis-n">'+f(c.M3)+'</td>'+
+             '<td class="sis-n">'+f(c.fM)+'</td><td class="sis-n'+(c.ratio>1?" fz-mal":"")+'">'+f(c.ratio)+'</td></tr>';
+         }).join("")+'</tbody></table></div></details></div>';
+    }
+    h+='<p class="nota">El armado lo propone el complemento (barras iguales en el perímetro, cuantía entre el 1 % y el '+
+       '6 %). La biaxial se comprueba con la superficie de interacción de la sección; Bresler se enseña al lado solo '+
+       'como contraste.</p>';
+    return h+'</section>';
+  }
+
   function tarjetaDisenoVigas(){
     function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
     function f(x,n){return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",",")}
@@ -16138,6 +16978,8 @@ var TT={script:performance.now()};
         '(Art. 7.10.5.1); el de confinamiento no baja de 8 mm (Art. 21.1).</p></section>';
     }else if(sub==="vigas"){
       h+=tarjetaDisenoVigas();
+    }else if(sub==="columnas"){
+      h+=tarjetaDisenoColumnas();
     }else{
       var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,revisar:0,luego:0},
           EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],revisar:["Revisar","dis-falta"],
@@ -16182,6 +17024,13 @@ var TT={script:performance.now()};
     al("#dVuAd",function(){ disenoProy().vuAd=!!this.checked; guardar(); render(); });
     /* D2 · Vigas: el nivel, la viga que se mira y su armado */
     al("#disNivel",function(){ S.disNivel=this.value; render(); });
+    /* D3 · Columnas: el nivel y la columna cuya ficha se enseña */
+    al("#disNivelC",function(){ S.disNivelC=this.value; render(); });
+    try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis tr[data-col]"),function(tr){
+      function toca(){ S.disCol=tr.dataset.col; render(); }
+      tr.onclick=toca;
+      tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toca(); } };
+    }); }catch(e){}
     try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis tr[data-viga]"),function(tr){
       function toca(){ S.disViga=(S.disViga===tr.dataset.viga)?null:tr.dataset.viga; render(); }
       tr.onclick=toca;
@@ -19007,7 +19856,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
