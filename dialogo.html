@@ -1423,7 +1423,10 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       },
       medidas: function (f, P) {
         var d = ladosZapata(f, P);
-        return [(+f[5]) * 100, (+f[6]) * 100, d.B * 100, d.L * 100, d.H * 100];
+        var a = [(+f[5]) * 100, (+f[6]) * 100, d.B * 100, d.L * 100, d.H * 100];
+        /* la corrida lleva encima un ELEMENTO (placa o fila de columnas), no una columna: el dibujo lo dice */
+        if (/^Corrida/.test(f[1])) a.push("elemento");
+        return a;
       }
     }
   };
@@ -11790,7 +11793,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v314 · 18-09-2026";
+  var BUILD="v316 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}

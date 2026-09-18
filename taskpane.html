@@ -2880,7 +2880,10 @@
       },
       medidas: function (f, P) {
         var d = ladosZapata(f, P);
-        return [(+f[5]) * 100, (+f[6]) * 100, d.B * 100, d.L * 100, d.H * 100];
+        var a = [(+f[5]) * 100, (+f[6]) * 100, d.B * 100, d.L * 100, d.H * 100];
+        /* la corrida lleva encima un ELEMENTO (placa o fila de columnas), no una columna: el dibujo lo dice */
+        if (/^Corrida/.test(f[1])) a.push("elemento");
+        return a;
       }
     }
   };
@@ -3439,7 +3442,10 @@
      H = (L − h columna) / divisor, y sin la columna ese número no se
      entiende.
      ------------------------------------------------------------------ */
-  function zapata(bColCm, hColCm, BCm, LCm, HCm, caja) {
+  function zapata(bColCm, hColCm, BCm, LCm, HCm, a6, a7) {
+    /* un sexto argumento opcional -"elemento"- dice que lo de encima es una placa o una fila de
+       columnas (zapata corrida); la caja siempre llega la ultima */
+    var caja = (a7 !== undefined) ? a7 : a6, esElemento = (a7 !== undefined && a6 === "elemento");
     var bc = bColCm > 0 ? bColCm : 30, hc = hColCm > 0 ? hColCm : 30;
     var B = BCm > 0 ? BCm : 150, L = LCm > 0 ? LCm : 150, H = HCm > 0 ? HCm : 50;
     if (B < 60) B = 60;
@@ -3501,9 +3507,10 @@
        Aqui arriba no cabe: hay 34 pt para el titulo de la vista y nada mas.
        El dato no se pierde, se dice en el pie. */
     f.push(texto(x0, yP + Math.max(B * s, muñon * s + H * s) + 34,
-                 "Columna " + nm(bc) + " × " + nm(hc) + " cm.   Área en planta "
-                 + "B × L = " + (B * L / 10000).toFixed(3)
-                 + " m². El terreno se apoya en la cara inferior."));
+                 (esElemento ? "Placa o columnas " : "Columna ") + nm(bc) + " × " + nm(hc) + " cm.   Área en planta "
+                 + "B × L = " + (B * L / 10000).toFixed(3) + " m²."
+                 /* en la corrida el pie es mas corto: el largo del elemento ya ocupa la caja */
+                 + (esElemento ? "" : " El terreno se apoya en la cara inferior.")));
     return f;
   }
   /* ------------------------------------------------------------------
@@ -5556,12 +5563,14 @@
     r = h.seccion(r, "1. CRITERIOS");
     r = h.subtitulo(r, "1.1   Factor de amplificación sísmica y divisor del peralte");
     r = h.tabla(r, [[3,4],[5,6],[7,8],[9,10]],
-      ["Tipo de zapata", "F sismo", "Divisor del peralte", "De qué columna sale"],
-      [["Centrada",  Z.Fsismo.centrada.toFixed(2),  Z.divisorPeralte.centrada,  "interior"],
-       ["Medianera", Z.Fsismo.medianera.toFixed(2), Z.divisorPeralte.medianera, "exterior (perimetral)"],
-       ["Esquinera", Z.Fsismo.esquinera.toFixed(2), Z.divisorPeralte.esquinera, "esquinera"],
+      ["Tipo de zapata", "F sismo", "Divisor del peralte", "Dónde va"],
+      [["Centrada",  Z.Fsismo.centrada.toFixed(2),  Z.divisorPeralte.centrada,  "lejos del lindero"],
+       ["Medianera", Z.Fsismo.medianera.toFixed(2), Z.divisorPeralte.medianera, "un lado en el lindero"],
+       ["Esquinera", Z.Fsismo.esquinera.toFixed(2), Z.divisorPeralte.esquinera, "dos lados en el lindero"],
        ["Combinada", Z.Fsismo.combinada.toFixed(2), Z.divisorPeralte.combinada,
-        "dos columnas vecinas que comparten zapata"]],
+        "dos columnas vecinas que comparten zapata"],
+       ["Corrida", Z.Fsismo.corrida.toFixed(2) + " (" + Z.Fsismo.medianera.toFixed(2) + " en el lindero)",
+        Z.divisorPeralte.corrida, "bajo una placa o una fila de columnas"]],
       null, null, { alinear: ["Left","Center","Center","Left"] });
     r = h.nota(r, "La esquinera usa divisor " + Z.divisorPeralte.esquinera
       + " y no " + Z.divisorPeralte.centrada + ": el formulario de la pág. 121 dice /"
@@ -5577,6 +5586,7 @@
       ["Zapata aislada", "B = √Az − (h − b)/2   ·   L = √Az + (h − b)/2"],
       ["Zapata medianera", "B = √(Az/2)   ·   L = 2 B"],
       ["Zapata combinada", "B = √Az − s/2   ·   L = √Az + s/2   (s = separación de ejes)"],
+      ["Zapata corrida", "L = h + X   ·   B = b + X   (h × b el elemento; X por tanteo hasta B × L ≥ Az)"],
       ["Peralte", "H = (L − h columna) / divisor;  en la combinada, del lado MENOR"],
       ["Redondeo", "lados y peralte, cada "
         + (Z.redondeoLado * 100).toFixed(0) + " cm hacia arriba"]
@@ -5716,9 +5726,10 @@
       + "en zapatas grandes el redondeo de "
       + (Z.redondeoLado * 100).toFixed(0) + " cm ya no lo tapa. Si dice REVISAR, sube "
       + "el lado mayor hasta que B × L llegue a Az.");
-    r = h.nota(r, "El tipo NO se elige: sale de dónde está la columna en la planta. "
-      + "Una columna interior lleva zapata centrada; una perimetral, medianera; una de "
-      + "esquina, esquinera. Y los pisos que carga son los " + P.niveles
+    r = h.nota(r, "El tipo NO se elige: sale de dónde está la zapata respecto al LINDERO, que es "
+      + "donde están las columnas de más afuera. Con un lado en el límite de propiedad es medianera; con "
+      + "dos, esquinera; lejos de él, centrada, aunque la columna sea exterior (junto a un ducto o un "
+      + "patio): es lo que dice el libro en la nota de la pág. 121. Y los pisos que carga son los " + P.niveles
       + " del edificio, no los de un nivel: la cimentación está debajo de todo.");
     var nComb = fs.filter(function (f) { return String(f[1]).toLowerCase() === "combinada"; }).length;
     r = h.nota(r, fs.length + " zapata(s) del nivel de cimentación"
@@ -7504,7 +7515,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v314 · 18-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v316 · 18-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
