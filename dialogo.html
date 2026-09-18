@@ -11790,7 +11790,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v313 · 18-09-2026";
+  var BUILD="v314 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -18239,7 +18239,14 @@ var TT={script:performance.now()};
     if(pac)return pac.dueña?predimZapataComb(pac):null;
     var sc=seccionCol(i,j,m,0);
     var d=medCol(i,j,m);
-    var sub=TIPO_ZAPATA[d.tipo]||"centrada";
+    /* EL TIPO DE ZAPATA SALE DEL LINDERO, no del tipo de la columna.  La columna junto a un ducto o un
+       patio es «exterior» para su area tributaria (tiene menos paños), pero su zapata NO esta en el limite
+       de propiedad y Oviedo es explicito (nota de la pag. 121): «cuando la zapata exterior no se encuentre
+       ubicada en limite de propiedad [...] se podra considerar como una zapata aislada».  Dos lados en el
+       lindero: esquinera; uno: medianera; ninguno: centrada.  Asi tambien el retiro que marques en Suelo
+       o la zapata que liberes en su ficha cambian el tipo, y con el su F sismo. */
+    var limZ=limiteDe(i,j,m), nLim=limZ?((limZ.x?1:0)+(limZ.y?1:0)):0;
+    var sub=(nLim===2)?"esquinera":((nLim===1)?"medianera":"centrada");
     var q=CALCULO.zapata({subtipo:sub,niveles:S.niveles.length,area_trib:d.at,
                           categoria:S.categoria,sigma_s:sigmaDiseno(),
                           col_b:sc.b/100,col_h:sc.h/100});
