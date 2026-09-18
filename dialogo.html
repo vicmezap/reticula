@@ -158,6 +158,9 @@
   /* En Edificio y en 3D no hay herramientas ni inspector: la reticula se queda con una sola pista y el
      contenido usa todo el ancho.  Sin esto, el bloque caia en la pista de 132 px de las herramientas. */
   .work.ancho{grid-template-columns:minmax(0,1fr)}
+  /* PLANTA DE CIMENTACION: fuera todo lo que dibuja o edita el piso; la Zapata solo aqui */
+  .work.cimentacion .noCim{display:none!important}
+  .work:not(.cimentacion) .soloCim{display:none!important}
   @media(max-width:980px){.work{grid-template-columns:1fr}}
   /* Hojas Excel no es el lienzo: no lleva herramientas ni inspector.  Sin
      esto la reticula conserva sus pistas de 132px y 292px, la galeria cae
@@ -838,19 +841,19 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <span class="lbl" style="padding:2px 8px 6px">Dibujar</span>
       <button class="tool" data-tool="sel" aria-pressed="true"><span class="swatch" style="background:var(--sheet)"></span>
         <span>Selección<small>ver medidas</small></span></button>
-      <button class="tool" data-tool="col" aria-pressed="false"><span class="swatch" style="background:var(--col)"></span>
+      <button class="tool noCim" data-tool="col" aria-pressed="false"><span class="swatch" style="background:var(--col)"></span>
         <span>Columna<small>clic o arrastra</small></span></button>
       <div class="sub" id="subCol" hidden role="group" aria-label="Forma de columna">
         <button class="sopt" data-col="rect" aria-pressed="true"><span class="sdot" style="background:var(--col)"></span>Rectangular</button>
         <button class="sopt" data-col="circular" aria-pressed="false"><span class="sdot" style="background:var(--col);border-radius:50%"></span>Circular</button>
       </div>
-      <button class="tool" data-tool="viga" aria-pressed="false"><span class="swatch" id="swViga" style="background:var(--viga)"></span>
+      <button class="tool noCim" data-tool="viga" aria-pressed="false"><span class="swatch" id="swViga" style="background:var(--viga)"></span>
         <span>Viga<small>clic o arrastra</small></span></button>
       <div class="sub" id="subViga" hidden role="group" aria-label="Tipo de viga">
         <button class="sopt" data-viga="principal" aria-pressed="true"><span class="sdot" style="background:var(--viga)"></span>Principal</button>
         <button class="sopt" data-viga="chata" aria-pressed="false"><span class="sdot" style="background:var(--chata)"></span>Chata</button>
       </div>
-      <button class="tool" data-tool="losa" aria-pressed="false"><span class="swatch" id="swLosa" style="background:var(--alig)"></span>
+      <button class="tool noCim" data-tool="losa" aria-pressed="false"><span class="swatch" id="swLosa" style="background:var(--alig)"></span>
         <span>Losa<small>clic o arrastra</small></span></button>
       <div class="sub" id="subLosa" hidden role="group" aria-label="Tipo de losa">
         <button class="sopt" data-losa="aligerada" aria-pressed="true"><span class="sdot" style="background:var(--alig)"></span>Aligerada</button>
@@ -859,15 +862,15 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="sopt" data-losa="escalera" aria-pressed="false"><span class="sdot" style="background:var(--esc)"></span>Escalera</button>
         <button class="sopt" data-losa="vacio" aria-pressed="false"><span class="sdot" style="background:var(--sheet)"></span>Vacío (quitar)</button>
       </div>
-      <button class="tool" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
+      <button class="tool noCim" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
         <span>Placa<small>clic o arrastra</small></span></button>
-      <button class="tool" data-tool="unir" aria-pressed="false"><span class="swatch" style="background:var(--sheet);border-style:dashed"></span>
+      <button class="tool noCim" data-tool="unir" aria-pressed="false"><span class="swatch" style="background:var(--sheet);border-style:dashed"></span>
         <span>Unir / separar<small>losas o vigas seguidas</small></span></button>
       <div class="sub" id="subUnir" hidden role="group" aria-label="Unir o separar">
         <button class="sopt" data-unir="unir" aria-pressed="true"><span class="sdot" style="background:var(--sheet);border:1px dashed var(--ink-3)"></span>Unir (encadena)</button>
         <button class="sopt" data-unir="separar" aria-pressed="false"><span class="sdot" style="background:var(--sheet)"></span>Separar</button>
       </div>
-      <button class="tool" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
+      <button class="tool soloCim" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
         <span>Zapata<small>bajo columna o placa</small></span></button>
       <div class="sub" id="subZapata" hidden role="group" aria-label="Zapatas">
         <button class="sopt" id="zapTodas">En todas las columnas</button>
@@ -880,16 +883,16 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="undo" title="Ctrl+Z">↶</button>
         <button class="btn" id="redo" title="Ctrl+Y">↷</button>
       </div>
-      <button class="btn" id="limpiar" style="margin:4px 2px 0"
+      <button class="btn noCim" id="limpiar" style="margin:4px 2px 0"
         title="Deja el nivel en blanco: quita columnas, vigas, losas, placas y zapatas">Limpiar</button>
-      <span class="lbl" style="padding:8px 8px 4px">Plano de fondo</span>
+      <span class="lbl noCim" style="padding:8px 8px 4px">Plano de fondo</span>
       <input type="file" id="calcoFile" accept=".pdf,image/*,.json" hidden>
-      <button class="btn" id="calcoCargar" style="margin:0 2px"
+      <button class="btn noCim" id="calcoCargar" style="margin:0 2px"
         title="Un PDF, una imagen o el plano que deja AUTOCAD.bat en la carpeta autocad">Traer plano…</button>
       <input type="file" id="ejesCadFile" accept=".json" hidden>
-      <button class="btn" id="ejesCad" style="margin:4px 2px 0"
+      <button class="btn noCim" id="ejesCad" style="margin:4px 2px 0"
         title="El archivo que deja EJES AUTOCAD.bat: los ejes con su nombre de AutoCAD, sus luces exactas y los ejes prima">Traer ejes de AutoCAD…</button>
-      <div id="calcoCtl" hidden>
+      <div id="calcoCtl" class="noCim" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
           title="Clic en el eje A del dibujo (u otro con nombre): queda encima de tu eje con ese nombre. Solo corre el plano en X">Anclar en A-A</button>
@@ -919,11 +922,11 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="calcoQuitar" style="margin:4px 2px 0">Quitar plano</button>
         <p class="nota" id="calcoInfo" style="padding:0 2px"></p>
       </div>
-      <div class="rule" style="margin:8px 2px"></div>
-      <span class="lbl" style="padding:8px 8px 4px">Plantas tipo</span>
-      <button class="btn" id="pR" style="margin:0 2px">Rectangular</button>
-      <button class="btn" id="pL" style="margin:4px 2px 0">En L</button>
-      <button class="btn" id="pU" style="margin:4px 2px 0">Con patio</button>
+      <div class="rule noCim" style="margin:8px 2px"></div>
+      <span class="lbl noCim" style="padding:8px 8px 4px">Plantas tipo</span>
+      <button class="btn noCim" id="pR" style="margin:0 2px">Rectangular</button>
+      <button class="btn noCim" id="pL" style="margin:4px 2px 0">En L</button>
+      <button class="btn noCim" id="pU" style="margin:4px 2px 0">Con patio</button>
     </div>
 
     <div class="tools" id="toolsUso" hidden>
@@ -1004,8 +1007,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     <aside class="insp" id="inspector">
       <h2 id="inspTitle">Elemento</h2>
       <div id="inspBody"><p class="empty">Selecciona un elemento de la planta.</p></div>
-      <div class="rule"></div>
-      <div class="ejes-acc">
+      <div class="rule noCim"></div>
+      <div class="ejes-acc noCim">
         <button class="btn" id="ejesPonEje"
           title="Clic sobre la planta: el eje se pega al centro de la columna, a la viga, a la línea o al eje del plano. Shift+clic: principal. Esc: terminar">Crear eje con clic</button>
         <button class="btn" id="ejesPonEjeIncl"
@@ -1015,11 +1018,11 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="btn" id="ejesAdopta" hidden
           title="Compara los ejes del AutoCAD de fondo con los del modelo y los adopta, eje por eje">Adoptar ejes del plano</button>
       </div>
-      <div id="ejesPisos"></div>
-      <h2>Ejes ↔</h2>
-      <div class="ejes" id="ejesX"></div>
-      <h2>Ejes ↕</h2>
-      <div class="ejes" id="ejesY"></div>
+      <div id="ejesPisos" class="noCim"></div>
+      <h2 class="noCim">Ejes ↔</h2>
+      <div class="ejes noCim" id="ejesX"></div>
+      <h2 class="noCim">Ejes ↕</h2>
+      <div class="ejes noCim" id="ejesY"></div>
     </aside>
   </div>
 
@@ -1043,8 +1046,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           <input type="checkbox" id="todos"> Todos los niveles</label>
         <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
           <input type="checkbox" id="verDims" checked> Ver dimensiones</label>
-        <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)"
-               title="Solo en el nivel de cimentación">
+        <label class="lbl" hidden style="display:flex;align-items:center;gap:6px;color:var(--ink-2)"
+               title="La cimentación tiene su propia planta: Nivel › Cimentación">
           <input type="checkbox" id="verCim" checked> Ver cimentación</label>
         <button class="btn pri" id="btnCheck">Revisar modelo</button>
       </div>
@@ -12118,7 +12121,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v336 · 18-09-2026";
+  var BUILD="v338 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -14724,6 +14727,8 @@ var TT={script:performance.now()};
     var DIMS=S.verDims||S.modo==="decisiones",
         FV=(S.modo==="decisiones")?(S.verDeci||{}):null;
     function ve(t){return !FV||FV[t]!==false}
+    /* PLANTA DE CIMENTACION: ni losas ni vigas; las placas tenues (se pinchan para la corrida bajo placa) */
+    var CIM=enCim();
     var s=$("#plano");while(s.firstChild)s.removeChild(s.firstChild);
     /* El lienzo tiene que caber la planta REAL: con el lote sesgado el
        borde largo puede pasarse del de referencia y quedaria cortado.
@@ -14797,7 +14802,7 @@ var TT={script:performance.now()};
 
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
-      if(o&&ve("losa")){
+      if(o&&ve("losa")&&!CIM){
         var tp=TIPOS[o.tipo||"aligerada"];
         /* El paño es un CUADRILATERO, no un rectangulo: con la planta
            sesgada sus cuatro esquinas no forman angulos rectos.  Se dibuja
@@ -14841,7 +14846,7 @@ var TT={script:performance.now()};
       /* La zona de clic sigue al paño.  Un rectangulo recto sobre una
          planta sesgada deja fuera una punta del paño y se mete en el de al
          lado: pinchabas uno y se seleccionaba el vecino. */
-      if(ve("losa")){
+      if(ve("losa")&&!CIM){
         var hit=el("polygon",{points:pts(encogeLosa(q4p(i,j),7)),"class":"hit"});
         hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
       }
@@ -14915,7 +14920,15 @@ var TT={script:performance.now()};
                     :(S.sel.i===i&&S.sel.j>=tv.desde&&S.sel.j<tv.hasta);
       if(m.placas[k]&&ve("placa")){          /* la placa va debajo y mas gruesa: es el muro */
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--placa)",
-          "stroke-width":9,opacity:sl?1:.9,"stroke-linecap":"butt"}));
+          "stroke-width":9,opacity:CIM?.3:(sl?1:.9),"stroke-linecap":"butt"}));
+      }
+      if(CIM){
+        /* en Cimentacion solo la placa se pincha: es donde va la corrida bajo placa */
+        if(m.placas[k]){
+          var hp=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":anchoFranja(o,i,j),"class":"hit"});
+          hp.dataset.t="viga";hp.dataset.o=o;hp.dataset.i=i;hp.dataset.j=j;g.appendChild(hp);
+        }
+        return;
       }
       if(m.vigas[k]&&ve("viga")){
         var ch=tipoViga(m.vigas[k])==="chata";
@@ -14952,7 +14965,8 @@ var TT={script:performance.now()};
     /* La cimentacion va DEBAJO de todo lo demas: se dibuja antes.  Solo en
        el nivel 1, que es donde estan las zapatas, y a escala real, que es lo
        que permite ver si dos se pisan. */
-    var verZap=(S.modo==="decisiones")?ve("zapata"):(S.verCim||S.tool==="zapata");
+    /* en el modelador la cimentacion se ve SOLO en su planta; en los pisos ya no (Victor, 18-09-2026) */
+    var verZap=(S.modo==="decisiones")?ve("zapata"):CIM;
     if(verZap&&S.act===0){
       var zs=zapatasDelNivel(), sol=solapesZapata(zs), pisadas={};
       sol.forEach(function(x){ pisadas[x.a.cod]=1; pisadas[x.b.cod]=1; });
@@ -15012,13 +15026,14 @@ var TT={script:performance.now()};
         txt(g,X(i,j),Y(j,i)-11,
             pc2.forma==="circular"?("Ø"+pc2.D):(pc2.b+"×"+pc2.h),
             (pc2.propia&&!pc2.cumple)?"var(--no)":"var(--acc-ink)",9.5);
-      if(!FV||(m.cols[key(i,j)]&&(ve("col")||(ve("zapata")&&S.act===0&&m.zapatas&&m.zapatas[key(i,j)])))){
+      /* en Cimentacion solo se pincha donde hay columna: un cruce vacio no lleva zapata */
+      if(CIM?!!m.cols[key(i,j)]:(!FV||(m.cols[key(i,j)]&&(ve("col")||(ve("zapata")&&S.act===0&&m.zapatas&&m.zapatas[key(i,j)]))))){
         var hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:radioNudo(i,j),"class":"hit"});
         hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
       }
     }
 
-    var q=S.sel;
+    var q=CIM?null:S.sel;          /* en Cimentacion no se pinta la zona tributaria: es cosa de los pisos */
     if(q&&q.t==="col"&&m.cols[key(q.i,q.j)]){
       /* =================================================================
          LA ZONA TRIBUTARIA DE UNA COLUMNA
@@ -15208,6 +15223,12 @@ var TT={script:performance.now()};
       if(primero){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();}
       return;
     }
+    /* PLANTA DE CIMENTACION: la estructura del piso no se toca; se selecciona una columna para ver su zapata
+       o se trabaja con la herramienta Zapata.  Y la Zapata solo trabaja ahi. */
+    if(enCim()){
+      if(S.tool==="sel"){ if(primero&&d.t==="col"){S.sel={t:"col",i:i,j:j};render();} return; }
+      if(S.tool!=="zapata")return;
+    }else if(S.tool==="zapata")return;
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
     if(S.tool==="unir"){if(primero)unirClic(d,i,j,UNIR_SHIFT);return}
     if(S.tool==="col"&&d.t==="col"){
@@ -16980,7 +17001,7 @@ var TT={script:performance.now()};
     var eb=(e.target&&e.target.closest)?e.target.closest("[data-escbtn]"):null;
     if(eb){e.preventDefault();accionEscalera(eb.getAttribute("data-escbtn"));return;}
     /* LA CORRIDA DE UN TRAMO, en un gesto: herramienta Zapata, Shift y arrastrar de una columna a otra */
-    if(S.tool==="zapata"&&e.shiftKey&&S.act===0&&e.target.dataset&&e.target.dataset.t==="col"){
+    if(S.tool==="zapata"&&e.shiftKey&&enCim()&&e.target.dataset&&e.target.dataset.t==="col"){
       e.preventDefault();
       CORR_ARR={i:+e.target.dataset.i, j:+e.target.dataset.j};
       pintaGuiaCorr(CORR_ARR,xyModelo(e));
@@ -17252,9 +17273,8 @@ var TT={script:performance.now()};
     ver("#subLosa",t==="losa");
     ver("#subUnir",t==="unir");
     ver("#subZapata",t==="zapata");
-    /* la cimentacion solo se dibuja en el 1er piso: se salta alli sola en
-       vez de dejarte pintando sobre un nivel donde no pasa nada */
-    if(t==="zapata"&&S.act!==0){S.act=0;S.sel=null;}
+    /* la zapata se dibuja en la planta de Cimentacion: la herramienta lleva alli */
+    if(t==="zapata"&&!S.cim){S.cim=true;S.act=0;S.sel=null;if(S.vista==="plano")render();}
     $("#hint").textContent=PISTAS[t]||"";
   }
 
@@ -17266,6 +17286,9 @@ var TT={script:performance.now()};
      Estaba escrita dentro de render() como un «hojas||proy||deci||comp», y
      cualquiera que necesitara la misma pregunta -por ejemplo, si tiene
      sentido hablar de la planta- tenia que escribir su propia copia. */
+  /* ¿Se esta mirando la planta de CIMENTACION?  Es el nivel 0 del modelo, pero sin losas ni vigas: los ejes,
+     las columnas del 1er piso de referencia, las placas tenues y las zapatas. */
+  function enCim(){ return !!S.cim && S.vista==="plano" && S.modo==="modelo"; }
   function sinPlano(){
     return S.modo==="hojas" || S.modo==="autocad" || S.modo==="proyecto" ||
            S.modo==="comprobacion" || S.modo==="etabs" || S.modo==="sismo" ||
@@ -17459,21 +17482,33 @@ var TT={script:performance.now()};
   /* ---------- niveles ---------- */
   function pintaNiveles(){
     var c=$("#niveles");c.innerHTML='<span class="lbl">Nivel</span>';
+    /* LA PLANTA DE CIMENTACION, antes del 1er piso (Victor, 18-09-2026): su propia vista 2D con los ejes, las
+       columnas del 1er piso de referencia y solo la cimentacion.  Solo en el modelador. */
+    if(S.modo==="modelo"){
+      var bc=document.createElement("button");bc.className="nbtn";bc.id="nCim";
+      bc.setAttribute("aria-current",enCim());bc.textContent="Cimentación";
+      bc.title="Planta de cimentación: zapatas, combinadas y corridas bajo las columnas del 1er piso";
+      bc.onclick=function(){S.cim=true;S.act=0;S.sel=null;S.vista="plano";
+        if(S.tool!=="sel"&&S.tool!=="zapata")elegirTool("zapata");
+        render()};c.appendChild(bc);
+    }
     S.niveles.forEach(function(n,k){
       var b=document.createElement("button");b.className="nbtn";
-      b.setAttribute("aria-current",S.vista==="plano"&&k===S.act);
+      b.setAttribute("aria-current",S.vista==="plano"&&k===S.act&&!enCim());
       b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
-      b.onclick=function(){S.act=k;S.sel=null;S.vista="plano";render()};c.appendChild(b);});
+      b.onclick=function(){S.cim=false;S.act=k;S.sel=null;S.vista="plano";
+        if(S.tool==="zapata")elegirTool("sel");
+        render()};c.appendChild(b);});
     /* en modo usos no se toca la estructura del edificio: solo se asignan usos */
     if(S.modo==="usos")return;
     var e=document.createElement("button");e.className="nbtn";
     e.setAttribute("aria-current",S.vista==="edificio");e.textContent="Edificio";
     e.title="Resumen de todos los niveles: lo que va a METRADO_CARGAS";
-    e.onclick=function(){S.vista="edificio";S.sel=null;render()};c.appendChild(e);
+    e.onclick=function(){S.cim=false;S.vista="edificio";S.sel=null;render()};c.appendChild(e);
     var t3=document.createElement("button");t3.className="nbtn";
     t3.setAttribute("aria-current",S.vista==="3d");t3.textContent="3D";
     t3.title="El edificio en 3D, con las secciones que se llevan a ETABS";
-    t3.onclick=function(){S.vista="3d";S.sel=null;render()};c.appendChild(t3);
+    t3.onclick=function(){S.cim=false;S.vista="3d";S.sel=null;render()};c.appendChild(t3);
     var a=document.createElement("div");a.className="acts";
     a.innerHTML='<button class="btn" id="nAdd">+ Nivel</button><button class="btn" id="nDup">Duplicar</button>'+
       '<button class="btn" id="nDel">Eliminar</button>'+
@@ -17850,7 +17885,7 @@ var TT={script:performance.now()};
     if(q.t==="col"){
       if(!m.cols[key(q.i,q.j)]){T.textContent="Cruce vacío";
         B.innerHTML='<p class="empty">Sin columna en '+ejeCol(q.i,q.j)+'.</p>';return}
-      var d=medCol(q.i,q.j),pc=seccionCol(q.i,q.j,m,S.act);
+      var d=medCol(q.i,q.j),pc=seccionCol(q.i,q.j,m,S.act), CIMI=enCim(), fichaZ="";
       T.textContent="Columna · eje "+ejeCol(q.i,q.j);
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños que carga",d.n+" de 4")+
@@ -17874,7 +17909,11 @@ var TT={script:performance.now()};
           ? '<p class="aviso" style="margin-top:8px">Ancho por debajo del mínimo de '+
             Math.round(CRITERIOS.MINIMOS.anchoColumna*100)+" cm (E.060).</p>"
           : "")+
-        (S.act===0?(function(){
+        (S.act===0&&!CIMI
+          ? '<div class="rule" style="margin:10px 0"></div><p class="nota" style="margin:0">Su zapata está en la planta de '+
+            '<b>Cimentación</b> (barra de niveles, antes del 1er piso).</p>'
+          : "")+
+        (S.act===0&&CIMI?(fichaZ=(function(){
           var tcr=corridaEn(q.i,q.j,m);
           if(tcr){
             var pcr=piezaCorrida(tcr,m), zq=pcr&&pcr.q;
@@ -18015,10 +18054,16 @@ var TT={script:performance.now()};
             (pa?("La combinada carga con las dos columnas y sus lados salen de √Az ± separación/2, "+
                  "con H = (lado menor − columna) / 4.")
                :"El tipo sale de dónde está la columna.")+"</p>";
-        })():"")+
+        })()):"")+
         '<p class="calcnote">Ac = P / ('+pc.C.toFixed(2)+" f&#39;c) con f&#39;c = "+
         (+S.fc||210)+" kg/cm². La cuadrada es el valor por defecto: "+
         "cualquier b × h que llegue a Ac vale, y esa la eliges tú.</p>";
+      /* en Cimentacion la columna es solo referencia: la ficha es la de su zapata */
+      if(CIMI){
+        T.textContent="Zapata · eje "+ejeCol(q.i,q.j);
+        html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--ink-2)">Columna '+
+          (pc.forma==="circular"?("Ø "+pc.D):(pc.b+" × "+pc.h))+' cm del 1er piso · '+d.tipo+'</span>'+fichaZ;
+      }
     }else if(q.t==="viga"){
       var kk=key(q.o,q.i,q.j);
       if(!m.vigas[kk]&&!m.placas[kk]){T.textContent="Tramo vacío";
@@ -25425,6 +25470,7 @@ var TT={script:performance.now()};
     ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
     document.querySelector(".work").classList.toggle("ancho",!conPlanta&&!solo);
+    document.querySelector(".work").classList.toggle("cimentacion",enCim());
     pintaNiveles();
     if(!etab)pintaSubmodos();             /* ETABS la pinta con sus errores */
     marcaAvisos();
@@ -25443,7 +25489,7 @@ var TT={script:performance.now()};
     else if(usos){drawUsos();pintaListaNiv();pintaSelector();pintaLeyenda();}
     else if(deci){draw();pintaDecisiones();}
     else{draw();inspector();}
-    if(!usos&&!deci&&!solo)editorEjes();
+    if(!usos&&!deci&&!solo&&!enCim())editorEjes();
     if(!solo&&!deci)tabla();
     guardar();
   }
