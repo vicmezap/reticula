@@ -24,43 +24,43 @@
   }
   @media (prefers-color-scheme:dark){
     :root:not([data-theme="light"]){
-      /* ACERO (elegido por Victor el 17-09-2026): el negro neutro de la maqueta «Grafito» con el
-         acento frio de «Pizarra».  Tres cosas lo hacen legible y no solo oscuro:
+      /* ACERO · MAS NEGRO (el matiz que Victor eligio el 17-09-2026): el negro casi puro de la
+         maqueta «Grafito» con el acento frio de «Pizarra», aqui en verde azulado.  Tres cosas lo hacen legible y no solo oscuro:
            · --paper es lo mas oscuro (la cabecera y las pestanas se apoyan en el) y --sheet, donde
              viven la planta y las tablas, es mas claro: el trabajo queda por delante;
            · --ink-3, el texto tenue de las etiquetas, sube a 4.7:1 sobre --sheet (el minimo legible
              es 4.5; la maqueta «Grafito» se quedaba en 3.8);
            · las piezas que el tema oscuro no cambiaba -placa, chata, zapata- ahora si: la placa
              era #3A4750 y sobre este fondo no se veia. */
-      --paper:#0E1113; --sheet:#1B2125; --panel:#14181B; --line:#303840; --line-soft:#242C31;
-      --ink:#E8ECEE; --ink-2:#AEB8BE; --ink-3:#808B92;
-      --acc:#4FBAC2; --acc-soft:#123034; --acc-ink:#93DEE4;
-      --col:#4FBAC2; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A97A0; --zapata:#9AAE85;
-      --alig:#7E8D94; --alig-f:rgba(126,141,148,.26);
-      --maci:#A8B4BA; --maci-f:rgba(168,180,186,.30);
+      --paper:#0B0C0D; --sheet:#15171A; --panel:#101214; --line:#2B2F33; --line-soft:#1F2326;
+      --ink:#EAECEE; --ink-2:#AEB3B8; --ink-3:#7F858B;
+      --acc:#55BDB4; --acc-soft:#10302C; --acc-ink:#8FDDD4;
+      --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A9096; --zapata:#9AAE85;
+      --alig:#828A90; --alig-f:rgba(130,138,144,.26);
+      --maci:#A9AEB3; --maci-f:rgba(169,174,179,.30);
       --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.24); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
-      --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4C555B;
+      --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A4F54;
       /* sobre ACERO: verde y rojo mas claros, y texto OSCURO sobre el acento claro */
-      --ok:#5FBF95; --no:#E8705F; --rev:#E0A24E; --acc-txt:#06211F;
+      --ok:#5FBF95; --no:#E8705F; --rev:#E0A24E; --acc-txt:#04201D;
       /* el terreno, apagado: en claro es casi blanco y sobre ACERO seria un foco */
-      --suelo3d:#20262A; --rejilla3d:#333C42; --cota3d:#8A959C; --eje3d:#E4705E;
+      --suelo3d:#1A1D20; --rejilla3d:#2D3236; --cota3d:#868C92; --eje3d:#E4705E;
       --sx:#35A0C8; --sy:#C47A48;
     }
   }
   :root[data-theme="dark"]{
     /* la misma ACERO de arriba, para cuando se elige a mano en Datos */
-    --paper:#0E1113; --sheet:#1B2125; --panel:#14181B; --line:#303840; --line-soft:#242C31;
-    --ink:#E8ECEE; --ink-2:#AEB8BE; --ink-3:#808B92;
-    --acc:#4FBAC2; --acc-soft:#123034; --acc-ink:#93DEE4;
-    --col:#4FBAC2; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A97A0; --zapata:#9AAE85;
-    --alig:#7E8D94; --alig-f:rgba(126,141,148,.26);
-    --maci:#A8B4BA; --maci-f:rgba(168,180,186,.30);
+    --paper:#0B0C0D; --sheet:#15171A; --panel:#101214; --line:#2B2F33; --line-soft:#1F2326;
+    --ink:#EAECEE; --ink-2:#AEB3B8; --ink-3:#7F858B;
+    --acc:#55BDB4; --acc-soft:#10302C; --acc-ink:#8FDDD4;
+    --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A9096; --zapata:#9AAE85;
+    --alig:#828A90; --alig-f:rgba(130,138,144,.26);
+    --maci:#A9AEB3; --maci-f:rgba(169,174,179,.30);
     --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.24); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
-    --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4C555B;
+    --trib:#E8705F; --trib-fill:rgba(232,112,95,.12); --grid:#4A4F54;
     /* sobre ACERO: verde y rojo mas claros, y texto OSCURO sobre el acento claro */
-    --ok:#5FBF95; --no:#E8705F; --rev:#E0A24E; --acc-txt:#06211F;
+    --ok:#5FBF95; --no:#E8705F; --rev:#E0A24E; --acc-txt:#04201D;
     /* el terreno, apagado: en claro es casi blanco y sobre ACERO seria un foco */
-    --suelo3d:#20262A; --rejilla3d:#333C42; --cota3d:#8A959C; --eje3d:#E4705E;
+    --suelo3d:#1A1D20; --rejilla3d:#2D3236; --cota3d:#868C92; --eje3d:#E4705E;
     --sx:#35A0C8; --sy:#C47A48;
   }
 
@@ -8302,18 +8302,17 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 
   /* --- WebGL ---------------------------------------------------------------------- */
   /* EL SOMBREADOR.  Hace en la tarjeta grafica lo que antes no habia: separar los niveles (cada vertice
-     sabe de que piso es y se sube con offs), la sombra proyectada sobre el suelo (el mismo triangulo,
-     aplastado contra el plano z = zs siguiendo el sol), el corte en X, el grano del concreto y la niebla
-     del fondo.  Asi no hay que rehacer la escena para animar ni para separar. */
+     sabe de que piso es y se sube con offs), el corte en X, el grano del concreto y la niebla del fondo.
+     Asi no hay que rehacer la escena para animar ni para separar.
+     Hubo tambien una sombra proyectada sobre el suelo; Victor la quito el 17-09-2026. */
   var MAX_NIV = 12;
   var VS = "attribute vec3 p; attribute vec3 n; attribute vec3 c; attribute float niv;" +
            "uniform mat4 mvp; uniform vec3 luz; uniform vec3 tinte; uniform float usaTinte;" +
-           "uniform float offs[" + MAX_NIV + "]; uniform float sombra; uniform vec3 dl; uniform float zs;" +
+           "uniform float offs[" + MAX_NIV + "];" +
            "varying vec3 col; varying vec3 mundo; varying float prof;" +
            "void main(){ float o = 0.0;" +
            " for (int i = 0; i < " + MAX_NIV + "; i++) { if (abs(float(i) - niv) < 0.5) o = offs[i]; }" +
            " vec3 wp = vec3(p.x, p.y, p.z + o);" +
-           " if (sombra > 0.5) { float s = (zs - wp.z) / dl.z; wp = wp + dl * s; }" +
            " float d = max(dot(n, luz), 0.0);" +
            " vec3 b = mix(c, tinte, usaTinte);" +
            " col = b * (0.58 + 0.42 * d); mundo = wp;" +
@@ -8332,8 +8331,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   function visor(canvas) {
     var gl = null;
     try {
-      gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true, alpha: true, stencil: true })
-           || canvas.getContext("experimental-webgl", { alpha: true, stencil: true });
+      gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true, alpha: true })
+           || canvas.getContext("experimental-webgl", { alpha: true });
     } catch (e) { gl = null; }
     if (!gl || typeof gl.createShader !== "function" || typeof gl.createBuffer !== "function") return null;
     function shader(tipo, src) {
@@ -8351,12 +8350,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         aC = gl.getAttribLocation(prog, "c"), aV = gl.getAttribLocation(prog, "niv");
     function u(n) { return gl.getUniformLocation(prog, n); }
     var uM = u("mvp"), uL = u("luz"), uT = u("tinte"), uU = u("usaTinte"), uA = u("alfa"),
-        uS = u("sombra"), uDL = u("dl"), uZS = u("zs"), uCorte = u("corte"), uGrano = u("grano"),
+        uCorte = u("corte"), uGrano = u("grano"),
         uNC = u("nieblaCol"), uNR = u("nieblaRango"), uOffs = [];
     for (var q = 0; q < MAX_NIV; q++) uOffs.push(u("offs[" + q + "]"));
     var B = { p: gl.createBuffer(), n: gl.createBuffer(), c: gl.createBuffer(), v: gl.createBuffer(),
               lp: gl.createBuffer(), ln: gl.createBuffer(), lc: gl.createBuffer(), lv: gl.createBuffer() };
-    var dat = { nTri: 0, nLin: 0, rangos: [], suelo: null, gruposLin: [], aristas: [0, 0], zs: 0 };
+    var dat = { nTri: 0, nLin: 0, rangos: [], gruposLin: [], aristas: [0, 0] };
     function sube(buf, arr) { gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); }
     function atributo(loc, buf, tam) {
       if (loc < 0) return;
@@ -8375,7 +8374,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         var P = new Float32Array(nT * 3), N = new Float32Array(nT * 3), Cc = new Float32Array(nT * 3),
             V = new Float32Array(nT), LP = new Float32Array(nL * 3), LN = new Float32Array(nL * 3),
             LC = new Float32Array(nL * 3), LV = new Float32Array(nL), i = 0, j = 0;
-        dat.rangos = []; dat.suelo = null; dat.gruposLin = [];
+        dat.rangos = []; dat.gruposLin = [];
         esc.solidos.forEach(function (s) {
           var ini = i, nivel = Math.max(0, Math.min(MAX_NIV - 1, +s.nivel || 0));
           s.tris.forEach(function (t) {
@@ -8383,7 +8382,6 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
             for (var w = 0; w < 3; w++) { P.set(t[w], i * 3); N.set(n, i * 3); Cc.set(s.color, i * 3); V[i] = nivel; i++; }
           });
           dat.rangos.push([ini, i - ini]);
-          if (s.fam === "suelo") dat.suelo = [ini, i - ini];
           s.aristas.forEach(function (a) {
             LP.set(a[0], j * 3); LV[j] = nivel; LP.set(a[1], (j + 1) * 3); LV[j + 1] = nivel; j += 2;
           });
@@ -8397,7 +8395,6 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         sube(B.p, P); sube(B.n, N); sube(B.c, Cc); sube(B.v, V);
         sube(B.lp, LP); sube(B.ln, LN); sube(B.lc, LC); sube(B.lv, LV);
         dat.nTri = nT; dat.nLin = nL;
-        dat.zs = (esc.suelo && esc.suelo.z != null) ? esc.suelo.z : ((esc.caja ? esc.caja.min[2] : 0) - 0.02);
       },
       dibujar: function (cam, o) {
         o = o || {};
@@ -8406,15 +8403,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         gl.viewport(0, 0, w, h);
         if (o.fondo) { var f = rgb(o.fondo); gl.clearColor(f[0], f[1], f[2], 1); }
         else gl.clearColor(0, 0, 0, 0);            /* transparente: el degradado del cielo lo pone el CSS */
-        gl.clearStencil(0);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         if (!dat.nTri) return;
         gl.useProgram(prog);
         gl.uniformMatrix4fv(uM, false, new Float32Array(matrices(cam, w / Math.max(1, h)).MVP));
         var luz = unit(o.luz || [0.35, -0.55, 0.76]);
         gl.uniform3fv(uL, new Float32Array(luz));
-        gl.uniform3fv(uDL, new Float32Array(por(luz, -1)));     /* hacia donde va la luz: hacia la sombra */
-        gl.uniform1f(uZS, dat.zs);
         gl.uniform1f(uCorte, o.corte == null ? 1e9 : o.corte);
         gl.uniform1f(uGrano, o.grano === false ? 0 : 1);
         var nc = rgb(o.nieblaColor || o.fondo || "#EEF1F4"), nr = o.niebla || [1e9, 1e9 + 1];
@@ -8424,24 +8418,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
         atributo(aP, B.p); atributo(aN, B.n); atributo(aC, B.c); atributo(aV, B.v, 1);
 
-        /* 1 - LA SOMBRA.  Se marcan en el estencil todos los triangulos aplastados contra el suelo y despues
-           se pinta el suelo UNA vez donde quedo marcado: sin esto, donde se cruzan dos sombras saldria el
-           doble de oscuro. */
-        var haySombra = (o.sombra !== false) && !!dat.suelo;
-        if (haySombra) {
-          gl.enable(gl.STENCIL_TEST);
-          gl.stencilFunc(gl.ALWAYS, 1, 0xFF); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
-          gl.colorMask(false, false, false, false); gl.depthMask(false);
-          gl.uniform1f(uS, 1); gl.uniform1f(uU, 0); gl.uniform1f(uA, 1);
-          /* el terreno NO proyecta sombra sobre si mismo: iria a la escena entera, que es el suelo, y la
-             mancha saldria uniforme.  El suelo es el ultimo solido, asi que basta con parar antes. */
-          gl.drawArrays(gl.TRIANGLES, 0, dat.suelo[0]);
-          gl.uniform1f(uS, 0);
-          gl.colorMask(true, true, true, true); gl.depthMask(true);
-          gl.disable(gl.STENCIL_TEST);
-        }
-
-        /* 2 - las piezas.  Con una elegida y aislar, las demas quedan en fantasma. */
+        /* 1 - las piezas.  Con una elegida y aislar, las demas quedan en fantasma. */
         gl.disable(gl.BLEND);
         gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
         gl.uniform1f(uU, 0); gl.uniform3fv(uT, new Float32Array([0, 0, 0]));
@@ -8457,19 +8434,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           gl.drawArrays(gl.TRIANGLES, 0, dat.nTri);
         }
 
-        /* 3 - la mancha de sombra sobre el suelo, donde marco el estencil */
-        if (haySombra) {
-          gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 1, 0xFF); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
-          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-          gl.disable(gl.DEPTH_TEST);
-          gl.uniform1f(uU, 1); gl.uniform3fv(uT, new Float32Array(rgb(o.sombraColor || "#16202A")));
-          gl.uniform1f(uA, o.sombraAlfa == null ? 0.20 : o.sombraAlfa);
-          gl.drawArrays(gl.TRIANGLES, dat.suelo[0], dat.suelo[1]);
-          gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST);
-          gl.uniform1f(uU, 0);
-        }
-
-        /* 4 - la pieza elegida, con su tinte */
+        /* 2 - la pieza elegida, con su tinte */
         var r = (sel !== null) ? dat.rangos[sel] : null;
         if (r && !o.aislar) {
           gl.uniform1f(uU, 0.85); gl.uniform3fv(uT, new Float32Array(rgb(o.acento || "#F2B705")));
@@ -8478,7 +8443,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         }
         gl.disable(gl.POLYGON_OFFSET_FILL);
 
-        /* 5 - las lineas: las aristas de las piezas y despues cada grupo con su color */
+        /* 3 - las lineas: las aristas de las piezas y despues cada grupo con su color */
         if (dat.nLin) {
           gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
           atributo(aP, B.lp); atributo(aN, B.ln); atributo(aC, B.lc); atributo(aV, B.lv, 1);
@@ -9302,7 +9267,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v239 · 17-09-2026";
+  var BUILD="v241 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -19765,7 +19730,7 @@ var TT={script:performance.now()};
   var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true,escalera:true,eje:true},
            niveles:"todos", avisar:true,
            /* lo nuevo: separar los pisos, cortar en X, las aristas, y el edificio armandose al entrar */
-           separar:0, corte:1, aristas:true, sombra:true, armando:null,
+           separar:0, corte:1, aristas:true, armando:null,
            sel:null, selIdx:null, visor:null, esc:null, drag:null, sinGL:false, pedido:0};
   /* cuanto sube cada nivel: lo que pide el mando mas lo que falte de la animacion de entrada */
   function sep3D(){
@@ -19917,7 +19882,7 @@ var TT={script:performance.now()};
       fondo:null, nieblaColor:c.fondo, niebla:[V3D.cam.dist+0.6*R, V3D.cam.dist+4.2*R],
       tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx,
       separar:sep3D(), corte:corte3D(), aristas:V3D.aristas, aislar:V3D.selIdx!==null,
-      sombra:V3D.sombra, sombraColor:c.tinta, sombraAlfa:0.22}); }catch(e){}
+      }); }catch(e){}
     burbujas3D();
   }
   /* LAS BURBUJAS DE LOS EJES, en HTML sobre el lienzo.  En WebGL el texto cuesta una textura por letra; aqui
