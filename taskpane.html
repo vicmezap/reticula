@@ -2927,7 +2927,9 @@
     var Z = C.ZAPATA;
     return (f[1] === "Centrada") ? Z.Fsismo.centrada
          : (f[1] === "Medianera") ? Z.Fsismo.medianera
-         : (f[1] === "Combinada") ? Z.Fsismo.combinada : Z.Fsismo.esquinera;
+         : (f[1] === "Combinada") ? Z.Fsismo.combinada
+         : /^Corrida medianera/.test(f[1]) ? Z.Fsismo.medianera
+         : /^Corrida/.test(f[1]) ? Z.Fsismo.corrida : Z.Fsismo.esquinera;
   }
   function pServZ(f, P) { return (+f[2]) * (+f[3]) * pesoDe(P) / 1000; }
   function azDe(f, P) {                                        /* m2 */
@@ -2938,6 +2940,18 @@
     if (f[1] === "Medianera") {
       B = arriba(Math.sqrt(az / 2), red);
       L = arriba(2 * Math.sqrt(az / 2), red);
+    } else if (/^Corrida/.test(f[1])) {
+      /* la corrida: la misma cuenta que la hoja y que calculo.js */
+      var hC = +f[6], bC = +f[5];
+      if (/entre linderos$/.test(f[1])) {
+        L = hC; B = Math.max(arriba(az / hC, red), bC);
+        var Hl = Math.max(0, arriba((B - bC) / (Z.divisorPeralte.corrida || 4), Z.redondeoPeralte));
+        return { B: B, L: L, H: Hl, area: B * L };
+      }
+      var sm = hC + bC, Xc = Math.max(0, arriba((-sm + Math.sqrt(sm * sm - 4 * (hC * bC - az))) / 2, red));
+      B = bC + Xc; L = hC + Xc;
+      return { B: B, L: L, H: Math.max(0, arriba(Xc / (Z.divisorPeralte.corrida || 4), Z.redondeoPeralte)),
+               area: B * L };
     } else if (f[1] === "Combinada") {
       /* la combinada: √Az ∓ separacion de ejes / 2 (f[7], «s ejes»), como la
          formula de PRE_ZAPATA; su peralte sale del lado MENOR y no baja de 0 */
@@ -5522,6 +5536,12 @@
   var L7_Z = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,10]];
   /* la de ocho: la combinada necesita una columna mas -la separacion de ejes- */
   var L8_Z = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10]];
+  /* LAS CORRIDAS se reconocen por el tipo exacto: sin LEFT ni SEARCH, que el banco de pruebas no tiene
+     y que en un Excel en ingles se escriben igual pero se traducen distinto en el de Victor */
+  var TIPOS_CORR = ["Corrida", "Corrida medianera", "Corrida entre linderos", "Corrida medianera entre linderos"];
+  function esC(c) { return "OR(" + TIPOS_CORR.map(function (t) { return c + '="' + t + '"'; }).join(",") + ")"; }
+  function entreC(c) { return "OR(" + c + '="Corrida entre linderos",' + c + '="Corrida medianera entre linderos")'; }
+  function medC(c) { return "OR(" + c + '="Corrida medianera",' + c + '="Corrida medianera entre linderos")'; }
 
   function zapata(P) {
     var fs = P.Z || [];
@@ -5623,10 +5643,12 @@
            medianera con F = 1.00 y la hoja lo daba por bueno. */
         return [f[0], f[1], +f[2], +f[3],
           "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
-          "=IF(D" + i + '="","",IF(D' + i + '="Centrada",' + Z.Fsismo.centrada
+          "=IF(D" + i + '="","",IF(' + medC("D" + i) + "," + Z.Fsismo.medianera
+            + ",IF(" + esC("D" + i) + "," + Z.Fsismo.corrida
+            + ",IF(D" + i + '="Centrada",' + Z.Fsismo.centrada
             + ",IF(D" + i + '="Medianera",' + Z.Fsismo.medianera
             + ",IF(D" + i + '="Combinada",' + Z.Fsismo.combinada
-            + "," + Z.Fsismo.esquinera + "))))",
+            + "," + Z.Fsismo.esquinera + "))))))",
           "=IFERROR(" + Z.incrementoPesoPropio + "*G" + i + "*H" + i
             + "/$F$" + fSig + ',"")',
           /* la separacion de ejes: solo la combinada la usa, y sale del modelo */
@@ -5653,21 +5675,30 @@
            sale del lado MENOR, no del mayor: es el lado que no tiene la otra
            columna enfrente para repartir la presion */
         var sep = "$J$" + f1;
+        /* LA CORRIDA (pag. 123): col b es el ancho del elemento y col h su largo de cara a cara.
+           X es el tanteo del libro -de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az-, que es la
+           raiz de esa cuadratica subida al multiplo de 10 cm.  Entre dos linderos no vuela a lo
+           largo: L = h y B = Az / h. */
+        var X = "MAX(0,CEILING((-(D" + i + "+E" + i + ")+SQRT((D" + i + "+E" + i + ")*(D" + i + "+E" + i
+              + ")-4*(D" + i + "*E" + i + "-" + az + ")))/2," + Z.redondeoLado + "))";
         return ['=IF(C' + f1 + '="","",C' + f1 + ')', +f[5], +f[6],
-          "=IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2)," + Z.redondeoLado
+          "=IF(" + entreC(tipo) + ",MAX(CEILING(" + az + "/E" + i + "," + Z.redondeoLado + "),D" + i + "),IF(" + esC(tipo)
+            + ",D" + i + "+" + X + ","
+            + "IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2)," + Z.redondeoLado
             + "),IF(" + tipo + '="Combinada",CEILING(SQRT(' + az + ")-" + sep + "/2,"
             + Z.redondeoLado + "),CEILING(SQRT(" + az + ")-(E" + i + "-D" + i + ")/2,"
-            + Z.redondeoLado + ")))",
-          "=IF(" + tipo + '="Medianera",CEILING(2*SQRT(' + az + "/2)," + Z.redondeoLado
+            + Z.redondeoLado + ")))))",
+          "=IF(" + entreC(tipo) + ",E" + i + ",IF(" + esC(tipo) + ",E" + i + "+" + X + ","
+            + "IF(" + tipo + '="Medianera",CEILING(2*SQRT(' + az + "/2)," + Z.redondeoLado
             + "),IF(" + tipo + '="Combinada",CEILING(SQRT(' + az + ")+" + sep + "/2,"
             + Z.redondeoLado + "),CEILING(SQRT(" + az + ")+(E" + i + "-D" + i + ")/2,"
-            + Z.redondeoLado + ")))",
+            + Z.redondeoLado + ")))))",
           "=F" + i + "*G" + i,
           /* MAX(0, ...): en una combinada con las columnas muy separadas para la
              carga, el lado menor sale mas estrecho que la propia columna y el
              peralte se va a negativo.  Un numero negativo no es un peralte: se
              deja en cero y la columna Estado lo manda a REVISAR. */
-          "=MAX(0,CEILING((IF(" + tipo + '="Combinada",F' + i + ",G" + i + ")-E" + i
+          "=MAX(0,CEILING(IF(" + entreC(tipo) + ",F" + i + "-D" + i + ",IF(" + tipo + '="Combinada",F' + i + ",G" + i + ")-E" + i
             + ")/IF(" + tipo + '="Esquinera",' + Z.divisorPeralte.esquinera + ","
             + Z.divisorPeralte.centrada + ")," + Z.redondeoPeralte + "))",
           "=IF(OR(H" + i + "<" + az + "-0.0001,I" + i + '<=0),"REVISAR","CUMPLE")'];
@@ -5700,9 +5731,12 @@
                   + "columna, es que esas dos columnas están demasiado separadas para la carga que "
                   + "llevan: no necesitan compartir zapata, o lo que toca es una conectada."
                 : "")
-      + " Corridas, conectadas y plateas NO están aquí: necesitan datos que la planta no da por "
-      + "sí sola (qué muro va encima, qué viga une dos zapatas) y se resuelven a mano con los "
-      + "criterios de la sección 1.");
+      + " LA CORRIDA (pág. 123) va bajo una placa o una fila de columnas: col b es el ancho del elemento, "
+      + "col h su largo de cara a cara, y L = h + X, B = b + X, H = (L − h)/4, con X el mismo volado en los "
+      + "dos sentidos, tanteado de 10 en 10 cm. Si corre por el lindero es «medianera»: excéntrica y con "
+      + "F = 1,50, como la zapata medianera; si sus dos extremos están en el lindero va «entre linderos»: "
+      + "no vuela a lo largo, L = h, B = Az / h y H = (B − b)/4. Conectadas y plateas no están aquí: las "
+      + "conectadas las diseña el complemento en Diseño E.060 › Zapatas.");
     return h.cerrar(r);
   }
 
@@ -7470,7 +7504,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v305 · 18-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v313 · 18-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

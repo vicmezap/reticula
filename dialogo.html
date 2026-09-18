@@ -1470,7 +1470,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var Z = C.ZAPATA;
     return (f[1] === "Centrada") ? Z.Fsismo.centrada
          : (f[1] === "Medianera") ? Z.Fsismo.medianera
-         : (f[1] === "Combinada") ? Z.Fsismo.combinada : Z.Fsismo.esquinera;
+         : (f[1] === "Combinada") ? Z.Fsismo.combinada
+         : /^Corrida medianera/.test(f[1]) ? Z.Fsismo.medianera
+         : /^Corrida/.test(f[1]) ? Z.Fsismo.corrida : Z.Fsismo.esquinera;
   }
   function pServZ(f, P) { return (+f[2]) * (+f[3]) * pesoDe(P) / 1000; }
   function azDe(f, P) {                                        /* m2 */
@@ -1481,6 +1483,18 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     if (f[1] === "Medianera") {
       B = arriba(Math.sqrt(az / 2), red);
       L = arriba(2 * Math.sqrt(az / 2), red);
+    } else if (/^Corrida/.test(f[1])) {
+      /* la corrida: la misma cuenta que la hoja y que calculo.js */
+      var hC = +f[6], bC = +f[5];
+      if (/entre linderos$/.test(f[1])) {
+        L = hC; B = Math.max(arriba(az / hC, red), bC);
+        var Hl = Math.max(0, arriba((B - bC) / (Z.divisorPeralte.corrida || 4), Z.redondeoPeralte));
+        return { B: B, L: L, H: Hl, area: B * L };
+      }
+      var sm = hC + bC, Xc = Math.max(0, arriba((-sm + Math.sqrt(sm * sm - 4 * (hC * bC - az))) / 2, red));
+      B = bC + Xc; L = hC + Xc;
+      return { B: B, L: L, H: Math.max(0, arriba(Xc / (Z.divisorPeralte.corrida || 4), Z.redondeoPeralte)),
+               area: B * L };
     } else if (f[1] === "Combinada") {
       /* la combinada: √Az ∓ separacion de ejes / 2 (f[7], «s ejes»), como la
          formula de PRE_ZAPATA; su peralte sale del lado MENOR y no baja de 0 */
@@ -11100,6 +11114,45 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var r = { subtipo: e.subtipo, P_servicio: r2(Pt), F_sismo: F, Az: r2(Az) };
     var mayor, menor, d;
 
+    /* ZAPATA CORRIDA (pag. 123, ejemplos 9 y 10): bajo una placa o bajo una fila de columnas.
+         L = h + X      B = b + X      H = (L − h) / 4
+       con h el largo del elemento de cara a cara (la placa, o de la primera columna a la ultima),
+       b su ancho, y X «el incremento de dimension por tanteo»: el mismo volado en los dos sentidos.
+       El tanteo del libro -subir X de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az- es la raiz
+       positiva de esa cuadratica subida al multiplo de 10 cm: reproduce X = 2,00 (Z09) y 2,10 (Z10). */
+    if (e.subtipo === "corrida") {
+      var hC = (e.largo != null) ? e.largo : ((e.Dc != null) ? e.Dc : e.col_h);
+      var bC = (e.ancho != null) ? e.ancho : e.col_b;
+      var sum = hC + bC;
+      var Xt = Math.max((-sum + Math.sqrt(sum * sum - 4 * (hC * bC - Az))) / 2, 0);
+      /* con poca carga la raiz sale negativa -el elemento ya cubre Az-: X = 0, y el Estado lo manda a
+         REVISAR porque no queda volado (H = 0).  +0 quita el «−0» de Math.ceil. */
+      var X = Math.max(arriba(Xt, Zc.redondeoLado), 0) + 0;
+      r.largo = hC; r.ancho = bC; r.X_teorico = r2(Xt); r.X = r2(X);
+      r.mayor_teorico = r2(Math.max(hC, bC) + Xt); r.menor_teorico = r2(Math.min(hC, bC) + Xt);
+      r.mayor = r2(Math.max(hC, bC) + X); r.menor = r2(Math.min(hC, bC) + X);
+      r.area_redondeada = r2(r.mayor * r.menor);
+      r.holgura_pct = r2(100 * (r.area_redondeada - Az) / Az);
+      var divC = Zc.divisorPeralte.corrida || 4;
+      r.divisorPeralte = divC;
+      r.H_teorico = r2(X / divC);                 /* (L − h)/4 con el L adoptado, como el libro */
+      r.H = r2(arriba(X / divC, Zc.redondeoPeralte)) + 0;
+      /* ENTRE DOS LINDEROS (no es del libro: es la geometria).  Si los dos extremos del tramo estan
+         en el limite de propiedad la zapata no puede volar a lo largo: L = h, el area la pone el
+         ancho, B = Az / h, y el peralte sale del volado que queda, el transversal: H = (B − b)/4. */
+      if (e.entreLinderos) {
+        r.entreLinderos = true;
+        r.mayor = r2(hC);
+        r.menor = r2(Math.max(arriba(Az / hC, Zc.redondeoLado), bC));   /* nunca mas angosta que el elemento */
+        r.mayor_teorico = r2(hC); r.menor_teorico = r2(Az / hC);
+        r.area_redondeada = r2(r.mayor * r.menor);
+        r.holgura_pct = r2(100 * (r.area_redondeada - Az) / Az);
+        r.H_teorico = r2(Math.max(r.menor - bC, 0) / divC);
+        r.H = r2(arriba(Math.max(r.menor - bC, 0) / divC, Zc.redondeoPeralte)) + 0;
+      }
+      return r;
+    }
+
     if (e.subtipo === "medianera") {
       menor = Math.sqrt(Az / 2); mayor = 2 * menor;
     } else if (e.subtipo === "combinada") {
@@ -11737,7 +11790,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v305 · 18-09-2026";
+  var BUILD="v313 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -14538,7 +14591,7 @@ var TT={script:performance.now()};
           var a=nodo(z.i,z.j,m), b=nodo(v.i,v.j,m);
           g.appendChild(el("line",{x1:mg+a.x*esc, y1:mg+a.y*esc, x2:mg+b.x*esc, y2:mg+b.y*esc,
             stroke:"var(--ink-3)","stroke-opacity":0.35,"stroke-width":Math.max(0.30*esc,4),
-            "stroke-linecap":"butt"}));
+            "stroke-linecap":"butt","pointer-events":"none"}));
         });
         if(z.conectada&&!(z.vigasCon||[]).length)
           txt(g,mg+z.x0*esc+3,mg+z.y0*esc+10,"sin columna para conectar","var(--no)",8.5,"start");
@@ -14550,7 +14603,11 @@ var TT={script:performance.now()};
           x:mg+z.x0*esc, y:mg+z.y0*esc,
           width:(z.x1-z.x0)*esc, height:(z.y1-z.y0)*esc,
           fill:mal?"rgba(198,40,40,.09)":"rgba(120,140,150,.10)",
-          stroke:col,"stroke-width":mal?1.6:1,"stroke-dasharray":"5 3"}));
+          stroke:col,"stroke-width":mal?1.6:1,"stroke-dasharray":"5 3",
+          /* se dibuja DESPUES de las lineas de clic de vigas y placas: sin esto las tapaba y, con la
+             cimentacion a la vista, no se podia pinchar el tramo que queda bajo una zapata -ni volver a
+             pinchar la placa de una corrida para quitarla- */
+          "pointer-events":"none"}));
         if(DIMS)
           txt(g,mg+z.x0*esc+3,mg+z.y1*esc-4,
               (z.combinada?"combinada ":(z.conectada?"conectada ":""))+z.B.toFixed(2)+"×"+z.L.toFixed(2),
@@ -14802,8 +14859,22 @@ var TT={script:performance.now()};
       var mz=S.niveles[0]; mz.zapatas=mz.zapatas||{};
       var kz=key(i,j);
       if(!mz.cols[kz])return;                 /* sin columna no hay zapata */
+      var enCorr=corridaEn(i,j,mz);
+      if(enCorr){ if(primero){ var qc=quitaCorrida(enCorr.ai,enCorr.aj);
+        if(qc.ok)toast("Quitada la zapata corrida: sus columnas vuelven a sus zapatas."); } return; }
       if(primero)modo=mz.zapatas[kz]?"off":"on";
       if(modo==="on")mz.zapatas[kz]={};else delete mz.zapatas[kz];
+    }else if(S.tool==="zapata"&&d.t==="viga"){
+      /* la zapata corrida bajo placa: un clic sobre el muro, en el nivel de cimentacion */
+      if(S.act!==0||!primero)return;
+      if(!m.placas[key(d.o,i,j)]){
+        toast("La zapata corrida va bajo una placa: pincha la placa. Bajo una fila de columnas, "+
+              "hazla desde la ficha de la zapata de una de ellas.");
+        return;
+      }
+      var rc=corridaBajoPlaca(d.o,i,j);
+      if(rc&&!rc.ok)toast(rc.msg);
+      return;
     }else if(S.tool==="placa"&&d.t==="viga"){
       var k4=key(d.o,i,j);
       if(primero)modo=m.placas[k4]?"off":"on";
@@ -16394,7 +16465,9 @@ var TT={script:performance.now()};
       for(var q in o){var s=q.split(":"),h=s[0]==="h";
         if(fuera(+s[1],+s[2],h?nX-1:nX,h?nY:nY-1))delete o[q];}
     });
-    if(m.zapatas)for(k in m.zapatas)if(!m.cols[k])delete m.zapatas[k];
+    if(m.zapatas)for(k in m.zapatas){ p=k.split(":");
+      if(fuera(+p[0],+p[1],nX,nY)){ delete m.zapatas[k]; continue; }
+      if(!m.cols[k]&&!(m.zapatas[k]&&m.zapatas[k].corr))delete m.zapatas[k]; }
   }
 
   function aplicaEjes(conCols){
@@ -16897,10 +16970,13 @@ var TT={script:performance.now()};
      sus botones no pueden llevar onclick: se delega en el contenedor, una vez.
      data-zunir / data-zsep, y no data-unir, que ya es de la herramienta «Unir». */
   $("#inspBody").addEventListener("click",function(ev){
-    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep]"):null;
+    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq]"):null;
     if(!b)return;
     var r2;
-    if(b.dataset.zunir){ var p=b.dataset.zunir.split(":");
+    if(b.dataset.zcorr){ var pc=b.dataset.zcorr.split(":"); r2=corridaDeColumnas(+pc[0],+pc[1],pc[2]); }
+    else if(b.dataset.zcorrq){ var pq=b.dataset.zcorrq.split(":"); r2=quitaCorrida(+pq[0],+pq[1]); }
+    else if(b.dataset.zlibre){ var pl=b.dataset.zlibre.split(":"); r2=liberaZapata(+pl[0],+pl[1]); }
+    else if(b.dataset.zunir){ var p=b.dataset.zunir.split(":");
       r2=unirZapatas(+p[0],+p[1],+p[2],+p[3]); }
     else { var q2=b.dataset.zsep.split(":"); r2=separarZapatas(+q2[0],+q2[1]); }
     if(r2&&!r2.ok)toast(r2.msg);
@@ -17031,7 +17107,11 @@ var TT={script:performance.now()};
 
   /* ---------- ejes ---------- */
   function remap(ejeX,mapa,dup){
-    var m=N(),c={},v={},l={},pc={},i,j,ni,nj,nX=nx(),nY=ny();
+    /* UN EJE DE MAS en el recorrido: borrarEje() quita el vano de dx ANTES de llamar aqui, y con el
+       conteo nuevo la ultima linea vieja -columnas, vigas, placas, losas- nunca se visitaba y se
+       perdia al borrar un eje del medio o el primero.  Los bucles miran si cada clave existe, asi que
+       el margen no cambia nada al partir. */
+    var m=N(),c={},v={},l={},pc={},i,j,ni,nj,nX=nx()+1,nY=ny()+1;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]){
       ni=ejeX?mapa(i):i;nj=ejeX?j:mapa(j);
       /* se mueve el objeto entero: la seccion leida viaja con su columna */
@@ -17066,6 +17146,22 @@ var TT={script:performance.now()};
       else    { if(tj==="Lx"||tj==="Ty")celda(B,function(z){pon(A,z)}); else pon(A,mapa(B)); }
     });
     m.juntas=jn;
+    /* LAS ZAPATAS SIGUEN A SU NUDO, como las columnas, y cada enlace -la pareja de una combinada,
+       el otro extremo de una corrida- se corre con el.  Antes no se movian: al partir un vano la
+       zapata se quedaba con la clave vieja, debajo de otra columna o de ninguna. */
+    if(m.zapatas&&typeof m.zapatas==="object"){
+      var zp={};
+      function nudoNuevo(ref){ var p=String(ref).split(":"), a=+p[0], b=+p[1];
+        var na=ejeX?mapa(a):a, nb=ejeX?b:mapa(b);
+        return (na===null||nb===null||na===undefined||nb===undefined)?null:na+":"+nb; }
+      Object.keys(m.zapatas).forEach(function(kz){
+        var nk=nudoNuevo(kz), z=m.zapatas[kz]; if(nk===null)return;
+        if(z&&z.con){ var nc=nudoNuevo(z.con); if(nc===null)delete z.con; else z.con=nc; }
+        if(z&&z.corr){ var nr=nudoNuevo(z.corr); if(nr===null)delete z.corr; else z.corr=nr; }
+        zp[nk]=z;
+      });
+      m.zapatas=zp;
+    }
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
@@ -17379,6 +17475,36 @@ var TT={script:performance.now()};
             Math.round(CRITERIOS.MINIMOS.anchoColumna*100)+" cm (E.060).</p>"
           : "")+
         (S.act===0?(function(){
+          var tcr=corridaEn(q.i,q.j,m);
+          if(tcr){
+            var pcr=piezaCorrida(tcr,m), zq=pcr&&pcr.q;
+            if(zq)return '<div class="rule" style="margin:10px 0"></div>'+
+              '<div class="name">'+pcr.cod+'</div><span class="tag" style="color:var(--ink-2)">Zapata corrida · eje '+
+              tcr.dir+'</span><dl class="kv" style="margin-top:9px">'+
+              kv("Lleva",(zq.nPla?(zq.nPla+" tramo(s) de placa"+(zq.nCol?" y ":"")):"")+(zq.nCol?(zq.nCol+" columna(s): "+zq.cods.join(", ")):""),1)+
+              kv("Área tributaria",zq.at.toFixed(2)+" m² (la suma de sus "+tcr.nodos.length+" nudos)",1)+
+              kv("Área requerida Az",zq.Az.toFixed(3)+" m²",1)+
+              kv("Elemento h × b",zq.largo.toFixed(2)+" × "+zq.ancho.toFixed(2)+" m (de cara a cara)",1)+
+              (zq.entreLinderos
+                ? kv("A lo largo","no vuela: sus dos extremos están en el lindero (L = h, B = Az / h)",1)
+                : kv("X por tanteo",(zq.X!=null?zq.X.toFixed(2):"—")+" m",1))+
+              kv("Dimensiones",'<b>'+zq.menor.toFixed(2)+" × "+zq.mayor.toFixed(2)+" m</b>",1)+
+              kv("Peralte H",zq.H.toFixed(2)+" m",1)+"</dl>"+
+              ((zq.finA||zq.finB||zq.bordeT)
+                ? '<p class="nota" style="margin-top:8px">En el <b>lindero</b>: '+
+                  (zq.entreLinderos?"sus dos extremos están en el límite, así que no vuela a lo largo y el área la pone el ancho. ":
+                   ((zq.finA||zq.finB)?"un extremo está en el límite y todo el volado va al otro. ":""))+
+                  (zq.bordeT?"Corre por el borde: crece solo hacia adentro y queda excéntrica, como la medianera. ":"")+'</p>'
+                : "")+
+              (zq.H<0.40-1e-9
+                ? '<p class="aviso" style="margin-top:8px">El peralte de la fórmula sale '+zq.H.toFixed(2)+' m. La E.060 '+
+                  '(Art. 15.7) pide al menos 300 mm por encima del acero inferior: con el recubrimiento, en obra no baja '+
+                  'de unos 0,40 m.</p>'
+                : "")+
+              '<div class="zc-unir"><button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Quitar la zapata corrida</button></div>'+
+              '<p class="calcnote">Oviedo, pág. 123: L = h + X, B = b + X y H = (L − h)/4, con X el mismo volado '+
+              'en los dos sentidos, tanteado de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az = 1.10 · P / σ.</p>';
+          }
           var z=predimZapata(q.i,q.j);
           if(!z)return '<div class="rule" style="margin:10px 0"></div>'+
             '<p class="nota" style="margin:0">Sin zapata. Dibújala con la '+
@@ -17442,6 +17568,27 @@ var TT={script:performance.now()};
               ? '<div class="zc-unir"><button class="mini" data-zsep="'+q.i+":"+q.j+
                 '">Separar en dos zapatas</button></div>'
               : "")+
+            (function(){
+              if(pa)return "";
+              var lim=limiteDe(q.i,q.j,m), libre=!!(m.zapatas[key(q.i,q.j)]||{}).libre;
+              if(lim)return '<p class="nota" style="margin-top:8px">En el <b>lindero</b> por la '+ladoLindero(lim)+
+                ': la zapata se pega al límite y D6 la conecta con una viga (E.060 15.2.6).</p>'+
+                '<div class="zc-unir"><button class="mini" data-zlibre="'+q.i+":"+q.j+
+                '">Aquí hay terreno libre: no es lindero</button></div>';
+              if(libre)return '<p class="nota" style="margin-top:8px">La marcaste con terreno libre al lado: '+
+                'va centrada bajo su columna.</p><div class="zc-unir"><button class="mini" data-zlibre="'+q.i+":"+q.j+
+                '">Volver a tratarla como lindero</button></div>';
+              return "";
+            })()+
+            (function(){
+              /* LA CORRIDA BAJO UNA FILA DE COLUMNAS: se ofrece si hay tres o mas seguidas con zapata suelta */
+              if(pa)return "";
+              var h="";
+              ["X","Y"].forEach(function(d){ var f=filaDeColumnas(q.i,q.j,d,m);
+                if(f.length>=3)h+='<button class="mini" data-zcorr="'+q.i+":"+q.j+":"+d+'">Corrida en '+d+
+                  ' con '+f.length+' columnas</button>'; });
+              return h?'<div class="zc-unir">'+h+'</div>':"";
+            })()+
             '<p class="calcnote">Az = 1.10 · P · F sismo / σ, con '+
             ((z.presion&&z.presion.manda==="neta")
               ? ("la presión NETA σn = "+z.presion.neta.toFixed(2)+" t/m²: el relleno de "+
@@ -18084,6 +18231,7 @@ var TT={script:performance.now()};
     var m=S.niveles[0];
     if(!m||!m.cols[key(i,j)])return null;
     if(!m.zapatas||!m.zapatas[key(i,j)])return null;   /* no la dibujaste */
+    if(corridaEn(i,j,m))return null;                 /* va en una zapata corrida: la calcula la corrida */
     /* ¿esta columna comparte zapata con una vecina?  Entonces no hay zapata
        aislada que calcular: la que manda es la combinada, y la calcula la
        columna dueña de la pareja. */
@@ -18119,17 +18267,57 @@ var TT={script:performance.now()};
             esNeta:!!c.esNeta,
             limites:(c.limites&&typeof c.limites==="object")?c.limites:{}};
   }
-  /* LOS LIMITES DE PROPIEDAD.  Se marcan por borde de la reticula -el primer y
-     el ultimo eje en X y en Y- en Datos › Materiales › Suelo.  La zapata de una
-     columna en un borde marcado no puede salirse del terreno: se pega al limite,
-     queda excentrica y D6 la conecta con una viga a la columna interior mas
-     cercana de su linea (E.060 15.2.6; Harmsen 12.9).  x0 es el primer eje en X
-     -el borde izquierdo- y y0 el primero en Y -el de arriba-. */
+  /* EL LINDERO SALE DE LA UBICACION DE CADA COLUMNA.  El limite de propiedad esta donde estan
+     las columnas del perimetro: una columna esta en el lindero por un lado cuando, mas alla de
+     ella en esa direccion, no hay nada del edificio -ni columna, ni losa, ni viga, ni placa-.
+     Asi un ducto o un patio interior no cuenta: tiene estructura al otro lado.  Su zapata no
+     puede salirse del terreno: se pega al lindero, queda excentrica y D6 la conecta con una
+     viga a la columna interior (E.060 15.2.6; Harmsen 12.9).
+
+     Por defecto TODOS los lados del edificio son lindero.  Lo que se guarda es la excepcion:
+     el lado donde hay retiro o terreno libre (S.proy.cim.limites.x0 = false, en Datos ›
+     Materiales › Suelo) y la zapata suelta que no esta en el lindero (zapata.libre, en su
+     ficha).  x0 es el lado izquierdo, x1 el derecho, y0 el de arriba e y1 el de abajo. */
+  function bordesLindero(){
+    var L=cimDatos().limites||{};
+    return {x0:L.x0!==false, x1:L.x1!==false, y0:L.y0!==false, y1:L.y1!==false};
+  }
+  /* ¿mas alla de (i,j), hacia ese lado, queda algo del edificio? */
+  function nadaMasAlla(i,j,m,lado){
+    var nX=m.dx.length+1, nY=m.dy.length+1, k;
+    function algoEnCelda(a,b){ return !!m.losas[key(a,b)]; }
+    if(lado==="x0"){ for(k=0;k<i;k++){
+        if(m.cols[key(k,j)]||algoEnCelda(k,j-1)||algoEnCelda(k,j)||m.vigas[key("h",k,j)]||m.placas[key("h",k,j)])return false; }
+      return true; }
+    if(lado==="x1"){ for(k=i+1;k<nX;k++)if(m.cols[key(k,j)])return false;
+      for(k=i;k<nX-1;k++)if(algoEnCelda(k,j-1)||algoEnCelda(k,j)||m.vigas[key("h",k,j)]||m.placas[key("h",k,j)])return false;
+      return true; }
+    if(lado==="y0"){ for(k=0;k<j;k++){
+        if(m.cols[key(i,k)]||algoEnCelda(i-1,k)||algoEnCelda(i,k)||m.vigas[key("v",i,k)]||m.placas[key("v",i,k)])return false; }
+      return true; }
+    for(k=j+1;k<nY;k++)if(m.cols[key(i,k)])return false;
+    for(k=j;k<nY-1;k++)if(algoEnCelda(i-1,k)||algoEnCelda(i,k)||m.vigas[key("v",i,k)]||m.placas[key("v",i,k)])return false;
+    return true;
+  }
+  /* el lindero de la zapata de (i,j): {x:"x0"|"x1"|null, y:"y0"|"y1"|null}, o null si no toca ninguno */
   function limiteDe(i,j,m){
-    var L=cimDatos().limites, nX=m.dx.length+1, nY=m.dy.length+1;
-    var lx=(i===0&&L.x0)?"x0":((i===nX-1&&L.x1)?"x1":null);
-    var ly=(j===0&&L.y0)?"y0":((j===nY-1&&L.y1)?"y1":null);
+    if(!m||!m.cols[key(i,j)])return null;
+    var z=m.zapatas&&m.zapatas[key(i,j)];
+    if(z&&z.libre)return null;                       /* la marcaste: tiene terreno libre al lado */
+    var L=bordesLindero();
+    var lx=(L.x0&&nadaMasAlla(i,j,m,"x0"))?"x0":((L.x1&&nadaMasAlla(i,j,m,"x1"))?"x1":null);
+    var ly=(L.y0&&nadaMasAlla(i,j,m,"y0"))?"y0":((L.y1&&nadaMasAlla(i,j,m,"y1"))?"y1":null);
+    /* una columna suelta sin nada alrededor estaria en los cuatro lados: eso no es un lindero */
+    if(lx&&nadaMasAlla(i,j,m,lx==="x0"?"x1":"x0"))lx=null;
+    if(ly&&nadaMasAlla(i,j,m,ly==="y0"?"y1":"y0"))ly=null;
     return (lx||ly)?{x:lx,y:ly}:null;
+  }
+  /* para escribirlo en palabras */
+  function ladoLindero(lim){
+    if(!lim)return "";
+    var t={x0:"izquierda",x1:"derecha",y0:"arriba",y1:"abajo"}, out=[];
+    if(lim.x)out.push(t[lim.x]); if(lim.y)out.push(t[lim.y]);
+    return out.join(" y ");
   }
   /* la columna interior con la que se conecta: la primera que hay avanzando desde el borde */
   function vigaConexionDe(i,j,m,dir,paso){
@@ -18271,6 +18459,231 @@ var TT={script:performance.now()};
     return {ok:true};
   }
 
+  /* una zapata del perimetro que NO esta en el lindero (hay retiro o terreno libre al lado) */
+  function liberaZapata(i,j){
+    var m=S.niveles[0], z=m&&m.zapatas&&m.zapatas[key(i,j)];
+    if(!z)return {ok:false,msg:"Esa columna no tiene zapata."};
+    snap();
+    if(z.libre)delete z.libre; else z.libre=true;
+    guardar(); render();
+    return {ok:true, libre:!!z.libre};
+  }
+
+  /* =====================================================================
+     ZAPATAS CORRIDAS (Oviedo pag. 123; ejemplos 9, pag. 141, y 10, pag. 143)
+
+     Una sola zapata a lo largo de un eje, bajo una PLACA o bajo una FILA de
+     columnas.  El libro:  L = h + X,  B = b + X,  H = (L − h)/4,  con h el largo
+     del elemento de cara a cara, b su ancho y X el incremento por tanteo (el
+     mismo en los dos sentidos) hasta que (h + X)(b + X) llegue a Az.
+
+     COMO SE GUARDA.  Igual que la combinada: la zapata del PRIMER nudo del
+     tramo lleva `corr:"i:j"` con el ULTIMO nudo, en el mismo eje.  Los nudos de
+     en medio -y sus columnas- quedan absorbidos: sus zapatas siguen en el
+     modelo, sin dibujarse ni predimensionarse, y vuelven si quitas la corrida.
+     Bajo una placa el primer nudo puede no tener columna: esa zapata vive igual
+     (podar() la respeta) porque es la que guarda la corrida.
+
+     LA CARGA.  El area tributaria es la SUMA de la de cada nudo del tramo -con
+     columna o sin ella-, que es lo que hace el libro: en el ejemplo 10 son las
+     cuatro columnas (4 × 4 × 8 = 128 m²); en el 9, la del nudo donde esta la
+     placa (5 × 8 = 40 m²).
+     ===================================================================== */
+  function tramoCorrida(a,b){
+    var dir=(a[1]===b[1])?"X":"Y", nodos=[], k;
+    if(dir==="X")for(k=Math.min(a[0],b[0]);k<=Math.max(a[0],b[0]);k++)nodos.push([k,a[1]]);
+    else for(k=Math.min(a[1],b[1]);k<=Math.max(a[1],b[1]);k++)nodos.push([a[0],k]);
+    var p=nodos[0], u=nodos[nodos.length-1];
+    return {dir:dir, ai:p[0], aj:p[1], bi:u[0], bj:u[1], nodos:nodos};
+  }
+  /* la corrida que pasa por el nudo (i,j), o null */
+  function corridaEn(i,j,m){
+    m=m||S.niveles[0]; if(!m||!m.zapatas)return null;
+    var k, z, a, b;
+    for(k in m.zapatas){
+      z=m.zapatas[k]; if(!z||!z.corr)continue;
+      a=k.split(":").map(Number); b=String(z.corr).split(":").map(Number);
+      if(a[0]===b[0]&&a[1]===b[1])continue;
+      if(a[0]!==b[0]&&a[1]!==b[1])continue;              /* no es un eje: se ignora */
+      var t=tramoCorrida(a,b);
+      if(t.nodos.some(function(n){ return n[0]===i&&n[1]===j; }))return t;
+    }
+    return null;
+  }
+  /* todas las corridas del nivel de cimentacion */
+  function corridasDelNivel(m){
+    m=m||S.niveles[0]; var out=[], k, z;
+    if(!m||!m.zapatas)return out;
+    for(k in m.zapatas){ z=m.zapatas[k]; if(!z||!z.corr)continue;
+      var a=k.split(":").map(Number), b=String(z.corr).split(":").map(Number);
+      if((a[0]===b[0])===(a[1]===b[1]))continue;
+      out.push(tramoCorrida(a,b)); }
+    return out;
+  }
+  function codigoCorrida(t,m){
+    var nm=nombres(0), k;
+    for(k=0;k<t.nodos.length;k++){ var c=nm.C[key(t.nodos[k][0],t.nodos[k][1])];
+      if(c&&c.cod)return c.cod.replace("-C-","-ZC-"); }
+    for(k=0;k<t.nodos.length-1;k++){
+      var n=t.nodos[k], kp=(t.dir==="X")?key("h",n[0],n[1]):key("v",n[0],n[1]), pl=nm.P&&nm.P[kp];
+      if(pl&&pl.cod)return pl.cod.replace("-PL-","-ZC-PL");
+    }
+    return "N1-ZC-"+t.ai+"-"+t.aj;
+  }
+  /* el predimensionamiento de una corrida, con el subtipo del libro */
+  function predimZapataCorr(t){
+    var m=S.niveles[0]; if(!t||!m)return null;
+    var nm=nombres(0), at=0, ancho=0, cods=[], nCol=0, nPla=0, k;
+    t.nodos.forEach(function(n){
+      at+=medCol(n[0],n[1],m).at;
+      if(m.cols[key(n[0],n[1])]){
+        var sc=seccionCol(n[0],n[1],m,0); nCol++;
+        ancho=Math.max(ancho,((t.dir==="X")?sc.h:sc.b)/100);
+        cods.push((nm.C[key(n[0],n[1])]||{}).cod);
+      }
+    });
+    for(k=0;k<t.nodos.length-1;k++){
+      var n=t.nodos[k], o=(t.dir==="X")?"h":"v";
+      if(m.placas[key(o,n[0],n[1])]){ nPla++;
+        var pp=predimPlaca(o,n[0],n[1],m); if(pp)ancho=Math.max(ancho,pp.t); }
+    }
+    if(!(ancho>0))ancho=CRITERIOS.MINIMOS.anchoColumna;
+    var na=nodo(t.ai,t.aj,m), nb=nodo(t.bi,t.bj,m);
+    var sep=Math.sqrt((nb.x-na.x)*(nb.x-na.x)+(nb.y-na.y)*(nb.y-na.y));
+    /* de cara a cara: en un extremo con columna se suma media columna; sin ella, la placa acaba en el eje */
+    function media(i,j){ if(!m.cols[key(i,j)])return 0; var sc=seccionCol(i,j,m,0);
+      return ((t.dir==="X")?sc.b:sc.h)/200; }
+    var eA=media(t.ai,t.aj), eB=media(t.bi,t.bj), largo=sep+eA+eB;
+    /* EL LINDERO.  A lo largo: si un extremo esta en el limite la zapata no vuela por ahi y todo el
+       X va al otro; si lo estan los dos no puede volar a lo largo (L = h) y se ensancha.  A lo ancho:
+       si todo el tramo corre por el borde crece solo hacia adentro y queda excentrica, como una
+       medianera, y lleva su F = 1,50 (Oviedo pag. 121: el limite de propiedad genera momentos). */
+    var L=bordesLindero(), ladoA=(t.dir==="X")?"x0":"y0", ladoB=(t.dir==="X")?"x1":"y1";
+    var libreA=!!(m.zapatas[key(t.ai,t.aj)]||{}).libre;
+    var finA=!libreA&&L[ladoA]&&nadaMasAlla(t.ai,t.aj,m,ladoA);
+    var finB=!libreA&&L[ladoB]&&nadaMasAlla(t.bi,t.bj,m,ladoB);
+    var tr0=(t.dir==="X")?"y0":"x0", tr1=(t.dir==="X")?"y1":"x1";
+    function todos(lado){ return L[lado]&&t.nodos.every(function(n){ return nadaMasAlla(n[0],n[1],m,lado); }); }
+    var bordeT=libreA?null:(todos(tr0)?tr0:(todos(tr1)?tr1:null));
+    var Zc=CRITERIOS.ZAPATA;
+    var q=CALCULO.zapata({subtipo:"corrida", niveles:S.niveles.length, area_trib:at,
+                          categoria:S.categoria, sigma_s:sigmaDiseno(), largo:largo, ancho:ancho,
+                          F_sismo:bordeT?Zc.Fsismo.medianera:Zc.Fsismo.corrida,
+                          entreLinderos:!!(finA&&finB)});
+    q.tipo="corrida"; q.corrida=true; q.tramo=t; q.at=at; q.largo=largo; q.ancho=ancho; q.sep=sep;
+    q.extA=eA; q.extB=eB; q.nCol=nCol; q.nPla=nPla; q.cods=cods; q.presion=presionSuelo();
+    q.col_b=ancho*100; q.col_h=largo*100;
+    q.finA=finA; q.finB=finB; q.bordeT=bordeT;
+    /* el tipo que lee la hoja: sus formulas ramifican sobre el */
+    q.tipoHoja="Corrida"+(bordeT?" medianera":"")+((finA&&finB)?" entre linderos":"");
+    q.menorCalc=q.menor; q.mayorCalc=q.mayor; q.Hcalc=q.H;
+    /* lo adoptado, si lo pusiste a mano en la zapata del primer nudo */
+    var sdz=secDe(m.zapatas[key(t.ai,t.aj)]);
+    if(sdz){ if(sdz.B>0)q.menor=sdz.B/100; if(sdz.L>0)q.mayor=sdz.L/100; if(sdz.H>0)q.H=sdz.H/100; }
+    q.propia=!!(sdz&&(sdz.B>0||sdz.L>0||sdz.H>0));
+    q.Hpropio=!!(sdz&&sdz.H>0);
+    q.areaOk=(q.menor*q.mayor>=q.Az-1e-9); q.HOk=(q.H>=q.H_teorico-1e-9);
+    q.cumple=(q.areaOk&&q.HOk);
+    return q;
+  }
+  /* la corrida en planta, lista para dibujar y cruzar con las demas (mismos campos que zapatasDelNivel) */
+  function piezaCorrida(t,m){
+    var q=predimZapataCorr(t); if(!q)return null;
+    var na=nodo(t.ai,t.aj,m), nb=nodo(t.bi,t.bj,m), ax, ay, x0, x1, y0, y1;
+    if(t.dir==="X"){
+      ax=q.mayor; ay=q.menor;
+      var xs=na.x-q.extA, xe=nb.x+q.extB, yc=(na.y+nb.y)/2;
+      if(q.finA&&!q.finB){ x0=xs; } else if(q.finB&&!q.finA){ x0=xe-ax; } else { x0=(xs+xe)/2-ax/2; }
+      x1=x0+ax;
+      if(q.bordeT==="y0"){ y0=yc-q.ancho/2; } else if(q.bordeT==="y1"){ y0=yc+q.ancho/2-ay; } else { y0=yc-ay/2; }
+      y1=y0+ay;
+    }else{
+      ax=q.menor; ay=q.mayor;
+      var ys=na.y-q.extA, ye=nb.y+q.extB, xc=(na.x+nb.x)/2;
+      if(q.finA&&!q.finB){ y0=ys; } else if(q.finB&&!q.finA){ y0=ye-ay; } else { y0=(ys+ye)/2-ay/2; }
+      y1=y0+ay;
+      if(q.bordeT==="x0"){ x0=xc-q.ancho/2; } else if(q.bordeT==="x1"){ x0=xc+q.ancho/2-ax; } else { x0=xc-ax/2; }
+      x1=x0+ax;
+    }
+    return {i:t.ai, j:t.aj, cod:codigoCorrida(t,m), tipo:"corrida", B:q.menor, L:q.mayor, H:q.H, Az:q.Az,
+            combinada:false, corrida:true, con:q.cods, Hpropio:q.Hpropio, propia:q.propia,
+            cumple:(q.cumple!==false), eje:t.dir, ax:ax, ay:ay, lim:null, conectada:false, vigasCon:[],
+            tramo:t, q:q, x0:x0, x1:x1, y0:y0, y1:y1};
+  }
+  /* crear o quitar: el tramo tiene que ser un eje, y sus columnas no pueden estar combinadas ni en otra corrida */
+  function ponCorrida(nodos){
+    var m=S.niveles[0]; if(!m)return {ok:false,msg:"No hay nivel de cimentación."};
+    if(!nodos||nodos.length<2)return {ok:false,msg:"Una corrida necesita al menos dos nudos."};
+    var k, n;
+    for(k=0;k<nodos.length;k++){ n=nodos[k];
+      if(corridaEn(n[0],n[1],m))return {ok:false,msg:"Ese tramo ya tiene una zapata corrida: quítala primero."};
+      if(m.cols[key(n[0],n[1])]&&parejaZapata(n[0],n[1],m))
+        return {ok:false,msg:"La columna "+((nombres(0).C[key(n[0],n[1])]||{}).cod||"")+" está en una combinada: sepárala primero."};
+    }
+    var a=nodos[0], b=nodos[nodos.length-1];
+    snap();
+    m.zapatas=m.zapatas||{};
+    var za=m.zapatas[key(a[0],a[1])]||(m.zapatas[key(a[0],a[1])]={});
+    za.corr=b[0]+":"+b[1];
+    delete za.libre;
+    /* si esa columna tenia medidas propias de su zapata AISLADA, se guardan aparte: la corrida no las hereda */
+    if(za.sec){ za.secAislada=za.sec; delete za.sec; }
+    guardar(); render();
+    return {ok:true};
+  }
+  function quitaCorrida(i,j){
+    var m=S.niveles[0], t=corridaEn(i,j,m);
+    if(!t)return {ok:false,msg:"Ahí no hay zapata corrida."};
+    snap();
+    var z=m.zapatas[key(t.ai,t.aj)];
+    if(z){ delete z.corr; delete z.sec;
+      if(z.secAislada){ z.sec=z.secAislada; delete z.secAislada; }
+      if(!m.cols[key(t.ai,t.aj)])delete m.zapatas[key(t.ai,t.aj)]; }
+    guardar(); render();
+    return {ok:true};
+  }
+  /* bajo una placa: todo el muro, los tramos de placa seguidos en ese eje */
+  function nodosDePlaca(o,i,j,m){
+    m=m||S.niveles[0]; if(!m||!m.placas[key(o,i,j)])return null;
+    var a, b, out=[], k;
+    if(o==="h"){ a=i; b=i; while(m.placas[key("h",a-1,j)])a--; while(m.placas[key("h",b+1,j)])b++;
+      for(k=a;k<=b+1;k++)out.push([k,j]); }
+    else{ a=j; b=j; while(m.placas[key("v",i,a-1)])a--; while(m.placas[key("v",i,b+1)])b++;
+      for(k=a;k<=b+1;k++)out.push([i,k]); }
+    return out;
+  }
+  function corridaBajoPlaca(o,i,j){
+    var m=S.niveles[0], nd=nodosDePlaca(o,i,j,m);
+    if(!nd)return {ok:false,msg:"Ahí no hay placa."};
+    var ya=corridaEn(nd[0][0],nd[0][1],m)||corridaEn(nd[1][0],nd[1][1],m);
+    if(ya)return quitaCorrida(ya.ai,ya.aj);
+    return ponCorrida(nd);
+  }
+  /* bajo una fila de columnas: desde (i,j), las columnas seguidas del eje que tienen zapata
+     suelta.  Los nudos sin columna de en medio entran en el tramo (la zapata pasa por debajo). */
+  function filaDeColumnas(i,j,dir,m){
+    m=m||S.niveles[0]; if(!m||!m.cols[key(i,j)])return [];
+    var nX=m.dx.length+1, nY=m.dy.length+1;
+    function sirve(a,b){ var z=m.zapatas&&m.zapatas[key(a,b)];
+      return !!(m.cols[key(a,b)]&&z&&!parejaZapata(a,b,m)&&!corridaEn(a,b,m)); }
+    if(!sirve(i,j))return [];
+    var cols=[[i,j]], k;
+    if(dir==="X"){
+      for(k=i-1;k>=0;k--){ if(!m.cols[key(k,j)])continue; if(!sirve(k,j))break; cols.unshift([k,j]); }
+      for(k=i+1;k<nX;k++){ if(!m.cols[key(k,j)])continue; if(!sirve(k,j))break; cols.push([k,j]); }
+    }else{
+      for(k=j-1;k>=0;k--){ if(!m.cols[key(i,k)])continue; if(!sirve(i,k))break; cols.unshift([i,k]); }
+      for(k=j+1;k<nY;k++){ if(!m.cols[key(i,k)])continue; if(!sirve(i,k))break; cols.push([i,k]); }
+    }
+    return cols;
+  }
+  function corridaDeColumnas(i,j,dir){
+    var m=S.niveles[0], cols=filaDeColumnas(i,j,dir,m);
+    if(cols.length<3)return {ok:false,msg:"Para una corrida hacen falta tres columnas seguidas con zapata; con dos, usa Combinar."};
+    var a=cols[0], b=cols[cols.length-1];
+    return ponCorrida(tramoCorrida(a,b).nodos);
+  }
+
   function separarZapatas(i,j){
     var m=S.niveles[0], pa=parejaZapata(i,j,m);
     if(!pa)return {ok:false,msg:"Esa zapata no está combinada."};
@@ -18348,6 +18761,8 @@ var TT={script:performance.now()};
     var m=S.niveles[0]; if(!m||!m.zapatas)return [];
     var nX=m.dx.length+1, nY=m.dy.length+1, r=[], i, j;
     var nm=nombres(0);
+    /* las corridas primero: una pieza por tramo, aunque su primer nudo no tenga columna */
+    corridasDelNivel(m).forEach(function(t){ var pz=piezaCorrida(t,m); if(pz)r.push(pz); });
     for(i=0;i<nX;i++)for(j=0;j<nY;j++){
       if(!m.zapatas[key(i,j)]||!m.cols[key(i,j)])continue;
       var z=predimZapata(i,j); if(!z)continue;
@@ -18485,6 +18900,16 @@ var TT={script:performance.now()};
                  z.pareja?(+z.sep).toFixed(2):"0.00",
                  z.pareja?((z.cods||[]).join(" + ")):""]);
       }
+      /* LAS CORRIDAS: col b = el ancho del elemento y col h su largo de cara a cara, que es lo que
+         la hoja necesita para L = h + X y B = b + X */
+      corridasDelNivel(m).forEach(function(t){
+        var zc=predimZapataCorr(t); if(!zc)return;
+        var codC=codigoCorrida(t,m);
+        ZAC[codC]=[zc.P_servicio.toFixed(2),zc.Az.toFixed(3),zc.menorCalc.toFixed(2),zc.mayorCalc.toFixed(2),
+                   zc.Hcalc.toFixed(2),(zc.mayorCalc*zc.menorCalc>=zc.Az-1e-9)?"CUMPLE":"REVISAR"];
+        ZA.push([codC,zc.tipoHoja,S.niveles.length,zc.at.toFixed(3),zc.F_sismo.toFixed(2),
+                 zc.ancho.toFixed(2),zc.largo.toFixed(2),"0.00",(zc.cods||[]).join(" + ")]);
+      });
     }
     /* Lo YA CALCULADO de cada fila, para que la tabla del pie muestre
        numeros en vez de la palabra "formula".  Va aparte y por codigo: las
@@ -20057,6 +20482,12 @@ var TT={script:performance.now()};
     out.presion=pn;
     var m=S.niveles[0], nm=nombres(0);
     zapatasDelNivel().forEach(function(z){
+      if(z.corrida){
+        out.lista.push({cod:z.cod, tipo:"corrida", corrida:true, columna:(z.con||[]).join(" + "),
+                        B:z.B, L:z.L, H:z.H, i:z.i, j:z.j, estado:"falta",
+                        porque:"la zapata corrida ya está predimensionada; su diseño E.060 (acero y cortante) es un paso aparte, D6c"});
+        return;
+      }
       var codC=(nm.C[key(z.i,z.j)]||{}).cod, sc=seccionCol(z.i,z.j,m,0);
       var reg={cod:z.cod, tipo:z.tipo, combinada:!!z.combinada, eje:(nm.C[key(z.i,z.j)]||{}).eje,
                columna:codC, B:z.B, L:z.L, H:z.H, i:z.i, j:z.j, b:sc.b/100, h:sc.h/100,
@@ -22983,14 +23414,17 @@ var TT={script:performance.now()};
           campo("pScT","Sobrecarga sobre el piso",v(c.sc,D.sc),"t/m²","number",'min="0" max="2" step="0.05"')+
           campo("pHz","Peralte supuesto de la zapata",v(c.hz,D.hz),"m","number",'min="0.3" max="2" step="0.05"')+
           (function(){
-            var m0=S.niveles[0], L=cimDatos().limites, nX=m0.dx.length+1, nY=m0.dy.length+1;
+            var m0=S.niveles[0], L=bordesLindero(), nX=m0.dx.length+1, nY=m0.dy.length+1;
             var ex=nombresEje(true,m0)||[], ey=nombresEje(false,m0)||[];
             function ch(k,t){ return '<label class="pf-lim"><input type="checkbox" data-limite="'+k+'"'+(L[k]?" checked":"")+
               '> '+t+'</label>'; }
-            return '<div class="pf pf-limf"><span class="pfe">Límite de propiedad</span><span class="pf-lims">'+
+            return '<div class="pf pf-limf"><span class="pfe">Lindero (límite de propiedad)</span><span class="pf-lims">'+
               ch("x0","eje "+(ex[0]||"1°")+" (izq.)")+ch("x1","eje "+(ex[nX-1]||"último")+" (der.)")+
               ch("y0","eje "+(ey[0]||"1°")+" (arriba)")+ch("y1","eje "+(ey[nY-1]||"último")+" (abajo)")+
-              '</span><span class="pfu">E.060 15.2.6</span></div>';
+              '</span><span class="pfu">E.060 15.2.6</span></div>'+
+              '<p class="nota">El lindero sale de dónde están las columnas: la de más afuera de cada lado '+
+              'está en el límite y su zapata no puede salirse del terreno. Desmarca un lado solo si ahí '+
+              'hay retiro o terreno libre. Una zapata suelta se libera desde su ficha.</p>';
           })()+
           '<label class="pf"><span class="pfe">El estudio de suelos da σs ya neta</span>'+
           '<input type="checkbox" id="pNeta"'+(c.esNeta?" checked":"")+'>'+
@@ -23149,7 +23583,7 @@ var TT={script:performance.now()};
     try{ var cN=$("#pNeta"); if(cN)cN.onchange=function(){ cimPon("esNeta",!!this.checked); }; }catch(e){}
     Array.prototype.forEach.call($("#panelProy").querySelectorAll("[data-limite]"),function(x){
       x.onchange=function(){
-        var L=Object.assign({},cimDatos().limites); L[this.dataset.limite]=!!this.checked;
+        var L=Object.assign({},bordesLindero()); L[this.dataset.limite]=!!this.checked;
         cimPon("limites",L);
       };
     });
@@ -24423,7 +24857,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,quitaCorrida:quitaCorrida,fila:filaDeColumnas}}};
 })();
 </script>
 
