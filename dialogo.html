@@ -12118,7 +12118,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v333 · 18-09-2026";
+  var BUILD="v335 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17983,13 +17983,8 @@ var TT={script:performance.now()};
                 h+='<div class="zc-lados">'+[["x0","izq."],["x1","der."],["y0","arriba"],["y1","abajo"]].map(function(p){
                   var on=(lim.x===p[0]||lim.y===p[0]);
                   return '<button class="mini" aria-pressed="'+on+'" data-zlado="'+ij+':'+p[0]+'">'+p[1]+'</button>'; }).join("")+'</div>';
-                h+=(zzL&&!(zzL.vigasCon||[]).length)
-                  ? '<p class="aviso" style="margin:6px 0 0">Se pega al límite por la '+ladoLindero(lim)+', pero en su eje no hay '+
-                    'columna interior para la viga de conexión (va perpendicular al límite, en la línea de la columna). '+
-                    'Únela con sus vecinas en una <b>zapata corrida</b> (herramienta Zapata, <b>Shift</b> y arrastra) o pon una '+
-                    'columna interior en ese eje.</p>'
-                  : '<p class="nota" style="margin:6px 0 0">Se pega al límite por la '+ladoLindero(lim)+' y D6 la conecta con una '+
-                    'viga a la columna interior (E.060 15.2.6).'+(lim.mano?' La restricción la pusiste tú.':' Sale de dónde está la columna.')+'</p>';
+                h+='<p class="nota" style="margin:6px 0 0">Se pega al límite por la '+ladoLindero(lim)+' y queda excéntrica, '+
+                   'sin viga de cimentación. Su diseño en D6 queda pendiente hasta que decidas cómo tomar esa excentricidad.</p>';
               }else h+='<p class="nota" style="margin:6px 0 0">Sin restricción: va centrada bajo su columna.</p>';
               return h+'</div>';
             })()+
@@ -18652,14 +18647,10 @@ var TT={script:performance.now()};
     if(pac)return pac.dueña?predimZapataComb(pac):null;
     var sc=seccionCol(i,j,m,0);
     var d=medCol(i,j,m);
-    /* EL TIPO DE ZAPATA SALE DEL LINDERO, no del tipo de la columna.  La columna junto a un ducto o un
-       patio es «exterior» para su area tributaria (tiene menos paños), pero su zapata NO esta en el limite
-       de propiedad y Oviedo es explicito (nota de la pag. 121): «cuando la zapata exterior no se encuentre
-       ubicada en limite de propiedad [...] se podra considerar como una zapata aislada».  Dos lados en el
-       lindero: esquinera; uno: medianera; ninguno: centrada.  Asi tambien el retiro que marques en Suelo
-       o la zapata que liberes en su ficha cambian el tipo, y con el su F sismo. */
+    /* EL TIPO DE ZAPATA es el de Oviedo -sale del tipo de la columna-, salvo que en su ficha marques
+       «Zapata con restriccion»: entonces lo dicen sus lados en el lindero (uno, medianera; dos, esquinera). */
     var limZ=limiteDe(i,j,m), nLim=limZ?((limZ.x?1:0)+(limZ.y?1:0)):0;
-    var sub=(nLim===2)?"esquinera":((nLim===1)?"medianera":"centrada");
+    var sub=limZ?((nLim===2)?"esquinera":"medianera"):(TIPO_ZAPATA[d.tipo]||"centrada");
     var q=CALCULO.zapata({subtipo:sub,niveles:S.niveles.length,area_trib:d.at,
                           categoria:S.categoria,sigma_s:sigmaDiseno(),
                           col_b:sc.b/100,col_h:sc.h/100});
@@ -18726,13 +18717,9 @@ var TT={script:performance.now()};
     if(z&&z.libre)return null;                       /* la marcaste: tiene terreno libre al lado */
     /* «ZAPATA CON RESTRICCION» activada a mano, con sus lados: manda sobre lo que diga la ubicacion */
     if(z&&z.restr&&(z.restr.x||z.restr.y))return {x:z.restr.x||null, y:z.restr.y||null, mano:true};
-    var L=bordesLindero();
-    var lx=(L.x0&&nadaMasAlla(i,j,m,"x0"))?"x0":((L.x1&&nadaMasAlla(i,j,m,"x1"))?"x1":null);
-    var ly=(L.y0&&nadaMasAlla(i,j,m,"y0"))?"y0":((L.y1&&nadaMasAlla(i,j,m,"y1"))?"y1":null);
-    /* una columna suelta sin nada alrededor estaria en los cuatro lados: eso no es un lindero */
-    if(lx&&nadaMasAlla(i,j,m,lx==="x0"?"x1":"x0"))lx=null;
-    if(ly&&nadaMasAlla(i,j,m,ly==="y0"?"y1":"y0"))ly=null;
-    return (lx||ly)?{x:lx,y:ly}:null;
+    /* NADA AUTOMATICO: una zapata esta en el lindero solo si en su ficha marcaste «Zapata con restriccion».
+       (Victor, 18-09-2026: «si la activo es porque la tiene, si no, no».) */
+    return null;
   }
   /* el lado que se propone al activar la restriccion en una columna que no esta en el borde: el que no tiene
      losa (el de afuera); si tiene losa por todos lados, el borde de la planta que le queda mas cerca */
@@ -18752,8 +18739,9 @@ var TT={script:performance.now()};
     var m=S.niveles[0], z=m&&m.zapatas&&m.zapatas[key(i,j)];
     if(!z)return {ok:false,msg:"Esa columna no tiene zapata."};
     snap();
-    if(!activa){ z.libre=true; delete z.restr; }
-    else{ delete z.libre; if(!limiteDe(i,j,m))z.restr=ladoPropuesto(i,j,m); }
+    delete z.libre;
+    if(!activa)delete z.restr;
+    else if(!limiteDe(i,j,m))z.restr=ladoPropuesto(i,j,m);
     guardar(); render();
     return {ok:true};
   }
@@ -18765,7 +18753,7 @@ var TT={script:performance.now()};
     r[eje]=(r[eje]===lado)?null:lado;
     snap();
     delete z.libre;
-    if(!r.x&&!r.y){ z.libre=true; delete z.restr; }
+    if(!r.x&&!r.y)delete z.restr;
     else z.restr=r;
     guardar(); render();
     return {ok:true};
@@ -19016,13 +19004,8 @@ var TT={script:performance.now()};
        X va al otro; si lo estan los dos no puede volar a lo largo (L = h) y se ensancha.  A lo ancho:
        si todo el tramo corre por el borde crece solo hacia adentro y queda excentrica, como una
        medianera, y lleva su F = 1,50 (Oviedo pag. 121: el limite de propiedad genera momentos). */
-    var L=bordesLindero(), ladoA=(t.dir==="X")?"x0":"y0", ladoB=(t.dir==="X")?"x1":"y1";
-    var libreA=!!(m.zapatas[key(t.ai,t.aj)]||{}).libre;
-    var finA=!libreA&&L[ladoA]&&nadaMasAlla(t.ai,t.aj,m,ladoA);
-    var finB=!libreA&&L[ladoB]&&nadaMasAlla(t.bi,t.bj,m,ladoB);
-    var tr0=(t.dir==="X")?"y0":"x0", tr1=(t.dir==="X")?"y1":"x1";
-    function todos(lado){ return L[lado]&&t.nodos.every(function(n){ return nadaMasAlla(n[0],n[1],m,lado); }); }
-    var bordeT=libreA?null:(todos(tr0)?tr0:(todos(tr1)?tr1:null));
+    /* sin lindero automatico: la corrida es la del libro, centrada en sus columnas */
+    var finA=false, finB=false, bordeT=null;
     var Zc=CRITERIOS.ZAPATA;
     var q=CALCULO.zapata({subtipo:"corrida", niveles:S.niveles.length, area_trib:at,
                           categoria:S.categoria, sigma_s:sigmaDiseno(), largo:largo, ancho:ancho,
@@ -19065,14 +19048,8 @@ var TT={script:performance.now()};
     }
     /* EN EL LINDERO la corrida queda excentrica: la conecta una viga, perpendicular al limite, desde cada
        columna suya que tenga una columna interior en su eje (Harmsen 12.9).  Sin ninguna, queda en rojo. */
-    var vigasC=[], conectada=!!q.bordeT;
-    if(q.bordeT){
-      var dirV=(t.dir==="X")?"Y":"X", paso=(q.bordeT==="x0"||q.bordeT==="y0")?1:-1;
-      t.nodos.forEach(function(n){ if(!m.cols[key(n[0],n[1])])return;
-        var vc=vigaConexionDe(n[0],n[1],m,dirV,paso);
-        if(vc){ var na2=nodo(n[0],n[1],m), nb2=nodo(vc.i,vc.j,m);
-          vc.desde=[n[0],n[1]]; vc.xa=na2.x; vc.ya=na2.y; vc.xb=nb2.x; vc.yb=nb2.y; vigasC.push(vc); } });
-    }
+    /* SIN VIGAS DE CIMENTACION: no se ponen solas (Victor no las ha pedido) */
+    var vigasC=[], conectada=false;
     return {i:t.ai, j:t.aj, cod:codigoCorrida(t,m), tipo:"corrida", B:q.menor, L:q.mayor, H:q.H, Az:q.Az,
             combinada:false, corrida:true, con:q.cods, Hpropio:q.Hpropio, propia:q.propia,
             cumple:(q.cumple!==false), eje:t.dir, ax:ax, ay:ay, lim:q.bordeT?{x:(t.dir==="Y")?q.bordeT:null,y:(t.dir==="X")?q.bordeT:null}:null,
@@ -19307,17 +19284,15 @@ var TT={script:performance.now()};
       var vigasC=[];
       if(lim){
         var scl=seccionCol(i,j,m,0), hb=scl.b/200, hh=scl.h/200;
-        if(lim.x){ cx=(lim.x==="x0")?nd.x-hb+ax/2:nd.x+hb-ax/2;
-          var vx=vigaConexionDe(i,j,m,"X",lim.x==="x0"?1:-1); if(vx)vigasC.push(vx); }
-        if(lim.y){ cy=(lim.y==="y0")?nd.y-hh+ay/2:nd.y+hh-ay/2;
-          var vy=vigaConexionDe(i,j,m,"Y",lim.y==="y0"?1:-1); if(vy)vigasC.push(vy); }
-        vigasC.forEach(function(v){ var b2=nodo(v.i,v.j,m); v.xa=nd.x; v.ya=nd.y; v.xb=b2.x; v.yb=b2.y; });
+        /* con restriccion se pega al limite; SIN viga de cimentacion (no se pone sola) */
+        if(lim.x)cx=(lim.x==="x0")?nd.x-hb+ax/2:nd.x+hb-ax/2;
+        if(lim.y)cy=(lim.y==="y0")?nd.y-hh+ay/2:nd.y+hh-ay/2;
       }
       r.push({i:i,j:j,cod:nm.C[key(i,j)].cod.replace("-C-","-Z-")+(z.pareja?"+":""),
               tipo:z.tipo, B:z.menor, L:z.mayor, H:z.H, Az:z.Az,
               combinada:!!z.pareja, con:z.pareja?z.cods:null, Hpropio:!!z.Hpropio,
               propia:!!z.propia, cumple:(z.cumple!==false),
-              eje:eje, ax:ax, ay:ay, lim:lim, conectada:!!lim, vigasCon:vigasC, vacia:vacia,
+              eje:eje, ax:ax, ay:ay, lim:lim, conectada:false, vigasCon:vigasC, vacia:vacia,
               x0:cx-ax/2, x1:cx+ax/2, y0:cy-ay/2, y1:cy+ay/2});
     }
     return r;
@@ -21046,8 +21021,16 @@ var TT={script:performance.now()};
                conectada:!!z.conectada, lim:z.lim};
       if(!z.combinada){
         var rq=reac[codC];
+        if(z.lim){
+          /* CON RESTRICCION (pegada al limite, excentrica) y sin viga: como tomar esa excentricidad lo decide
+             Victor; hasta entonces D6 no la disena como si estuviera centrada, que seria inseguro */
+          reg.estado="falta"; reg.lim=z.lim;
+          reg.porque="zapata con restricción (excéntrica, sin viga de cimentación): su diseño queda pendiente hasta que "+
+            "decidas cómo tomar la excentricidad";
+          out.lista.push(reg); return;
+        }
         if(!rq){ reg.estado="falta"; reg.porque="ETABS no trae la reacción de "+codC; out.lista.push(reg); return; }
-        if(z.conectada){
+        if(false){
           reg.conectada=true;
           if(!z.vigasCon.length){ reg.estado="falta";
             reg.porque="está en el límite y no hay columna interior en su línea para la viga de conexión";
@@ -24026,19 +24009,6 @@ var TT={script:performance.now()};
           campo("pGr","Peso del relleno γ",v(c.gamma,D.gamma),"t/m³","number",'min="1" max="2.5" step="0.05"')+
           campo("pScT","Sobrecarga sobre el piso",v(c.sc,D.sc),"t/m²","number",'min="0" max="2" step="0.05"')+
           campo("pHz","Peralte supuesto de la zapata",v(c.hz,D.hz),"m","number",'min="0.3" max="2" step="0.05"')+
-          (function(){
-            var m0=S.niveles[0], L=bordesLindero(), nX=m0.dx.length+1, nY=m0.dy.length+1;
-            var ex=nombresEje(true,m0)||[], ey=nombresEje(false,m0)||[];
-            function ch(k,t){ return '<label class="pf-lim"><input type="checkbox" data-limite="'+k+'"'+(L[k]?" checked":"")+
-              '> '+t+'</label>'; }
-            return '<div class="pf pf-limf"><span class="pfe">Lindero (límite de propiedad)</span><span class="pf-lims">'+
-              ch("x0","eje "+(ex[0]||"1°")+" (izq.)")+ch("x1","eje "+(ex[nX-1]||"último")+" (der.)")+
-              ch("y0","eje "+(ey[0]||"1°")+" (arriba)")+ch("y1","eje "+(ey[nY-1]||"último")+" (abajo)")+
-              '</span><span class="pfu">E.060 15.2.6</span></div>'+
-              '<p class="nota">El lindero sale de dónde están las columnas: la de más afuera de cada lado '+
-              'está en el límite y su zapata no puede salirse del terreno. Desmarca un lado solo si ahí '+
-              'hay retiro o terreno libre. Una zapata suelta se libera desde su ficha.</p>';
-          })()+
           '<label class="pf"><span class="pfe">El estudio de suelos da σs ya neta</span>'+
           '<input type="checkbox" id="pNeta"'+(c.esNeta?" checked":"")+'>'+
           '<span class="pfu">no se resta nada</span></label>'+
