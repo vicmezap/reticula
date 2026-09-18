@@ -5592,7 +5592,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     s216: "Art. 21.6.4.2", hx216: "Art. 21.6.4.3", lo216: "Art. 21.6.4.4", fuera216: "Art. 21.6.4.5",
     ash: "Art. 21.6.4.1 (b)", zuncho: "Art. 21.6.4.1 (a) y 10.9.3, ec. (10-5)", vu216: "Art. 21.6.5.1",
     s214: "Art. 21.4.5.3", fuera214: "Art. 21.4.5.4", vu214: "Art. 21.4.3",
-    nudo: "Art. 21.6.2.2"
+    nudo: "Art. 21.6.2.2", pu01: "Art. 21.6.2.1"
   };
   var PHI_V = 0.85;                 /* cortante, Art. 9.3.2.3 */
   var GRAV = 1.25;                  /* 1,25 (CM + CV), Art. 9.2.3 */
@@ -6068,6 +6068,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
                     estribo: estriboNom, estriboMin: estriboMinimo(sec.bar) };
     base.combos = porCombo; base.peor = peor;
     base.Po = po(sec) / 1000; base.fPnMax = sup.fPnMax / 1000; base.Mn = Mn / 1e5;
+    /* para el nudo (D4): el Mn MAS BAJO en el rango de axiales -Art. 21.6.2.2- y si la columna
+       llega al 0,1 f'c Ag que pide el Art. 21.6.2.1 para que la comprobacion aplique */
+    base.MnMin = momentoMinimo(sup, dem) / 1e5;
+    base.MnMin2 = momentoMinimo(sup, dem, "M2") / 1e5;
+    base.MnMin3 = momentoMinimo(sup, dem, "M3") / 1e5;
+    base.columnaFuerte = pideColumnaFuerte(dem, fc, sec.Ag);
     base.cortante = { Vu: Vu, Vcap: Vcap, Vana: Vana, Vc: Vc, Vs: Vs, VsMax: VsM, d: d, bw: bw,
                       ramas: ramas, Av: Av, sReq: sReq, sMax: sMax, por: porV };
     base.estribos = { Lo: conf.Lo, so: redAbajo(sDentro, 1), sFuera: redAbajo(sFuera, 1),
@@ -6078,6 +6084,69 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   }
 
   /* el mayor Mn de la sección en el rango de cargas axiales de las combinaciones (21.4.3 y 21.6.5.1) */
+
+  /* la capacidad NOMINAL de una curva para una carga axial dada: (M2, M3) donde Pn = Pu.
+     La de arriba entra por φPn y devuelve φM: esta entra por el axial de verdad y devuelve Mn,
+     que es lo que compara el Art. 21.6.2.2 -momentos nominales, sin φ-. */
+  function enCurvaNominal(curva, Pn0) {
+    var pts = curva.pts, i, a, b, t;
+    for (i = 0; i < pts.length - 1; i++) {
+      a = pts[i]; b = pts[i + 1];
+      if ((a.Pn - Pn0) * (b.Pn - Pn0) <= 0 && Math.abs(b.Pn - a.Pn) > 1e-9) {
+        t = (Pn0 - a.Pn) / (b.Pn - a.Pn);
+        return { M2: a.M2 + (b.M2 - a.M2) * t, M3: a.M3 + (b.M3 - a.M3) * t, fuera: false };
+      }
+    }
+    return { M2: 0, M3: 0, fuera: true };
+  }
+
+  /* la curva cuyo eje neutro da flexion en la direccion pedida: "M3" es la que flexiona con el
+     momento M3 (el fuerte de ETABS) y "M2" la otra */
+  function curvaDe(sup, cual) {
+    var buscado = (cual === "M2") ? Math.PI / 2 : 0, mejor = null, dif = 1e9, i, d;
+    for (i = 0; i < sup.curvas.length; i++) {
+      d = Math.abs(Math.atan2(Math.sin(sup.curvas[i].alfa - buscado), Math.cos(sup.curvas[i].alfa - buscado)));
+      if (d < dif) { dif = d; mejor = sup.curvas[i]; }
+    }
+    return mejor;
+  }
+
+  /* =====================================================================
+     Mnc PARA EL NUDO (Art. 21.6.2.2)
+
+     No es el momento mayor que puede dar la columna, sino el MAS BAJO de
+     los que le tocan: se mira cada combinacion con SU carga axial y se
+     toma el menor.  Con axiales altas la seccion da menos momento, asi
+     que es justo la combinacion mas comprimida la que suele mandar.
+
+     cual: "M2" o "M3" para pedir la direccion; sin ella, el menor de las
+     dos, que es el del lado seguro.
+     ===================================================================== */
+  function momentoMinimo(sup, dem, cual) {
+    if (!sup || !dem || !dem.length) return 0;
+    var curvas = cual ? [curvaDe(sup, cual)] : [curvaDe(sup, "M2"), curvaDe(sup, "M3")];
+    var min = null;
+    dem.forEach(function (d) {
+      curvas.forEach(function (cur) {
+        if (!cur) return;
+        var e = enCurvaNominal(cur, d.Pu);
+        if (e.fuera) return;                       /* axial por encima de la curva: no hay momento */
+        var M = Math.sqrt(e.M2 * e.M2 + e.M3 * e.M3);
+        if (min === null || M < min) min = M;
+      });
+    });
+    return min === null ? 0 : min;
+  }
+
+  /* Art. 21.6.2.1: la comprobacion de columna fuerte solo se le hace a la columna cuya carga
+     axial amplificada excede 0,1 f'c Ag.  Por debajo, la norma la trata como elemento en flexion. */
+  function pideColumnaFuerte(dem, fc, Ag) {
+    var Pmax = 0;
+    (dem || []).forEach(function (d) { Pmax = Math.max(Pmax, d.Pu || 0); });
+    var tope = 0.1 * fc * Ag / 1000;               /* kgf -> t */
+    return { aplica: Pmax > tope, Pu: Pmax, tope: tope, art: ART.pu01 };
+  }
+
   function momentoMaximo(sup, dem) {
     var Pmin = 1e18, Pmax = -1e18, M = 0;
     dem.forEach(function (d) { Pmin = Math.min(Pmin, d.Pu); Pmax = Math.max(Pmax, d.Pu); });
@@ -6143,7 +6212,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   return { ART: ART, PHI_V: PHI_V, GRAV: GRAV, MPR: MPR,
            rejilla: rejilla, circulares: circulares, seccion: seccion, contorno: contorno,
            recorta: recorta, areaCentro: areaCentro, punto: punto, po: po, pnMax: pnMax,
-           pBalanceado: pBalanceado, superficie: superficie, enCurva: enCurva, verifica: verifica,
+           pBalanceado: pBalanceado, superficie: superficie, enCurva: enCurva, enCurvaNominal: enCurvaNominal,
+           curvaDe: curvaDe, momentoMinimo: momentoMinimo, pideColumnaFuerte: pideColumnaFuerte, verifica: verifica,
            bresler: bresler, pnConE: pnConE, esbeltez: esbeltez, vc: vc, vsMax: vsMax, confinamiento: confinamiento,
            ash: ash, zuncho: zuncho, ramasDe: ramasDe, propone: propone, momentoMaximo: momentoMaximo,
            disenar: disenar, resumen: resumen };
@@ -6201,10 +6271,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
+  /* Los artículos, leídos del texto oficial de la E.060 2009 que está en
+     documentacion/bibliografia, no de memoria. */
   var ART = {
-    fuerte: "Art. 21.6.2.2", cortante: "Art. 21.7.4", aj: "Art. 21.7.4.1",
-    barra: "Art. 21.7.2.3", estribos: "Art. 21.7.3", ash: "Art. 21.6.4.1 (b)",
-    phi: "Art. 9.3.2.3", mpr: "Art. 21.6.5.1"
+    fuerte: "Art. 21.6.2.2", pu01: "Art. 21.6.2.1", cortante: "Art. 21.7.4.3", aj: "Art. 21.7.4.1",
+    pasa: "Art. 21.7.2.4", termina: "Art. 21.7.2.3", gancho: "Art. 12.5", ganchoMin: "Art. 12.5.1",
+    estribos: "Art. 21.7.3.2", ash: "Art. 21.6.4.1", phi: "Art. 21.7.2.2", mpr: "Art. 21.6.5.1"
   };
 
   var PHI_V = 0.85;        /* cortante */
@@ -6344,21 +6416,68 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var C = (o.mnc || []).reduce(function (a, b) { return a + pos(b); }, 0);
     var V = (o.mnv || []).reduce(function (a, b) { return a + pos(b); }, 0);
     var pide = FACTOR * V;
+    /* Art. 21.6.2.1: si la columna no llega a 0,1 f'c Ag, esta comprobación no le toca */
+    var aplica = (o.aplica === undefined) ? true : !!o.aplica;
     return {
-      sumaMnc: C, sumaMnv: V, pide: pide, factor: FACTOR,
+      sumaMnc: C, sumaMnv: V, pide: pide, factor: FACTOR, aplica: aplica,
+      Pu: o.Pu == null ? null : +o.Pu, tope: o.tope == null ? null : +o.tope,
       ratio: pide > 0 ? C / pide : null,
-      cumple: (V <= 0) ? null : (C >= pide - 1e-9),
-      art: ART.fuerte
+      cumple: !aplica ? null : ((V <= 0) ? null : (C >= pide - 1e-9)),
+      art: ART.fuerte, artAplica: ART.pu01
     };
   }
 
-  /* la columna, medida paralela a la barra de viga, no baja de 20 db */
+  /* ---------------------------------------------------------------
+     EL ANCLAJE DE LA BARRA DE VIGA.  Son DOS artículos distintos y hay que
+     saber cuál toca, porque piden cosas muy diferentes:
+
+       · la barra que ATRAVIESA el nudo -viga a los dos lados- pide columna
+         >= 20 db (21.7.2.4).  Es una condición de adherencia: la barra
+         entra en fluencia por un lado y en compresión por el otro, y el
+         nudo tiene que darle largo suficiente para el cambio;
+
+       · la barra que TERMINA en la columna -nudo de borde o de esquina-
+         se ancla con gancho hasta la cara más lejana del núcleo confinado
+         (21.7.2.3 -> 21.7.5.1 -> 12.5):
+              ldg = 0,075 fy db / raiz(f'c)      (kgf/cm², db y ldg en cm)
+         y nunca menos de 8 db ni de 15 cm (12.5.1).  El 12.5.3 permite
+         bajarla al 70 % con recubrimiento lateral >= 65 mm y extensión
+         >= 50 mm, y al 80 % con estribos a no más de 3 db; se aplican solo
+         si quien llama dice que se cumplen.
+     --------------------------------------------------------------- */
   function barraPasante(o) {
     o = o || {};
     var h = pos(o.hCol), db = pos(o.db);
     if (!(h > 0 && db > 0)) return null;
     var min = DB_MIN * db / 10;                        /* db en mm -> cm */
-    return { hCol: h, db: db, min: min, veces: h / (db / 10), cumple: h >= min - 1e-9, art: ART.barra };
+    return { tipo: "pasa", hCol: h, db: db, min: min, veces: h / (db / 10),
+             cumple: h >= min - 1e-9, art: ART.pasa,
+             dice: "la barra atraviesa el nudo: la columna no baja de 20 db" };
+  }
+
+  function ganchoTermina(o) {
+    o = o || {};
+    var h = pos(o.hCol), db = pos(o.db), fc = pos(o.fc), fy = pos(o.fy) || 4200;
+    if (!(h > 0 && db > 0 && fc > 0)) return null;
+    var dbCm = db / 10;
+    var ldg = 0.075 * fy * dbCm / Math.sqrt(fc);       /* 12.5.2, anexo en kgf/cm² */
+    var base = ldg, factores = [];
+    if (o.recubre) { ldg *= 0.7; factores.push("0,7 por recubrimiento (12.5.3 a)"); }
+    if (o.estribado) { ldg *= 0.8; factores.push("0,8 por estribos (12.5.3 b)"); }
+    var piso = Math.max(8 * dbCm, 15);                 /* 12.5.1 */
+    var pide = Math.max(ldg, piso);
+    /* lo que hay: de la cara donde llega la viga hasta la cara más lejana del núcleo confinado */
+    var rec = (o.rec == null) ? 4 : pos(o.rec), est = (o.estribo == null) ? 0.95 : pos(o.estribo);
+    var hay = Math.max(h - rec - est, 0);
+    return { tipo: "termina", hCol: h, db: db, ldg: base, factores: factores, minimo: piso,
+             pide: pide, hay: hay, cumple: hay >= pide - 1e-9, art: ART.termina, artCalculo: ART.gancho,
+             dice: "la barra termina en la columna: se ancla con gancho dentro del núcleo" };
+  }
+
+  /* la comprobación que toca, según haya viga a los dos lados o a uno */
+  function anclaje(o) {
+    o = o || {};
+    return (o.pasa === true) ? barraPasante(o) : ganchoTermina(o);
   }
 
   /* los estribos DENTRO del nudo */
@@ -6406,9 +6525,15 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       if (lados) q.sentido = lados.nombre;
       var r = g ? vn({ fc: fc, Aj: g.Aj, clase: cl.k }) : null;
       var phiVn = r ? PHI_V * r.Vn : null;
-      var cf = columnaFuerte({ mnc: v.mnc, mnv: lados ? lados.mnv : v.mnv });
+      var cf = columnaFuerte({ mnc: v.mnc, mnv: lados ? lados.mnv : v.mnv,
+                               aplica: (v.aplica === undefined) ? true : !!v.aplica,
+                               Pu: v.Pu, tope: v.tope });
       if (lados) cf.sentido = lados.nombre;
-      var bp = barraPasante({ hCol: hCol, db: v.db });
+      /* ¿la barra atraviesa o termina?  Atraviesa si hay viga a los dos lados en esta dirección */
+      var pasa = !!(v.izq && v.der) || (v.pasa === true);
+      var bp = anclaje({ pasa: pasa, hCol: hCol, db: v.db, fc: fc, fy: fy,
+                         rec: o.rec, estribo: o.estribo,
+                         recubre: v.recubre, estribado: v.estribado });
 
       out.dir[d] = {
         clase: cl, aj: g, cortante: q, vn: r, phi: PHI_V, phiVn: phiVn,
@@ -6418,6 +6543,11 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       };
 
       var et = d.toUpperCase();
+      if (cf.aplica === false)
+        out.avisos.push({ g: "leve", t: "dirección " + et + ": la columna no llega a 0,1 f'c Ag" +
+          (cf.Pu != null && cf.tope != null ? " (Pu " + cf.Pu.toFixed(1) + " t frente a " +
+           cf.tope.toFixed(1) + " t)" : "") + ", así que el " + ART.fuerte + " no le aplica (" +
+          ART.pu01 + ")." });
       if (cf.cumple === false)
         out.avisos.push({ g: "grave", t: "dirección " + et + ": la columna no es más fuerte que las vigas. " +
           "Σ Mnc = " + cf.sumaMnc.toFixed(2) + " t·m y hace falta 1,2 Σ Mnv = " + cf.pide.toFixed(2) +
@@ -6425,10 +6555,14 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       if (out.dir[d].cumpleV === false)
         out.avisos.push({ g: "grave", t: "dirección " + et + ": el nudo no resiste su cortante. " +
           "Vu = " + q.Vu.toFixed(2) + " t frente a φVn = " + phiVn.toFixed(2) + " t (" + ART.cortante + ")." });
-      if (bp && !bp.cumple)
-        out.avisos.push({ g: "grave", t: "dirección " + et + ": la columna mide " + bp.hCol.toFixed(0) +
-          " cm y la barra de viga de " + bp.db + " mm pide " + bp.min.toFixed(0) + " cm (20 db, " +
-          ART.barra + "): la barra no ancla dentro del nudo." });
+      if (bp && !bp.cumple && bp.tipo === "pasa")
+        out.avisos.push({ g: "grave", t: "dirección " + et + ": la barra de viga de " + bp.db +
+          " mm atraviesa el nudo y pide " + bp.min.toFixed(0) + " cm de columna (20 db, " + ART.pasa +
+          "); la columna mide " + bp.hCol.toFixed(0) + " cm." });
+      if (bp && !bp.cumple && bp.tipo === "termina")
+        out.avisos.push({ g: "grave", t: "dirección " + et + ": la barra de viga de " + bp.db +
+          " mm termina en la columna y su gancho pide " + bp.pide.toFixed(0) + " cm (" + ART.gancho +
+          "), y dentro del núcleo confinado solo hay " + bp.hay.toFixed(0) + " cm (" + ART.termina + ")." });
       if (cl.k === "otros")
         out.avisos.push({ g: "leve", t: "dirección " + et + ": " + cl.texto + " (" + cl.caras +
           " cara(s) con viga ancha). El nudo trabaja con el menor de los tres coeficientes." });
@@ -6473,6 +6607,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   return {
     ART: ART, PHI_V: PHI_V, FACTOR: FACTOR, SOBRE: SOBRE, COEF: COEF, S_NUDO: S_NUDO, DB_MIN: DB_MIN,
     confinan: confinan, clase: clase, aj: aj, vn: vn, cortante: cortante, vColumna: vColumna,
+    barraPasante: barraPasante, ganchoTermina: ganchoTermina, anclaje: anclaje,
     sentidos: sentidos, peorSentido: peorSentido,
     columnaFuerte: columnaFuerte, barraPasante: barraPasante, estribos: estribos,
     revisar: revisar, salidas: salidas
@@ -9665,7 +9800,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v258 · 18-09-2026";
+  var BUILD="v260 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17553,14 +17688,27 @@ var TT={script:performance.now()};
         function dbMax(a,b2){ return Math.max(a&&a.db?a.db:0, b2&&b2.db?b2.db:0)||null; }
         function mpr(v,parte){ return v?MPR_NUDO*(parte==="sup"?v.mnSup:v.mnInf):0; }
 
-        var mnc=[cAb.Mn||0]; if(cAr&&cAr.Mn)mnc.push(cAr.Mn);
+        /* Art. 21.6.2.2: el Mn que se compara es el MAS BAJO en el rango de axiales de la
+           columna, no el mayor -ese es el del Art. 21.6.5.1, para la cortante por capacidad-.
+           D3 lo calcula como base.MnMin; si un modelo viejo no lo trae, se usa el de siempre. */
+        var mnAb=(cAb.MnMin!=null)?cAb.MnMin:cAb.Mn, mnAr=cAr?((cAr.MnMin!=null)?cAr.MnMin:cAr.Mn):0;
+        var mnc=[mnAb||0]; if(mnAr)mnc.push(mnAr);
+        /* Art. 21.6.2.1: si ninguna de las dos columnas llega a 0,1 f'c Ag, la comprobación no aplica */
+        var cfAb=cAb.columnaFuerte||{aplica:true}, cfAr=(cAr&&cAr.columnaFuerte)||null;
+        var aplicaCF=!!cfAb.aplica||!!(cfAr&&cfAr.aplica);
         var r=NUDOS.revisar({
           fc:K.fc, fy:K.fy, bCol:bCol, hColX:hCol, hColY:bCol, hEntrepiso:(+m.h||2.8),
           caras:caras,
+          /* el recubrimiento y el estribo de la columna, para saber cuánto núcleo hay para el gancho */
+          rec:(K.recub&&K.recub.columna&&K.recub.columna.cm)||4,
+          estribo:(K.barras&&K.barras.columna&&K.barras.columna.estribo&&DISENO.barra(K.barras.columna.estribo))
+                  ? DISENO.barra(K.barras.columna.estribo).d : 0.95,
           x:{bViga:anchoMax(vIzq,vDer), izq:lado(vIzq), der:lado(vDer), mnc:mnc,
+             aplica:aplicaCF, Pu:cfAb.Pu, tope:cfAb.tope,
              mprIzq:mpr(vIzq,"sup"), mprDer:mpr(vDer,"inf"), db:dbMax(vIzq,vDer),
              ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0},
           y:{bViga:anchoMax(vAb2,vAr2), izq:lado(vAb2), der:lado(vAr2), mnc:mnc,
+             aplica:aplicaCF, Pu:cfAb.Pu, tope:cfAb.tope,
              mprIzq:mpr(vAb2,"sup"), mprDer:mpr(vAr2,"inf"), db:dbMax(vAb2,vAr2),
              ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0}
         });
@@ -17644,16 +17792,27 @@ var TT={script:performance.now()};
         var cf=n2.fuerte||{}, A=n2.aj||{}, V=n2.cortante||{};
         h+='<div class="dis-figw"><h4 style="margin:6px 0 4px">Dirección '+d.toUpperCase()+'</h4>'+
           '<div class="etb-scroll"><table class="sis-t"><tbody>'+
-          fila("Columna fuerte, viga débil","Σ Mnc = "+f(cf.sumaMnc)+" t·m  ·  1,2 Σ Mnv = "+f(cf.pide)+
-               " t·m"+(cf.sentido?"  ·  sentido "+cf.sentido:""), cf.cumple, NUDOS.ART.fuerte)+
+          fila("Columna fuerte, viga débil",
+               (cf.aplica===false
+                 ? ("no aplica: la columna no llega a 0,1 f'c Ag"+
+                    (cf.Pu!=null?" (Pu "+f(cf.Pu,1)+" t frente a "+f(cf.tope,1)+" t)":""))
+                 : "Σ Mnc = "+f(cf.sumaMnc)+" t·m  ·  1,2 Σ Mnv = "+f(cf.pide)+" t·m"+
+                   (cf.sentido?"  ·  sentido "+cf.sentido:"")),
+               cf.cumple, (cf.aplica===false)?NUDOS.ART.pu01:NUDOS.ART.fuerte)+
           fila("Nudo",f(A.bj,0)+" cm de ancho efectivo ("+esc(A.manda||"")+")  ·  Aj = "+f(A.Aj,0)+
                " cm²  ·  "+esc((n2.clase||{}).texto||""), null, NUDOS.ART.aj)+
           fila("Cortante","Vu = "+f(V.Vu)+" t  =  T1 "+f(V.T1)+" + C2 "+f(V.C2)+" − Vcol "+f(V.Vcol)+
                "  ·  φVn = "+f(n2.phiVn)+" t", n2.cumpleV, NUDOS.ART.cortante)+
-          fila("Barra que atraviesa", n2.barra
-               ? ("columna "+f(n2.barra.hCol,0)+" cm  ·  20 db = "+f(n2.barra.min,1)+" cm con barras de "+
-                  f(n2.barra.db,1)+" mm")
-               : "sin barras de viga conocidas", n2.barra?n2.barra.cumple:null, NUDOS.ART.barra)+
+          fila((n2.barra&&n2.barra.tipo==="termina")?"Barra que termina (gancho)":"Barra que atraviesa",
+               !n2.barra ? "sin barras de viga conocidas"
+               : (n2.barra.tipo==="pasa"
+                  ? ("columna "+f(n2.barra.hCol,0)+" cm  ·  20 db = "+f(n2.barra.min,1)+
+                     " cm con barras de "+f(n2.barra.db,1)+" mm")
+                  : ("ℓdg = "+f(n2.barra.ldg,1)+" cm  ·  mínimo "+f(n2.barra.minimo,1)+
+                     " cm  ·  pide "+f(n2.barra.pide,1)+" cm y hay "+f(n2.barra.hay,1)+
+                     " cm de núcleo, con barras de "+f(n2.barra.db,1)+" mm")),
+               n2.barra?n2.barra.cumple:null,
+               n2.barra?(n2.barra.tipo==="pasa"?NUDOS.ART.pasa:NUDOS.ART.gancho):NUDOS.ART.pasa)+
           fila("Estribos dentro del nudo", "Ash = "+f((n2.estribos||{}).ash)+" cm²  ·  s ≤ "+
                f((n2.estribos||{}).s,0)+" cm  ·  "+esc((n2.estribos||{}).texto||""), null, NUDOS.ART.estribos)+
           '</tbody></table></div></div>';
@@ -21053,7 +21212,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
