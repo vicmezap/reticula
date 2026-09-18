@@ -127,6 +127,9 @@
   .leyi{display:flex;align-items:center;gap:6px;font:400 11.5px "IBM Plex Sans",sans-serif;color:var(--ink-2)}
   .leyi span.c{width:11px;height:11px;flex:none;border-radius:2px;border:1px solid var(--ink-3)}
   .leyi b{margin-left:auto;font:500 11px "IBM Plex Mono",monospace;color:var(--ink)}
+  /* En Edificio y en 3D no hay herramientas ni inspector: la reticula se queda con una sola pista y el
+     contenido usa todo el ancho.  Sin esto, el bloque caia en la pista de 132 px de las herramientas. */
+  .work.ancho{grid-template-columns:minmax(0,1fr)}
   @media(max-width:980px){.work{grid-template-columns:1fr}}
   /* Hojas Excel no es el lienzo: no lleva herramientas ni inspector.  Sin
      esto la reticula conserva sus pistas de 132px y 292px, la galeria cae
@@ -397,7 +400,35 @@
 .dis-arm .pfn{grid-column:auto;align-self:center;margin:0}
 .pfi.dis-n{width:64px}
 .dis-cort .kv{max-width:560px}
+/* EL 3D: cielo en degradado detras del lienzo -el visor lo deja transparente- y una vineta suave en los
+   bordes.  Las burbujas y las cotas van encima, en HTML, para que el texto se lea nitido. */
+.v3d-lienzo{position:relative;background:radial-gradient(120% 90% at 50% 0%, var(--sheet) 0%, var(--paper) 100%)}
+.v3d-lienzo::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(76% 62% at 50% 46%, rgba(0,0,0,0) 55%, rgba(12,20,27,.13) 100%)}
+.v3d-lienzo canvas{position:relative;z-index:0}
+.v3d-lienzo #b3d{z-index:2}
+.v3d-cota{position:absolute;transform:translate(-50%,-50%);font:500 10px/1 "IBM Plex Mono",monospace;
+  color:var(--ink-2);background:var(--sheet);padding:1px 3px;border-radius:2px;white-space:nowrap}
+.v3d-niv{position:absolute;transform:translate(-100%,-50%);font:600 10.5px/1 "IBM Plex Sans",sans-serif;
+  color:var(--ink);background:var(--sheet);border:1px solid var(--line);border-radius:3px;padding:3px 6px;
+  white-space:nowrap}
+.v3d-mando{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2)}
+.v3d-mando input[type="range"]{width:92px;accent-color:var(--acc)}
+.v3d-mando output{font:500 10.5px "IBM Plex Mono",monospace;color:var(--ink);min-width:46px;text-align:right}
 .dis-figw{margin:2px 0 10px}
+/* D3: las dos figuras de la columna van a una altura fija; sin esto el SVG se estiraba
+   a todo el ancho del panel y los textos salian enormes. */
+.dis-figs{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin:6px 0 12px}
+.dis-fig{display:block;width:auto}
+.dis-fig-pm{height:250px}
+.dis-fig-sec{height:170px}
+.dis-figt{font:11px "IBM Plex Sans",sans-serif;fill:var(--ink-2)}
+.dis-avisos{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2)}
+.dis-avisos li{margin:3px 0}
+.dis-todas{margin-top:10px}
+.dis-todas summary{cursor:pointer;font-size:12.5px;color:var(--ink-2);padding:4px 0}
+.dis-fila{cursor:pointer}
+.dis-fila.sel>td{background:var(--sheet)}
 .dis-figw svg{display:block;max-width:none}
 .ejes-acc{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
 .luces .eje-nom{width:4.1em;padding:0 2px;font:inherit;font-size:.88em;font-style:normal;color:inherit;background:var(--sheet);
@@ -7790,12 +7821,16 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
                   nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", escalera: "#7C6FA8",
                   /* los ejes en el suelo, del rojo de las burbujas del plano; y el aviso, mas encendido */
-                  eje: "#C2443D", aviso: "#D23B2E" };
+                  eje: "#C2443D", aviso: "#D23B2E",
+                  /* el terreno donde se apoya el edificio, su rejilla de un metro y las cotas de vano */
+                  suelo: "#E4EAEF", rejilla: "#C2CFD9", cota: "#8C97A2" };
   var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "escalera", "eje"];
   /* la losa tapa la cara de arriba de vigas, columnas y placas: se bajan un pelo para que no parpadeen */
   var BAJA_VIGA = 0.003, BAJA_COL = 0.006, LADOS_CIRCULO = 20;
   /* el eje sale un poco fuera de la planta y su burbuja va un poco mas alla; el prisma es plano y fino */
   var EJE_FUERA = 0.60, EJE_BURB = 0.45, EJE_ANCHO = 0.04, EJE_ALTO = 0.01;
+  /* el suelo sale del edificio unos metros, la rejilla es de 1 m y las cotas van por fuera */
+  var SUELO_FUERA = 0.55, SUELO_MIN = 3.0, REJILLA = 1.0, COTA_FUERA = 2.2, COTA_MARCA = 0.22, SUELO_BAJA = 0.02;
 
   /* --- vectores ------------------------------------------------------------ */
   function resta(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
@@ -8030,7 +8065,67 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       out.forEach(function (s) { for (var q = 0; q < 3; q++) { mn[q] = Math.min(mn[q], s.min[q]); mx[q] = Math.max(mx[q], s.max[q]); } });
       caja = { min: mn, max: mx, centro: por(suma(mn, mx), 0.5), radio: Math.max(0.5, largo(resta(mx, mn)) / 2) };
     }
-    return { solidos: out, caja: caja, avisos: avisos, burbujas: burbujas,
+
+    /* EL SUELO.  Un edificio flotando no se entiende: se le pone el terreno donde se apoya, con la rejilla
+       de un metro, los ejes marcados y las cotas de vano dibujadas como en un plano.  Nada de esto se puede
+       tocar con el raton -no es una pieza- y no entra en la caja que encuadra la camara. */
+    var lineas = [], cotas = [], suelo = null;
+    if (o.suelo !== false && caja) {
+      var zs = caja.min[2] - SUELO_BAJA;
+      /* el terreno sale del edificio en proporcion a su tamano: con una planta chica, un suelo enorme se
+         comia la escena y la niebla lo dejaba todo blanco */
+      var fuera = Math.max(SUELO_MIN, COTA_FUERA + 1.0,
+                           SUELO_FUERA * Math.max(caja.max[0] - caja.min[0], caja.max[1] - caja.min[1]));
+      var sx0 = caja.min[0] - fuera, sx1 = caja.max[0] + fuera,
+          sy0 = caja.min[1] - fuera, sy1 = caja.max[1] + fuera;
+      var g = prisma([[sx0, sy0], [sx1, sy0], [sx1, sy1], [sx0, sy1]], zs - 0.04, zs, false);
+      g.aristas = [];
+      out.push({ fam: "suelo", cod: "suelo", nivel: 0, titulo: "Terreno", detalle: "donde se apoya el edificio",
+                 color: C.suelo, tris: g.tris, aristas: [], min: [sx0, sy0, zs - 0.04], max: [sx1, sy1, zs],
+                 noTocar: true });
+      suelo = { z: zs, min: [sx0, sy0], max: [sx1, sy1] };
+
+      var rej = [], m;
+      for (m = Math.ceil(sx0 / REJILLA) * REJILLA; m <= sx1; m += REJILLA)
+        rej.push([[m, sy0, zs + 0.001], [m, sy1, zs + 0.001]]);
+      for (m = Math.ceil(sy0 / REJILLA) * REJILLA; m <= sy1; m += REJILLA)
+        rej.push([[sx0, m, zs + 0.001], [sx1, m, zs + 0.001]]);
+      lineas.push({ nombre: "rejilla", color: (o.colores && o.colores.rejilla) || COLORES.rejilla,
+                    alfa: 0.35, segs: rej });
+
+      /* las cotas: entre ejes seguidos, por fuera de la planta, con su marca en cada extremo */
+      var exs = [], eys = [];
+      ((ex && ex.ejes) || []).forEach(function (e) {
+        var d = String(e.dir || "").toUpperCase();
+        if (d === "X") exs.push(+e.x1); else if (d === "Y") eys.push(+e.y1);
+      });
+      function ordena(a) { return a.slice().sort(function (p, q) { return p - q; }); }
+      exs = ordena(exs); eys = ordena(eys);
+      /* la linea de cotas va DELANTE, por fuera de la fila de burbujas -el mismo lado que tiene la camara
+         de frente en isometrica-.  Detras el numero se lee encima de la losa. */
+      var segs = [], yc = caja.min[1] - COTA_FUERA, xc = caja.min[0] - COTA_FUERA, i;
+      for (i = 0; i + 1 < exs.length; i++) {
+        segs.push([[exs[i], yc, zs + 0.002], [exs[i + 1], yc, zs + 0.002]]);
+        [exs[i], exs[i + 1]].forEach(function (x) {
+          segs.push([[x, yc - COTA_MARCA, zs + 0.002], [x, yc + COTA_MARCA, zs + 0.002]]);
+        });
+        cotas.push({ texto: m2(exs[i + 1] - exs[i]), dir: "X",
+                     p: [(exs[i] + exs[i + 1]) / 2, yc - COTA_MARCA * 1.6, zs] });
+      }
+      for (i = 0; i + 1 < eys.length; i++) {
+        segs.push([[xc, eys[i], zs + 0.002], [xc, eys[i + 1], zs + 0.002]]);
+        [eys[i], eys[i + 1]].forEach(function (y) {
+          segs.push([[xc - COTA_MARCA, y, zs + 0.002], [xc + COTA_MARCA, y, zs + 0.002]]);
+        });
+        cotas.push({ texto: m2(eys[i + 1] - eys[i]), dir: "Y",
+                     p: [xc - COTA_MARCA * 1.6, (eys[i] + eys[i + 1]) / 2, zs] });
+      }
+      if (segs.length)
+        lineas.push({ nombre: "cotas", color: (o.colores && o.colores.cota) || COLORES.cota, alfa: 0.85, segs: segs });
+    }
+
+    return { solidos: out, caja: caja, avisos: avisos, burbujas: burbujas, lineas: lineas, cotas: cotas,
+             suelo: suelo,
              niveles: niv.map(function (L, k) { return { nombre: L.nombre || ("N" + (k + 1)), z0: +L.z0, z1: +L.z1 }; }) };
   }
 
@@ -8140,12 +8235,22 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     return t1 >= Math.max(t0, 0);
   }
   /* la pieza mas cercana que toca el rayo -> {indice, t} o null */
-  function elegir(esc, ry) {
-    var mejor = null;
+  /* Que pieza hay bajo el rayo.  El terreno NO cuenta -no es una pieza-, y si los niveles estan separados
+     hay que buscar donde estan AHORA: el dibujo los sube en la tarjeta grafica, no en la escena.
+     o: {separar: [metros por nivel]} */
+  function elegir(esc, ry, o) {
+    var mejor = null, sep = (o && o.separar) || null;
+    function dz(s) { return sep ? (sep[+s.nivel || 0] || 0) : 0; }
     ((esc && esc.solidos) || []).forEach(function (s, i) {
-      if (!tocaCaja(ry.o, ry.d, s.min, s.max)) return;
+      if (s.noTocar) return;
+      var d = dz(s);
+      var mn = d ? [s.min[0], s.min[1], s.min[2] + d] : s.min,
+          mx = d ? [s.max[0], s.max[1], s.max[2] + d] : s.max;
+      if (!tocaCaja(ry.o, ry.d, mn, mx)) return;
       s.tris.forEach(function (tr) {
-        var t = tocaTriangulo(ry.o, ry.d, tr[0], tr[1], tr[2]);
+        var a = tr[0], b = tr[1], c = tr[2];
+        if (d) { a = [a[0], a[1], a[2] + d]; b = [b[0], b[1], b[2] + d]; c = [c[0], c[1], c[2] + d]; }
+        var t = tocaTriangulo(ry.o, ry.d, a, b, c);
         if (t !== null && (!mejor || t < mejor.t)) mejor = { indice: i, t: t };
       });
     });
@@ -8153,85 +8258,199 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   }
 
   /* --- WebGL ---------------------------------------------------------------------- */
-  var VS = "attribute vec3 p; attribute vec3 n; attribute vec3 c; uniform mat4 mvp; uniform vec3 luz; uniform vec3 tinte;" +
-           "uniform float usaTinte; varying vec3 col;" +
-           "void main(){ float d = max(dot(n, luz), 0.0); vec3 b = mix(c, tinte, usaTinte);" +
-           " col = b * (0.58 + 0.42 * d); gl_Position = mvp * vec4(p, 1.0); }";
-  var FS = "precision mediump float; varying vec3 col; uniform float alfa; void main(){ gl_FragColor = vec4(col, alfa); }";
+  /* EL SOMBREADOR.  Hace en la tarjeta grafica lo que antes no habia: separar los niveles (cada vertice
+     sabe de que piso es y se sube con offs), la sombra proyectada sobre el suelo (el mismo triangulo,
+     aplastado contra el plano z = zs siguiendo el sol), el corte en X, el grano del concreto y la niebla
+     del fondo.  Asi no hay que rehacer la escena para animar ni para separar. */
+  var MAX_NIV = 12;
+  var VS = "attribute vec3 p; attribute vec3 n; attribute vec3 c; attribute float niv;" +
+           "uniform mat4 mvp; uniform vec3 luz; uniform vec3 tinte; uniform float usaTinte;" +
+           "uniform float offs[" + MAX_NIV + "]; uniform float sombra; uniform vec3 dl; uniform float zs;" +
+           "varying vec3 col; varying vec3 mundo; varying float prof;" +
+           "void main(){ float o = 0.0;" +
+           " for (int i = 0; i < " + MAX_NIV + "; i++) { if (abs(float(i) - niv) < 0.5) o = offs[i]; }" +
+           " vec3 wp = vec3(p.x, p.y, p.z + o);" +
+           " if (sombra > 0.5) { float s = (zs - wp.z) / dl.z; wp = wp + dl * s; }" +
+           " float d = max(dot(n, luz), 0.0);" +
+           " vec3 b = mix(c, tinte, usaTinte);" +
+           " col = b * (0.58 + 0.42 * d); mundo = wp;" +
+           " vec4 q = mvp * vec4(wp, 1.0); prof = q.w; gl_Position = q; }";
+  var FS = "precision mediump float; varying vec3 col; varying vec3 mundo; varying float prof;" +
+           "uniform float alfa; uniform float corte; uniform float grano;" +
+           "uniform vec3 nieblaCol; uniform vec2 nieblaRango;" +
+           "void main(){ if (mundo.x > corte) discard;" +
+           " float g = 1.0;" +
+           " if (grano > 0.5) { float r = fract(sin(dot(floor(mundo.xy * 24.0), vec2(12.9898, 78.233))" +
+           " + mundo.z * 3.7) * 43758.5453); g = 0.965 + 0.07 * r; }" +
+           " float f = clamp((prof - nieblaRango.x) / max(0.001, nieblaRango.y - nieblaRango.x), 0.0, 1.0);" +
+           " gl_FragColor = vec4(mix(col * g, nieblaCol, f * 0.55), alfa); }";
 
   /* el que dibuja en un <canvas>; null si el navegador no tiene WebGL */
   function visor(canvas) {
     var gl = null;
-    try { gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true }) || canvas.getContext("experimental-webgl"); }
-    catch (e) { gl = null; }
+    try {
+      gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true, alpha: true, stencil: true })
+           || canvas.getContext("experimental-webgl", { alpha: true, stencil: true });
+    } catch (e) { gl = null; }
     if (!gl || typeof gl.createShader !== "function" || typeof gl.createBuffer !== "function") return null;
     function shader(tipo, src) {
-      var s = gl.createShader(tipo);
-      gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || "sombreador");
-      return s;
+      var sh = gl.createShader(tipo);
+      gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || "sombreador");
+      return sh;
     }
     var prog = gl.createProgram();
     gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
     gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
-    var aP = gl.getAttribLocation(prog, "p"), aN = gl.getAttribLocation(prog, "n"), aC = gl.getAttribLocation(prog, "c");
-    var uM = gl.getUniformLocation(prog, "mvp"), uL = gl.getUniformLocation(prog, "luz"), uT = gl.getUniformLocation(prog, "tinte"),
-        uU = gl.getUniformLocation(prog, "usaTinte"), uA = gl.getUniformLocation(prog, "alfa");
-    var B = { p: gl.createBuffer(), n: gl.createBuffer(), c: gl.createBuffer(), lp: gl.createBuffer(), ln: gl.createBuffer(), lc: gl.createBuffer() };
-    var dat = { nTri: 0, nLin: 0, rangos: [] };
+    var aP = gl.getAttribLocation(prog, "p"), aN = gl.getAttribLocation(prog, "n"),
+        aC = gl.getAttribLocation(prog, "c"), aV = gl.getAttribLocation(prog, "niv");
+    function u(n) { return gl.getUniformLocation(prog, n); }
+    var uM = u("mvp"), uL = u("luz"), uT = u("tinte"), uU = u("usaTinte"), uA = u("alfa"),
+        uS = u("sombra"), uDL = u("dl"), uZS = u("zs"), uCorte = u("corte"), uGrano = u("grano"),
+        uNC = u("nieblaCol"), uNR = u("nieblaRango"), uOffs = [];
+    for (var q = 0; q < MAX_NIV; q++) uOffs.push(u("offs[" + q + "]"));
+    var B = { p: gl.createBuffer(), n: gl.createBuffer(), c: gl.createBuffer(), v: gl.createBuffer(),
+              lp: gl.createBuffer(), ln: gl.createBuffer(), lc: gl.createBuffer(), lv: gl.createBuffer() };
+    var dat = { nTri: 0, nLin: 0, rangos: [], suelo: null, gruposLin: [], aristas: [0, 0], zs: 0 };
     function sube(buf, arr) { gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); }
-    function atributo(loc, buf) {
+    function atributo(loc, buf, tam) {
       if (loc < 0) return;
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, tam || 3, gl.FLOAT, false, 0, 0);
+    }
+    function offsets(lista) {
+      for (var i = 0; i < MAX_NIV; i++) gl.uniform1f(uOffs[i], (lista && lista[i]) ? lista[i] : 0);
     }
     return {
       gl: gl,
       cargar: function (esc) {
         var nT = 0, nL = 0;
         esc.solidos.forEach(function (s) { nT += s.tris.length * 3; nL += s.aristas.length * 2; });
+        (esc.lineas || []).forEach(function (g) { nL += g.segs.length * 2; });
         var P = new Float32Array(nT * 3), N = new Float32Array(nT * 3), Cc = new Float32Array(nT * 3),
-            LP = new Float32Array(nL * 3), LN = new Float32Array(nL * 3), LC = new Float32Array(nL * 3), i = 0, j = 0;
-        dat.rangos = [];
+            V = new Float32Array(nT), LP = new Float32Array(nL * 3), LN = new Float32Array(nL * 3),
+            LC = new Float32Array(nL * 3), LV = new Float32Array(nL), i = 0, j = 0;
+        dat.rangos = []; dat.suelo = null; dat.gruposLin = [];
         esc.solidos.forEach(function (s) {
-          var ini = i;
+          var ini = i, nivel = Math.max(0, Math.min(MAX_NIV - 1, +s.nivel || 0));
           s.tris.forEach(function (t) {
             var n = unit(cruz(resta(t[1], t[0]), resta(t[2], t[0])));
-            for (var q = 0; q < 3; q++) { P.set(t[q], i * 3); N.set(n, i * 3); Cc.set(s.color, i * 3); i++; }
+            for (var w = 0; w < 3; w++) { P.set(t[w], i * 3); N.set(n, i * 3); Cc.set(s.color, i * 3); V[i] = nivel; i++; }
           });
           dat.rangos.push([ini, i - ini]);
-          s.aristas.forEach(function (a) { LP.set(a[0], j * 3); LP.set(a[1], (j + 1) * 3); j += 2; });
+          if (s.fam === "suelo") dat.suelo = [ini, i - ini];
+          s.aristas.forEach(function (a) {
+            LP.set(a[0], j * 3); LV[j] = nivel; LP.set(a[1], (j + 1) * 3); LV[j + 1] = nivel; j += 2;
+          });
         });
-        sube(B.p, P); sube(B.n, N); sube(B.c, Cc); sube(B.lp, LP); sube(B.ln, LN); sube(B.lc, LC);
+        dat.aristas = [0, j];
+        (esc.lineas || []).forEach(function (g) {
+          var ini = j;
+          g.segs.forEach(function (a) { LP.set(a[0], j * 3); LP.set(a[1], (j + 1) * 3); LV[j] = 0; LV[j + 1] = 0; j += 2; });
+          dat.gruposLin.push({ ini: ini, n: j - ini, color: g.color, alfa: g.alfa == null ? 0.6 : g.alfa });
+        });
+        sube(B.p, P); sube(B.n, N); sube(B.c, Cc); sube(B.v, V);
+        sube(B.lp, LP); sube(B.ln, LN); sube(B.lc, LC); sube(B.lv, LV);
         dat.nTri = nT; dat.nLin = nL;
+        dat.zs = (esc.suelo && esc.suelo.z != null) ? esc.suelo.z : ((esc.caja ? esc.caja.min[2] : 0) - 0.02);
       },
       dibujar: function (cam, o) {
         o = o || {};
-        var w = canvas.width, h = canvas.height, fondo = rgb(o.fondo || "#FFFFFF");
+        var w = canvas.width, h = canvas.height;
+        var sep = o.separar || [], sel = (o.sel !== null && o.sel !== undefined) ? o.sel : null;
         gl.viewport(0, 0, w, h);
-        gl.clearColor(fondo[0], fondo[1], fondo[2], 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        if (o.fondo) { var f = rgb(o.fondo); gl.clearColor(f[0], f[1], f[2], 1); }
+        else gl.clearColor(0, 0, 0, 0);            /* transparente: el degradado del cielo lo pone el CSS */
+        gl.clearStencil(0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
         if (!dat.nTri) return;
         gl.useProgram(prog);
         gl.uniformMatrix4fv(uM, false, new Float32Array(matrices(cam, w / Math.max(1, h)).MVP));
-        gl.uniform3fv(uL, new Float32Array(unit([0.35, -0.55, 0.76])));
-        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.BLEND);
+        var luz = unit(o.luz || [0.35, -0.55, 0.76]);
+        gl.uniform3fv(uL, new Float32Array(luz));
+        gl.uniform3fv(uDL, new Float32Array(por(luz, -1)));     /* hacia donde va la luz: hacia la sombra */
+        gl.uniform1f(uZS, dat.zs);
+        gl.uniform1f(uCorte, o.corte == null ? 1e9 : o.corte);
+        gl.uniform1f(uGrano, o.grano === false ? 0 : 1);
+        var nc = rgb(o.nieblaColor || o.fondo || "#EEF1F4"), nr = o.niebla || [1e9, 1e9 + 1];
+        gl.uniform3fv(uNC, new Float32Array(nc));
+        gl.uniform2fv(uNR, new Float32Array(nr));
+        offsets(sep);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+        atributo(aP, B.p); atributo(aN, B.n); atributo(aC, B.c); atributo(aV, B.v, 1);
+
+        /* 1 - LA SOMBRA.  Se marcan en el estencil todos los triangulos aplastados contra el suelo y despues
+           se pinta el suelo UNA vez donde quedo marcado: sin esto, donde se cruzan dos sombras saldria el
+           doble de oscuro. */
+        var haySombra = (o.sombra !== false) && !!dat.suelo;
+        if (haySombra) {
+          gl.enable(gl.STENCIL_TEST);
+          gl.stencilFunc(gl.ALWAYS, 1, 0xFF); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+          gl.colorMask(false, false, false, false); gl.depthMask(false);
+          gl.uniform1f(uS, 1); gl.uniform1f(uU, 0); gl.uniform1f(uA, 1);
+          /* el terreno NO proyecta sombra sobre si mismo: iria a la escena entera, que es el suelo, y la
+             mancha saldria uniforme.  El suelo es el ultimo solido, asi que basta con parar antes. */
+          gl.drawArrays(gl.TRIANGLES, 0, dat.suelo[0]);
+          gl.uniform1f(uS, 0);
+          gl.colorMask(true, true, true, true); gl.depthMask(true);
+          gl.disable(gl.STENCIL_TEST);
+        }
+
+        /* 2 - las piezas.  Con una elegida y aislar, las demas quedan en fantasma. */
+        gl.disable(gl.BLEND);
         gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
-        atributo(aP, B.p); atributo(aN, B.n); atributo(aC, B.c);
-        gl.uniform1f(uU, 0); gl.uniform1f(uA, 1); gl.uniform3fv(uT, new Float32Array([0, 0, 0]));
-        gl.drawArrays(gl.TRIANGLES, 0, dat.nTri);
-        var r = (o.sel !== null && o.sel !== undefined) ? dat.rangos[o.sel] : null;
-        if (r) {
+        gl.uniform1f(uU, 0); gl.uniform3fv(uT, new Float32Array([0, 0, 0]));
+        if (sel !== null && o.aislar) {
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+          gl.uniform1f(uA, 0.14);
+          gl.drawArrays(gl.TRIANGLES, 0, dat.nTri);
+          gl.depthMask(true); gl.disable(gl.BLEND);
+          var r0 = dat.rangos[sel];
+          if (r0) { gl.uniform1f(uA, 1); gl.drawArrays(gl.TRIANGLES, r0[0], r0[1]); }
+        } else {
+          gl.uniform1f(uA, 1);
+          gl.drawArrays(gl.TRIANGLES, 0, dat.nTri);
+        }
+
+        /* 3 - la mancha de sombra sobre el suelo, donde marco el estencil */
+        if (haySombra) {
+          gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 1, 0xFF); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.disable(gl.DEPTH_TEST);
+          gl.uniform1f(uU, 1); gl.uniform3fv(uT, new Float32Array(rgb(o.sombraColor || "#16202A")));
+          gl.uniform1f(uA, o.sombraAlfa == null ? 0.20 : o.sombraAlfa);
+          gl.drawArrays(gl.TRIANGLES, dat.suelo[0], dat.suelo[1]);
+          gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.STENCIL_TEST);
+          gl.uniform1f(uU, 0);
+        }
+
+        /* 4 - la pieza elegida, con su tinte */
+        var r = (sel !== null) ? dat.rangos[sel] : null;
+        if (r && !o.aislar) {
           gl.uniform1f(uU, 0.85); gl.uniform3fv(uT, new Float32Array(rgb(o.acento || "#F2B705")));
+          gl.uniform1f(uA, 1);
           gl.drawArrays(gl.TRIANGLES, r[0], r[1]);
         }
         gl.disable(gl.POLYGON_OFFSET_FILL);
+
+        /* 5 - las lineas: las aristas de las piezas y despues cada grupo con su color */
         if (dat.nLin) {
           gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-          atributo(aP, B.lp); atributo(aN, B.ln); atributo(aC, B.lc);
-          gl.uniform1f(uU, 1); gl.uniform3fv(uT, new Float32Array(rgb(o.tinta || "#1A2029"))); gl.uniform1f(uA, 0.5);
-          gl.drawArrays(gl.LINES, 0, dat.nLin);
+          atributo(aP, B.lp); atributo(aN, B.ln); atributo(aC, B.lc); atributo(aV, B.lv, 1);
+          gl.uniform1f(uU, 1);
+          if (o.aristas !== false && dat.aristas[1] > 0) {
+            gl.uniform3fv(uT, new Float32Array(rgb(o.tinta || "#1A2029")));
+            gl.uniform1f(uA, o.aristasAlfa == null ? 0.5 : o.aristasAlfa);
+            gl.drawArrays(gl.LINES, dat.aristas[0], dat.aristas[1]);
+          }
+          dat.gruposLin.forEach(function (g) {
+            gl.uniform3fv(uT, new Float32Array(rgb(g.color)));
+            gl.uniform1f(uA, g.alfa);
+            gl.drawArrays(gl.LINES, g.ini, g.n);
+          });
+          gl.disable(gl.BLEND);
         }
       }
     };
@@ -9040,7 +9259,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v220 · 17-09-2026";
+  var BUILD="v230 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -16527,12 +16746,12 @@ var TT={script:performance.now()};
     function X(m){ return mg+(W-mg-8)*(m/Mx) }
     function Y(p){ return H-mg-(H-mg-12)*((p-Pmin)/(Py-Pmin)) }
     var linea=pts.map(function(p,i){ return (i?"L":"M")+X(p.M).toFixed(1)+" "+Y(p.P).toFixed(1) }).join(" ");
-    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig" role="img" aria-label="Diagrama de interacción de '+esc(d.cod)+'">'];
+    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig dis-fig-pm" role="img" aria-label="Diagrama de interacción de '+esc(d.cod)+'">'];
     s.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="none"/>');
     /* ejes */
     s.push('<path d="M'+mg+' '+Y(Py)+' L'+mg+' '+(H-mg)+' L'+(W-8)+' '+(H-mg)+'" fill="none" stroke="var(--ink-3)" stroke-width="1"/>');
     if(Pmin<0)s.push('<path d="M'+mg+' '+Y(0)+' L'+(W-8)+' '+Y(0)+'" fill="none" stroke="var(--ink-3)" stroke-width="0.6" stroke-dasharray="3 3"/>');
-    s.push('<text x="'+(W-8)+'" y="'+(H-mg+16)+'" text-anchor="end" class="dis-figt">φMn (t·m)</text>');
+    s.push('<text x="'+((mg+W-8)/2)+'" y="'+(H-mg+22)+'" text-anchor="middle" class="dis-figt">φMn (t·m)</text>');
     s.push('<text x="'+(mg-6)+'" y="'+Y(Py)+'" text-anchor="end" class="dis-figt">'+Py.toFixed(0)+'</text>');
     s.push('<text x="'+(mg-6)+'" y="'+(H-mg)+'" text-anchor="end" class="dis-figt">'+Pmin.toFixed(0)+'</text>');
     s.push('<text x="'+(mg-26)+'" y="'+(H/2)+'" class="dis-figt" transform="rotate(-90 '+(mg-26)+' '+(H/2)+')" text-anchor="middle">φPn (t)</text>');
@@ -16555,13 +16774,13 @@ var TT={script:performance.now()};
   function figuraSeccionCol(d){
     if(!d||!d.sec)return "";
     var sec=d.sec, L=110, esc=L/Math.max(sec.b||sec.D,sec.h||sec.D,1), W=L+30, H=L+30, cx=W/2, cy=H/2;
-    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig" role="img" aria-label="Sección de la columna">'];
+    var s=['<svg viewBox="0 0 '+W+' '+H+'" class="dis-fig dis-fig-sec" role="img" aria-label="Sección de la columna">'];
     if(sec.forma==="circular"){
-      s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(sec.D/2*esc)+'" fill="var(--bg-2)" stroke="var(--ink-2)" stroke-width="1.2"/>');
+      s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+(sec.D/2*esc)+'" fill="var(--panel)" stroke="var(--ink-2)" stroke-width="1.2"/>');
       s.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+((sec.D/2-sec.rec)*esc)+'" fill="none" stroke="var(--acc)" stroke-width="0.9"/>');
     }else{
       s.push('<rect x="'+(cx-sec.b/2*esc)+'" y="'+(cy-sec.h/2*esc)+'" width="'+(sec.b*esc)+'" height="'+(sec.h*esc)+
-             '" fill="var(--bg-2)" stroke="var(--ink-2)" stroke-width="1.2"/>');
+             '" fill="var(--panel)" stroke="var(--ink-2)" stroke-width="1.2"/>');
       s.push('<rect x="'+(cx-(sec.b/2-sec.rec)*esc)+'" y="'+(cy-(sec.h/2-sec.rec)*esc)+'" width="'+((sec.b-2*sec.rec)*esc)+
              '" height="'+((sec.h-2*sec.rec)*esc)+'" fill="none" stroke="var(--acc)" stroke-width="0.9" rx="2"/>');
     }
@@ -17834,81 +18053,6 @@ var TT={script:performance.now()};
           'margen que el propio libro se permite al redondear la longitud a medida '+
           'constructiva.'
         : 'Todavía no hay placas dibujadas en ningún nivel.')+'</p>';
-  }
-
-  /* ---------- diagnostico de carga ----------------------------------
-     Mide de donde se va el tiempo al abrir esta ventana, en la maquina y la
-     conexion reales.  transferSize === 0 con decodedBodySize > 0 significa
-     servido de cache: no costo red. */
-  function ms(v){ return (v==null||!isFinite(v)) ? "—" : (Math.round(v)+" ms"); }
-  function kb(v){ return (v==null||!isFinite(v)) ? "—" : (v/1024).toFixed(1)+" KB"; }
-
-  function medirCarga(){
-    var out={nav:null,grupos:[],total:{red:0,bytes:0,n:0,cache:0}};
-    try{
-      var nav=(performance.getEntriesByType("navigation")||[])[0];
-      if(nav) out.nav={
-        dns:  nav.domainLookupEnd-nav.domainLookupStart,
-        tls:  nav.connectEnd-nav.connectStart,
-        html: nav.responseEnd-nav.requestStart,
-        bytes:nav.transferSize,
-        dom:  nav.domContentLoadedEventEnd-nav.startTime,
-        load: nav.loadEventEnd-nav.startTime
-      };
-      var res=performance.getEntriesByType("resource")||[];
-      var cajas={"office.js":[],"CSS de fuentes":[],"archivos de fuente":[],"otros":[]};
-      res.forEach(function(r){
-        var d = r.name.indexOf("appsforoffice")>-1 ? "office.js"
-              : r.name.indexOf("fonts.googleapis")>-1 ? "CSS de fuentes"
-              : r.name.indexOf("fonts.gstatic")>-1 ? "archivos de fuente" : "otros";
-        cajas[d].push(r);
-      });
-      Object.keys(cajas).forEach(function(k){
-        var v=cajas[k]; if(!v.length) return;
-        var dur=0,by=0,cache=0;
-        v.forEach(function(r){
-          dur=Math.max(dur, r.responseEnd);           /* cuando termino el ultimo */
-          by+=(r.transferSize||0);
-          if(!r.transferSize && r.decodedBodySize) cache++;
-        });
-        out.grupos.push({nombre:k,n:v.length,hasta:dur,bytes:by,cache:cache});
-        out.total.n+=v.length; out.total.bytes+=by; out.total.cache+=cache;
-        out.total.red=Math.max(out.total.red,dur);
-      });
-    }catch(e){ out.error=e.message; }
-    return out;
-  }
-
-  function bloqueCarga(){
-    var d=medirCarga();
-    if(d.error) return '<h3>Diagnóstico de carga</h3><p class="nota">No disponible: '+d.error+'</p>';
-    var f=[];
-    if(d.nav) f.push("<tr><td>Este HTML ("+kb(d.nav.bytes)+")</td><td>1</td><td>"+
-      ms(d.nav.html)+"</td><td>DNS "+ms(d.nav.dns)+" · TLS "+ms(d.nav.tls)+"</td></tr>");
-    d.grupos.forEach(function(g){
-      f.push("<tr><td>"+g.nombre+"</td><td>"+g.n+"</td><td>"+ms(g.hasta)+"</td><td>"+
-        kb(g.bytes)+(g.cache?"  ·  "+g.cache+" de caché":"")+"</td></tr>");
-    });
-    return '<h3>Diagnóstico de carga</h3>'+
-      '<table><thead><tr><th>Qué</th><th>N.º</th><th>Listo a los</th><th>Detalle</th>'+
-      '</tr></thead><tbody>'+f.join("")+
-      (typeof TT!=="undefined"&&TT.listo
-        ? '<tr><td>Ejecutar este script</td><td>—</td><td>'+ms(TT.antesRender-TT.script)+
-          '</td><td>parsear y definir todo</td></tr>'+
-          '<tr><td>Dibujar el plano</td><td>—</td><td>'+ms(TT.listo-TT.antesRender)+
-          '</td><td>primer render</td></tr>'+
-          '<tr class="tot"><td><b>Listo para usar</b></td><td>—</td><td><b>'+ms(TT.listo)+
-          '</b></td><td>desde que arrancó la ventana</td></tr>'
-        : '')+
-      (d.nav?'<tr class="tot"><td>DOM listo</td><td>—</td><td>'+ms(d.nav.dom)+
-             '</td><td>página usable</td></tr>'+
-             '<tr class="tot"><td>Carga completa</td><td>—</td><td>'+ms(d.nav.load)+
-             '</td><td>todo descargado</td></tr>':'')+
-      '</tbody></table>'+
-      '<p class="nota">«Listo a los» se cuenta desde que empezó a abrirse la ventana. '+
-      'Lo que dice «de caché» no costó red esta vez. Si las fuentes salen altas en la '+
-      'primera apertura y bajas en la segunda, el coste es de primera carga; si salen '+
-      'altas siempre, hay que traerlas dentro del archivo.</p>';
   }
 
   /* =====================================================================
@@ -19534,7 +19678,24 @@ var TT={script:performance.now()};
      ===================================================================== */
   var V3D={cam:null, vistaNom:"iso", filtro:{col:true,viga:true,losa:true,placa:true,zapata:true,escalera:true,eje:true},
            niveles:"todos", avisar:true,
+           /* lo nuevo: separar los pisos, cortar en X, las aristas, y el edificio armandose al entrar */
+           separar:0, corte:1, aristas:true, sombra:true, armando:null,
            sel:null, selIdx:null, visor:null, esc:null, drag:null, sinGL:false, pedido:0};
+  /* cuanto sube cada nivel: lo que pide el mando mas lo que falte de la animacion de entrada */
+  function sep3D(){
+    var n=(V3D.esc&&V3D.esc.niveles)?V3D.esc.niveles.length:0, a=V3D.armando, L=[], k;
+    for(k=0;k<Math.max(n,1)+1;k++){
+      var base=V3D.separar*k;
+      L.push(a?base+a.alto*Math.max(0,1-Math.max(0,Math.min(1,(a.t-k*0.16)/0.58))):base);
+    }
+    return L;
+  }
+  /* el corte en X, en metros del modelo: 1 = sin cortar */
+  function corte3D(){
+    var c=V3D.esc&&V3D.esc.caja;
+    if(!c||V3D.corte>=1)return null;
+    return c.min[0]-1+V3D.corte*(c.max[0]-c.min[0]+2);
+  }
   try{ window.addEventListener("resize",function(){ if(S.vista==="3d")dibuja3D(); }); }catch(e){}
   function esc3(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
   function colores3D(){
@@ -19563,7 +19724,16 @@ var TT={script:performance.now()};
       '<label class="v3d-ch">Niveles <select id="n3d" class="mini"></select></label>'+
       '<label class="v3d-ch" title="Pinta de rojo las columnas y placas que nacen en un piso alto o que mueren '+
       'teniendo pisos encima: su carga no baja seguida hasta la cimentación"><input type="checkbox" id="a3d"'+
-      (V3D.avisar?" checked":"")+'> Avisos</label></div>'+
+      (V3D.avisar?" checked":"")+'> Avisos</label>'+
+      /* los dos mandos de ingeniero: separar los pisos como un despiece y cortar el edificio para ver dentro */
+      '<span class="v3d-mando" title="Levanta los pisos para ver el entramado de cada uno">'+
+      '<label for="s3d">Separar</label><input type="range" id="s3d" min="0" max="100" value="'+
+      Math.round(V3D.separar/3.2*100)+'"><output id="so3d">'+V3D.separar.toFixed(1)+' m</output></span>'+
+      '<span class="v3d-mando" title="Un plano de corte que avanza en X: las piezas se cortan de verdad">'+
+      '<label for="k3d">Cortar X</label><input type="range" id="k3d" min="0" max="100" value="'+
+      Math.round(V3D.corte*100)+'"><output id="ko3d">'+(V3D.corte>=1?"entero":"cortado")+'</output></span>'+
+      '<label class="v3d-ch" title="La línea fina en los cantos, como en un plano"><input type="checkbox" id="r3d"'+
+      (V3D.aristas?" checked":"")+'> Aristas</label></div>'+
       /* el lienzo lleva encima una capa para las burbujas de eje: su letra va en HTML, que se lee nitida,
          colocada proyectando el punto del mundo con VISTA3D.proyecta() */
       '<div class="v3d-lienzo" style="position:relative"><canvas id="c3d" tabindex="0" aria-label="El edificio en 3D: arrastra para girar, '+
@@ -19575,6 +19745,15 @@ var TT={script:performance.now()};
       c.onchange=function(){ V3D.filtro[this.getAttribute("data-f3")]=!!this.checked; pinta3D(); }; });
     var sn=$("#n3d"); if(sn)sn.onchange=function(){ V3D.niveles=this.value; pinta3D(); };
     var sa=$("#a3d"); if(sa)sa.onchange=function(){ V3D.avisar=!!this.checked; pinta3D(); };
+    var ss=$("#s3d"); if(ss)ss.oninput=function(){
+      V3D.separar=(+this.value/100)*3.2;
+      var o=$("#so3d"); if(o)o.textContent=V3D.separar.toFixed(1)+" m";
+      pedir3D(); };
+    var sk=$("#k3d"); if(sk)sk.oninput=function(){
+      V3D.corte=+this.value/100;
+      var o=$("#ko3d"); if(o)o.textContent=(V3D.corte>=1?"entero":"cortado");
+      pedir3D(); };
+    var sr=$("#r3d"); if(sr)sr.onchange=function(){ V3D.aristas=!!this.checked; pedir3D(); };
     var cv=$("#c3d"); if(cv&&cv.addEventListener)eventos3D(cv);
     V3D.visor=null; V3D.sinGL=false;
   }
@@ -19643,8 +19822,13 @@ var TT={script:performance.now()};
     if(cv.width!==w)cv.width=w;
     if(cv.height!==h)cv.height=h;
     V3D.cam.aspecto=w/h;               /* lo usa Encuadrar: en un lienzo angosto manda el ancho */
-    var c=colores3D();
-    try{ V3D.visor.dibujar(V3D.cam,{fondo:c.fondo, tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx}); }catch(e){}
+    var c=colores3D(), caja=V3D.esc&&V3D.esc.caja, R=caja?caja.radio:10;
+    try{ V3D.visor.dibujar(V3D.cam,{
+      /* el fondo lo pone el CSS con su degradado: el lienzo se deja transparente */
+      fondo:null, nieblaColor:c.fondo, niebla:[V3D.cam.dist+0.6*R, V3D.cam.dist+4.2*R],
+      tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx,
+      separar:sep3D(), corte:corte3D(), aristas:V3D.aristas, aislar:V3D.selIdx!==null,
+      sombra:V3D.sombra, sombraColor:c.tinta, sombraAlfa:0.22}); }catch(e){}
     burbujas3D();
   }
   /* LAS BURBUJAS DE LOS EJES, en HTML sobre el lienzo.  En WebGL el texto cuesta una textura por letra; aqui
@@ -19653,7 +19837,10 @@ var TT={script:performance.now()};
     var cont=$("#b3d"), cv=$("#c3d"); if(!cont)return;
     if(!cv||!V3D.esc||!V3D.cam){ cont.innerHTML=""; return; }
     var w=cv.clientWidth||1, h=cv.clientHeight||1, s=[];
+    /* lo que el corte se lleva, tambien se lleva su etiqueta: si no, quedan flotando sobre el vacio */
+    var kx=corte3D(), fuera=function(p){ return kx!=null && p[0]>kx; };
     (V3D.esc.burbujas||[]).forEach(function(b){
+      if(fuera(b.p))return;
       var p=VISTA3D.proyecta(V3D.cam,b.p,w,h);
       /* detras de la camara o muy fuera del lienzo: no se pinta */
       if(!(p[2]<1)||p[0]<-30||p[1]<-30||p[0]>w+30||p[1]>h+30)return;
@@ -19664,11 +19851,29 @@ var TT={script:performance.now()};
         'font:600 '+(b.prima?9:10)+'px/1 sans-serif;text-align:center;box-sizing:border-box">'+
         esc3(b.id)+'</span>');
     });
+    /* las cotas de vano y la etiqueta de cada nivel, tambien en HTML */
+    var sep=sep3D();
+    (V3D.esc.cotas||[]).forEach(function(c){
+      if(fuera(c.p))return;
+      var p=VISTA3D.proyecta(V3D.cam,c.p,w,h);
+      if(!(p[2]<1)||p[0]<-40||p[1]<-20||p[0]>w+40||p[1]>h+20)return;
+      s.push('<span class="v3d-cota" style="left:'+p[0].toFixed(1)+'px;top:'+p[1].toFixed(1)+'px">'+esc3(c.texto)+'</span>');
+    });
+    var caja=V3D.esc.caja;
+    if(caja)(V3D.esc.niveles||[]).forEach(function(L,k){
+      var z=(+L.z1)+(sep[k]||0);
+      if(fuera([caja.min[0]-0.6]))return;
+      var p=VISTA3D.proyecta(V3D.cam,[caja.min[0]-0.6,caja.min[1]-0.6,z],w,h);
+      if(!(p[2]<1)||p[0]<-10||p[1]<-20||p[0]>w+10||p[1]>h+20)return;
+      s.push('<span class="v3d-niv" style="left:'+p[0].toFixed(1)+'px;top:'+p[1].toFixed(1)+'px">'+
+        esc3(L.nombre)+' · +'+(+L.z1).toFixed(2)+'</span>');
+    });
     cont.innerHTML=s.join("");
   }
   function elige3D(cv,x,y){
     if(!V3D.esc||!V3D.cam)return;
-    var w=cv.clientWidth||1, h=cv.clientHeight||1, q=VISTA3D.elegir(V3D.esc,VISTA3D.rayo(V3D.cam,x,y,w,h));
+    var w=cv.clientWidth||1, h=cv.clientHeight||1,
+        q=VISTA3D.elegir(V3D.esc,VISTA3D.rayo(V3D.cam,x,y,w,h),{separar:sep3D()});
     V3D.selIdx=q?q.indice:null; V3D.sel=q?V3D.esc.solidos[q.indice]:null;
     dibuja3D(); info3D();
   }
@@ -19710,9 +19915,29 @@ var TT={script:performance.now()};
     }
     S.act=Math.min(k,S.niveles.length-1); S.vista="plano"; S.sel=sel; render();
   }
+  /* EL EDIFICIO SE ARMA DELANTE DE TI: al entrar en 3D los pisos caen en su sitio en medio segundo.
+     Cuenta como esta hecho -abajo primero- y no cuesta nada: el sombreador ya sabe subir cada nivel.
+     Con el sistema en movimiento reducido, no se anima. */
+  function arma3D(){
+    var quieto=false;
+    try{ quieto=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+    if(quieto){ V3D.armando=null; return; }
+    var t0=(window.performance&&performance.now)?performance.now():Date.now();
+    V3D.armando={t:0, alto:2.4};
+    (function paso(){
+      if(!V3D.armando||S.vista!=="3d"){ V3D.armando=null; pedir3D(); return; }
+      var ahora=(window.performance&&performance.now)?performance.now():Date.now();
+      V3D.armando.t=Math.min(1,(ahora-t0)/640);
+      if(V3D.armando.t>=1)V3D.armando=null;
+      pedir3D();
+      if(V3D.armando)requestAnimationFrame(paso);
+    })();
+  }
+
   function pinta3D(){
     var el=$("#vista3d"); if(!el)return;
-    if(String(el.innerHTML||"").indexOf('id="c3d"')<0)montar3D(el);
+    var nuevo=String(el.innerHTML||"").indexOf('id="c3d"')<0;
+    if(nuevo)montar3D(el);
     var ex, zs=[];
     try{ ex=exportaEtabs(); }catch(e){ info3D('<span class="deci-no">No se pudo armar el edificio: '+esc3(e&&e.message)+'</span>'); return; }
     try{
@@ -19754,6 +19979,7 @@ var TT={script:performance.now()};
     }
     if(!V3D.visor){ info3D('<span class="deci-no">Este navegador no dibuja en 3D: WebGL no está disponible.</span>'); return; }
     V3D.visor.cargar(V3D.esc);
+    if(nuevo)arma3D();                 /* la primera vez, el edificio se levanta solo */
     dibuja3D();
     info3D();
   }
@@ -19781,8 +20007,7 @@ var TT={script:performance.now()};
       '<div class="rule" style="margin:14px 0 10px"></div>'+
       bloquePlacas()+
       '<div class="rule" style="margin:14px 0 10px"></div>'+
-      '<h3>Dimensiones traídas de Excel</h3>'+
-      '<div class="rule" style="margin:14px 0 10px"></div>'+
+      /* aqui vivia un titulo "Dimensiones traidas de Excel" que nunca tuvo nada debajo */
       '<h3>Supuesto de apoyo</h3>'+
       '<div class="row" style="align-items:center;gap:8px">'+
       '<label class="lbl" for="lcol">Lado de columna (m)</label>'+
@@ -19793,9 +20018,7 @@ var TT={script:performance.now()};
       '<p class="nota">De aquí sale la luz libre de las vigas: <code>Ln = L − lado</code>. '+
       'El ancho de las vigas no se supone: sale del ancho tributario de cada una, así que '+
       'la luz libre de las losas ya es exacta. La sección de la columna la calcula Excel, '+
-      'por eso esta sí es un supuesto: ajústala en la segunda pasada.</p>'+
-      '<div class="rule" style="margin:14px 0 10px"></div>'+
-      bloqueCarga();
+      'por eso esta sí es un supuesto: ajústala en la segunda pasada.</p>';
     var lc=$("#lcol");
     if(lc)lc.onchange=function(){var v=parseFloat(this.value);
       if(v>0){snap();S.ladoCol=v;render();}};
@@ -19823,14 +20046,18 @@ var TT={script:performance.now()};
         dise=(S.modo==="diseno"), ini=(S.modo==="inicio"), acad=(S.modo==="autocad");
     var solo=sinPlano();                  /* pestanas a todo el ancho */
     var esPlano=(S.vista==="plano")&&!solo;
+    /* EN EDIFICIO Y EN 3D NO SE DIBUJA NI SE EDITAN EJES: las herramientas y el panel de la derecha
+       se quedan fuera y el resumen -o el edificio- usa todo el ancho.  Lo pidio Victor el 17-09-2026
+       y es lo que ordena esas dos pantallas. */
+    var conPlanta=(S.vista==="plano");
     /* DECISIONES es la planta de solo lectura: sus filtros donde van las
        herramientas y su panel donde va el inspector */
-    ver(".tools:not(#toolsUso):not(#toolsDeci)",!(usos||deci||solo));
-    ver("#toolsUso",usos);
-    ver("#toolsDeci",deci&&!solo);
-    ver("#inspector",!(usos||deci||solo));
-    ver("#panelUso",usos);
-    ver("#inspDeci",deci&&!solo);
+    ver(".tools:not(#toolsUso):not(#toolsDeci)",!(usos||deci||solo)&&conPlanta);
+    ver("#toolsUso",usos&&conPlanta);
+    ver("#toolsDeci",deci&&!solo&&conPlanta);
+    ver("#inspector",!(usos||deci||solo)&&conPlanta);
+    ver("#panelUso",usos&&conPlanta);
+    ver("#inspDeci",deci&&!solo&&conPlanta);
     ver("#panelHojas",hojas);
     ver("#panelAcad",acad);
     ver("#panelProy",proy);
@@ -19856,6 +20083,7 @@ var TT={script:performance.now()};
     ver("#hint",!solo&&esPlano&&!usos);
     ver(".zoom",esPlano);
     document.querySelector(".work").classList.toggle("solo",solo);
+    document.querySelector(".work").classList.toggle("ancho",!conPlanta&&!solo);
     pintaNiveles();
     if(!etab)pintaSubmodos();             /* ETABS la pinta con sus errores */
     marcaAvisos();
