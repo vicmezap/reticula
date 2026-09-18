@@ -926,10 +926,23 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="rule"></div>
       <h2>En este nivel</h2>
       <div class="ley" id="leyenda"></div>
+      <div id="cmUso"></div>
       <div id="scUso"></div>
+      <div id="escUso"></div>
       <div id="azoteaUso"></div>
       <div class="rule"></div>
-      <button class="btn" id="copiarUsos">Copiar usos del nivel anterior</button>
+      <span class="lbl">Asignar en bloque</span>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0 6px">
+        <button class="btn" id="usoTodo"
+          title="Pone la ocupación y el ambiente de arriba en TODOS los paños de este nivel">A todo el nivel</button>
+        <button class="btn" id="usoFaltan"
+          title="Solo en los paños que todavía no tienen uso: no toca lo que ya asignaste">Solo a los que faltan</button>
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <button class="btn" id="copiarUsos">Copiar del nivel anterior</button>
+        <button class="btn" id="usoATodos"
+          title="Lleva los usos de ESTE nivel a los demás pisos, paño por paño">Copiar a todos los pisos</button>
+      </div>
     </aside>
 
     <aside class="insp" id="inspDeci" hidden></aside>
@@ -9286,7 +9299,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v247 · 17-09-2026";
+  var BUILD="v251 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -11562,6 +11575,42 @@ var TT={script:performance.now()};
     }
     c.innerHTML=html;
 
+    /* LA CARGA ENTERA DEL NIVEL, no solo la viva.  Es el desglose que arma METRADO_CARGAS:
+       peso propio de cada losa por su area, mas las otras cargas, y encima la S/C.  Estaba solo en
+       la hoja, y es justo lo que se quiere ver mientras se asignan los usos. */
+    var cga=$("#cmUso");
+    if(cga){
+      var cp=cargasPermanentes(), gam=(+(S.proy&&S.proy.concreto)||2400), pp=0, aL=0, i2, j2;
+      for(i2=0;i2<nx()-1;i2++)for(j2=0;j2<ny()-1;j2++){
+        var lo4=m.losas[key(i2,j2)]; if(!lo4)continue;
+        var a4=areaPano(i2,j2,m), pl4=predimLosa(i2,j2,m);
+        aL+=a4;
+        pp+=a4*(esEscalera(lo4)?SISMO.pesoLosa("maciza",(pl4&&pl4.e)||20,gam)
+                              :SISMO.pesoLosa(lo4.tipo||"aligerada",(pl4&&pl4.e)||20,gam));
+      }
+      if(!aL)cga.innerHTML="";
+      else{
+        var ppm=pp/aL, otras=(+cp.piso||0)+(+cp.cielo||0)+(+cp.tabiq||0)+(+cp.estructura||0);
+        var cmT=ppm+otras, cvm=(aT>0)?cvT/aT:0;
+        function fila(k,v,cl){ return '<div class="leyi'+(cl?" "+cl:"")+'">'+k+"<b>"+Math.round(v)+" kg/m²</b></div>"; }
+        cga.innerHTML='<div class="rule"></div><h2>Carga del nivel</h2><div class="ley">'+
+          fila("Peso propio de las losas",ppm)+
+          fila("Piso y cielo raso",(+cp.piso||0)+(+cp.cielo||0))+
+          fila("Tabiquería",+cp.tabiq||0)+
+          fila("Vigas, columnas y placas",+cp.estructura||0)+
+          fila("Carga muerta CM",cmT,"tot")+
+          fila("Carga viva CV",cvm)+
+          '<div class="leyi tot">Servicio CM + CV<b>'+Math.round(cmT+cvm)+" kg/m² · "+
+          ((cmT+cvm)*aL/1000).toFixed(1)+' t</b></div></div>'+
+          '<p class="empty" style="margin:6px 0 0">El mismo desglose que METRADO_CARGAS y la misma '+
+          'base que el peso sísmico. Aquí el peso propio va paño a paño con su espesor; la hoja usa '+
+          'el espesor mayor de cada tipo, así que con espesores distintos la hoja sale algo más '+
+          'pesada'+
+          (cp.estructuraAuto?"":". El peso de vigas, columnas y placas es el estimado de 150 kg/m²: "+
+           "en Datos puedes pedir que se calcule del modelo")+'.</p>';
+      }
+    }
+
     /* el selector de la S/C por defecto, aqui: es la carga de lo que dejes sin asignar y vivia
        solo en la barra de Planta, en otra pestaña */
     var box=$("#scUso");
@@ -11578,6 +11627,23 @@ var TT={script:performance.now()};
           '<select id="scUsoSel" style="flex:1">'+op+'</select></div>';
         var sel=$("#scUsoSel");
         if(sel)sel.onchange=function(){ $("#sc").value=this.value; guardar(); render(); };
+      }
+    }
+
+    /* LA ESCALERA ya tiene carga viva propia: «Corredores y escaleras» del grupo de la E.020 que
+       corresponde al uso del proyecto.  Se dice, porque un clic encima la reemplaza sin avisar. */
+    var esc2=$("#escUso");
+    if(esc2){
+      var nEsc=0, kE;
+      for(kE in m.losas) if(esEscalera(m.losas[kE]))nEsc++;
+      if(!nEsc)esc2.innerHTML="";
+      else{
+        var cvE=ESCALERA.cargaViva(S.proy&&S.proy.uso,E020.TABLA);
+        esc2.innerHTML='<div class="rule"></div><h2>Escaleras</h2>'+
+          '<p class="empty" style="margin:0">'+nEsc+' en este nivel. Su carga viva ya sale de '+
+          '«Corredores y escaleras»'+(cvE.grupo?" de "+String(cvE.grupo):"")+': <b>'+cvE.w+' kg/m²</b>'+
+          (cvE.supuesto?" (la norma no lo tabula para este uso: se toma el de oficinas)":"")+
+          '. Si le asignas un uso aquí, lo reemplazas.</p>';
       }
     }
 
@@ -14282,6 +14348,43 @@ var TT={script:performance.now()};
   });
   $("#selUso").addEventListener("change",function(){S.uso=this.value;S.amb="";render()});
   $("#selAmb").addEventListener("change",function(){S.amb=this.value;render()});
+  /* ASIGNAR EN BLOQUE.  Pintar paño a paño esta bien para una planta con varios ambientes, pero
+     para «todo esto es vivienda» eran doce clics por piso.  La escalera se respeta: su carga sale
+     de «Corredores y escaleras» y no de lo que diga el selector. */
+  function asignaEnBloque(soloFaltan){
+    var m=N(),n=0,i,j,o;
+    snap();
+    for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+      o=m.losas[key(i,j)];
+      if(!o||esEscalera(o))continue;
+      if(soloFaltan&&o.uso)continue;
+      o.uso=S.uso; o.amb=S.amb; n++;
+    }
+    render();
+    toast(n?("Asignados "+n+" paño(s): "+(S.amb||S.uso)+".")
+           :(soloFaltan?"No queda ningún paño sin asignar.":"Este nivel no tiene losas."));
+  }
+  $("#usoTodo").addEventListener("click",function(){ asignaEnBloque(false); });
+  $("#usoFaltan").addEventListener("click",function(){ asignaEnBloque(true); });
+  $("#usoATodos").addEventListener("click",copiaUsosATodos);
+  function copiaUsosATodos(){
+    var m=N(),n=0,p=0;
+    snap();
+    S.niveles.forEach(function(q,k){
+      if(k===S.act)return;
+      var toco=0,i,j,o,d;
+      for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
+        o=m.losas[key(i,j)]; d=q.losas[key(i,j)];
+        if(!o||!d||!o.uso||esEscalera(d))continue;
+        d.uso=o.uso; d.amb=o.amb; toco++;
+      }
+      if(toco){ n+=toco; p++; }
+    });
+    render();
+    toast(n?("Copiados "+n+" paño(s) a "+p+" piso(s)."):"No hay otro piso con paños en los mismos sitios.");
+    return n;
+  }
+
   $("#copiarUsos").addEventListener("click",function(){
     if(S.act===0)return toast("El primer nivel no tiene un nivel anterior.");
     var ant=S.niveles[S.act-1],m=N(),n=0,i,j,o,p2;
@@ -20311,7 +20414,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z)}}};
 })();
 </script>
 
