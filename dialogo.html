@@ -223,6 +223,41 @@
   #panelEjes li button:hover{background:var(--acc-soft);color:var(--acc-ink)}
   .ley .leyi.tot{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;color:var(--ink);
     padding-left:17px}
+  /* las tablitas del panel de cargas: ambientes y niveles */
+  /* EL PANEL MIDE 330 px y recorta lo que se sale (overflow-x:hidden): las columnas van fijas y
+     el nombre se recorta con puntos suspensivos, en vez de empujar la tabla fuera de la vista. */
+  table.ley-t{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;
+    font:400 11px "IBM Plex Sans",sans-serif;margin-top:2px;
+    /* el panel es una columna flex: sin esto la tabla se planta en su min-content -600 px medidos-
+       y se sale del panel, que la recorta sin avisar */
+    min-width:0}
+  table.ley-t td.nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* OJO con los nombres: «niv» ya es la barra de niveles y es display:flex; una tabla con esa
+     clase se partia en dos. De ahi «ley-niv». */
+  table.ley-t.amb th:nth-child(2),table.ley-t.amb td:nth-child(2){width:34px}
+  table.ley-t.amb th:nth-child(3),table.ley-t.amb td:nth-child(3){width:54px}
+  table.ley-t.amb th:nth-child(4),table.ley-t.amb td:nth-child(4){width:42px}
+  table.ley-t.ley-niv th:nth-child(2),table.ley-t.ley-niv td:nth-child(2){width:54px}
+  table.ley-t.ley-niv th:nth-child(3),table.ley-t.ley-niv td:nth-child(3){width:38px}
+  table.ley-t.ley-niv th:nth-child(4),table.ley-t.ley-niv td:nth-child(4){width:38px}
+  table.ley-t.ley-niv th:nth-child(5),table.ley-t.ley-niv td:nth-child(5){width:42px}
+  table.ley-t small{font-size:9px;color:var(--ink-3)}
+  table.ley-t th{font:500 9px/1 "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);text-align:right;padding:0 0 4px;font-weight:500}
+  table.ley-t th:first-child{text-align:left}
+  table.ley-t td{padding:3px 0;color:var(--ink-2);border-top:1px solid var(--line-soft)}
+  table.ley-t td.n{text-align:right;font:500 11px "IBM Plex Mono",monospace;color:var(--ink);
+    font-variant-numeric:tabular-nums;padding-left:6px}
+  table.ley-t td .c{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;
+    border:1px solid var(--ink-3);vertical-align:-1px}
+  table.ley-t tfoot td{border-top:1px solid var(--line);color:var(--ink);font-weight:600}
+  table.ley-t tfoot td.n{color:var(--acc-ink)}
+  details.niv-todos{margin-top:8px}
+  details.niv-todos>summary{cursor:pointer;font:500 11.5px "IBM Plex Sans",sans-serif;
+    color:var(--acc-ink);list-style:none;padding:3px 0}
+  details.niv-todos>summary::-webkit-details-marker{display:none}
+  details.niv-todos>summary::before{content:"▸ ";color:var(--ink-3)}
+  details.niv-todos[open]>summary::before{content:"▾ "}
   .ley .leyi.tot b{color:var(--acc-ink)}
   .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
   svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
@@ -927,6 +962,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <h2>En este nivel</h2>
       <div class="ley" id="leyenda"></div>
       <div id="cmUso"></div>
+      <div id="todosNiv"></div>
       <div id="scUso"></div>
       <div id="escUso"></div>
       <div id="azoteaUso"></div>
@@ -9299,7 +9335,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v251 · 17-09-2026";
+  var BUILD="v255 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -11544,21 +11580,48 @@ var TT={script:performance.now()};
     if(inp)inp.onchange=function(){S.manual[claveAmb(S.uso,S.amb)]=this.value;guardar();render()};
   }
 
+  /* abierto o cerrado, entre dibujos */
+  var TODOS_NIV=false;
+  /* LA CARGA DE UN NIVEL: peso propio de sus losas paño a paño, las otras cargas permanentes y la
+     carga viva ponderada -los paños sin uso con la S/C por defecto-.  Es la misma cuenta que hace
+     el peso sismico, puesta en un solo sitio para no escribirla dos veces. */
+  function cargaDeNivel(m){
+    var cp=cargasPermanentes(), gam=(+(S.proy&&S.proy.concreto)||2400);
+    var nX=m.dx.length+1, nY=m.dy.length+1, i, j, area=0, pp=0, cv=0;
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
+      var o=m.losas[key(i,j)]; if(!o)continue;
+      var a=areaPano(i,j,m), pl=predimLosa(i,j,m), e=(pl&&pl.e)||20;
+      area+=a;
+      pp+=a*(esEscalera(o)?SISMO.pesoLosa("maciza",e,gam):SISMO.pesoLosa(o.tipo||"aligerada",e,gam));
+      cv+=a*scPano(o);
+    }
+    var otras=(+cp.piso||0)+(+cp.cielo||0)+(+cp.tabiq||0)+(+cp.estructura||0);
+    return {area:area, pp:area?pp/area:0, otras:otras,
+            cm:(area?pp/area:0)+otras, cv:area?cv/area:0};
+  }
+
   function pintaLeyenda(){
     var m=N(),col=coloresAmb(),ar=areasPorAmb(m),c=$("#leyenda"),html="",k;
     var claves=Object.keys(ar).sort();
     if(!claves.length){c.innerHTML='<p class="empty">Este nivel no tiene losas.</p>';return}
+    /* el area total del nivel, para saber que parte es cada ambiente */
+    var areaNiv=0;
+    claves.forEach(function(k){ areaNiv+=ar[k].area; });
+    html+='<table class="ley-t amb"><thead><tr><th>Ambiente</th><th>w</th><th>Área</th>'+
+          '<th>Aporte</th></tr></thead><tbody>';
     claves.forEach(function(k){
-      var d=ar[k];
-      if(!d.uso){
-        html+='<div class="leyi"><span class="c" style="background:var(--panel)"></span>'+
-          "Sin asignar<b>"+scDefecto()+" · "+d.area.toFixed(2)+" m²</b></div>";
-      }else{
-        var pw=pesoAmb(d.uso,d.amb);
-        html+='<div class="leyi"><span class="c" style="background:'+col[k]+'"></span>'+
-          (d.amb||d.uso)+'<b>'+(pw===null?"—":pw)+" · "+d.area.toFixed(2)+" m²</b></div>";
-      }
+      var d=ar[k], pw=d.uso?pesoAmb(d.uso,d.amb):null, porDef=(pw===null);
+      if(porDef)pw=scDefecto();
+      var t=d.area*pw/1000, pct=areaNiv?(d.area*100/areaNiv):0;
+      var nom=(d.uso?(d.amb||d.uso):"Sin asignar");
+      html+='<tr title="'+nom.replace(/"/g,"&quot;")+' · '+Math.round(pct)+' % del nivel">'+
+        '<td class="nom"><span class="c" style="background:'+(d.uso?col[k]:"var(--panel)")+'"></span>'+
+        nom+'</td>'+
+        '<td class="n">'+Math.round(pw)+(porDef&&d.uso?"*":"")+'</td>'+
+        '<td class="n">'+d.area.toFixed(2)+'</td>'+
+        '<td class="n">'+t.toFixed(1)+'</td></tr>';
     });
+    html+="</tbody>";
     /* EL PROMEDIO DEL NIVEL.  Es el numero que acaba en METRADO_CARGAS y en el peso sismico, y
        hasta ahora habia que esperar a la hoja para verlo.  Los paños sin asignar entran con la S/C
        por defecto, igual que en el predimensionamiento y en ETABS. */
@@ -11570,9 +11633,11 @@ var TT={script:performance.now()};
       aT+=d.area; cvT+=d.area*w;
     });
     if(aT>0){
-      html+='<div class="leyi tot">Media del nivel<b>'+Math.round(cvT/aT)+" kg/m² · "+
-        (cvT/1000).toFixed(1)+" t</b></div>";
+      html+='<tfoot><tr><td class="nom">Media del nivel</td><td class="n">'+Math.round(cvT/aT)+'</td>'+
+        '<td class="n">'+aT.toFixed(2)+'</td><td class="n">'+(cvT/1000).toFixed(1)+'</td></tr></tfoot>';
     }
+    html+='</table><p class="empty" style="margin:4px 0 0">w en kg/m², área en m², aporte en t. '+
+      'El aporte es área × w: es lo que suma ese ambiente a la carga viva del nivel.</p>';
     c.innerHTML=html;
 
     /* LA CARGA ENTERA DEL NIVEL, no solo la viva.  Es el desglose que arma METRADO_CARGAS:
@@ -11602,12 +11667,61 @@ var TT={script:performance.now()};
           fila("Carga viva CV",cvm)+
           '<div class="leyi tot">Servicio CM + CV<b>'+Math.round(cmT+cvm)+" kg/m² · "+
           ((cmT+cvm)*aL/1000).toFixed(1)+' t</b></div></div>'+
+          /* EL ATAJO DE LA CATEGORIA.  PRE_COLUMNA dimensiona con el peso/m² fijo del libro
+             -1000, 1500 o 2000 segun la categoria- y no con este metrado.  La diferencia es la
+             misma para todas las columnas del edificio, asi que es UNA linea, no una tabla. */
+          (function(){
+            var atajo=+((CRITERIOS.CATEGORIA[S.categoria]||{}).peso||0);
+            if(!atajo)return "";
+            var tA2=0,tP=0;
+            pesoSismico().forEach(function(n){ tA2+=n.area; tP+=n.P*1000; });
+            if(!tA2)return "";
+            var real=tP/tA2, dif=(real/atajo-1)*100;
+            return '<div class="rule" style="margin:8px 0"></div>'+
+              '<div class="leyi tot" style="padding-left:0">Columnas · peso de la categoría'+
+              '<b>'+atajo+' kg/m²</b></div>'+
+              '<div class="leyi" style="padding-left:0">Columnas · con este metrado'+
+              '<b>'+Math.round(real)+' kg/m² ('+(dif>=0?"+":"")+dif.toFixed(0)+' %)</b></div>'+
+              '<p class="empty" style="margin:5px 0 0">PRE_COLUMNA usa el de la categoría, que es '+
+              'el atajo del libro. Si tu metrado sale muy por debajo, las columnas van sobradas; '+
+              'por encima, cortas. El metrado es U·(CM + '+
+              Math.round((CRITERIOS.CATEGORIA[S.categoria]||{}).pctSC*100)+' % CV), como en la hoja.</p>';
+          })()+
           '<p class="empty" style="margin:6px 0 0">El mismo desglose que METRADO_CARGAS y la misma '+
           'base que el peso sísmico. Aquí el peso propio va paño a paño con su espesor; la hoja usa '+
           'el espesor mayor de cada tipo, así que con espesores distintos la hoja sale algo más '+
           'pesada'+
           (cp.estructuraAuto?"":". El peso de vigas, columnas y placas es el estimado de 150 kg/m²: "+
            "en Datos puedes pedir que se calcule del modelo")+'.</p>';
+      }
+    }
+
+    /* TODOS LOS NIVELES DE UNA VEZ.  El panel solo ve el nivel activo, y lo que se quiere cazar
+       -un piso sin asignar, la azotea con carga de piso- solo se ve comparando pisos.  Es la MISMA
+       cuenta que la de arriba, hecha nivel a nivel. */
+    var tn=$("#todosNiv");
+    if(tn){
+      if(S.niveles.length<2)tn.innerHTML="";
+      else{
+        var fil="",tA=0,tCM=0,tCV=0;
+        S.niveles.forEach(function(q,k){
+          var d=cargaDeNivel(q);
+          tA+=d.area; tCM+=d.cm*d.area; tCV+=d.cv*d.area;
+          fil+='<tr title="N'+(k+1)+(esAzotea(k)?" · azotea":"")+' · '+d.area.toFixed(2)+' m²">'+
+            '<td class="nom">N'+(k+1)+(esAzotea(k)?' <small>az.</small>':'')+'</td>'+
+            '<td class="n">'+d.area.toFixed(2)+'</td><td class="n">'+Math.round(d.cm)+'</td>'+
+            '<td class="n">'+Math.round(d.cv)+'</td><td class="n">'+Math.round(d.cm+d.cv)+'</td></tr>';
+        });
+        tn.innerHTML='<details class="niv-todos"'+(TODOS_NIV?" open":"")+'><summary>Todos los niveles</summary>'+
+          '<table class="ley-t ley-niv"><thead><tr><th>Nivel</th><th>Área</th><th>CM</th><th>CV</th>'+
+          '<th>Σ</th></tr></thead><tbody>'+fil+'</tbody>'+
+          (tA?'<tfoot><tr><td class="nom">Edificio</td><td class="n">'+tA.toFixed(2)+'</td>'+
+              '<td class="n">'+Math.round(tCM/tA)+'</td><td class="n">'+Math.round(tCV/tA)+'</td>'+
+              '<td class="n">'+Math.round((tCM+tCV)/tA)+'</td></tr></tfoot>':'')+
+          '</table><p class="empty" style="margin:5px 0 0">En kg/m². La media del edificio va '+
+          'ponderada por área.</p></details>';
+        var dt=tn.querySelector("details");
+        if(dt)dt.ontoggle=function(){ TODOS_NIV=this.open; };
       }
     }
 
