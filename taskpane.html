@@ -5341,7 +5341,10 @@
 
   function metradoCargas(P) {
     var amb = P.A || [], niv = P.M || [];
-    vacio(amb.length, "paños con uso asignado");
+    /* «con uso asignado» ya no: el modelador manda tambien el area sin asignar, con la S/C por
+       defecto, que es la que usan el predimensionamiento, ETABS y el peso sismico.  Lo que no
+       puede faltar es el area. */
+    vacio(amb.length, "paños");
     var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
     var h = F.hoja("METRADO_CARGAS"), r = 6;
     h.titulo("METRADO DE CARGAS");
@@ -7132,7 +7135,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v241 · 17-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v247 · 17-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

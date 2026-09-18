@@ -221,6 +221,9 @@
     color:var(--ink-2);border-radius:4px;cursor:pointer;padding:1px 7px;
     font:600 11px "IBM Plex Sans",sans-serif}
   #panelEjes li button:hover{background:var(--acc-soft);color:var(--acc-ink)}
+  .ley .leyi.tot{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;color:var(--ink);
+    padding-left:17px}
+  .ley .leyi.tot b{color:var(--acc-ink)}
   .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
   svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
   .hit{cursor:pointer;fill:transparent}
@@ -923,6 +926,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="rule"></div>
       <h2>En este nivel</h2>
       <div class="ley" id="leyenda"></div>
+      <div id="scUso"></div>
+      <div id="azoteaUso"></div>
       <div class="rule"></div>
       <button class="btn" id="copiarUsos">Copiar usos del nivel anterior</button>
     </aside>
@@ -7680,13 +7685,27 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   var GRUPO_E020 = [
     [/vivienda/i, "VIVIENDAS"], [/oficina/i, "OFICINAS"], [/hotel|hospedaje/i, "HOTELES"],
     [/hospital|cl[ií]nica|posta/i, "HOSPITALES"], [/educativ|universidad|instituto/i, "CENTROS DE EDUCACIÓN"],
-    [/biblioteca/i, "BIBLIOTECAS"], [/cine|teatro|estadio|coliseo|museo|terminal/i, "LUGARES DE ASAMBLEA"],
-    [/comercial|tienda/i, "TIENDAS"], [/penitenciar/i, "INSTITUCIONES PENALES"]
+    [/biblioteca/i, "BIBLIOTECAS"], [/cine|teatro|estadio|coliseo|museo|terminal|restaurante|gimnasio|sal[óo]n de baile/i,
+     "LUGARES DE ASAMBLEA"],   /* E.020 Tabla 1: los restaurantes y gimnasios estan en este grupo */
+    [/comercial|tienda/i, "TIENDAS"], [/penitenciar/i, "INSTITUCIONES PENALES"],
+    /* faltaban: la E.030 los nombra asi y la E.020 los tabula en estos dos grupos.  Para la
+       escalera no cambia nada -ninguno de los dos tiene fila «Corredores y escaleras»- pero la
+       pantalla de Cargas si necesita saber donde cae un deposito o una fabrica. */
+    [/dep[óo]sito|almac[ée]n|almacenaje|granos/i, "ALMACENAJE"],
+    [/industri|f[áa]brica|horno/i, "INDUSTRIA"]
   ];
+  /* De que grupo de la E.020 es un uso de la lista de la E.030 (la de Datos).  Vive aqui porque aqui
+     nacio -la escalera lo necesitaba para su «Corredores y escaleras»- y sale fuera para que la
+     pantalla de Cargas use ESTA y no otra copia que se desincronice. */
+  function grupoE020(uso) {
+    for (var i = 0; i < GRUPO_E020.length; i++)
+      if (GRUPO_E020[i][0].test(String(uso || ""))) return GRUPO_E020[i][1];
+    return null;
+  }
+
   /* la carga viva de la escalera: «Corredores y escaleras» del grupo de la E.020 que corresponde al uso */
   function cargaViva(uso, tabla) {
-    var g = null, i;
-    for (i = 0; i < GRUPO_E020.length; i++) if (GRUPO_E020[i][0].test(String(uso || ""))) { g = GRUPO_E020[i][1]; break; }
+    var g = grupoE020(uso), i;
     var f = g ? (tabla || []).filter(function (x) { return x.g === g && x.a === "Corredores y escaleras"; })[0] : null;
     if (f && f.w > 0) return { w: +f.w, grupo: g, supuesto: false };
     return { w: CV_SIN_TABLA, grupo: g, supuesto: true };
@@ -7832,7 +7851,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   }
 
   return { ART: ART, A010: A010, PASO_MIN: PASO_MIN, CP_OBJETIVO: CP_OBJETIVO, CV_SIN_TABLA: CV_SIN_TABLA,
-           pasoMinimo: pasoMinimo, cargaViva: cargaViva, geometria: geometria, predim: predim, trazado: trazado,
+           pasoMinimo: pasoMinimo, cargaViva: cargaViva, grupoE020: grupoE020, geometria: geometria, predim: predim, trazado: trazado,
            apoyosTramo: apoyosTramo, cargasApoyos: cargasApoyos, comprobar: comprobar };
 });
 </script>
@@ -9267,7 +9286,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v241 · 17-09-2026";
+  var BUILD="v247 · 17-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -10154,6 +10173,9 @@ var TT={script:performance.now()};
   /* TODO lo que es del proyecto: lo que se guarda en el libro y en la biblioteca */
   function payloadActual(){
     return {n:S.niveles,sc:($("#sc")||{}).value,man:S.manual,lc:S.ladoCol,
+            /* el uso con el que estabas pintando: si no viaja, cada vez que se abre la ventana
+               vuelve al primero de la tabla */
+            us:S.uso,am:S.amb,
             vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
             he:S.heredaEjes!==false,
             pr:S.proy,et:S.etabs,in:S.intentos,bib:S.pid||null};
@@ -10202,6 +10224,7 @@ var TT={script:performance.now()};
       var viejo=!d.n[0].zapatas;
       S.niveles=d.n.map(migrar);
       if(viejo)zapatasEnTodas();if(d.sc)$("#sc").value=d.sc;
+      if(d.us){S.uso=d.us;S.amb=d.am||"";}
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
       if(d.vd!==undefined)S.verDims=!!d.vd;
       if(d.vc!==undefined)S.verCim=!!d.vc;
@@ -10469,6 +10492,22 @@ var TT={script:performance.now()};
   /* ---------- usos y cargas ---------- */
   function claveAmb(u,a){return u+"|"+a}
   function ocupaciones(){return E020.usos()}
+  /* AZOTEA: el ambiente que manda la norma para un techo plano corriente */
+  var AZOTEA={uso:"AZOTEA Y TECHOS", amb:"Techo plano, inclinación hasta 3°", art:"E.020 Art. 7.1 a)"};
+  function esAzotea(k){ return k===S.niveles.length-1; }
+  /* CON QUE OCUPACION ARRANCA LA PANTALLA DE CARGAS.
+     Antes: el primer grupo de la E.020 por orden alfabetico, que es ALMACENAJE, 500 kg/m².  Con el
+     proyecto diciendo «Viviendas» en Datos, un arrastre sin querer pintaba 500 donde van 200.
+     Ahora: el grupo de la E.020 que corresponde al uso del proyecto -la misma equivalencia que usa
+     la escalera- y, en el ultimo nivel sin nada asignado, la azotea. */
+  function usoPorDefecto(){
+    var m=N();
+    if(esAzotea(S.act)&&m&&!Object.keys(m.losas||{}).some(function(k){return !!m.losas[k].uso}))
+      return {uso:AZOTEA.uso, amb:AZOTEA.amb};
+    var g=(typeof ESCALERA!=="undefined"&&ESCALERA.grupoE020)?ESCALERA.grupoE020(S.proy&&S.proy.uso):null;
+    if(g&&ocupaciones().indexOf(g)>=0)return {uso:g, amb:""};
+    return null;
+  }
   function ambientesDe(u){return E020.ambientes(u)}
   function fichaAmb(u,a){
     var t=E020.TABLA,k;
@@ -10745,7 +10784,14 @@ var TT={script:performance.now()};
         txt(g,cx,nom?cy+12:cy+4,(pw===null?"falta carga":pw+" kg/m²"),
             pw===null?"var(--trib)":"var(--ink-2)",10.5);
       }else{
-        txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);
+        /* sin asignar NO es sin carga: lleva la S/C por defecto, y eso hay que verlo en el paño.
+           A 9.5px la mono mide ~6.2px por caracter: se escribe la version que quepa, o ninguna. */
+        var cabe2=Math.floor((an-10)/6.2), largo=scDefecto()+" kg/m² por defecto",
+            corto=scDefecto()+" kg/m²", pie=(largo.length<=cabe2)?largo:(corto.length<=cabe2?corto:"");
+        if(pie){
+          txt(g,cx,cy-1,"sin asignar","var(--ink-3)",10.5);
+          txt(g,cx,cy+12,pie,"var(--ink-3)",9.5);
+        }else txt(g,cx,cy+4,"sin asignar","var(--ink-3)",10.5);
       }
       /* en un pano angosto la zona encogida 5 desaparecia: se encoge con el pano */
       var hit=el("polygon",{points:pts(encoge(Q,Math.min(5,0.2*Math.min(an,Math.max.apply(null,ys)-y)))),"class":"hit"});
@@ -11457,7 +11503,10 @@ var TT={script:performance.now()};
 
   function pintaSelector(){
     var su=$("#selUso"),sa=$("#selAmb"),ocs=ocupaciones();
-    if(!S.uso&&ocs.length)S.uso=ocs[0];
+    if(!S.uso&&ocs.length){
+      var pd=usoPorDefecto();
+      if(pd){ S.uso=pd.uso; S.amb=pd.amb; } else S.uso=ocs[0];
+    }
     su.innerHTML=ocs.map(function(u){
       return '<option value="'+u+'"'+(u===S.uso?" selected":"")+">"+u+"</option>"}).join("");
     var ambs=ambientesDe(S.uso);
@@ -11490,14 +11539,81 @@ var TT={script:performance.now()};
       var d=ar[k];
       if(!d.uso){
         html+='<div class="leyi"><span class="c" style="background:var(--panel)"></span>'+
-          "Sin asignar<b>"+d.area.toFixed(2)+" m²</b></div>";
+          "Sin asignar<b>"+scDefecto()+" · "+d.area.toFixed(2)+" m²</b></div>";
       }else{
         var pw=pesoAmb(d.uso,d.amb);
         html+='<div class="leyi"><span class="c" style="background:'+col[k]+'"></span>'+
           (d.amb||d.uso)+'<b>'+(pw===null?"—":pw)+" · "+d.area.toFixed(2)+" m²</b></div>";
       }
     });
+    /* EL PROMEDIO DEL NIVEL.  Es el numero que acaba en METRADO_CARGAS y en el peso sismico, y
+       hasta ahora habia que esperar a la hoja para verlo.  Los paños sin asignar entran con la S/C
+       por defecto, igual que en el predimensionamiento y en ETABS. */
+    var aT=0,cvT=0,sinA=0;
+    claves.forEach(function(k){
+      var d=ar[k], w=d.uso?pesoAmb(d.uso,d.amb):null;
+      if(w===null)w=scDefecto();
+      if(!d.uso)sinA+=d.area;
+      aT+=d.area; cvT+=d.area*w;
+    });
+    if(aT>0){
+      html+='<div class="leyi tot">Media del nivel<b>'+Math.round(cvT/aT)+" kg/m² · "+
+        (cvT/1000).toFixed(1)+" t</b></div>";
+    }
     c.innerHTML=html;
+
+    /* el selector de la S/C por defecto, aqui: es la carga de lo que dejes sin asignar y vivia
+       solo en la barra de Planta, en otra pestaña */
+    var box=$("#scUso");
+    if(box){
+      if(!sinA){ box.innerHTML=""; }
+      else{
+        var op=[100,200,250,300,400,500,750].map(function(v){
+          return '<option value="'+v+'"'+(scDefecto()===v?" selected":"")+">"+v+" kg/m²</option>"}).join("");
+        box.innerHTML='<div class="rule"></div><h2>Los que faltan</h2>'+
+          '<p class="empty" style="margin:0 0 6px">'+sinA.toFixed(2)+' m² sin asignar. Van con esta '+
+          'carga, la misma que usan el predimensionamiento, ETABS y el peso sísmico.</p>'+
+          '<div class="row" style="align-items:center;gap:8px">'+
+          '<span class="lbl" for="scUsoSel">S/C por defecto</span>'+
+          '<select id="scUsoSel" style="flex:1">'+op+'</select></div>';
+        var sel=$("#scUsoSel");
+        if(sel)sel.onchange=function(){ $("#sc").value=this.value; guardar(); render(); };
+      }
+    }
+
+    /* LA AZOTEA.  El ultimo nivel es la azotea para el peso sismico -entra al 25 %-, pero su carga
+       viva sale de lo que asignes: sin esto, una azotea olvidada pesa 200 en vez de los 100 que
+       manda la E.020 Art. 7.1 a). */
+    var az=$("#azoteaUso");
+    if(az){
+      var esUlt=esAzotea(S.act), falta=[];
+      if(esUlt)claves.forEach(function(k){
+        var d=ar[k];
+        if(!d.uso||d.uso!==AZOTEA.uso)falta.push(d.area);
+      });
+      if(!esUlt||!falta.length)az.innerHTML="";
+      else{
+        var aF=falta.reduce(function(a,b){return a+b},0);
+        az.innerHTML='<div class="rule"></div><h2>Azotea</h2>'+
+          '<p class="aviso" style="margin:0 0 6px">Este es el último nivel. '+aF.toFixed(2)+' m² '+
+          'llevan carga de piso; la '+AZOTEA.art+' pide <b>'+E020.carga(AZOTEA.uso,AZOTEA.amb)+
+          ' kg/m²</b> para un techo plano.</p>'+
+          '<button class="btn" id="ponAzotea">Poner azotea a esos paños</button>';
+        var b=$("#ponAzotea");
+        if(b)b.onclick=function(){
+          snap();
+          var mm=N();
+          Object.keys(mm.losas).forEach(function(k){
+            var o=mm.losas[k];
+            if(esEscalera(o))return;                    /* la escalera no es azotea */
+            if(o.uso===AZOTEA.uso)return;
+            o.uso=AZOTEA.uso; o.amb=AZOTEA.amb;
+          });
+          S.uso=AZOTEA.uso; S.amb=AZOTEA.amb;
+          guardar(); render();
+        };
+      }
+    }
   }
 
 
@@ -15476,7 +15592,14 @@ var TT={script:performance.now()};
 
     var am=areasPorAmb(m),AMB=[];
     Object.keys(am).forEach(function(k){
-      var d=am[k]; if(!d.uso)return;
+      var d=am[k];
+      /* EL AREA SIN ASIGNAR TAMBIEN VA, con la S/C por defecto.  Si se quedara fuera, la hoja
+         promediaria solo lo asignado y diria una carga que el modelador no usa: con 105 m² de
+         almacenaje y 315 sin asignar salian 500 kg/m² para todo el nivel. */
+      if(!d.uso){
+        if(d.area>0)AMB.push([nm.nivel,"— sin asignar —","S/C por defecto",d.area.toFixed(2),scDefecto()]);
+        return;
+      }
       var w=pesoAmb(d.uso,d.amb);
       AMB.push([nm.nivel,d.uso,d.amb||"—",d.area.toFixed(2),w===null?"":w]);
     });
@@ -17948,6 +18071,25 @@ var TT={script:performance.now()};
                scPano(lo2)+" kg/m²: fuera de la tabla α de losas (máx 500)",
                nv,{t:"losa",i:i,j:j});
       }
+      /* LAS CARGAS QUE NO ELEGISTE.  Lo que se deja sin asignar no va sin carga: va con la S/C
+         por defecto, en el predimensionamiento, en ETABS, en el peso sismico y -desde ahora- en
+         METRADO_CARGAS.  Que se sepa, que es una decision y no un olvido. */
+      var sinU=0, aSinU=0, aPiso=0;
+      for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
+        var lo3=m.losas[key(i,j)]; if(!lo3||esEscalera(lo3))continue;
+        if(!lo3.uso){ sinU++; aSinU+=areaPano(i,j,m); }
+        else if(esAzotea(k)&&lo3.uso!==AZOTEA.uso) aPiso+=areaPano(i,j,m);
+      }
+      if(sinU)
+        mete("cargas","revisar",sinU+" paño(s) sin uso asignado ("+aSinU.toFixed(2)+" m²): van con "+
+             scDefecto()+" kg/m², la S/C por defecto. Se asignan en Paso 2 · Cargas.",nv,null);
+      /* la azotea con carga de piso: el peso sismico ya la trata como azotea -entra al 25 %- pero
+         su carga viva sale de lo que asignes, y 200 en vez de 100 duplica la CV del ultimo techo */
+      if(esAzotea(k)&&(aPiso>0||sinU))
+        mete("cargas","revisar","es el último nivel: "+(aPiso+aSinU).toFixed(2)+" m² llevan carga de "+
+             "piso y la "+AZOTEA.art+" pide "+E020.carga(AZOTEA.uso,AZOTEA.amb)+" kg/m² en un techo "+
+             "plano. En Paso 2 · Cargas hay un botón que se lo pone.",nv,null);
+
       /* el sesgo del lote: no es un fallo, pero es lo primero que hay que
          saber de una planta asi, y hasta ahora solo se veia en el lienzo */
       if(irregular(m)){
@@ -18956,7 +19098,10 @@ var TT={script:performance.now()};
     {n:"PRE_COLUMNA_CIRCULAR",tit:"Pre columna circular",t:"ele", q:function(c){return c.col}},
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
     {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
-    {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met", q:function(c){return c.usos}},
+    /* METRADO_CARGAS ya no necesita usos asignados: lo que no tiene uso va con la S/C por
+       defecto, igual que en el predimensionamiento.  Lo que necesita es que haya losas. */
+    {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met",
+     q:function(c){return c.losa.aligerada+c.losa.maciza+c.losa.nervada}},
     {n:"ANALISIS_SISMICO",   tit:"Análisis sísmico",   t:"ele",
      q:function(c){return c.losa.aligerada+c.losa.maciza+c.losa.nervada}},
     /* C2: sale solo con resultados de ETABS en el libro */
@@ -19026,8 +19171,8 @@ var TT={script:performance.now()};
       return vs?{ok:true,pie:"resultados de "+(vs.archivo||"ETABS")}:{ok:false,pie:"sin resultados de ETABS"};
     }
     var q=h.q(c);
-    if(!q) return {ok:false,pie:h.t==="met"?"sin usos asignados":"sin elementos"};
-    return {ok:true,pie:q+(h.t==="met"?" paño(s) con uso":" elemento(s)")};
+    if(!q) return {ok:false,pie:h.t==="met"?"sin losas dibujadas":"sin elementos"};
+    return {ok:true,pie:q+(h.t==="met"?" paño(s)":" elemento(s)")};
   }
 
   /* EL MODELO PARA ETABS, dicho en su sitio.  El panel lo deja en el libro
