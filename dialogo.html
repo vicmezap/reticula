@@ -7738,19 +7738,26 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   /* la barra y el paso de obra para un As en un ancho (cm) */
   function malla(o) {
     var lista = (o.lista && o.lista.length) ? o.lista : ['5/8"', '3/4"', '1"'];
-    var sMax = Math.min(3 * o.H, 40), i, mejor = null;
+    var sMax = Math.min(3 * o.H, 40), i, mejor = null, rec = (o.rec || 7.5);
+    function cuantas(s) { return Math.floor((o.ancho - 2 * rec) / s + 1e-9) + 1; }
+    /* EL PASO SE AJUSTA HASTA QUE LAS BARRAS QUE CABEN LLEGUEN AL ACERO PEDIDO.  El paso sale de As por metro,
+       pero las barras que caben entre recubrimientos se cuentan hacia abajo: 1/2" @ 15 en 1,30 m eran 8 barras,
+       10,32 cm² contra 10,53 pedidos.  Se baja el paso de 2,5 en 2,5 cm hasta que n·Ab ≥ As. */
+    function paso(Ab, piso) {
+      var s = Math.min(Math.floor(Ab * o.ancho / o.As / 2.5) * 2.5, sMax);
+      while (s - 2.5 >= piso - 1e-9 && cuantas(s) * Ab < o.As - 1e-9) s -= 2.5;
+      return s;
+    }
     for (i = 0; i < lista.length; i++) {
-      var Ab = barra(lista[i]).a;
-      var s = Math.floor(Ab * o.ancho / o.As / 2.5) * 2.5;
-      s = Math.min(s, sMax);
-      if (s >= 12.5) { mejor = { bar: lista[i], s: s, Ab: Ab, db: barra(lista[i]).d * 10 }; break; }
+      var Ab = barra(lista[i]).a, s = paso(Ab, 12.5);
+      if (s >= 12.5 && cuantas(s) * Ab >= o.As - 1e-9) { mejor = { bar: lista[i], s: s, Ab: Ab, db: barra(lista[i]).d * 10 }; break; }
     }
     if (!mejor) {
       var ult = lista[lista.length - 1], Ab2 = barra(ult).a;
-      var s2 = Math.max(Math.floor(Ab2 * o.ancho / o.As / 2.5) * 2.5, 7.5);
+      var s2 = Math.max(paso(Ab2, 7.5), 7.5);
       mejor = { bar: ult, s: Math.min(s2, sMax), Ab: Ab2, db: barra(ult).d * 10, apretada: s2 < 10 };
     }
-    mejor.n = Math.floor((o.ancho - 2 * (o.rec || 7.5)) / mejor.s) + 1;
+    mejor.n = cuantas(mejor.s);
     mejor.AsPuesta = mejor.n * mejor.Ab;
     mejor.sMax = sMax;
     return mejor;
@@ -12121,7 +12128,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v338 · 18-09-2026";
+  var BUILD="v345 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12603,8 +12610,9 @@ var TT={script:performance.now()};
      ya une: ahi unir es no poner nada y separar es poner false; en un eje
      principal, al reves. */
   function ponJunta(m,r,unir){
-    var porDefecto=esPrima(r.ejeX,r.eje,m);
-    var valor=unir?(porDefecto?null:true):(porDefecto?false:null);
+    /* con V1 y L1 un eje sin apoyo ya une por si solo, principal o prima: unir es quitar la junta y separar
+       es ponerla en false.  (Antes, en un eje principal, «separar» no ponia nada y no separaba.) */
+    var valor=unir?null:false;
     if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
     (r.claves||[r.clave]).forEach(function(c){ if(valor===null)delete m.juntas[c]; else m.juntas[c]=valor; });
     return valor;
@@ -12879,10 +12887,11 @@ var TT={script:performance.now()};
         return !!q&&!esc0&&!esEscalera(q)&&
                (!propia||((q.tipo||"aligerada")===(o0.tipo||"aligerada")&&dirLosa(q)===dir))},
       function(a){
-        /* una VIGA siempre es apoyo; sin viga, la junta y si no el eje.  La
+        /* una VIGA o una PLACA siempre es apoyo; sin apoyo, la junta.  La
            junta solo vale entre losas del mismo tipo y armadas a lo largo:
            si luego giras una o le cambias el tipo, vuelven a ser dos. */
-        if(m.vigas[ejeX?("v:"+a+":"+j):("h:"+i+":"+a)])return true;
+        var kb=ejeX?("v:"+a+":"+j):("h:"+i+":"+a);
+        if(m.vigas[kb]||(m.placas&&m.placas[kb]))return true;
         var jt=junta(m,ejeX?("Lx:"+a+":"+j):("Ly:"+i+":"+a));
         if(jt===true){
           var c1=m.losas[ejeX?((a-1)+":"+j):(i+":"+(a-1))],
@@ -12891,7 +12900,10 @@ var TT={script:performance.now()};
                    dirLosa(c1)===dirLosa(c2)&&dirLosa(c1)===(ejeX?"x":"y"));
         }
         if(jt===false)return true;
-        return !esPrima(ejeX,a,m);
+        /* L1 (Victor, 19-09-2026): LA LOSA VA DE APOYO A APOYO.  Un eje sin viga ni placa no la corta, sea
+           principal o prima: con ejes de arquitectura un eje principal sin nada debajo partia una losa de
+           4 m en trozos de 0,36 y le daba un peralte de 5 cm.  Igual que V1 para la viga. */
+        return false;
       });
     /* LA LOSA TIENE DOS BORDES EN LA DIRECCION DE SU LUZ, Y EN UN PAÑO EN
        PUNTA NO MIDEN LO MISMO.
@@ -12931,15 +12943,15 @@ var TT={script:performance.now()};
      losa aparte: el eje A′ que Victor puso por la escalera partia en dos a las
      losas de A a B y Unir no las dejaba juntar («una al lado de la otra»). */
   function cortaLado(dir,a,desde,hasta,m){
-    var y=(dir==="y"), k, todas=true;
+    var y=(dir==="y"), k;
     for(k=desde;k<hasta;k++){
-      if(m.vigas[y?("v:"+a+":"+k):("h:"+k+":"+a)])return true;
+      var kb=y?("v:"+a+":"+k):("h:"+k+":"+a);
+      if(m.vigas[kb]||(m.placas&&m.placas[kb]))return true;
       var jt=junta(m,y?("Ty:"+a+":"+k):("Tx:"+k+":"+a));
       if(jt===false)return true;
-      if(jt!==true)todas=false;
     }
-    if(esPrima(y,a,m))return false;
-    return !todas;
+    /* L1: sin viga ni placa en toda la linea, el eje no corta de costado, sea principal o prima */
+    return false;
   }
   function ladoLosa(dir,i,j,m,t){
     var y=(dir==="y"), c0=y?i:j, lim=(y?m.dx:m.dy).length, o=m.losas[key(i,j)];
@@ -13117,57 +13129,11 @@ var TT={script:performance.now()};
   }
   function areaNivel(m){var a=0,i,j,nX=m.dx.length+1,nY=m.dy.length+1;
     for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++)if(m.losas[i+":"+j])a+=areaPano(i,j,m);return a}
-  /* La linea media va a la mitad del vano REAL: con un prima sin apoyo el
-     vano abarca varios tramos y la mitad se corre con el.  Sin primas,
-     tramoLosa da un vano y esto es literalmente lo de siempre. */
-  /* =====================================================================
-     EL TROZO QUE LE TOCA A UNA ESQUINA DEL PAÑO
+  /* EL REPARTO VIEJO -a cada esquina de un paño su cuarto, con o sin columna- se quito el 19-09-2026: con ejes
+     de arquitectura perdia el 90 % de la losa.  El reparto de ahora esta en repartoLosa(). */
 
-     El area tributaria de una columna se mide hasta la MITAD de cada vano:
-     las dos lineas medias del paño lo parten en cuatro, y a la columna le
-     toca el trozo que la contiene.
-
-     En un paño RECTANGULAR esos cuatro trozos son iguales y basta con
-     dividir el area entre cuatro.  En un paño en PUNTA no lo son: la
-     esquina del lado ancho recoge mas y la de la punta menos.  Con un
-     trapecio de lados 3.165 y 3.705 -el «+0.54 m» que avisa el propio
-     modelador- la diferencia es de un 3.9 %; con lados 1 y 4 es del 30 %.
-     Y va EN CONTRA DE LA SEGURIDAD en la esquina ancha, que es a la que se
-     le estaba dando de menos.
-
-     Asi que se mide el trozo de verdad: del nodo a los puntos medios de sus
-     dos lados y al centro del paño, por la formula de Gauss.  El centro es
-     donde se cruzan las dos lineas medias, que en un cuadrilatero cualquiera
-     es la media de los cuatro vertices.
-
-     Los cuatro trozos SUMAN el paño entero, asi que no se pierde ni se
-     inventa carga.  Y en un rectangulo da exactamente un cuarto: lo que ya
-     estaba bien no cambia.
-     ===================================================================== */
-  /* LA FIGURA del trozo que le toca a la esquina (i,j) del paño (pi,pj):
-     el cuadrilatero [nudo, medio hacia un vecino, centro del paño, medio
-     hacia el otro vecino].
-
-     Devuelve la figura y no solo su area a proposito: de aqui salen LAS DOS
-     COSAS, el numero que se reporta y el recuadro que se dibuja.  Antes el
-     area salia de aqui y el dibujo de un rectangulo aparte que solo
-     coincidia cuando la planta era recta. */
-  function quadEsquina(pi,pj,i,j,m){
-    m=m||N();
-    var V=quadPano(pi,pj,m);
-    var IJ=[[pi,pj],[pi+1,pj],[pi+1,pj+1],[pi,pj+1]],k=-1,t;
-    for(t=0;t<4;t++) if(IJ[t][0]===i&&IJ[t][1]===j) k=t;
-    if(k<0) return null;                     /* no es esquina de este paño */
-    var O=centro(V);
-    return [V[k], med(V[k],V[(k+1)%4]), O, med(V[k],V[(k+3)%4])];
-  }
-  function areaEsquina(pi,pj,i,j,m){
-    var P=quadEsquina(pi,pj,i,j,m);
-    return P ? areaPoli(P) : areaPano(pi,pj,m)/4;
-  }
-
-  /* EL BORDE DE FUERA de varios cuadrilateros que solo comparten aristas
-     enteras -los trozos de esquina alrededor de una columna-.  Cada arista
+  /* EL BORDE DE FUERA de varios poligonos que solo comparten aristas
+     enteras -los trozos del reparto de una columna-.  Cada arista
      interior aparece dos veces en sentidos opuestos y se anula; lo que
      sobrevive se encadena, y eso es el contorno de la union.
 
@@ -13193,6 +13159,34 @@ var TT={script:performance.now()};
       cur=ini[cl(cur.b)];
     }
     return ruta;
+  }
+  /* TODOS LOS ANILLOS del borde.  Con el reparto por cercania la region de una columna puede quedar en dos
+     pedazos -a los dos lados de un vacio- o rodear un hueco; contorno() solo encadena el primero. */
+  function contornos(quads){
+    function cl(p){return p.x.toFixed(4)+","+p.y.toFixed(4)}
+    var vivas={},lista=[],q,k,P,a,b,ini={};
+    for(q=0;q<quads.length;q++){
+      P=quads[q];
+      for(k=0;k<P.length;k++){
+        a=P[k]; b=P[(k+1)%P.length];
+        if(vivas[cl(b)+"|"+cl(a)]) delete vivas[cl(b)+"|"+cl(a)];
+        else vivas[cl(a)+"|"+cl(b)]={a:a,b:b};
+      }
+    }
+    for(k in vivas){lista.push(vivas[k]); (ini[cl(vivas[k].a)]=ini[cl(vivas[k].a)]||[]).push(vivas[k]);}
+    var usada={}, anillos=[], e, g;
+    lista.forEach(function(e0){
+      if(usada[cl(e0.a)+"|"+cl(e0.b)])return;
+      var ruta=[]; e=e0; g=0;
+      while(e && !usada[cl(e.a)+"|"+cl(e.b)] && g++<2000){
+        usada[cl(e.a)+"|"+cl(e.b)]=1;
+        ruta.push(e.a);
+        var sig=(ini[cl(e.b)]||[]).filter(function(x){return !usada[cl(x.a)+"|"+cl(x.b)];});
+        e=sig[0];
+      }
+      if(ruta.length>=3)anillos.push(ruta);
+    });
+    return anillos;
   }
 
   /* EL LIENZO: cuanto ocupa la planta, donde empieza y a que escala.
@@ -13279,44 +13273,163 @@ var TT={script:performance.now()};
     };
   }
 
-  function medCol(i,j,m){
-    m=m||N();var ps=panos(i,j,m),at=0,bx=0,by=0,vx={},vy={};
-    ps.forEach(function(q){
-      /* EL BORDE DE ESTA COLUMNA, no el mas largo del paño.  tramoLosa
-         devuelve L = el largo de los dos -que es lo que manda para el
-         peralte de la losa- y L1/L2 por separado.  Aqui hace falta el de la
-         linea donde esta la columna: para el paño (q0,q1), la fila j es la
-         q1 o la q1+1, y la columna i es la q0 o la q0+1. */
-      var tx=tramoLosa("x",q[0],q[1],m), ty=tramoLosa("y",q[0],q[1],m);
-      var lx=(j===q[1]?tx.L1:tx.L2)/2, ly=(i===q[0]?ty.L1:ty.L2)/2;
-      /* EL TROZO DE ESTA ESQUINA, no un cuarto del paño: en un paño en
-         punta los cuatro trozos no son iguales.  Ver areaEsquina(). */
-      at+=areaEsquina(q[0],q[1],i,j,m); vx[q[0]]=lx; vy[q[1]]=ly;});
-    if(vx[i-1]!=null)bx+=vx[i-1];
-    if(vx[i]  !=null)bx+=vx[i];
-    if(vy[j-1]!=null)by+=vy[j-1];
-    if(vy[j]  !=null)by+=vy[j];
-    var n=ps.length;
-    /* CUANTO ABARCA A CADA LADO, por separado.  El recuadro de la pantalla
-       se dibujaba con medio vano de la RETICULA y los numeros decian medio
-       vano REAL: con un eje prima sin apoyo la losa cruza varios tramos y
-       las dos cuentas se separan.  Se veia un recuadro que no llegaba a
-       donde decia el numero.  Ahora el dibujo usa estos mismos lados. */
-    var lados={izq:vx[i-1]||0, der:vx[i]||0, arr:vy[j-1]||0, aba:vy[j]||0};
-    return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",
-           at:at,bx:bx,by:by,n:n,lados:lados};
+  /* =====================================================================
+     EL REPARTO DE LA LOSA ENTRE LOS APOYOS VERTICALES  (Victor, 19-09-2026)
+
+     Hasta aqui el area tributaria de una columna era la suma de los trozos
+     de esquina de los paños que la tocan: el paño se partia por sus dos
+     lineas medias y cada esquina se llevaba su cuarto.  Eso supone que en
+     las cuatro esquinas de cada paño hay columna, es decir, que cada eje es
+     una linea estructural.  Con ejes de ARQUITECTURA no lo es: en el N1 de
+     Victor hay 144 cruces y 23 columnas, y el trozo de una esquina sin
+     columna no se lo llevaba nadie.  Se perdia el 90 % de la losa (11,89 de
+     115,74 m²), las columnas y las zapatas salian diez veces mas chicas, y
+     el reparto solo cerraba en una reticula llena.
+
+     La regla de siempre, dicha bien: la columna carga la losa que le queda
+     MAS CERCA que a cualquier otra columna -hasta la mitad de la distancia
+     a cada vecina, en todas las direcciones-.  Es lo que se dibuja a mano
+     con las mediatrices, y en una reticula regular da exactamente el
+     rectangulo de medias luces.  Cada paño se recorta por la mediatriz con
+     cada apoyo (Sutherland-Hodgman sobre el cuadrilatero real del paño), asi
+     que los trozos de todos los apoyos SUMAN el paño entero: el reparto no
+     pierde ni inventa un metro cuadrado, con los ejes que sean y en planta
+     sesgada.  TODA COLUMNA es apoyo, tenga o no losa junto a su nudo: la de
+     A-4 en el N1 de Victor esta al borde de un vacio y le llega la losa por
+     una chata y dos principales; fuera del reparto salia con 0 m² y una
+     zapata de 0 x 0.  Un nudo de placa es apoyo si tiene losa al lado: el
+     muro carga la losa que toca, y eso es lo que suma la zapata corrida bajo
+     la placa.
+     ===================================================================== */
+  function esApoyoVertical(i,j,m){
+    if(m.cols[key(i,j)])return "col";
+    if(!panos(i,j,m).length)return null;
+    var pl=m.placas||{};
+    if(pl[key("h",i-1,j)]||pl[key("h",i,j)]||pl[key("v",i,j-1)]||pl[key("v",i,j)])return "placa";
+    return null;
   }
-  /* Ancho tributario de una viga: medio paño a cada lado que tenga losa. */
-  function anchoTrib(o,i,j,m){
-    m=m||N();var B=0;
-    if(o==="h"){
-      if(m.losas[key(i,j-1)])B+=tramoLosa("y",i,j-1,m).L/2;
-      if(m.losas[key(i,j)])  B+=tramoLosa("y",i,j,m).L/2;
-    }else{
-      if(m.losas[key(i-1,j)])B+=tramoLosa("x",i-1,j,m).L/2;
-      if(m.losas[key(i,j)])  B+=tramoLosa("x",i,j,m).L/2;
+  /* lo que queda del poligono P en el semiplano a·x + b·y <= c */
+  function recortaSemiplano(P,a,b,c){
+    var out=[],n=P.length,k,p,q,fp,fq,t;
+    for(k=0;k<n;k++){
+      p=P[k]; q=P[(k+1)%n];
+      fp=a*p.x+b*p.y-c; fq=a*q.x+b*q.y-c;
+      if(fp<=0)out.push(p);
+      if((fp<0&&fq>0)||(fq<0&&fp>0)){ t=fp/(fp-fq); out.push({x:p.x+t*(q.x-p.x), y:p.y+t*(q.y-p.y)}); }
     }
-    return B;
+    return out;
+  }
+  /* FUERA DE UN DIBUJO no hay memoria de pasada, y cada columna que se pregunta rehacia el reparto entero: en
+     una planta de 30 x 30, pedir las zapatas tardaba 105 s.  Se guarda por nivel con la firma de lo unico de lo
+     que depende -los vanos, donde hay columna, losa y placa-; si algo de eso cambia, se rehace. */
+  var REPARTO_FUERA=(typeof WeakMap==="function")?new WeakMap():null;
+  function firmaReparto(m){
+    return [m.dx.join(),m.dy.join(),(m.dx2||[]).join(),(m.dy2||[]).join(),
+            Object.keys(m.cols||{}).join(),Object.keys(m.losas||{}).join(),Object.keys(m.placas||{}).join()].join("|");
+  }
+  function repartoLosa(m){
+    m=m||N();
+    var mc=cacheDe(m); if(mc&&mc.reparto)return mc.reparto;
+    var firma=null;
+    if(!mc&&REPARTO_FUERA){
+      firma=firmaReparto(m);
+      var g=REPARTO_FUERA.get(m); if(g&&g.firma===firma)return g.R;
+    }
+    var R=repartoCalc(m);
+    if(mc)mc.reparto=R; else if(REPARTO_FUERA)REPARTO_FUERA.set(m,{firma:firma,R:R});
+    return R;
+  }
+  function repartoCalc(m){
+    var nX=m.dx.length+1,nY=m.dy.length+1,i,j,k,S=[],t,p;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++){
+      t=esApoyoVertical(i,j,m); if(!t)continue;
+      p=nodo(i,j,m); S.push({k:key(i,j),i:i,j:j,x:p.x,y:p.y,t:t});
+    }
+    var R={sitios:S,por:{},piezas:{}};
+    S.forEach(function(s){R.por[s.k]=0;R.piezas[s.k]=[];});
+    for(i=0;i<nX-1;i++)for(j=0;j<nY-1;j++){
+      if(!m.losas[key(i,j)])continue;
+      var V=quadPano(i,j,m), c=centro(V), r=0, d=[], dmin=Infinity, a, b, cand=[];
+      for(k=0;k<4;k++)r=Math.max(r,dist(c,V[k]));
+      for(k=0;k<S.length;k++){d[k]=dist(c,S[k]);if(d[k]<dmin)dmin=d[k];}
+      if(dmin===Infinity)continue;
+      /* SOLO LOS APOYOS CERCANOS.  Un punto del paño esta a menos de r del centro, asi que un apoyo a mas de
+         dmin + 2r del centro nunca es el mas cercano de ningun punto; y la mediatriz entre a y b solo corta
+         la parte de a que hay dentro del paño si d[b] <= d[a] + 2r.  Todo lo que importa esta a dmin + 4r. */
+      for(k=0;k<S.length;k++)if(d[k]<=dmin+4*r+1e-9)cand.push(k);
+      for(var ca=0;ca<cand.length;ca++){
+        a=cand[ca];
+        if(d[a]>dmin+2*r+1e-9)continue;
+        var P=V;
+        for(var cb=0;cb<cand.length&&P.length>=3;cb++){
+          b=cand[cb];
+          if(b===a||d[b]>d[a]+2*r+1e-9)continue;   /* su mediatriz no corta el paño */
+          var sx=S[a].x,sy=S[a].y,tx=S[b].x,ty=S[b].y;
+          P=recortaSemiplano(P,tx-sx,ty-sy,(tx*tx+ty*ty-sx*sx-sy*sy)/2);
+        }
+        if(P.length>=3){ var ar=areaPoli(P); if(ar>1e-12){R.por[S[a].k]+=ar; R.piezas[S[a].k].push({i:i,j:j,P:P});} }
+      }
+    }
+    return R;
+  }
+  /* CUANTO ABARCA el apoyo (i,j) siguiendo su eje hacia (di,dj): hasta la mediatriz con el apoyo mas proximo
+     en esa direccion, y nunca mas alla de donde se acaba la losa.  En una reticula regular es la media luz. */
+  function ladoReparto(i,j,m,di,dj,R){
+    var nX=m.dx.length+1,nY=m.dy.length+1, i2=i+di, j2=j+dj;
+    if(i2<0||j2<0||i2>=nX||j2>=nY)return 0;
+    var c=nodo(i,j,m), n2=nodo(i2,j2,m), ux=n2.x-c.x, uy=n2.y-c.y, L=Math.sqrt(ux*ux+uy*uy)||1;
+    ux/=L; uy/=L;
+    var tmax=Infinity;
+    R.sitios.forEach(function(s){
+      if(s.i===i&&s.j===j)return;
+      var vx=s.x-c.x, vy=s.y-c.y, pr=vx*ux+vy*uy;
+      if(pr>1e-12)tmax=Math.min(tmax,(vx*vx+vy*vy)/(2*pr));
+    });
+    var suma=0, a=i, b=j, hay, seg;
+    for(;;){
+      var a2=a+di, b2=b+dj; if(a2<0||b2<0||a2>=nX||b2>=nY)break;
+      if(di){ var ci=Math.min(a,a2); hay=!!(m.losas[key(ci,b-1)]||m.losas[key(ci,b)]); }
+      else  { var cj=Math.min(b,b2); hay=!!(m.losas[key(a-1,cj)]||m.losas[key(a,cj)]); }
+      if(!hay)break;
+      seg=dist(nodo(a,b,m),nodo(a2,b2,m));
+      if(suma+seg>=tmax){suma=tmax;break;}
+      suma+=seg; a=a2; b=b2;
+    }
+    return Math.min(suma,tmax);
+  }
+  function medCol(i,j,m){
+    m=m||N();var ps=panos(i,j,m), n=ps.length, R=repartoLosa(m), k=key(i,j), es=(R.por[k]!==undefined);
+    var lados={izq:es?ladoReparto(i,j,m,-1,0,R):0, der:es?ladoReparto(i,j,m,1,0,R):0,
+               arr:es?ladoReparto(i,j,m,0,-1,R):0, aba:es?ladoReparto(i,j,m,0,1,R):0};
+    return{tipo:n>=4?"Interior":n===1?"Esquinera":"Exterior",
+           at:es?R.por[k]:0, bx:lados.izq+lados.der, by:lados.arr+lados.aba, n:n, lados:lados,
+           piezas:es?R.piezas[k]:[]};
+  }
+  /* ANCHO TRIBUTARIO DE UNA VIGA en el paño (i,j): a cada lado con losa, la mitad de la distancia a la
+     siguiente LINEA DE APOYO paralela (viga o placa), que es hasta donde llega tramoLosa en esa direccion.
+     Antes era medio paño de la reticula: con ejes de arquitectura, 0,36 m para una viga de 4,57 m. */
+  function anchoTribLados(o,i,j,m){
+    m=m||N();var a=0,b=0;
+    if(o==="h"){
+      if(m.losas[key(i,j-1)])a=tramoLosa("y",i,j-1,m).L/2;
+      if(m.losas[key(i,j)])  b=tramoLosa("y",i,j,m).L/2;
+    }else{
+      if(m.losas[key(i-1,j)])a=tramoLosa("x",i-1,j,m).L/2;
+      if(m.losas[key(i,j)])  b=tramoLosa("x",i,j,m).L/2;
+    }
+    return {a:a,b:b};
+  }
+  function anchoTrib(o,i,j,m){ var l=anchoTribLados(o,i,j,m); return l.a+l.b; }
+  /* la viga ENTERA (de columna a columna, V1) toma a cada lado el mayor de sus paños: una viga es una pieza y se
+     dimensiona para el tramo que mas losa le cuelga */
+  function anchoTribTramo(o,i,j,m){
+    m=m||N();
+    var t=tramoViga(o,i,j,m), a=0, b=0, k, l;
+    for(k=t.desde;k<t.hasta;k++){
+      l=(o==="h")?anchoTribLados("h",k,j,m):anchoTribLados("v",i,k,m);
+      a=Math.max(a,l.a); b=Math.max(b,l.b);
+    }
+    return {a:a,b:b,B:a+b,tramo:t};
   }
   /* Oviedo: b = B/20 >= 0.25 m. Depende solo del ancho tributario, que es
      geometria pura, asi que el modelador lo sabe sin preguntarle a Excel.
@@ -13328,7 +13441,7 @@ var TT={script:performance.now()};
     /* si tocaste el ancho a mano manda el tuyo */
     var vd=vigaDuena(o,i,j,m);
     if(vd&&vd.sec&&vd.sec.b>0)return vd.sec.b/100;
-    return CALCULO.anchoVigaPrincipal(anchoTrib(o,i,j,m));
+    return CALCULO.anchoVigaPrincipal(anchoTribTramo(o,i,j,m).B);
   }
   /* El apoyo esta centrado en el eje: cada extremo se come la mitad.
      Con apoyos iguales el descuento total es justo el ancho del apoyo. */
@@ -13341,7 +13454,8 @@ var TT={script:performance.now()};
     else       {c1=ladoCol(i,t.desde,m); c2=ladoCol(i,t.hasta,m);}
     if(c1!==null&&c2!==null){d=(c1+c2)/2;real=true;}
     else d=S.ladoCol;
-    return{L:L,Ln:Math.max(L-d,PISO_LUZ),B:anchoTrib(o,i,j,m),desc:d,real:real,tramo:t};
+    var at=anchoTribTramo(o,i,j,m);
+    return{L:L,Ln:Math.max(L-d,PISO_LUZ),B:at.B,Ba:at.a,Bb:at.b,desc:d,real:real,tramo:t};
   }
   function medLosa(i,j,m){
     m=m||N();var o=m.losas[key(i,j)],t,b1,b2;
@@ -15058,35 +15172,34 @@ var TT={script:performance.now()};
          que es la unica direccion que la propia region deja despejada, y se
          ata con una guia para que se vea de quien habla.
          ================================================================= */
-      var d0=medCol(q.i,q.j),ps=panos(q.i,q.j);
-      if(ps.length){
+      var d0=medCol(q.i,q.j);
+      /* se pinta aunque no tenga losa junto a su nudo: su area le llega por las vigas y hay que ver de donde */
+      if(d0.piezas.length){
         var L=d0.lados, nd=nodo(q.i,q.j,m), nP=aPant(nd);
 
-        /* LA REGION ES LA UNION DE LOS TROZOS DE ESQUINA, los mismos que
-           suma medCol() para dar el area.  Se pintan y se les saca el borde
-           de fuera: lo que se ve y lo que dice la placa ya son la misma
-           figura, no dos dibujos que casualmente coincidian en recto. */
-        var trozos=ps.map(function(p){
-              return quadEsquina(p[0],p[1],q.i,q.j,m).map(aPant); }),
-            borde=contorno(trozos);
+        /* LA REGION ES LA UNION DE LOS TROZOS DEL REPARTO -la losa mas cerca de esta columna que de
+           cualquier otra-, los mismos que suma medCol() para dar el area.  Se pintan y se les saca el
+           borde de fuera: lo que se ve y lo que dice la placa son la misma figura. */
+        var trozos=d0.piezas.map(function(p){ return p.P.map(aPant); }),
+            anillos=contornos(trozos), borde=[];
+        anillos.forEach(function(r){ borde=borde.concat(r); });   /* la caja de todos los pedazos, para la placa */
         trozos.forEach(function(A){
           g.appendChild(el("polygon",{points:pts(A),fill:"var(--trib-fill)"}));
         });
-        g.appendChild(el("polygon",{points:pts(borde),fill:"none",
+        anillos.forEach(function(r){ g.appendChild(el("polygon",{points:pts(r),fill:"none",
           stroke:"var(--trib)","stroke-width":1.8,
-          "stroke-dasharray":"8 4","stroke-linejoin":"round"}));
+          "stroke-dasharray":"8 4","stroke-linejoin":"round"})); });
 
-        /* LAS MEDIAS, por donde se parte cada vano: del nudo de la columna
-           al medio del vano.  En planta sesgada salen inclinadas, y pasan
-           POR el nudo en vez de de lado a lado, porque el nudo y sus dos
-           vecinos no estan en linea. */
-        function medio(di,dj){
+        /* LAS MEDIAS: del nudo de la columna hasta donde llega su region por cada eje, que es la
+           mediatriz con la vecina (la media luz, en reticula regular) o el borde de la losa. */
+        function medio(di,dj,t){
           var a=q.i+di, b=q.j+dj;
-          if(a<0||b<0||a>=nx()||b>=ny())return null;
-          return aPant(med(nd,nodo(a,b,m)));
+          if(a<0||b<0||a>=nx()||b>=ny()||!(t>0))return null;
+          var n2=nodo(a,b,m), ux=n2.x-nd.x, uy=n2.y-nd.y, Lg=Math.sqrt(ux*ux+uy*uy)||1;
+          return aPant({x:nd.x+ux/Lg*t, y:nd.y+uy/Lg*t});
         }
-        var Mz=L.izq?medio(-1,0):null, Md=L.der?medio(1,0):null,
-            Ma=L.arr?medio(0,-1):null, Mb=L.aba?medio(0,1):null;
+        var Mz=medio(-1,0,L.izq), Md=medio(1,0,L.der),
+            Ma=medio(0,-1,L.arr), Mb=medio(0,1,L.aba);
         [[Mz,Md],[Ma,Mb]].forEach(function(par){
           var Rt=[]; if(par[0])Rt.push(par[0]); Rt.push(nP); if(par[1])Rt.push(par[1]);
           if(Rt.length<2)return;
@@ -15171,18 +15284,20 @@ var TT={script:performance.now()};
          es exactamente lo que suma anchoTrib().  Con la planta sesgada es
          un cuadrilatero; el rectangulo de antes se salia del paño por un
          extremo y no llegaba por el otro. */
-      var v=medViga(q.o,q.i,q.j), hz=(q.o==="h");
-      var a0=[q.i,q.j], a1=hz?[q.i+1,q.j]:[q.i,q.j+1];
+      var v=medViga(q.o,q.i,q.j), hz=(q.o==="h"), tvz=v.tramo;
+      /* LA FRANJA DE LA VIGA ENTERA (de columna a columna): a cada lado, la mitad de la distancia a la
+         siguiente viga o placa paralela (la mayor de sus paños), que es lo que suma B */
+      var a0=hz?[tvz.desde,q.j]:[q.i,tvz.desde], a1=hz?[tvz.hasta,q.j]:[q.i,tvz.hasta];
       var A=nodo(a0[0],a0[1],m), B=nodo(a1[0],a1[1],m);
-      function ladoV(di,dj,hayLosa){
-        if(!hayLosa)return [A,B];
-        return [med(A,nodo(a0[0]+di,a0[1]+dj,m)),
-                med(B,nodo(a1[0]+di,a1[1]+dj,m))];
+      function corre(P,ij,di,dj,t){
+        var a=ij[0]+di, b=ij[1]+dj;
+        if(!(t>0)||a<0||b<0||a>=nx()||b>=ny())return P;
+        var n2=nodo(a,b,m), ux=n2.x-P.x, uy=n2.y-P.y, Lg=Math.sqrt(ux*ux+uy*uy)||1;
+        return {x:P.x+ux/Lg*t, y:P.y+uy/Lg*t};
       }
-      var uno=hz?ladoV(0,-1,!!m.losas[key(q.i,q.j-1)])    /* arriba    */
-                :ladoV(-1,0,!!m.losas[key(q.i-1,q.j)]),   /* izquierda */
-          dos=hz?ladoV(0, 1,!!m.losas[key(q.i,q.j)])      /* abajo     */
-                :ladoV( 1,0,!!m.losas[key(q.i,q.j)]);     /* derecha   */
+      function ladoV(di,dj,t){ return [corre(A,a0,di,dj,t),corre(B,a1,di,dj,t)]; }
+      var uno=hz?ladoV(0,-1,v.Ba):ladoV(-1,0,v.Ba),    /* arriba / izquierda */
+          dos=hz?ladoV(0, 1,v.Bb):ladoV( 1,0,v.Bb);    /* abajo / derecha    */
       var F=[uno[0],uno[1],dos[1],dos[0]].map(aPant);
       g.appendChild(el("polygon",{points:pts(F),fill:"var(--trib-fill)",
         stroke:"var(--trib)","stroke-width":1.4,"stroke-dasharray":"6 4"}));
@@ -17888,9 +18003,14 @@ var TT={script:performance.now()};
       var d=medCol(q.i,q.j),pc=seccionCol(q.i,q.j,m,S.act), CIMI=enCim(), fichaZ="";
       T.textContent="Columna · eje "+ejeCol(q.i,q.j);
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+"</span>"+
-        '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños que carga",d.n+" de 4")+
+        '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Paños junto al nudo",d.n+" de 4")+
         kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
         kv("Área tributaria",d.at.toFixed(3)+" m²",1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+
+        /* el area es la losa MAS CERCANA a esta columna que a cualquier otra: lo que se ve sombreado en la planta */
+        '</dl><p class="nota" style="margin:4px 0 0">'+(d.n===0&&d.at>0
+          ? 'No tiene losa junto a su nudo: carga la losa que le queda más cerca que a cualquier otra columna, que le llega por sus vigas.'
+          : 'El área es la losa que le queda más cerca que a cualquier otra columna: hasta la mitad de la distancia a cada vecina.')+
+        '</p><dl class="kv" style="margin-top:4px">'+
         kv("Peso en servicio P",pc.P.toFixed(2)+" t",1)+
         kv("Área requerida Ac",pc.Ac+" cm²",1)+
         (pc.forma==="circular"
