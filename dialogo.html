@@ -12118,7 +12118,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v335 · 18-09-2026";
+  var BUILD="v336 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12837,8 +12837,7 @@ var TT={script:performance.now()};
       function(k){return !!m.vigas[ejeX?("h:"+k+":"+j):("v:"+i+":"+k)]},
       function(a){
         /* una COLUMNA siempre es apoyo.  Sin columna manda la junta, si la
-           hay -unir o separar a mano-, y si no el eje: el principal corta y
-           el prima no.  Sin juntas esto es exactamente lo de antes. */
+           hay -unir o separar a mano-. */
         if(m.cols[ejeX?(a+":"+j):(i+":"+a)])return true;
         var jt=junta(m,ejeX?("Vh:"+a+":"+j):("Vv:"+i+":"+a));
         if(jt===true){
@@ -12847,7 +12846,17 @@ var TT={script:performance.now()};
           return !(b1&&b2&&tipoViga(b1)===tipoViga(b2));
         }
         if(jt===false)return true;
-        return !esPrima(ejeX,a,m);
+        /* V1 (Victor, 19-09-2026): LA VIGA VA DE COLUMNA A COLUMNA.  Antes, sin junta, un eje principal la cortaba
+           siempre, aunque no tuviera columna: en una planta con ejes de arquitectura (144 cruces, 23 columnas) la
+           viga del eje A entre dos columnas a 5,3 m salia en cinco tramos, uno de 0,10 m.  Ahora un eje sin columna
+           no la corta, sea principal o prima.  Si cortan: una PLACA en ese nudo -la viga se apoya en el muro, como
+           antes- y un cambio de tipo (principal a chata), que son dos vigas distintas. */
+        var ci=ejeX?a:i, cj=ejeX?j:a;
+        if(m.placas["h:"+(ci-1)+":"+cj]||m.placas["h:"+ci+":"+cj]||m.placas["v:"+ci+":"+(cj-1)]||m.placas["v:"+ci+":"+cj])
+          return true;
+        var v1=m.vigas[ejeX?("h:"+(a-1)+":"+j):("v:"+i+":"+(a-1))],
+            v2=m.vigas[ejeX?("h:"+a+":"+j):("v:"+i+":"+a)];
+        return !!(v1&&v2&&tipoViga(v1)!==tipoViga(v2));
       });
     if(mc)mc[kc]=copia1(t);
     return t;
