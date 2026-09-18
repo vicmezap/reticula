@@ -5513,6 +5513,8 @@
      fila, dentro de la misma hoja: ninguna formula cruza de hoja.
      ===================================================================== */
   var L7_Z = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,10]];
+  /* la de ocho: la combinada necesita una columna mas -la separacion de ejes- */
+  var L8_Z = [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10]];
 
   function zapata(P) {
     var fs = P.Z || [];
@@ -5530,7 +5532,9 @@
       ["Tipo de zapata", "F sismo", "Divisor del peralte", "De qué columna sale"],
       [["Centrada",  Z.Fsismo.centrada.toFixed(2),  Z.divisorPeralte.centrada,  "interior"],
        ["Medianera", Z.Fsismo.medianera.toFixed(2), Z.divisorPeralte.medianera, "exterior (perimetral)"],
-       ["Esquinera", Z.Fsismo.esquinera.toFixed(2), Z.divisorPeralte.esquinera, "esquinera"]],
+       ["Esquinera", Z.Fsismo.esquinera.toFixed(2), Z.divisorPeralte.esquinera, "esquinera"],
+       ["Combinada", Z.Fsismo.combinada.toFixed(2), Z.divisorPeralte.combinada,
+        "dos columnas vecinas que comparten zapata"]],
       null, null, { alinear: ["Left","Center","Center","Left"] });
     r = h.nota(r, "La esquinera usa divisor " + Z.divisorPeralte.esquinera
       + " y no " + Z.divisorPeralte.centrada + ": el formulario de la pág. 121 dice /"
@@ -5545,7 +5549,8 @@
         + " · P · F sismo / σs"],
       ["Zapata aislada", "B = √Az − (h − b)/2   ·   L = √Az + (h − b)/2"],
       ["Zapata medianera", "B = √(Az/2)   ·   L = 2 B"],
-      ["Peralte", "H = (L − h columna) / divisor"],
+      ["Zapata combinada", "B = √Az − s/2   ·   L = √Az + s/2   (s = separación de ejes)"],
+      ["Peralte", "H = (L − h columna) / divisor;  en la combinada, del lado MENOR"],
       ["Redondeo", "lados y peralte, cada "
         + (Z.redondeoLado * 100).toFixed(0) + " cm hacia arriba"]
     ], null, null, { alinear: DFIN });
@@ -5576,8 +5581,8 @@
 
     /* ---- tabla 1: carga y area requerida ---- */
     r = h.seccion(r, "3. CARGA Y ÁREA REQUERIDA");
-    var T1 = lista(h, r, L7_Z,
-      ["Código", "Tipo", "N.º pisos", "A trib (m²)", "P (t)", "F sismo", "Az (m²)"],
+    var T1 = lista(h, r, L8_Z,
+      ["Código", "Tipo", "N.º pisos", "A trib (m²)", "P (t)", "F sismo", "Az (m²)", "s ejes (m)"],
       fs,
       function (f, i) {
         /* EL F SISMO NO SE ESCRIBE: lo fija el tipo, y el tipo esta en la
@@ -5587,10 +5592,13 @@
           "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
           "=IF(D" + i + '="","",IF(D' + i + '="Centrada",' + Z.Fsismo.centrada
             + ",IF(D" + i + '="Medianera",' + Z.Fsismo.medianera
-            + "," + Z.Fsismo.esquinera + ")))",
+            + ",IF(D" + i + '="Combinada",' + Z.Fsismo.combinada
+            + "," + Z.Fsismo.esquinera + "))))",
           "=IFERROR(" + Z.incrementoPesoPropio + "*G" + i + "*H" + i
-            + "/$F$" + fSig + ',"")'];
-      }, { 3: "0.000", 4: "0.00", 5: "0.00", 6: "0.000" });
+            + "/$F$" + fSig + ',"")',
+          /* la separacion de ejes: solo la combinada la usa, y sale del modelo */
+          +(f[7] || 0)];
+      }, { 3: "0.000", 4: "0.00", 5: "0.00", 6: "0.000", 7: "0.00" });
     r = T1.fin + 1;
 
     /* ---- tabla 2: dimensiones, referidas fila a fila a la primera ---- */
@@ -5608,18 +5616,28 @@
            tenerlo escrito dos veces significa que se pueden contradecir.
            Ademas asi la plantilla de V1 funciona vacia: escribes el codigo
            una vez arriba y aparece abajo. */
+        /* la combinada usa la SEPARACION de ejes en vez de (h − b), y su peralte
+           sale del lado MENOR, no del mayor: es el lado que no tiene la otra
+           columna enfrente para repartir la presion */
+        var sep = "$J$" + f1;
         return ['=IF(C' + f1 + '="","",C' + f1 + ')', +f[5], +f[6],
-          "=IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2),"
+          "=IF(" + tipo + '="Medianera",CEILING(SQRT(' + az + "/2)," + Z.redondeoLado
+            + "),IF(" + tipo + '="Combinada",CEILING(SQRT(' + az + ")-" + sep + "/2,"
             + Z.redondeoLado + "),CEILING(SQRT(" + az + ")-(E" + i + "-D" + i + ")/2,"
-            + Z.redondeoLado + "))",
-          "=IF(" + tipo + '="Medianera",CEILING(2*SQRT(' + az + "/2),"
+            + Z.redondeoLado + ")))",
+          "=IF(" + tipo + '="Medianera",CEILING(2*SQRT(' + az + "/2)," + Z.redondeoLado
+            + "),IF(" + tipo + '="Combinada",CEILING(SQRT(' + az + ")+" + sep + "/2,"
             + Z.redondeoLado + "),CEILING(SQRT(" + az + ")+(E" + i + "-D" + i + ")/2,"
-            + Z.redondeoLado + "))",
+            + Z.redondeoLado + ")))",
           "=F" + i + "*G" + i,
-          "=CEILING((G" + i + "-E" + i + ")/IF(" + tipo + '="Esquinera",'
-            + Z.divisorPeralte.esquinera + "," + Z.divisorPeralte.centrada + "),"
-            + Z.redondeoPeralte + ")",
-          "=IF(H" + i + ">=" + az + '-0.0001,"CUMPLE","REVISAR")'];
+          /* MAX(0, ...): en una combinada con las columnas muy separadas para la
+             carga, el lado menor sale mas estrecho que la propia columna y el
+             peralte se va a negativo.  Un numero negativo no es un peralte: se
+             deja en cero y la columna Estado lo manda a REVISAR. */
+          "=MAX(0,CEILING((IF(" + tipo + '="Combinada",F' + i + ",G" + i + ")-E" + i
+            + ")/IF(" + tipo + '="Esquinera",' + Z.divisorPeralte.esquinera + ","
+            + Z.divisorPeralte.centrada + ")," + Z.redondeoPeralte + "))",
+          "=IF(OR(H" + i + "<" + az + "-0.0001,I" + i + '<=0),"REVISAR","CUMPLE")'];
       }, { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.000", 6: "0.00" });
     r = T2.fin + 1;
     r = manda(h, r, L8,
@@ -5638,10 +5656,20 @@
       + "Una columna interior lleva zapata centrada; una perimetral, medianera; una de "
       + "esquina, esquinera. Y los pisos que carga son los " + P.niveles
       + " del edificio, no los de un nivel: la cimentación está debajo de todo.");
-    r = h.nota(r, fs.length + " zapata(s), una por columna del nivel de cimentación. "
-      + "Combinadas, corridas, conectadas y plateas NO están aquí: necesitan datos que "
-      + "la planta no da por sí sola (qué columnas comparten zapata, qué muro va encima) "
-      + "y se resuelven a mano con los criterios de la sección 1.");
+    var nComb = fs.filter(function (f) { return String(f[1]).toLowerCase() === "combinada"; }).length;
+    r = h.nota(r, fs.length + " zapata(s) del nivel de cimentación"
+      + (nComb ? ", de las cuales " + nComb + " combinada(s): en esas, una sola zapata lleva DOS "
+                 + "columnas vecinas, su área tributaria es la suma de las dos y sus lados salen de "
+                 + "√Az ± s/2, con s la separación entre ejes que trae la columna «s ejes» de la "
+                 + "tabla 3. El peralte de una combinada sale del lado MENOR."
+               : ", una por columna")
+      + (nComb ? " Si en una combinada el peralte sale 0 y el lado menor más estrecho que la "
+                  + "columna, es que esas dos columnas están demasiado separadas para la carga que "
+                  + "llevan: no necesitan compartir zapata, o lo que toca es una conectada."
+                : "")
+      + " Corridas, conectadas y plateas NO están aquí: necesitan datos que la planta no da por "
+      + "sí sola (qué muro va encima, qué viga une dos zapatas) y se resuelven a mano con los "
+      + "criterios de la sección 1.");
     return h.cerrar(r);
   }
 
@@ -6838,6 +6866,115 @@
      recalcula: escribe lo comprobado con el articulo de cada linea, para
      poder revisarlo sin abrir el complemento.
      ===================================================================== */
+  /* =====================================================================
+     DISENO_PLACAS — los muros estructurales (D5) con el Cap. 21.9 y el
+     11.10: el espesor, el cortante de diseño y el del plano, la malla del
+     alma, la flexocompresion, los elementos de borde y el momento de
+     agrietamiento, muro por muro y piso por piso.  Son los resultados de
+     oviedo/placas.js; la hoja no recalcula.
+     ===================================================================== */
+  function disenoPlacas(P) {
+    var DP = P && P.disenoPlacas, FZ = P && P.fuerzas, K = P && P.diseno;
+    if (!DP || !DP.lista || !DP.lista.length || !FZ) throw sinResultados("fuerzas de muros para diseñarlos");
+    function coma(x, n) { return (x == null || !isFinite(x)) ? "—" : (+x).toFixed(n == null ? 2 : n).replace(".", ","); }
+    function pct(x) { return (x == null || !isFinite(x)) ? "—" : (x * 100).toFixed(3).replace(".", ",") + " %"; }
+    var h = F.hoja("DISENO_PLACAS"), r = 6, sec = 2, RS = DP.resumen || {};
+    h.titulo("DISEÑO DE PLACAS · E.060 CAP. 21.9");
+    r = origenFuerzas(h, r, FZ, "El muro se comprueba en la BASE DE CADA PISO, que es su sección crítica. El "
+      + "cortante de diseño no es el del análisis: se ajusta a la flexión que el muro tiene instalada, "
+      + "Vu = Vua · Mn/Mua con Mn/Mua ≤ R (Art. 21.9.5.3), y se compara con Vc = αc √f'c·Acw —αc de 0,80 a 0,53 "
+      + "según hm/lm (Art. 11.10.5)— más Vs = Acw·ρh·fy (Art. 11.10.10.1), con el tope de 2,6 √f'c·Acw del "
+      + "Art. 11.10.4 y φ = 0,85. Los coeficientes van en kgf/cm², como los publica el anexo de unidades de la "
+      + "propia norma. La flexocompresión sale de la superficie de interacción de la sección real —malla del "
+      + "alma más el acero de los bordes— y de ella sale la profundidad del eje neutro que decide si hacen "
+      + "falta elementos de borde confinados (Art. 21.9.7.4). No entran las vigas de acoplamiento "
+      + "(Art. 21.9.9): el modelador no tiene ese elemento.");
+
+    var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
+    r = h.seccion(r, (sec++) + ". CON QUÉ SE DISEÑA");
+    r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+    if (K) {
+      r = h.fila(r, LD, ["f'c (kg/cm²)", K.fc, "de Criterios de diseño"], null, IZQ3);
+      r = h.fila(r, LD, ["fy (kg/cm²)", K.fy, "malla del alma y acero de borde"], null, IZQ3);
+      if (K.recub && K.recub.placa)
+        r = h.fila(r, LD, ["Recubrimiento de muros (cm)", K.recub.placa.cm, "Art. 7.7.1"], null, IZQ3);
+    }
+    r = h.fila(r, LD, ["φ de cortante", "0,85", "Art. 9.3.2"], null, IZQ3);
+    r = h.fila(r, LD, ["Espesor mínimo", "h/25 y 15 cm", "Art. 21.9.3.2; 20 cm en sótano exterior"], null, IZQ3);
+    r = h.fila(r, LD, ["Cuantías mínimas", "ρh 0,0025 · ρv ec. (11-32)",
+                       "Art. 11.10.10.2 y 11.10.10.3; s ≤ 3t y ≤ 40 cm"], null, IZQ3);
+    r = h.fila(r, LD, ["Muros", RS.total || DP.lista.length, (RS.cumplen || 0) + " cumplen · " + (RS.revisar || 0)
+                       + " por revisar · " + (RS.no || 0) + " no cumplen"], null, IZQ3);
+    r++;
+
+    var fmt = { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00" },
+        al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] },
+        LT = [[3, 4], [5, 10]], alT = { alinear: ["Left", "Left"], negrita: false },
+        EST = { cumple: "CUMPLE", revisar: "REVISAR", "no cumple": "NO CUMPLE", falta: "SIN DATOS" };
+    var muros = [];
+    DP.lista.forEach(function (d) { if (muros.indexOf(d.muro) < 0) muros.push(d.muro); });
+    muros.forEach(function (mu) {
+      r = h.seccion(r, (sec++) + ". MURO " + mu);
+      r = h.encabezado(r, F8, ["Piso · dirección", "lm (m)", "t (cm)", "Vu (t)", "φVn (t)", "Vu/φVn",
+                               "D/C flexo", "Cumple"], 34.0);
+      DP.lista.filter(function (d) { return d.muro === mu; }).forEach(function (d) {
+        r = h.fila(r, LT, [EST[d.estado] || String(d.estado).toUpperCase(),
+                           d.cod + (d.eje ? " · eje " + d.eje : "") + " · dirección " + (d.dir || "—") +
+                           " · hm total " + coma(d.hm) + " m" + (d.R ? " · R = " + coma(d.R, 0) : "")],
+                   null, { alinear: ["Left", "Left"] });
+        if (d.estado === "falta") {
+          r = h.fila(r, LT, ["   Sin datos", (d.avisos || []).map(function (a) { return a.t; }).join(" ")], null, alT);
+          return;
+        }
+        r = h.fila(r, F8, ["   " + d.piso + " · " + (d.dir || "—"), d.lm, d.t, d.Vu, d.phiVn, d.ratioV,
+                           d.ratioF, (d.cumple === false) ? "NO" : "SÍ"], fmt, al);
+        r = h.fila(r, LT, ["      Espesor", "t = " + coma(d.t, 0) + " cm · pide " + coma(d.espesorMin, 1) +
+                           " cm (manda " + (d.espesorManda || "—") + ") · " + (d.espesorCumple === false ?
+                           "NO CUMPLE" : "cumple") + " (Art. 21.9.3.2)"], null, alT);
+        r = h.fila(r, LT, ["      Cortante de diseño", "Vua = " + coma(d.Vua) + " t del análisis × " +
+                           coma(d.factor) + (d.topado ? " (Mn/Mua daba " + coma(d.bruto) + ", topado en R)" : "") +
+                           " = " + coma(d.Vu) + " t" + (d.comboV ? " · de " + d.comboV : "") +
+                           " (Art. 21.9.5.3)"], null, alT);
+        r = h.fila(r, LT, ["      Cortante en el plano", "Vc = " + coma(d.Vc) + " t (αc = " + coma(d.alfa, 2) +
+                           ", hm/lm = " + coma(d.relacion) + ") · Vs = " + coma(d.Vs) + " t · φVn = " +
+                           coma(d.phiVn) + " t" + (d.pasaTope ? " · POR ENCIMA del tope 2,6√f'c·Acw" : "") +
+                           " (Art. 11.10.5 y 11.10.10.1)"], null, alT);
+        r = h.fila(r, LT, ["      Malla del alma", "pide ρh = " + pct(d.rhoH) + " y ρv = " + pct(d.rhoV) +
+                           " → " + (d.mallaH || "—") + " horizontal y " + (d.mallaV || "—") + " vertical en " +
+                           (d.capas === 2 ? "dos capas" : "una capa") + " · puesta ρh = " + pct(d.rhoPuesta) +
+                           " · s ≤ " + coma(d.sMax, 0) + " cm (Art. 11.10.10)"], null, alT);
+        r = h.fila(r, LT, ["      Armado propuesto", (d.armadoBorde || "—") + " · malla " +
+                           (d.armadoMalla || "—") + " en " + (d.capas === 2 ? "dos capas" : "una capa") +
+                           " · ρ total = " + pct(d.armadoRho) +
+                           (d.armadoAlcanza === false ? " · NO ALCANZA" : "") +
+                           " (Art. 21.9.6.1)"], null, alT);
+        r = h.fila(r, LT, ["      Flexocompresión", "peor " + (d.comboF || "—") + ": Pu = " + coma(d.Pu, 1) +
+                           " t · Mu = " + coma(d.Mu) + " t·m · φMn = " + coma(d.phiMn) + " t·m · D/C = " +
+                           coma(d.ratioF) + " (Art. 21.9.6.1)"], null, alT);
+        r = h.fila(r, LT, ["      Elementos de borde", (d.c == null) ? "—" :
+                           ("c = " + coma(d.c, 1) + " cm · límite lm/(600·δu/hm) = " + coma(d.cLimite, 1) +
+                            " cm con δu/hm = " + coma(d.deriva, 4) + (d.derivaTope ? " (el piso de 0,005)" : "") +
+                            " → " + (d.bordePide ? ("HACEN FALTA, de " + coma(d.bordeLargo, 0) + " cm y " +
+                              coma(d.zona) + " m de alto, con estribos " + (d.bordeEstribo || "") + " @ " +
+                              coma(d.bordeS, 0) + " cm") : "no hacen falta") + " (Art. 21.9.7.4)")], null, alT);
+        r = h.fila(r, LT, ["      Agrietamiento", (d.Mcr == null) ? "—" : (d.agrietaAplica
+                           ? ("Mcr = " + coma(d.Mcr) + " t·m · φMn = " + coma(d.phiMnAgr) + " t·m · " +
+                              (d.agrietaCumple === false ? "NO CUMPLE" : "cumple"))
+                           : "no aplica: la tracción no llega a 2,0√f'c") + " (Art. 21.9.6.5)"], null, alT);
+        (d.avisos || []).forEach(function (a) {
+          r = h.fila(r, LT, [a.g === "grave" ? "   AVISO" : "   Nota", a.t], null, alT);
+        });
+      });
+      r++;
+    });
+
+    r = h.nota(r, "El cortante de un muro no se arregla siempre con más acero: por encima de 2,6 √f'c·Acw "
+      + "(Art. 11.10.4) la resistencia la pone el concreto y hay que engrosar o alargar el muro. Y los elementos "
+      + "de borde no son refuerzo extra de flexión: son confinamiento para que el extremo comprimido no se "
+      + "aplaste cuando el muro llega a su desplazamiento de diseño.");
+    return h.cerrar(r);
+  }
+
   function disenoNudos(P) {
     var DN = P && P.disenoNudos, FZ = P && P.fuerzas, K = P && P.diseno;
     if (!DN || !DN.lista || !DN.lista.length || !FZ)
@@ -6897,6 +7034,8 @@
           r = h.fila(r, LT, ["      Cortante", "Vu = T1 " + coma(q.T1) + " + C2 " + coma(q.C2) + " − Vcol "
                              + coma(q.Vcol) + " = " + coma(q.Vu) + " t · φVn = " + coma(q.phiVn) + " t"], null, alT);
           r = h.fila(r, LT, ["      Vcol", "por equilibrio con las vigas en 1,25 fy: " + coma(q.vcolEq) + " t"
+                             + (q.vcolTras > 0 ? (" = " + coma(q.vcolMom) + " t de los Mpr + " + coma(q.vcolTras)
+                                + " t de llevar las cortantes de viga al eje de la columna") : "")
                              + (q.vcolAna != null ? " · ETABS da " + coma(q.vcolAna) + " t en esta dirección"
                                 : " · sin cortante de ETABS para comparar") + " (Art. 21.7.4.3)"], null, alT);
           if (q.barra)
@@ -7213,7 +7352,7 @@
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
            reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas,
-           disenoColumnas: disenoColumnas, disenoNudos: disenoNudos };
+           disenoColumnas: disenoColumnas, disenoNudos: disenoNudos, disenoPlacas: disenoPlacas };
 });
 </script>
 <script>
@@ -7228,7 +7367,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v268 · 18-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v290 · 18-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7644,7 +7783,8 @@ var REGISTRO = {
   "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); },
   "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); },
   "DISENO_COLUMNAS":    function(p){ return HOJAS.disenoColumnas(p); },
-  "DISENO_NUDOS":       function(p){ return HOJAS.disenoNudos(p); }
+  "DISENO_NUDOS":       function(p){ return HOJAS.disenoNudos(p); },
+  "DISENO_PLACAS":      function(p){ return HOJAS.disenoPlacas(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en
