@@ -12088,7 +12088,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v329 · 18-09-2026";
+  var BUILD="v331 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -14930,13 +14930,19 @@ var TT={script:performance.now()};
         /* en rojo: se pisa con otra, esta en el lindero sin columna interior a la que conectarla, o no
            carga nada.  El porque lo dice su ficha; encima de la planta solo va la medida */
         var sinViga=!!(z.conectada&&!(z.vigasCon||[]).length);
-        var mal=!!pisadas[z.cod]||sinViga||!!z.vacia;
+        var sinVolado=!!(z.corrida&&!(z.H>0));
+        var mal=!!pisadas[z.cod]||sinViga||!!z.vacia||sinVolado;
         var col=mal?"var(--no)":"var(--ink-3)";
+        /* UNA ZAPATA TAN ANGOSTA COMO SU COLUMNA (la corrida sin volado) quedaba escondida debajo de los cuadrados
+           de las columnas: parecia que no se habia creado.  Se dibuja con 14 px de ancho como minimo, en rojo */
+        var rx=mg+z.x0*esc, ry=mg+z.y0*esc, rw=(z.x1-z.x0)*esc, rh=(z.y1-z.y0)*esc;
+        if(rw<14){ rx-=(14-rw)/2; rw=14; }
+        if(rh<14){ ry-=(14-rh)/2; rh=14; }
         g.appendChild(el("rect",{
-          x:mg+z.x0*esc, y:mg+z.y0*esc,
-          width:(z.x1-z.x0)*esc, height:(z.y1-z.y0)*esc,
+          x:rx, y:ry,
+          width:rw, height:rh,
           fill:mal?"rgba(198,40,40,.09)":"rgba(120,140,150,.10)",
-          stroke:col,"stroke-width":mal?1.6:1,"stroke-dasharray":"5 3",
+          stroke:col,"stroke-width":sinVolado?2.2:(mal?1.6:1),"stroke-dasharray":"5 3",
           /* se dibuja DESPUES de las lineas de clic de vigas y placas: sin esto las tapaba y, con la
              cimentacion a la vista, no se podia pinchar el tramo que queda bajo una zapata -ni volver a
              pinchar la placa de una corrida para quitarla- */
@@ -16962,7 +16968,9 @@ var TT={script:performance.now()};
     var r=tramoArrastre(a,xyModelo(e));
     if(!r.ok){ toast(r.msg); render(); return; }
     var rr=ponCorrida(r.nodos);
-    toast(rr.ok?("Zapata corrida "+r.nombre+" con "+r.n+" columnas. Ctrl+Z la deshace."):rr.msg);
+    if(rr.ya){ S.sel={t:"col",i:a.i,j:a.j}; render(); toast(r.nombre+": esa zapata corrida ya está hecha; su ficha está a la derecha."); return; }
+    toast(rr.ok?((rr.rehecha?"Rehecha: ahora ":"")+"Zapata corrida "+r.nombre+" con "+r.n+" columnas"+
+      (rr.separadas?" (se separó la combinada que pisaba)":"")+". Ctrl+Z la deshace."):rr.msg);
   });
 
   /* Arrastrar el calco para colocarlo.  Va con la tecla Alt para no pelearse
@@ -17846,6 +17854,13 @@ var TT={script:performance.now()};
                   (zq.entreLinderos?"sus dos extremos están en el límite, así que no vuela a lo largo y el área la pone el ancho. ":
                    ((zq.finA||zq.finB)?"un extremo está en el límite y todo el volado va al otro. ":""))+
                   (zq.bordeT?"Corre por el borde: crece solo hacia adentro y queda excéntrica, como la medianera. ":"")+'</p>'
+                : "")+
+              (!(zq.X>0)&&!zq.entreLinderos
+                ? '<p class="aviso" style="margin-top:8px"><b>No tiene volado.</b> La carga de sus columnas cabe bajo su '+
+                  'propia huella: Az = '+zq.Az.toFixed(2)+' m² y las columnas ya ocupan '+(zq.largo*zq.ancho).toFixed(2)+' m², así '+
+                  'que la fórmula del libro da X = 0 (B = '+zq.menor.toFixed(2)+' m, el ancho de la columna). Por eso se ve tan '+
+                  'angosta. Revisa sus áreas tributarias ('+zq.at.toFixed(2)+' m² entre las '+zq.nCol+') y la capacidad del suelo; '+
+                  'con las reacciones de ETABS, D6 dará la medida de diseño.</p>'
                 : "")+
               (zq.H<0.40-1e-9
                 ? '<p class="aviso" style="margin-top:8px">El peralte de la fórmula sale '+zq.H.toFixed(2)+' m. La E.060 '+
@@ -18991,17 +19006,32 @@ var TT={script:performance.now()};
             tramo:t, q:q, x0:x0, x1:x1, y0:y0, y1:y1};
   }
   /* crear o quitar: el tramo tiene que ser un eje, y sus columnas no pueden estar combinadas ni en otra corrida */
+  /* soltar una corrida sin deshacer ni repintar: la usan quitar y rehacer */
+  function soltarCorrida(t,m){
+    var z=m.zapatas[key(t.ai,t.aj)];
+    if(!z)return;
+    delete z.corr; delete z.sec;
+    if(z.secAislada){ z.sec=z.secAislada; delete z.secAislada; }
+    if(!m.cols[key(t.ai,t.aj)])delete m.zapatas[key(t.ai,t.aj)];
+  }
+  /* PONER UNA CORRIDA NO SE RECHAZA (un gesto se topa, no se rechaza).  Si ese mismo tramo ya es una corrida,
+     se dice y se ensena; si pisa otra corrida o una combinada, se deshacen y queda la nueva, de una sola vez. */
   function ponCorrida(nodos){
     var m=S.niveles[0]; if(!m)return {ok:false,msg:"No hay nivel de cimentación."};
     if(!nodos||nodos.length<2)return {ok:false,msg:"Una corrida necesita al menos dos nudos."};
-    var k, n;
+    var a=nodos[0], b=nodos[nodos.length-1], k, n, pisa={}, parejas=[];
     for(k=0;k<nodos.length;k++){ n=nodos[k];
-      if(corridaEn(n[0],n[1],m))return {ok:false,msg:"Ese tramo ya tiene una zapata corrida: quítala primero."};
-      if(m.cols[key(n[0],n[1])]&&parejaZapata(n[0],n[1],m))
-        return {ok:false,msg:"La columna "+((nombres(0).C[key(n[0],n[1])]||{}).cod||"")+" está en una combinada: sepárala primero."};
+      var tc=corridaEn(n[0],n[1],m);
+      if(tc)pisa[tc.ai+":"+tc.aj]=tc;
+      var pa=m.cols[key(n[0],n[1])]&&parejaZapata(n[0],n[1],m);
+      if(pa)parejas.push(pa);
     }
-    var a=nodos[0], b=nodos[nodos.length-1];
+    var ya=Object.keys(pisa).map(function(x){ return pisa[x]; });
+    if(ya.length===1&&ya[0].ai===a[0]&&ya[0].aj===a[1]&&ya[0].bi===b[0]&&ya[0].bj===b[1])
+      return {ok:false, ya:true, t:ya[0], msg:"Esa zapata corrida ya está hecha: te enseño su ficha."};
     snap();
+    ya.forEach(function(t){ soltarCorrida(t,m); });
+    parejas.forEach(function(pa){ var zp=m.zapatas[key(pa.ai,pa.aj)]; if(zp)delete zp.con; });
     m.zapatas=m.zapatas||{};
     var za=m.zapatas[key(a[0],a[1])]||(m.zapatas[key(a[0],a[1])]={});
     za.corr=b[0]+":"+b[1];
@@ -19009,16 +19039,13 @@ var TT={script:performance.now()};
     /* si esa columna tenia medidas propias de su zapata AISLADA, se guardan aparte: la corrida no las hereda */
     if(za.sec){ za.secAislada=za.sec; delete za.sec; }
     guardar(); render();
-    return {ok:true};
+    return {ok:true, rehecha:ya.length>0, separadas:parejas.length};
   }
   function quitaCorrida(i,j){
     var m=S.niveles[0], t=corridaEn(i,j,m);
     if(!t)return {ok:false,msg:"Ahí no hay zapata corrida."};
     snap();
-    var z=m.zapatas[key(t.ai,t.aj)];
-    if(z){ delete z.corr; delete z.sec;
-      if(z.secAislada){ z.sec=z.secAislada; delete z.secAislada; }
-      if(!m.cols[key(t.ai,t.aj)])delete m.zapatas[key(t.ai,t.aj)]; }
+    soltarCorrida(t,m);
     guardar(); render();
     return {ok:true};
   }
@@ -25368,7 +25395,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida}}};
 })();
 </script>
 
