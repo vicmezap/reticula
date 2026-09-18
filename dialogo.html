@@ -1504,7 +1504,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       /* la combinada: √Az ∓ separacion de ejes / 2 (f[7], «s ejes»), como la
          formula de PRE_ZAPATA; su peralte sale del lado MENOR y no baja de 0 */
       var sep = (+f[7]) || 0;
-      B = arriba(Math.sqrt(az) - sep / 2, red);
+      B = Math.max(arriba(Math.sqrt(az) - sep / 2, red), arriba(+f[5], red));   /* nunca mas angosta que la columna */
       L = arriba(Math.sqrt(az) + sep / 2, red);
     } else {
       var d = ((+f[6]) - (+f[5])) / 2;                /* (col h - col b) / 2 */
@@ -10848,8 +10848,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     /* las zapatas vienen en las coordenadas de la planta del complemento (Y hacia abajo): se voltean como la exportacion */
     if (niv.length && mostrar("zapata", 0)) (o.zapatas || []).forEach(function (z) {
       if (!(z.H > 0)) return;
-      mete("zapata", z.cod, 0, "Zapata " + z.cod, (z.tipo ? z.tipo + " · " : "") + m2(z.B) + " × " + m2(z.L) + " × " + m2(z.H) + " m",
-           C.zapata, prisma([[+z.x0, -z.y1], [+z.x1, -z.y1], [+z.x1, -z.y0], [+z.x0, -z.y0]], -z.H, 0), { ij: [z.i, z.j] });
+      /* con H = 0 -la formula del libro con poca carga- el prisma no tenia alto y la zapata desaparecia:
+         se dibuja con 0,20 m y el rotulo dice que el peralte esta por revisar */
+      var hZ = (+z.H > 0) ? +z.H : 0.20;
+      mete("zapata", z.cod, 0, "Zapata " + z.cod, (z.tipo ? z.tipo + " · " : "") + m2(z.B) + " × " + m2(z.L) + " × " +
+           ((+z.H > 0) ? m2(z.H) + " m" : "H por revisar (sale 0)"),
+           C.zapata, prisma([[+z.x0, -z.y1], [+z.x1, -z.y1], [+z.x1, -z.y0], [+z.x0, -z.y0]], -hZ, 0), { ij: [z.i, z.j] });
     });
     /* LOS EJES, tumbados en el suelo.  Sin ellos el edificio flota y no sabes si miras la fachada del A o la
        del C.  Van como prismas planos y finos y NO como aristas, porque el visor dibuja todas las aristas del
@@ -11450,6 +11454,13 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     r.mayor_teorico = r2(mayor); r.menor_teorico = r2(menor);
     r.mayor = r2(arriba(mayor, Zc.redondeoLado));
     r.menor = r2(arriba(menor, Zc.redondeoLado));
+    /* LA COMBINADA NUNCA MAS ANGOSTA QUE SU COLUMNA.  Con poca carga y las columnas separadas, √Az − s/2
+       sale menor que la columna -una zapata que no se puede construir, y que en el 3D no se veia-.  Se
+       topa al ancho de la columna; el peralte sale 0 y la hoja lo manda a REVISAR (menor_teorico guarda
+       el valor del libro para avisarlo). */
+    if (e.subtipo === "combinada" && e.col_b > 0 && r.menor < e.col_b - 1e-9) {
+      r.menor = r2(arriba(e.col_b, Zc.redondeoLado)); r.anchoTopado = true;
+    }
 
     /* EL PUNTO.  La construccion s +- d conserva la SUMA de los lados, no el
        producto: (s+d)(s-d) = Az - d^2.  Siempre da de menos.  En aisladas el
@@ -11469,7 +11480,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var elem  = (e.subtipo === "combinada") ? e.col_b : e.col_h;
     r.divisorPeralte = div;
     r.H_teorico = r2((ladoH - elem) / div);
-    r.H = r2(arriba((ladoH - elem) / div, Zc.redondeoPeralte));
+    r.H = Math.max(r2(arriba((ladoH - elem) / div, Zc.redondeoPeralte)), 0) + 0;
     return r;
   }
 
@@ -12077,7 +12088,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v327 · 18-09-2026";
+  var BUILD="v329 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -19131,7 +19142,7 @@ var TT={script:performance.now()};
        tienen por que compartir zapata, o que lo que toca es una CONECTADA -dos
        aisladas unidas por una viga de cimentacion-, que no esta en el
        predimensionamiento.  Se dice en vez de escribir un numero sin sentido. */
-    q.estrecha=(q.menor<colPerp-1e-9);
+    q.estrecha=((q.menor_teorico!=null?q.menor_teorico:q.menor)<colPerp-1e-9);
     q.sinPeralte=!(q.H_teorico>0);
     q.cumple=(q.areaOk&&q.HOk&&!q.estrecha&&!q.sinPeralte);
     q.pareja=pa;
