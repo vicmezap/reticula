@@ -6615,6 +6615,163 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== aci.js (inlinado) ===== */
+/* =====================================================================
+   aci.js — EL ACI 318-19 COMO REFERENCIA, NUNCA COMO CALCULO
+
+   El complemento diseña con la E.060, que es la que rige en el Peru.  Este
+   modulo no calcula nada del diseño: solo dice, al lado de cada
+   comprobacion, QUE PEDIRIA el ACI 318-19 en su lugar.  Sirve para dos
+   cosas: entender de donde viene una diferencia cuando se compara con una
+   plantilla basada en el ACI, y decidir a sabiendas si se quiere ir por
+   encima de la norma peruana.
+
+   POR QUE NO SE MEZCLAN.  Cada codigo es un sistema calibrado: el ACI baja
+   las cargas (1,2D + 1,6L) y baja los φ; la E.060 las sube (1,4CM + 1,7CV)
+   y sube los φ.  El factor de seguridad global acaba siendo casi el mismo
+   -entre 0,7 % y 3,3 % de diferencia-, asi que tomar las cargas de una con
+   los φ de la otra da un resultado que ninguna de las dos pretende.  De
+   ahi la regla: una sola norma DENTRO de un mismo calculo.
+
+   DE DONDE SALE CADA FILA.  Del material de Victor, no de memoria:
+     · «Diferencias ACI 318 y E.060», Alexis Pompilla Yabar (PUCP / UNSAAC,
+       febrero 2026), 133 laminas, en su pack de plantillas.  Se cita la
+       lamina de cada dato.
+     · La E.060 2009 oficial, en documentacion/bibliografia.
+   Un dato que no este en esas fuentes NO se pone aqui.
+
+   Un apunte que explica casi todo: la E.060 2009 adopto el ACI 318S-2005.
+   Las diferencias de hoy son, en su mayoria, lo que el ACI cambio en sus
+   cuatro ediciones siguientes.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.ACI = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var FUENTE = "Diferencias ACI 318 y E.060 (Pompilla Yábar, 2026)";
+  var EDICION = "ACI 318-19";
+
+  function lam(n) { return FUENTE + ", lámina " + n; }
+
+  /* ---------------------------------------------------------------
+     LA TABLA.  Cada fila: que se compara, que hace la E.060 -que es lo
+     que el complemento calcula-, que haria el ACI, y de donde sale.
+     --------------------------------------------------------------- */
+  var TABLA = [
+    { k: "combos", que: "Combinaciones de carga",
+      e060: "1,4 CM + 1,7 CV · 1,25 (CM+CV) ± CS · 0,9 CM + CV ± CS",
+      artE: "Art. 9.2", aci: "1,4D · 1,2D + 1,6L + 0,5Lr · 1,2D + 1,0E + 1,0L · 0,9D + 1,0E",
+      artA: "ACI 318-19 Cap. 5", de: lam(39),
+      nota: "En el ACI la acción sísmica E incluye el sismo vertical (0,2 SDS·D) del ASCE 7-22. " +
+            "En la E.060 el sismo no se amplifica porque la E.030 ya lo da a nivel de resistencia." },
+
+    { k: "phiFlexion", que: "φ en flexión", e060: "0,90", artE: "Art. 9.3.2.1",
+      aci: "0,65 a 0,90 según la deformación del acero extremo (diseño unificado)",
+      artA: "ACI 318-19 Tabla 21.2.2", de: lam(45),
+      nota: "El comité del RNE decidió NO adoptar el diseño unificado en flexocompresión." },
+
+    { k: "phiCompresion", que: "φ en compresión con estribos", e060: "0,70", artE: "Art. 9.3.2.2 (b)",
+      aci: "0,65", artA: "ACI 318-19 Tabla 21.2.2", de: lam(40),
+      nota: "La diferencia se atribuye a que el ACI amplifica menos las cargas (1,2D y 1,6L)." },
+
+    { k: "phiCortante", que: "φ en cortante y torsión", e060: "0,85", artE: "Art. 9.3.2.3",
+      aci: "0,75", artA: "ACI 318-19 Tabla 21.2.1", de: lam(40),
+      nota: "Es la diferencia de φ más grande entre las dos normas. En el nudo, las dos usan 0,85." },
+
+    { k: "rhoMax", que: "Acero máximo en vigas", e060: "ρmáx = 0,75 ρb", artE: "Art. 10.3.4",
+      aci: "ρmáx = ρb · (fy + 600)/(fy + 1200) · dt/d, con la sección controlada por tracción",
+      artA: "ACI 318-19 Art. 9.3.3.1", de: lam(65), nota: "" },
+
+    { k: "sConfinamiento", que: "Separación de estribos dentro de la zona de confinamiento",
+      e060: "el menor de 6 db, min(b,h)/3 y 10 cm", artE: "Art. 21.6.4.2",
+      aci: "el menor de min(b,h)/4, 6 db (grado 420) y so = 10 + (35 − hx)/3, entre 10 y 15 cm",
+      artA: "ACI 318-19 Art. 18.7.5.3", de: lam(98),
+      nota: "El ACI mide la separación también con hx, la distancia entre barras arriostradas." },
+
+    { k: "sFuera", que: "Separación de estribos fuera de la zona de confinamiento",
+      e060: "el menor de 10 db y 25 cm", artE: "Art. 21.6.4.5",
+      aci: "15 cm, 6 db (grado 60), y lo que pidan la cortante por capacidad y los empalmes",
+      artA: "ACI 318-19 Art. 18.7.5.5", de: lam(99), nota: "" },
+
+    { k: "gancho", que: "Gancho de la barra que termina en el nudo",
+      e060: "ℓdg = 0,075 fy db / √f'c  (kgf/cm²), no menos de 8 db ni 15 cm",
+      artE: "Art. 21.7.5.1 → 12.5",
+      aci: "ℓdh = fy db / (5,4 λ √f'c)  (MPa), y ℓd = 2,5 ℓdh en barras inferiores y 3,25 ℓdh en las superiores",
+      artA: "ACI 318-19 Art. 18.8.5.1 a 18.8.5.3", de: lam(86),
+      nota: "En kgf/cm² el ACI equivale a 0,058 fy db/√f'c. Con una barra de 5/8\" y f'c 210 salen 26,6 cm frente a los 34,6 de la E.060: el ACI pide un 23 % menos, o la E.060 un 30 % más." },
+
+    { k: "nudoVn", que: "Resistencia al cortante del nudo",
+      e060: "5,3 / 4,0 / 3,2 √f'c · Aj según el nudo esté confinado en cuatro caras, en tres o dos opuestas, o en ninguna",
+      artE: "Art. 21.7.4.1",
+      aci: "la misma idea, pero clasificando además por columna continua o discontinua y por viga centrada o excéntrica",
+      artA: "ACI 318-19 Tabla 18.8.4.3", de: "plantilla de columnas de Yabar (usa esa tabla)",
+      nota: "Las plantillas de Mathcad de Yabar siguen esta tabla; por eso sus números de nudo no coinciden con los de la E.060." },
+
+    { k: "nudoCap", que: "Dónde vive el capítulo del nudo", e060: "Cap. 21.7", artE: "Art. 21.7",
+      aci: "Cap. 18.8 (nudos de pórticos especiales)", artA: "ACI 318-19 Art. 18.8", de: lam(26),
+      nota: "Equivalencias: pórticos y duales tipo II de la E.060 ≡ pórticos especiales del ACI; " +
+            "columnas y vigas de sistemas de muros ≡ pórticos intermedios." },
+
+    { k: "muros", que: "Muros estructurales", e060: "Cap. 21.9",
+      artE: "Art. 21.9", aci: "Cap. 18.10, bastante más exigente tras los muros delgados de Chile 2010",
+      artA: "ACI 318-19 Art. 18.10", de: lam(14),
+      nota: "Es la diferencia más grande de las dos normas. Cuando se diseñen placas, mirar esta fila." }
+  ];
+
+  var POR_CLAVE = {};
+  TABLA.forEach(function (f) { POR_CLAVE[f.k] = f; });
+
+  function fila(k) { return POR_CLAVE[k] || null; }
+  function claves() { return TABLA.map(function (f) { return f.k; }); }
+
+  /* ---------------------------------------------------------------
+     LO QUE SE PUEDE PONER EN NUMEROS.  Solo lo que las fuentes dan con
+     formula; el resto se queda en texto.  Todo en kgf, cm y kg/cm².
+     --------------------------------------------------------------- */
+  var PHI = { flexion: 0.90, compEstribos: 0.65, compEspiral: 0.75, cortante: 0.75, nudo: 0.85 };
+
+  /* ACI 318-19 18.8.5.1, pasado a kgf/cm²: 0,185 fy db/√f'c en MPa = 0,058 en kgf/cm² */
+  function ganchoACI(o) {
+    o = o || {};
+    var fy = +o.fy || 4200, db = +o.db || 0, fc = +o.fc || 0;   /* db en mm */
+    if (!(db > 0 && fc > 0)) return null;
+    var dbCm = db / 10;
+    var l = 0.0578 * fy * dbCm / Math.sqrt(fc);
+    return { ldh: l, minimo: Math.max(8 * dbCm, 15), pide: Math.max(l, 8 * dbCm, 15),
+             art: "ACI 318-19 Art. 18.8.5.1", de: lam(86) };
+  }
+
+  /* ACI 318-19 18.7.5.3: so = 10 + (35 − hx)/3, acotado entre 10 y 15 cm (hx en cm) */
+  function soACI(o) {
+    o = o || {};
+    var hx = +o.hx, db = +o.db, bmin = +o.bmin;
+    var so = (isFinite(hx)) ? Math.min(15, Math.max(10, 10 + (35 - hx) / 3)) : null;
+    var cand = [];
+    if (bmin > 0) cand.push({ v: bmin / 4, por: "min(b,h)/4" });
+    if (db > 0) cand.push({ v: 6 * db / 10, por: "6 db" });
+    if (so !== null) cand.push({ v: so, por: "so = 10 + (35 − hx)/3" });
+    if (!cand.length) return null;
+    var m = cand[0], i;
+    for (i = 1; i < cand.length; i++) if (cand[i].v < m.v) m = cand[i];
+    return { s: m.v, manda: m.por, art: "ACI 318-19 Art. 18.7.5.3", de: lam(98) };
+  }
+
+  /* ACI 318-19 9.3.3.1 */
+  function rhoMaxACI(o) {
+    o = o || {};
+    var rb = +o.rhoB, fy = +o.fy || 4200, dt = +o.dt || 1, d = +o.d || 1;
+    if (!(rb > 0)) return null;
+    return { rho: rb * (fy + 600) / (fy + 1200) * (dt / d), art: "ACI 318-19 Art. 9.3.3.1", de: lam(65) };
+  }
+
+  return { EDICION: EDICION, FUENTE: FUENTE, TABLA: TABLA, PHI: PHI,
+           fila: fila, claves: claves,
+           ganchoACI: ganchoACI, soACI: soACI, rhoMaxACI: rhoMaxACI };
+});
+</script>
+<script>
 /* ===== tablas_bat.js (inlinado) ===== */
 /* =====================================================================
    tablas_bat.js — LAS TABLAS DE RETICULA.bat [3], iguales en el complemento
@@ -9800,7 +9957,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v260 · 18-09-2026";
+  var BUILD="v262 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17817,6 +17974,21 @@ var TT={script:performance.now()};
                f((n2.estribos||{}).s,0)+" cm  ·  "+esc((n2.estribos||{}).texto||""), null, NUDOS.ART.estribos)+
           '</tbody></table></div></div>';
       });
+      /* qué pediría el ACI en este mismo nudo: referencia, no cálculo */
+      if(typeof ACI!=="undefined"){
+        var fN=ACI.fila("nudoVn"), fG=ACI.fila("gancho"), lineas=[];
+        var bx=(sel.r.dir.x||{}).barra;
+        if(bx&&bx.tipo==="termina"){
+          var KN=criteriosDiseno();
+          var ga=ACI.ganchoACI({fy:KN.fy, db:bx.db, fc:KN.fc});
+          if(ga)lineas.push("el gancho por "+esc(ga.art)+" sería "+f(ga.ldh,1)+" cm, frente a los "+
+            f(bx.ldg,1)+" cm de la E.060");
+        }
+        if(fN)lineas.push(esc(fN.aci)+" ("+esc(fN.artA)+")");
+        if(lineas.length)
+          h+='<p class="nota" style="margin-top:8px"><b>'+esc(ACI.EDICION)+' (referencia):</b> '+
+            lineas.join(" · ")+'. No entra en el cálculo: el diseño es con la E.060.</p>';
+      }
       if(sel.r.avisos.length)
         h+='<div class="dis-avisos">'+sel.r.avisos.map(function(a){
           return '<p class="aviso'+(a.g==="grave"?" dis-no":"")+'">'+esc(a.t)+'</p>'}).join("")+'</div>';
@@ -18229,6 +18401,28 @@ var TT={script:performance.now()};
         '<p class="nota">Con estas barras el complemento propondrá el armado de cada elemento, y lo podrás cambiar '+
         'elemento por elemento. Estribos: 8 mm hasta barras de 5/8", 3/8" hasta 1" y 1/2" para las mayores '+
         '(Art. 7.10.5.1); el de confinamiento no baja de 8 mm (Art. 21.1).</p></section>';
+      /* EL ACI 318-19, AL LADO.  No entra en ningún cálculo: el complemento diseña con la E.060.
+         Está aquí para saber de dónde viene una diferencia cuando comparas con una plantilla
+         basada en el ACI, y para decidir a sabiendas si quieres ir por encima de la norma. */
+      if(typeof ACI!=="undefined"){
+        h+='<section class="pbox sis-ancha"><h3>La E.060 al lado del '+esc(ACI.EDICION)+'</h3>'+
+          '<p class="nota" style="margin:0 0 8px">El complemento <b>diseña con la E.060</b>, que es la '+
+          'que rige en el Perú. Esta tabla es solo referencia: cada norma es un sistema calibrado '+
+          '—el ACI baja las cargas y baja los φ; la E.060 los sube— y mezclarlas da un resultado que '+
+          'ninguna de las dos pretende.</p>'+
+          '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Qué</th>'+
+          '<th>E.060 · lo que se calcula</th><th>'+esc(ACI.EDICION)+' · referencia</th></tr></thead><tbody>'+
+          ACI.TABLA.map(function(f){
+            return '<tr><td><b>'+esc(f.que)+'</b></td>'+
+              '<td>'+esc(f.e060)+'<br><span class="nota">'+esc(f.artE)+'</span></td>'+
+              '<td>'+esc(f.aci)+'<br><span class="nota">'+esc(f.artA)+'</span>'+
+              (f.nota?'<br><span class="nota">'+esc(f.nota)+'</span>':'')+'</td></tr>';
+          }).join("")+'</tbody></table></div>'+
+          '<p class="nota">Las filas salen de «'+esc(ACI.FUENTE)+'», del material del proyecto, y del '+
+          'texto oficial de la E.060; cada una dice su artículo en las dos normas. La E.060 de 2009 '+
+          'adoptó el ACI 318S-2005, así que casi todas las diferencias de hoy son lo que el ACI cambió '+
+          'en sus cuatro ediciones siguientes.</p></section>';
+      }
     }else if(sub==="vigas"){
       h+=tarjetaDisenoVigas();
     }else if(sub==="columnas"){
