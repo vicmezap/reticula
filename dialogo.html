@@ -6150,6 +6150,336 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== nudos.js (inlinado) ===== */
+/* =====================================================================
+   nudos.js — D4 · LA UNION VIGA-COLUMNA CON LA E.060
+
+   El nudo es lo que queda entre la viga y la columna, y es donde falla un
+   portico mal detallado: las dos piezas pueden estar bien diseñadas cada
+   una y el encuentro no.  Aqui se comprueban las cuatro cosas que pide el
+   Capitulo 21, con lo que D2 (vigas) y D3 (columnas) ya calcularon:
+
+     1  COLUMNA FUERTE, VIGA DEBIL .................. Art. 21.6.2.2
+        Σ Mnc ≥ 1,2 Σ Mnv en las caras del nudo, en cada direccion y en
+        los dos sentidos del sismo.  Es lo que decide DONDE se forma la
+        rotula: si manda la viga, el edificio avisa antes de caerse.
+
+     2  CORTANTE EN EL NUDO ......................... Art. 21.7.4
+        El acero de las vigas llega al nudo en fluencia sobrerresistente
+        -1,25 fy, igual que el Mpr del Art. 21.6.5.1- y tira de un lado
+        mientras empuja del otro:
+            Vu = T1 + C2 − Vcol  con  T = 1,25 fy As  y  C2 = T2
+        La resistencia NO depende de los estribos del nudo: depende del
+        concreto y de cuanto nudo hay confinado por vigas.
+            Vn = 5,3 √f'c · Aj   confinado en las cuatro caras
+            Vn = 4,0 √f'c · Aj   en tres caras o en dos opuestas
+            Vn = 3,2 √f'c · Aj   los demas
+        con f'c y Vn en kgf/cm² (son los 1,7 / 1,2 / 1,0 √f'c del texto en
+        MPa: √10 = 3,162 convierte uno en otro).  φ = 0,85 (Art. 9.3.2.3).
+
+     3  LA BARRA QUE ATRAVIESA EL NUDO .............. Art. 21.7.2.3
+        La columna, medida paralela a la barra de viga, no puede bajar de
+        20 db: si no, la barra no alcanza a anclarse dentro del nudo y se
+        desliza en cuanto la viga entra en fluencia.
+
+     4  ESTRIBOS DENTRO DEL NUDO .................... Art. 21.7.3
+        Los mismos del confinamiento de la columna (Art. 21.6.4.1), y solo
+        la mitad cuando hay vigas en las cuatro caras que cubren al menos
+        3/4 del ancho de la columna, con s ≤ 15 cm.
+
+   NO decide secciones ni armados: los recibe y dice si el encuentro pasa.
+   Quien no cumple tiene tres salidas -columna mas grande, f'c mayor o
+   vigas mas chicas- y el motor las dice en el orden en que de verdad
+   sirven.
+
+   Unidades de fuera: cm, kg/cm², t·m, toneladas.  Dentro se trabaja en
+   kgf y cm, y solo se vuelve a t·m al salir.
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.NUDOS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var ART = {
+    fuerte: "Art. 21.6.2.2", cortante: "Art. 21.7.4", aj: "Art. 21.7.4.1",
+    barra: "Art. 21.7.2.3", estribos: "Art. 21.7.3", ash: "Art. 21.6.4.1 (b)",
+    phi: "Art. 9.3.2.3", mpr: "Art. 21.6.5.1"
+  };
+
+  var PHI_V = 0.85;        /* cortante */
+  var FACTOR = 1.2;        /* el 1,2 de columna fuerte */
+  var SOBRE = 1.25;        /* 1,25 fy: la fluencia sobrerresistente del acero */
+  var S_NUDO = 15;         /* cm: separacion maxima de estribos dentro del nudo */
+  var DB_MIN = 20;         /* veces db: la columna paralela a la barra de viga */
+
+  /* los tres casos del Art. 21.7.4.1, en kgf/cm² (1,7 / 1,2 / 1,0 en MPa) */
+  var COEF = { cuatro: 5.3, tres: 4.0, otros: 3.2 };
+  var NOMBRE = {
+    cuatro: "confinado en las cuatro caras",
+    tres: "confinado en tres caras o en dos opuestas",
+    otros: "sin confinar por vigas"
+  };
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function pos(x) { var v = num(x); return (v === null || v <= 0) ? 0 : v; }
+
+  /* ---------------------------------------------------------------
+     CUANTAS CARAS CUENTAN.  Una viga confina el nudo solo si es ancha:
+     la E.060 pide que cubra al menos 3/4 del ancho de la columna en esa
+     cara.  Una viga chata de 25 cm contra una columna de 60 no confina
+     nada, y el nudo se queda en el caso de 3,2 √f'c.
+     --------------------------------------------------------------- */
+  function confinan(caras, bCol, hCol) {
+    var n = 0, ejes = { x: 0, y: 0 }, i, c;
+    for (i = 0; i < (caras || []).length; i++) {
+      c = caras[i] || {};
+      var ancho = (String(c.dir).toLowerCase() === "y") ? bCol : hCol;   /* la cara perpendicular */
+      var lado = (String(c.dir).toLowerCase() === "y") ? "y" : "x";
+      if (pos(c.b) >= 0.75 * pos(ancho) - 1e-9 && pos(c.b) > 0) { n++; ejes[lado]++; }
+    }
+    return { n: n, x: ejes.x, y: ejes.y };
+  }
+
+  /* la clase del nudo PARA UNA DIRECCION de analisis */
+  function clase(caras, bCol, hCol) {
+    var q = confinan(caras, bCol, hCol);
+    if (q.n >= 4) return { k: "cuatro", coef: COEF.cuatro, texto: NOMBRE.cuatro, caras: q.n };
+    /* tres caras, o dos OPUESTAS: dos opuestas son las dos de un mismo eje */
+    if (q.n === 3 || (q.n === 2 && (q.x === 2 || q.y === 2)))
+      return { k: "tres", coef: COEF.tres, texto: NOMBRE.tres, caras: q.n };
+    return { k: "otros", coef: COEF.otros, texto: NOMBRE.otros, caras: q.n };
+  }
+
+  /* ---------------------------------------------------------------
+     EL AREA EFECTIVA Aj (Art. 21.7.4.1).  La profundidad es la columna
+     medida en la direccion que se analiza; el ancho efectivo es el menor
+     de tres: no vale ensanchar el nudo mas alla de lo que la viga puede
+     meter dentro de la columna.
+       bj = min( b + h ,  b + 2x ,  bc )
+     con b = ancho de la viga, h = peralte de la columna en esa direccion,
+     x = lo que sobra de columna al lado de la viga (el menor de los dos)
+     y bc = ancho de la columna perpendicular a la direccion.
+     --------------------------------------------------------------- */
+  function aj(o) {
+    o = o || {};
+    var b = pos(o.bViga), h = pos(o.hCol), bc = pos(o.bCol);
+    if (!(b > 0 && h > 0 && bc > 0)) return null;
+    var e = Math.abs(num(o.exc) || 0);                 /* excentricidad viga-columna */
+    var x = Math.max((bc - b) / 2 - e, 0);             /* lo que sobra al lado mas corto */
+    var cand = [
+      { v: b + h, por: "b + h de la columna" },
+      { v: b + 2 * x, por: "b + 2x (x = " + x.toFixed(1) + " cm de columna al lado de la viga)" },
+      { v: bc, por: "el ancho de la columna" }
+    ];
+    var m = cand[0], i;
+    for (i = 1; i < cand.length; i++) if (cand[i].v < m.v) m = cand[i];
+    return { bj: m.v, manda: m.por, h: h, Aj: m.v * h, x: x, exc: e };
+  }
+
+  /* Vn del nudo, en toneladas */
+  function vn(o) {
+    o = o || {};
+    var fc = pos(o.fc), A = pos(o.Aj), cl = o.clase || "otros";
+    var coef = COEF[cl] || COEF.otros;
+    var V = coef * Math.sqrt(fc) * A;                  /* kgf */
+    return { Vn: V / 1000, coef: coef, clase: cl, texto: NOMBRE[cl] || NOMBRE.otros, art: ART.aj };
+  }
+
+  /* ---------------------------------------------------------------
+     LA CORTANTE QUE LE LLEGA.  Las dos vigas del nudo trabajan a la vez:
+     la de un lado con su acero de arriba en traccion y la del otro con el
+     de abajo empujando.  Las dos fuerzas van EN EL MISMO SENTIDO dentro
+     del nudo y se restan de la cortante de la columna.
+       T1 = 1,25 fy As_sup(izq)     C2 = T2 = 1,25 fy As_inf(der)
+       Vu = T1 + C2 − Vcol
+     Con viga en un solo lado -nudo de borde- el otro termino es cero.
+     --------------------------------------------------------------- */
+  function cortante(o) {
+    o = o || {};
+    var fy = pos(o.fy), A1 = pos(o.As1), A2 = pos(o.As2), Vcol = pos(o.Vcol);
+    var T1 = SOBRE * fy * A1 / 1000, T2 = SOBRE * fy * A2 / 1000;     /* toneladas */
+    return { T1: T1, C2: T2, Vcol: Vcol, Vu: T1 + T2 - Vcol, sobre: SOBRE, art: ART.cortante };
+  }
+
+  /* ---------------------------------------------------------------
+     LOS DOS SENTIDOS DEL SISMO.  El sismo va y viene, y el nudo no ve lo
+     mismo en cada sentido: en uno tira el acero de ARRIBA de la viga
+     izquierda y empuja el de ABAJO de la derecha, y en el otro al reves.
+     Se calculan los dos y manda el peor, que es lo que hay que resistir.
+     --------------------------------------------------------------- */
+  function sentidos(o) {
+    o = o || {};
+    var izq = o.izq || {}, der = o.der || {};
+    var A = { As1: pos(izq.sup), As2: pos(der.inf), mnv: [pos(izq.mnSup), pos(der.mnInf)] };
+    var B = { As1: pos(der.sup), As2: pos(izq.inf), mnv: [pos(der.mnSup), pos(izq.mnInf)] };
+    return [
+      { nombre: "→", As1: A.As1, As2: A.As2, mnv: A.mnv, sumaMnv: A.mnv[0] + A.mnv[1] },
+      { nombre: "←", As1: B.As1, As2: B.As2, mnv: B.mnv, sumaMnv: B.mnv[0] + B.mnv[1] }
+    ];
+  }
+  /* el sentido que manda: el que deja mas acero tirando del nudo */
+  function peorSentido(o) {
+    var v = sentidos(o);
+    return (v[0].As1 + v[0].As2 >= v[1].As1 + v[1].As2) ? v[0] : v[1];
+  }
+
+  /* la cortante de la columna que descuenta: los Mpr de las vigas del nudo
+     repartidos en la altura entre puntos de inflexion (la altura libre) */
+  function vColumna(o) {
+    o = o || {};
+    var M = pos(o.mprIzq) + pos(o.mprDer), h = pos(o.hEntrepiso);
+    if (!(h > 0)) return 0;
+    return M / h;                                      /* t·m / m = t */
+  }
+
+  /* ---------------------------------------------------------------
+     COLUMNA FUERTE, VIGA DEBIL (Art. 21.6.2.2).  Se comparan MOMENTOS
+     NOMINALES, no de diseño: Mnc de la columna de arriba y la de abajo
+     -cada uno con SU carga axial, que es la que manda en una columna-
+     contra Mnv de las vigas que llegan al nudo.
+     --------------------------------------------------------------- */
+  function columnaFuerte(o) {
+    o = o || {};
+    var C = (o.mnc || []).reduce(function (a, b) { return a + pos(b); }, 0);
+    var V = (o.mnv || []).reduce(function (a, b) { return a + pos(b); }, 0);
+    var pide = FACTOR * V;
+    return {
+      sumaMnc: C, sumaMnv: V, pide: pide, factor: FACTOR,
+      ratio: pide > 0 ? C / pide : null,
+      cumple: (V <= 0) ? null : (C >= pide - 1e-9),
+      art: ART.fuerte
+    };
+  }
+
+  /* la columna, medida paralela a la barra de viga, no baja de 20 db */
+  function barraPasante(o) {
+    o = o || {};
+    var h = pos(o.hCol), db = pos(o.db);
+    if (!(h > 0 && db > 0)) return null;
+    var min = DB_MIN * db / 10;                        /* db en mm -> cm */
+    return { hCol: h, db: db, min: min, veces: h / (db / 10), cumple: h >= min - 1e-9, art: ART.barra };
+  }
+
+  /* los estribos DENTRO del nudo */
+  function estribos(o) {
+    o = o || {};
+    var cuatro = (o.clase === "cuatro");
+    var ash = pos(o.ashCol), s = pos(o.sCol);
+    return {
+      ash: cuatro ? ash / 2 : ash,
+      mitad: cuatro,
+      s: Math.min(s > 0 ? s : S_NUDO, S_NUDO),
+      sMax: S_NUDO,
+      texto: cuatro
+        ? "vigas en las cuatro caras: basta la mitad del Ash de la columna, con s ≤ 15 cm"
+        : "el mismo Ash que el confinamiento de la columna, con s ≤ 15 cm",
+      art: ART.estribos, artAsh: ART.ash
+    };
+  }
+
+  /* ---------------------------------------------------------------
+     TODO EL NUDO DE UNA VEZ.  Entra lo que D2 y D3 ya saben; sale el
+     veredicto por direccion, los avisos y que hacer si no pasa.
+     --------------------------------------------------------------- */
+  function revisar(o) {
+    o = o || {};
+    var fc = pos(o.fc), fy = pos(o.fy) || 4200;
+    var bCol = pos(o.bCol), hColX = pos(o.hColX) || bCol, hColY = pos(o.hColY) || bCol;
+    var caras = o.caras || [];
+    var out = { fc: fc, fy: fy, avisos: [], dir: {}, art: ART };
+
+    ["x", "y"].forEach(function (d) {
+      var v = o[d] || {};
+      var hCol = (d === "x") ? hColX : hColY;          /* peralte en la direccion de analisis */
+      var bc = (d === "x") ? hColY : hColX;            /* el ancho perpendicular */
+      var cl = clase(caras, bCol, hColX);
+      var g = aj({ bViga: pos(v.bViga), hCol: hCol, bCol: bc, exc: v.exc });
+      var Vc = (v.Vcol !== undefined && v.Vcol !== null)
+        ? pos(v.Vcol)
+        : vColumna({ mprIzq: v.mprIzq, mprDer: v.mprDer, hEntrepiso: o.hEntrepiso });
+      /* con las vigas dadas por lado se prueban los dos sentidos del sismo y manda el peor;
+         con As1/As2 sueltos -las pruebas y quien llame a mano- se usa lo que venga */
+      var lados = (v.izq || v.der) ? peorSentido(v) : null;
+      var q = cortante({ fy: fy, As1: lados ? lados.As1 : v.As1,
+                         As2: lados ? lados.As2 : v.As2, Vcol: Vc });
+      if (lados) q.sentido = lados.nombre;
+      var r = g ? vn({ fc: fc, Aj: g.Aj, clase: cl.k }) : null;
+      var phiVn = r ? PHI_V * r.Vn : null;
+      var cf = columnaFuerte({ mnc: v.mnc, mnv: lados ? lados.mnv : v.mnv });
+      if (lados) cf.sentido = lados.nombre;
+      var bp = barraPasante({ hCol: hCol, db: v.db });
+
+      out.dir[d] = {
+        clase: cl, aj: g, cortante: q, vn: r, phi: PHI_V, phiVn: phiVn,
+        ratioV: (phiVn > 0) ? q.Vu / phiVn : null,
+        cumpleV: (phiVn > 0) ? (q.Vu <= phiVn + 1e-9) : null,
+        fuerte: cf, barra: bp, estribos: estribos({ clase: cl.k, ashCol: v.ashCol, sCol: v.sCol })
+      };
+
+      var et = d.toUpperCase();
+      if (cf.cumple === false)
+        out.avisos.push({ g: "grave", t: "dirección " + et + ": la columna no es más fuerte que las vigas. " +
+          "Σ Mnc = " + cf.sumaMnc.toFixed(2) + " t·m y hace falta 1,2 Σ Mnv = " + cf.pide.toFixed(2) +
+          " t·m (" + ART.fuerte + "). La rótula se formaría en la columna." });
+      if (out.dir[d].cumpleV === false)
+        out.avisos.push({ g: "grave", t: "dirección " + et + ": el nudo no resiste su cortante. " +
+          "Vu = " + q.Vu.toFixed(2) + " t frente a φVn = " + phiVn.toFixed(2) + " t (" + ART.cortante + ")." });
+      if (bp && !bp.cumple)
+        out.avisos.push({ g: "grave", t: "dirección " + et + ": la columna mide " + bp.hCol.toFixed(0) +
+          " cm y la barra de viga de " + bp.db + " mm pide " + bp.min.toFixed(0) + " cm (20 db, " +
+          ART.barra + "): la barra no ancla dentro del nudo." });
+      if (cl.k === "otros")
+        out.avisos.push({ g: "leve", t: "dirección " + et + ": " + cl.texto + " (" + cl.caras +
+          " cara(s) con viga ancha). El nudo trabaja con el menor de los tres coeficientes." });
+    });
+
+    /* que hacer si no pasa, en el orden en que de verdad sirve */
+    out.salidas = salidas(out);
+    return out;
+  }
+
+  /* ---------------------------------------------------------------
+     LAS SALIDAS.  Agrandar la columna sirve dos veces -sube Aj y sube
+     Mnc-, subir f'c sirve solo para el cortante y con raiz cuadrada, y
+     bajar el acero de la viga sirve para las dos cosas pero hay que
+     rehacer D2.  Se dicen en ese orden.
+     --------------------------------------------------------------- */
+  function salidas(r) {
+    var v = [], hayV = false, hayF = false;
+    ["x", "y"].forEach(function (d) {
+      var q = r.dir[d]; if (!q) return;
+      if (q.cumpleV === false) hayV = true;
+      if (q.fuerte && q.fuerte.cumple === false) hayF = true;
+    });
+    if (!hayV && !hayF) return v;
+    if (hayV) {
+      var peor = 1;
+      ["x", "y"].forEach(function (d) {
+        var q = r.dir[d];
+        if (q && q.ratioV > peor) peor = q.ratioV;
+      });
+      v.push("Agrandar la columna: Aj crece con el peralte y el nudo necesita " +
+             ((peor - 1) * 100).toFixed(0) + " % más.");
+      v.push("Subir f'c: la resistencia del nudo va con √f'c, así que de 210 a 280 kg/cm² solo " +
+             "sube un " + ((Math.sqrt(280 / 210) - 1) * 100).toFixed(0) + " %.");
+    }
+    if (hayF) v.push("Columna más grande o más armada: Σ Mnc tiene que llegar a 1,2 Σ Mnv.");
+    v.push("Bajar el acero de las vigas que llegan al nudo: T = 1,25 fy As y Σ Mnv bajan con él, " +
+           "pero hay que rehacer el diseño de esas vigas.");
+    return v;
+  }
+
+  return {
+    ART: ART, PHI_V: PHI_V, FACTOR: FACTOR, SOBRE: SOBRE, COEF: COEF, S_NUDO: S_NUDO, DB_MIN: DB_MIN,
+    confinan: confinan, clase: clase, aj: aj, vn: vn, cortante: cortante, vColumna: vColumna,
+    sentidos: sentidos, peorSentido: peorSentido,
+    columnaFuerte: columnaFuerte, barraPasante: barraPasante, estribos: estribos,
+    revisar: revisar, salidas: salidas
+  };
+});
+</script>
+<script>
 /* ===== tablas_bat.js (inlinado) ===== */
 /* =====================================================================
    tablas_bat.js — LAS TABLAS DE RETICULA.bat [3], iguales en el complemento
@@ -9335,7 +9665,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v255 · 18-09-2026";
+  var BUILD="v258 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -9478,7 +9808,8 @@ var TT={script:performance.now()};
     verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"]],
     fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
-    diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["vigas","Vigas"],["columnas","Columnas"]],
+    diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["vigas","Vigas"],
+            ["columnas","Columnas"],["nudos","Nudos"]],
     hojas:[["normas","Normas y criterios"],["predim","Predimensionamiento"],["cargas","Cargas y sismo"],
            ["resultados","Resultados y diseño"]]
   };
@@ -17160,6 +17491,192 @@ var TT={script:performance.now()};
   var DVC={p:-1,v:null};
   var ESTADO_VIGA={ok:["Cumple","dis-ok"],revisar:["Revisar","dis-luego"],"no cumple":["No cumple","dis-falta"],
                    falta:["Sin datos","dis-na"]};
+  /* =====================================================================
+     D4 · LOS NUDOS.  La norma vive en oviedo/nudos.js; aqui se arma cada
+     nudo con lo que ya calcularon D2 y D3 y se le pasa.
+
+     Un nudo por columna y por nivel.  Las vigas que llegan salen de los
+     cuatro tramos que tocan el nudo -dos en X y dos en Y-, y de cada una
+     se toma LA CARA que da al nudo: la viga que empieza ahi aporta su cara
+     izquierda y la que muere ahi, la derecha.
+     ===================================================================== */
+  var DNU={p:-1,v:null};
+  function disenoNudos(){
+    if(DNU.p===PASADA)return DNU.v;
+    var K=criteriosDiseno(), DV=disenoVigas(), DC=disenoColumnas(),
+        out={lista:[], hay:!!(DV.hay&&DC.hay), alDia:!!(DV.alDia&&DC.alDia)};
+    if(!out.hay||typeof NUDOS==="undefined"){ DNU={p:PASADA,v:out}; return out; }
+
+    /* lo diseñado, por codigo */
+    var vig={}, col={};
+    (DV.lista||[]).forEach(function(d){ if(d&&d.cod)vig[d.cod]=d; });
+    (DC.lista||[]).forEach(function(d){ if(d&&d.cod)col[d.cod]=d; });
+
+    function caraDe(o,i,j,m,nudo){
+      /* que cara de la viga da a este nudo: la del extremo que coincide */
+      var k=o+":"+i+":"+j; if(!m.vigas[k])return null;
+      var t=tramoViga(o,i,j,m), nm=nombres(S.niveles.indexOf(m));
+      var b=nm.V[k]; if(!b)return null;
+      var d=vig[b.cod]; if(!d||!d.As||!d.Mn)return null;
+      var ext=(o==="h")?i:j, cara=(ext===t.desde)?"izq":((ext+1===t.hasta)?"der":null);
+      /* el nudo esta en el otro extremo del tramo cuando la viga muere aqui */
+      if(cara===null)cara=(nudo===t.desde)?"izq":"der";
+      var pv=predimViga(o,i,j,m)||{};
+      return {cod:b.cod, cara:cara, b:(d.b||pv.b*100||0), h:(d.h||pv.h*100||0),
+              sup:(d.As[cara]||{}).sup||0, inf:(d.As[cara]||{}).inf||0,
+              mnSup:(d.Mn[cara]||{}).sup||0, mnInf:(d.Mn[cara]||{}).inf||0,
+              db:(d.armado&&d.armado.sup&&d.armado.sup.bar)?DISENO.barra(d.armado.sup.bar).d*10:null,
+              chata:!!d.chata};
+    }
+
+    S.niveles.forEach(function(m,k){
+      var nX=m.dx.length+1, nY=m.dy.length+1, nm=nombres(k),
+          arriba=(k+1<S.niveles.length)?S.niveles[k+1]:null, nmA=arriba?nombres(k+1):null;
+      var i,j;
+      for(i=0;i<nX;i++)for(j=0;j<nY;j++){
+        if(!m.cols[key(i,j)])continue;
+        var cAb=col[(nm.C[key(i,j)]||{}).cod], cAr=(arriba&&arriba.cols[key(i,j)])?col[(nmA.C[key(i,j)]||{}).cod]:null;
+        if(!cAb)continue;                        /* sin diseño de la columna no hay nudo que revisar */
+        /* las cuatro vigas que tocan el nudo */
+        var vIzq=(i>0)?caraDe("h",i-1,j,m,i):null, vDer=caraDe("h",i,j,m,i);
+        var vAb2=(j>0)?caraDe("v",i,j-1,m,j):null, vAr2=caraDe("v",i,j,m,j);
+        if(!vIzq&&!vDer&&!vAb2&&!vAr2)continue;  /* una columna sin vigas no hace nudo */
+
+        var sec=cAb.sec||{}, bCol=(sec.b||0), hCol=(sec.h||sec.b||0);
+        if(sec.D>0){ bCol=sec.D; hCol=sec.D; }
+        var caras=[];
+        if(vIzq)caras.push({dir:"x",b:vIzq.b}); if(vDer)caras.push({dir:"x",b:vDer.b});
+        if(vAb2)caras.push({dir:"y",b:vAb2.b}); if(vAr2)caras.push({dir:"y",b:vAr2.b});
+
+        function lado(v){ return v?{sup:v.sup, inf:v.inf, mnSup:v.mnSup, mnInf:v.mnInf}:null; }
+        function anchoMax(a,b2){ return Math.max(a?a.b:0, b2?b2.b:0); }
+        function dbMax(a,b2){ return Math.max(a&&a.db?a.db:0, b2&&b2.db?b2.db:0)||null; }
+        function mpr(v,parte){ return v?MPR_NUDO*(parte==="sup"?v.mnSup:v.mnInf):0; }
+
+        var mnc=[cAb.Mn||0]; if(cAr&&cAr.Mn)mnc.push(cAr.Mn);
+        var r=NUDOS.revisar({
+          fc:K.fc, fy:K.fy, bCol:bCol, hColX:hCol, hColY:bCol, hEntrepiso:(+m.h||2.8),
+          caras:caras,
+          x:{bViga:anchoMax(vIzq,vDer), izq:lado(vIzq), der:lado(vDer), mnc:mnc,
+             mprIzq:mpr(vIzq,"sup"), mprDer:mpr(vDer,"inf"), db:dbMax(vIzq,vDer),
+             ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0},
+          y:{bViga:anchoMax(vAb2,vAr2), izq:lado(vAb2), der:lado(vAr2), mnc:mnc,
+             mprIzq:mpr(vAb2,"sup"), mprDer:mpr(vAr2,"inf"), db:dbMax(vAb2,vAr2),
+             ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0}
+        });
+        var graves=r.avisos.filter(function(a){return a.g==="grave"}).length;
+        out.lista.push({
+          cod:"N"+(k+1)+"-NU-"+(nm.C[key(i,j)]||{}).eje, nivel:k+1, i:i, j:j,
+          eje:(nm.C[key(i,j)]||{}).eje, colAbajo:cAb.cod, colArriba:cAr?cAr.cod:null,
+          columna:(sec.D>0?("Ø "+sec.D):(bCol+" × "+hCol))+" cm",
+          vigas:[vIzq,vDer,vAb2,vAr2].filter(Boolean).map(function(v){return v.cod}),
+          chata:[vIzq,vDer,vAb2,vAr2].filter(Boolean).some(function(v){return v.chata}),
+          r:r, graves:graves,
+          estado:graves?"no cumple":(r.avisos.length?"revisar":"cumple")
+        });
+      }
+    });
+    out.resumen={total:out.lista.length,
+                 cumplen:out.lista.filter(function(q){return q.estado==="cumple"}).length,
+                 no:out.lista.filter(function(q){return q.estado==="no cumple"}).length,
+                 revisar:out.lista.filter(function(q){return q.estado==="revisar"}).length};
+    DNU={p:PASADA,v:out};
+    return out;
+  }
+  var MPR_NUDO=1.25;   /* el mismo 1,25 del Mpr (Art. 21.6.5.1) para la cortante de la columna */
+
+
+  /* D4b · LA PANTALLA DE NUDOS.  Arriba la tabla de todos los nudos con su veredicto por
+     dirección, y debajo la ficha del que pinches: las cuatro comprobaciones del Capítulo 21
+     con sus números, y qué hacer si no pasa. */
+  var NUDO_SEL=null;
+  function tarjetaDisenoNudos(){
+    function esc(t){return String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+    function f(x,n){return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",",")}
+    var r=resultadosEtabs(), h='<section class="pbox sis-ancha"><h3>Nudos · viga-columna con la E.060</h3>'+estadoResultados(r);
+    if(!r||r.error)return h+'</section>';
+    var D=disenoNudos();
+    if(!D.hay)
+      return h+'<p class="aviso">Los nudos se revisan con las vigas y las columnas ya diseñadas: '+
+        'pasa primero por <b>Vigas</b> y <b>Columnas</b>.</p></section>';
+    if(!D.lista.length)
+      return h+'<p class="aviso">No hay ningún encuentro viga-columna diseñado todavía.</p></section>';
+
+    var q=D.resumen;
+    h+='<p class="nota" style="margin:0 0 8px">'+q.total+' nudo(s) · '+q.cumplen+' cumplen'+
+      (q.revisar?' · '+q.revisar+' por revisar':'')+(q.no?' · <b class="dis-falta">'+q.no+' no cumplen</b>':'')+
+      '. Un nudo por columna y nivel, con las vigas que llegan a él.</p>';
+
+    var EST={"cumple":["Cumple","dis-ok"],"revisar":["Revisar","dis-luego"],"no cumple":["No cumple","dis-falta"]};
+    h+='<div class="etb-scroll"><table class="sis-t dis-todas"><thead><tr>'+
+      '<th>Nudo</th><th>Columna</th><th>Vigas</th>'+
+      '<th>X · Mnc/1,2Mnv</th><th>X · Vu/φVn</th>'+
+      '<th>Y · Mnc/1,2Mnv</th><th>Y · Vu/φVn</th><th>Estado</th></tr></thead><tbody>';
+    D.lista.forEach(function(n){
+      function col(d){
+        var q2=n.r.dir[d]||{}, cf=q2.fuerte||{};
+        var rf=(cf.ratio==null)?"—":f(cf.ratio);
+        var rv=(q2.ratioV==null)?"—":f(q2.ratioV);
+        return '<td class="'+((cf.cumple===false)?"dis-falta":"")+'">'+rf+'</td>'+
+               '<td class="'+((q2.cumpleV===false)?"dis-falta":"")+'">'+rv+'</td>';
+      }
+      var e=EST[n.estado]||EST.revisar;
+      h+='<tr class="dis-fila'+(NUDO_SEL===n.cod?" sel":"")+'" data-nudo="'+esc(n.cod)+'" tabindex="0">'+
+        '<td>'+esc(n.cod)+'</td><td>'+esc(n.columna)+'</td><td>'+n.vigas.length+'</td>'+
+        col("x")+col("y")+'<td class="'+e[1]+'">'+e[0]+'</td></tr>';
+    });
+    h+='</tbody></table></div>'+
+      '<p class="nota">Mnc/1,2Mnv es columna fuerte-viga débil (Art. 21.6.2.2): por debajo de 1,00 la '+
+      'rótula se forma en la columna. Vu/φVn es la cortante del nudo (Art. 21.7.4): por encima de 1,00 '+
+      'el nudo no resiste. Pincha una fila para ver el detalle.</p>';
+
+    /* la ficha del elegido */
+    var sel=null;
+    D.lista.forEach(function(n){ if(n.cod===NUDO_SEL)sel=n; });
+    if(!sel)sel=D.lista.filter(function(n){return n.estado==="no cumple"})[0]||D.lista[0];
+    if(sel){
+      h+='<div class="rule" style="margin:14px 0 10px"></div><h3>'+esc(sel.cod)+'</h3>'+
+        '<p class="nota" style="margin:0 0 8px">Columna '+esc(sel.columna)+' · '+esc(sel.colAbajo)+
+        (sel.colArriba?' y '+esc(sel.colArriba)+' encima':' (no hay columna encima: es el último nivel)')+
+        ' · vigas '+sel.vigas.map(esc).join(", ")+'.</p>';
+      ["x","y"].forEach(function(d){
+        var n2=sel.r.dir[d]; if(!n2)return;
+        var cf=n2.fuerte||{}, A=n2.aj||{}, V=n2.cortante||{};
+        h+='<div class="dis-figw"><h4 style="margin:6px 0 4px">Dirección '+d.toUpperCase()+'</h4>'+
+          '<div class="etb-scroll"><table class="sis-t"><tbody>'+
+          fila("Columna fuerte, viga débil","Σ Mnc = "+f(cf.sumaMnc)+" t·m  ·  1,2 Σ Mnv = "+f(cf.pide)+
+               " t·m"+(cf.sentido?"  ·  sentido "+cf.sentido:""), cf.cumple, NUDOS.ART.fuerte)+
+          fila("Nudo",f(A.bj,0)+" cm de ancho efectivo ("+esc(A.manda||"")+")  ·  Aj = "+f(A.Aj,0)+
+               " cm²  ·  "+esc((n2.clase||{}).texto||""), null, NUDOS.ART.aj)+
+          fila("Cortante","Vu = "+f(V.Vu)+" t  =  T1 "+f(V.T1)+" + C2 "+f(V.C2)+" − Vcol "+f(V.Vcol)+
+               "  ·  φVn = "+f(n2.phiVn)+" t", n2.cumpleV, NUDOS.ART.cortante)+
+          fila("Barra que atraviesa", n2.barra
+               ? ("columna "+f(n2.barra.hCol,0)+" cm  ·  20 db = "+f(n2.barra.min,1)+" cm con barras de "+
+                  f(n2.barra.db,1)+" mm")
+               : "sin barras de viga conocidas", n2.barra?n2.barra.cumple:null, NUDOS.ART.barra)+
+          fila("Estribos dentro del nudo", "Ash = "+f((n2.estribos||{}).ash)+" cm²  ·  s ≤ "+
+               f((n2.estribos||{}).s,0)+" cm  ·  "+esc((n2.estribos||{}).texto||""), null, NUDOS.ART.estribos)+
+          '</tbody></table></div></div>';
+      });
+      if(sel.r.avisos.length)
+        h+='<div class="dis-avisos">'+sel.r.avisos.map(function(a){
+          return '<p class="aviso'+(a.g==="grave"?" dis-no":"")+'">'+esc(a.t)+'</p>'}).join("")+'</div>';
+      if(sel.r.salidas.length)
+        h+='<p class="nota"><b>Si no pasa:</b></p><ol class="dx-l">'+
+          sel.r.salidas.map(function(t){return '<li>'+esc(t)+'</li>'}).join("")+'</ol>';
+      if(sel.chata)
+        h+='<p class="nota">Alguna de las vigas que llegan es chata: su acero entra igual en el nudo, '+
+          'pero una viga chata no confina la cara (no llega a 3/4 del ancho de la columna).</p>';
+    }
+    return h+'</section>';
+
+    function fila(que,dice,ok,art){
+      var t=(ok===true)?'<span class="dis-ok">cumple</span>':((ok===false)?'<span class="dis-falta">no cumple</span>':"—");
+      return '<tr><td style="width:190px">'+que+'</td><td>'+dice+'</td><td style="width:90px">'+t+'</td>'+
+             '<td style="width:120px" class="nota">'+art+'</td></tr>';
+    }
+  }
+
   function disenoVigas(){
     if(DVC.p===PASADA)return DVC.v;
     var r=resultadosEtabs(), K=criteriosDiseno(), FZ=null, ex=null,
@@ -17557,6 +18074,8 @@ var TT={script:performance.now()};
       h+=tarjetaDisenoVigas();
     }else if(sub==="columnas"){
       h+=tarjetaDisenoColumnas();
+    }else if(sub==="nudos"){
+      h+=tarjetaDisenoNudos();
     }else{
       var F=datosDiseno(), grupos=[], cuenta={listo:0,falta:0,revisar:0,luego:0},
           EST={listo:["Listo","dis-ok"],falta:["Falta","dis-falta"],revisar:["Revisar","dis-falta"],
@@ -17605,6 +18124,12 @@ var TT={script:performance.now()};
     al("#disNivelC",function(){ S.disNivelC=this.value; render(); });
     try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis tr[data-col]"),function(tr){
       function toca(){ S.disCol=tr.dataset.col; render(); }
+      tr.onclick=toca;
+      tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toca(); } };
+    }); }catch(e){}
+    /* D4 · Nudos: la fila que se mira */
+    try{ Array.prototype.forEach.call(document.querySelectorAll("#panelDis tr[data-nudo]"),function(tr){
+      function toca(){ NUDO_SEL=(NUDO_SEL===tr.dataset.nudo)?null:tr.dataset.nudo; render(); }
       tr.onclick=toca;
       tr.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toca(); } };
     }); }catch(e){}
