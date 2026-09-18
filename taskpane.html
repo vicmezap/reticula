@@ -13,9 +13,31 @@
 <title>Retícula Estructural</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script>
+/* El tema, antes de pintar nada: el mismo «reticula_tema» que elige el dialogo en Datos. */
+(function(){
+  /* con cinturon: corre lo primero de todo y las pruebas ejecutan el panel con un DOM de
+     mentira donde documentElement puede no existir. */
+  try{
+    var t=localStorage.getItem("reticula_tema")||"dark", r=document.documentElement;
+    if(r&&r.setAttribute&&(t==="light"||t==="dark")) r.setAttribute("data-theme",t);
+  }catch(e){}
+})();
+</script>
 <style>
   :root{--paper:#F4F6F8;--sheet:#FFFFFF;--line:#C9D2DA;--ink:#1A2029;--ink2:#4A5763;--ink3:#7B8894;
         --acc:#0F6E8C;--acc-soft:#DCEBF1;--ok:#2F6E4F;--warn:#B3541E}
+  /* ACERO, el mismo oscuro del dialogo (Victor lo eligio el 17-09-2026).  El panel y el dialogo
+     salen de la misma direccion, asi que comparten el localStorage donde vive «reticula_tema»:
+     lo que se elige en Datos vale aqui tambien. */
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0E1113;--sheet:#1B2125;--line:#303840;--ink:#E8ECEE;--ink2:#AEB8BE;--ink3:#808B92;
+      --acc:#4FBAC2;--acc-soft:#123034;--ok:#5FBF95;--warn:#E0A24E}
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E1113;--sheet:#1B2125;--line:#303840;--ink:#E8ECEE;--ink2:#AEB8BE;--ink3:#808B92;
+    --acc:#4FBAC2;--acc-soft:#123034;--ok:#5FBF95;--warn:#E0A24E}
   *{box-sizing:border-box}
   body{margin:0;padding:14px;background:var(--paper);color:var(--ink);
        font:400 13px/1.45 "IBM Plex Sans",system-ui,sans-serif}
@@ -7110,7 +7132,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v230 · 17-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v239 · 17-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
