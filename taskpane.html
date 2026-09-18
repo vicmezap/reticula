@@ -6831,6 +6831,99 @@
      armado propuesto, el cortante y los estribos de confinamiento.  Son los
      resultados de oviedo/columnas.js; la hoja no recalcula.
      ===================================================================== */
+  /* =====================================================================
+     DISENO_NUDOS — el encuentro viga-columna (D4) con las cuatro
+     comprobaciones del Capitulo 21, nudo por nudo y direccion por
+     direccion.  Son los resultados de oviedo/nudos.js; la hoja no
+     recalcula: escribe lo comprobado con el articulo de cada linea, para
+     poder revisarlo sin abrir el complemento.
+     ===================================================================== */
+  function disenoNudos(P) {
+    var DN = P && P.disenoNudos, FZ = P && P.fuerzas, K = P && P.diseno;
+    if (!DN || !DN.lista || !DN.lista.length || !FZ)
+      throw sinResultados("vigas y columnas diseñadas para revisar sus nudos");
+    function coma(x, n) { return (x == null || !isFinite(x)) ? "—" : (+x).toFixed(n == null ? 2 : n).replace(".", ","); }
+    var h = F.hoja("DISENO_NUDOS"), r = 6, sec = 2, RS = DN.resumen || {};
+    h.titulo("DISEÑO DE NUDOS · E.060 CAP. 21");
+    r = origenFuerzas(h, r, FZ, "El nudo no se analiza: se comprueba con lo que ya calcularon las vigas (D2) y las "
+      + "columnas (D3), en el estado en que las vigas han rotulado. Columna fuerte-viga débil: Σ Mnc ≥ 1,2 Σ Mnv, "
+      + "con el Mnc de la axial que da la MENOR resistencia a flexión (Art. 21.6.2.2) y solo en columnas con "
+      + "Pu > 0,1 f'c Ag (Art. 21.6.2.1). Cortante del nudo: Vu = 1,25 fy (As1 + As2) − Vcol, con Vcol por "
+      + "equilibrio de la columna cortada a media altura, frente a Vn = 5,3 / 4,0 / 3,2 √f'c·Aj según las caras "
+      + "confinadas (Art. 21.7.4.1 y 21.7.4.3), con φ = 0,85 (Art. 21.7.2.2). Anclaje: 20 db de columna si la barra "
+      + "atraviesa el nudo (Art. 21.7.2.4), o el gancho del Art. 12.5 dentro del núcleo si termina en él "
+      + "(Art. 21.7.2.3). Estribos dentro del nudo por el Art. 21.7.3.2. El sismo va y viene: de los dos sentidos "
+      + "se escribe el peor.");
+
+    var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
+    r = h.seccion(r, (sec++) + ". CON QUÉ SE COMPRUEBA");
+    r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+    if (K) {
+      r = h.fila(r, LD, ["f'c (kg/cm²)", K.fc, "de Criterios de diseño; el nudo resiste con el concreto"], null, IZQ3);
+      r = h.fila(r, LD, ["fy (kg/cm²)", K.fy, "el acero de las vigas llega al nudo a 1,25 fy (Art. 21.7.2.1)"], null, IZQ3);
+      if (K.recub && K.recub.columna)
+        r = h.fila(r, LD, ["Recubrimiento de columnas (cm)", K.recub.columna.cm,
+                           "descuenta núcleo para el gancho"], null, IZQ3);
+    }
+    r = h.fila(r, LD, ["φ del nudo", "0,85", "Art. 21.7.2.2, sin importar el tipo de solicitación"], null, IZQ3);
+    r = h.fila(r, LD, ["Vn del nudo", "5,3 / 4,0 / 3,2 √f'c·Aj",
+                       "cuatro caras / tres o dos opuestas / las demás (Art. 21.7.4.1, anexo en kgf/cm²)"], null, IZQ3);
+    r = h.fila(r, LD, ["Nudos", RS.total || DN.lista.length, (RS.cumplen || 0) + " cumplen · " + (RS.revisar || 0)
+                       + " por revisar · " + (RS.no || 0) + " no cumplen"], null, IZQ3);
+    r++;
+
+    var fmt = { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.00" },
+        al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] },
+        LT = [[3, 4], [5, 10]], alT = { alinear: ["Left", "Left"], negrita: false },
+        EST = { cumple: "CUMPLE", revisar: "REVISAR", "no cumple": "NO CUMPLE" };
+    nivelesDe(DN.lista).forEach(function (nv) {
+      r = h.seccion(r, (sec++) + ". NUDOS DEL NIVEL " + (nv || "-"));
+      r = h.encabezado(r, F8, ["Nudo · dirección", "Σ Mnc (t·m)", "1,2 Σ Mnv", "Mnc/Mnv", "Vu (t)", "φVn (t)",
+                               "Vu/φVn", "Cumple"], 34.0);
+      DN.lista.filter(function (d) { return d.nivel === nv; }).forEach(function (d) {
+        r = h.fila(r, LT, [EST[d.estado] || String(d.estado).toUpperCase(),
+                           d.cod + " · columna " + d.columna + " · vigas " +
+                           ((d.vigas || []).join(", ") || "—")], null, { alinear: ["Left", "Left"] });
+        ["x", "y"].forEach(function (k) {
+          var q = d[k]; if (!q) return;
+          var et = k.toUpperCase();
+          r = h.fila(r, F8, ["   " + et + " · " + (q.clase || ""),
+                             q.aplicaCF ? q.sumaMnc : "no aplica", q.aplicaCF ? q.pide : "Pu < 0,1 f'c Ag",
+                             q.aplicaCF ? q.ratioCF : "—", q.Vu, q.phiVn, q.ratioV,
+                             (q.cumpleCF === false || q.cumpleV === false ||
+                              (q.barra && q.barra.cumple === false)) ? "NO" : "SÍ"], fmt, al);
+          r = h.fila(r, LT, ["      Nudo", "bj " + coma(q.bj, 1) + " cm · manda " +
+                             String(q.manda || "—").split(" (")[0] + " · Aj " + coma(q.Aj, 0) + " cm²"], null, alT);
+          r = h.fila(r, LT, ["      Cortante", "Vu = T1 " + coma(q.T1) + " + C2 " + coma(q.C2) + " − Vcol "
+                             + coma(q.Vcol) + " = " + coma(q.Vu) + " t · φVn = " + coma(q.phiVn) + " t"], null, alT);
+          r = h.fila(r, LT, ["      Vcol", "por equilibrio con las vigas en 1,25 fy: " + coma(q.vcolEq) + " t"
+                             + (q.vcolAna != null ? " · ETABS da " + coma(q.vcolAna) + " t en esta dirección"
+                                : " · sin cortante de ETABS para comparar") + " (Art. 21.7.4.3)"], null, alT);
+          if (q.barra)
+            r = h.fila(r, LT, ["      Barra de viga", "φ" + coma(q.barra.db, 1) + " mm " +
+                               (q.barra.tipo === "pasa"
+                                 ? ("atraviesa el nudo: pide " + coma(q.barra.pide, 1) + " cm de columna (20 db) y hay "
+                                    + coma(q.barra.hay, 1) + " cm")
+                                 : ("termina en el nudo: el gancho pide " + coma(q.barra.pide, 1) +
+                                    " cm y dentro del núcleo hay " + coma(q.barra.hay, 1) + " cm")) +
+                               " (" + (q.barra.art || "") + ")"], null, alT);
+          if (q.estribos)
+            r = h.fila(r, LT, ["      Estribos del nudo", "Ash " + coma(q.estribos.ash) + " cm² @ " +
+                               coma(q.estribos.s, 0) + " cm · " + (q.estribos.texto || "")], null, alT);
+        });
+        (d.avisos || []).forEach(function (a) {
+          r = h.fila(r, LT, [a.g === "grave" ? "   AVISO" : "   Nota", a.t], null, alT);
+        });
+      });
+      r++;
+    });
+
+    r = h.nota(r, "Un nudo que no pasa el cortante no se arregla con más estribos: Vn depende del concreto y del "
+      + "área efectiva Aj, así que hay que agrandar la columna, subir el f'c o bajar el acero de las vigas que "
+      + "llegan. Los estribos del nudo son confinamiento (Art. 21.7.3), no resistencia.");
+    return h.cerrar(r);
+  }
+
   function disenoColumnas(P) {
     var DC = P && P.disenoColumnas, FZ = P && P.fuerzas, K = P && P.diseno;
     if (!DC || !DC.lista || !DC.lista.length || !FZ) throw sinResultados("fuerzas de columnas para diseñarlas");
@@ -7120,7 +7213,7 @@
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
            reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas,
-           disenoColumnas: disenoColumnas };
+           disenoColumnas: disenoColumnas, disenoNudos: disenoNudos };
 });
 </script>
 <script>
@@ -7135,7 +7228,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v262 · 18-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v268 · 18-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7550,7 +7643,8 @@ var REGISTRO = {
   "REACCIONES":         function(p){ return HOJAS.reacciones(p); },
   "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); },
   "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); },
-  "DISENO_COLUMNAS":    function(p){ return HOJAS.disenoColumnas(p); }
+  "DISENO_COLUMNAS":    function(p){ return HOJAS.disenoColumnas(p); },
+  "DISENO_NUDOS":       function(p){ return HOJAS.disenoNudos(p); }
 };
 
 /* El proyecto llega TROCEADO por el canal de Office.  Antes se dejaba en

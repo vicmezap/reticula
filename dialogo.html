@@ -488,6 +488,7 @@
 .dis-fig{display:block;width:auto}
 .dis-fig-pm{height:250px}
 .dis-fig-sec{height:170px}
+.dis-fig-nudo{height:230px}
 .dis-figt{font:11px "IBM Plex Sans",sans-serif;fill:var(--ink-2)}
 .dis-avisos{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2)}
 .dis-avisos li{margin:3px 0}
@@ -5982,9 +5983,11 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     var Mn = momentoMaximo(sup, dem);
     /* Mn en kg·cm y ln en m: la luz libre va a cm (ln*100) y el resultado de kg a t */
     var Vcap = (2 * MPR * Mn) / (ln * 100) / 1000;              /* t */
-    var Vana = 0, VanaS = 0, PuMin = 1e18, hayTrac = false;
+    var Vana = 0, VanaS = 0, PuMin = 1e18, hayTrac = false, V2max = 0, V3max = 0;
     dem.forEach(function (d) {
       Vana = Math.max(Vana, Math.abs(d.V2), Math.abs(d.V3));
+      V2max = Math.max(V2max, Math.abs(d.V2));         /* eje local 2 = X del modelo */
+      V3max = Math.max(V3max, Math.abs(d.V3));         /* eje local 3 = Y */
       PuMin = Math.min(PuMin, d.PuT);
       if (d.PuT < 0) hayTrac = true;
     });
@@ -6074,7 +6077,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     base.MnMin2 = momentoMinimo(sup, dem, "M2") / 1e5;
     base.MnMin3 = momentoMinimo(sup, dem, "M3") / 1e5;
     base.columnaFuerte = pideColumnaFuerte(dem, fc, sec.Ag);
-    base.cortante = { Vu: Vu, Vcap: Vcap, Vana: Vana, Vc: Vc, Vs: Vs, VsMax: VsM, d: d, bw: bw,
+    base.cortante = { Vu: Vu, Vcap: Vcap, Vana: Vana, V2: V2max, V3: V3max, Vc: Vc, Vs: Vs, VsMax: VsM, d: d, bw: bw,
                       ramas: ramas, Av: Av, sReq: sReq, sMax: sMax, por: porV };
     base.estribos = { Lo: conf.Lo, so: redAbajo(sDentro, 1), sFuera: redAbajo(sFuera, 1),
                       art: conf.art, artFuera: conf.artFuera, ash: estAsh, zuncho: estZun };
@@ -6244,10 +6247,14 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
             Vn = 5,3 √f'c · Aj   confinado en las cuatro caras
             Vn = 4,0 √f'c · Aj   en tres caras o en dos opuestas
             Vn = 3,2 √f'c · Aj   los demas
-        con f'c y Vn en kgf/cm² (son los 1,7 / 1,2 / 1,0 √f'c del texto en
-        MPa: √10 = 3,162 convierte uno en otro).  φ = 0,85 (Art. 9.3.2.3).
+        con f'c y Vn en kgf/cm²: NO son una conversion de los 1,7 / 1,2 /
+        1,0 √f'c del cuerpo en MPa -esa daria 5,43 / 3,83 / 3,19-, sino los
+        valores que la PROPIA norma publica en su anexo de unidades kgf/cm²
+        (p. 205 del texto oficial).  Se usan los del anexo, que es lo que
+        dice la norma en las unidades en que trabaja el complemento.
+        φ = 0,85 (Art. 21.7.2.2).
 
-     3  LA BARRA QUE ATRAVIESA EL NUDO .............. Art. 21.7.2.3
+     3  LA BARRA QUE ATRAVIESA EL NUDO .............. Art. 21.7.2.4
         La columna, medida paralela a la barra de viga, no puede bajar de
         20 db: si no, la barra no alcanza a anclarse dentro del nudo y se
         desliza en cuanto la viga entra en fluencia.
@@ -6264,6 +6271,31 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 
    Unidades de fuera: cm, kg/cm², t·m, toneladas.  Dentro se trabaja en
    kgf y cm, y solo se vuelve a t·m al salir.
+
+   ---------------------------------------------------------------------
+   CONTRASTADO CONTRA LA PLANTILLA DE MATHCAD DE YABAR (Col_Rec_final.mcdx)
+   y contra la guia del NIST (GCR 16-917-40, Fig. 5-6).  Mismo nudo -
+   columna 60x60, vigas 30x60 a los dos lados, f'c 210, fy 4200, entrepiso
+   3,00 m, As 15,83 / 7,92 cm²- por los dos caminos:
+
+     · φ = 0,85, el 1,25 fy (su κ'), Vu = T1 + T2 − Vcol, el conteo de
+       caras confinadas (3/4 del ancho) y la desigualdad de columna fuerte
+       -el escribe DC = 1,2 ΣMnv/ΣMnc ≤ 1, nosotros ΣMnc ≥ 1,2 ΣMnv-
+       coinciden exactamente.
+     · bj: coincide.  El texto oficial dice ancho de la columna, y si la
+       viga es mas angosta, no mas que b + h ni que dos veces la distancia
+       del eje de la viga al borde de la columna (= b + 2x).  Son los tres
+       candidatos que calcula aj().
+     · Vcol: NO coincide, y es la unica diferencia de fondo.  El NIST corta
+       la columna a MEDIA ALTURA DE PISO arriba y abajo del nudo, asi que
+       el brazo es la altura de entrepiso -lo que hacemos-.  La plantilla
+       divide entre (h − hv), la altura LIBRE, que deja fuera el peralte
+       del nudo: en este caso su Vcol sale 25 % mayor.  Ademas suma el
+       traslado de las cortantes de viga al eje de la columna,
+       Ve·(hc/2)/lc, que el NIST tambien trae y nosotros no: otro 8 %.
+       Como Vcol RESTA, las dos cosas juntas bajan su Vu un 6 % respecto
+       del nuestro.  Nos quedamos con el brazo del NIST y sin el traslado:
+       es el lado seguro y es el que dibuja la Fig. 21.7.4.3.
    ===================================================================== */
 (function (raiz, definir) {
   if (typeof module === "object" && module.exports) module.exports = definir();
@@ -6396,13 +6428,32 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     return (v[0].As1 + v[0].As2 >= v[1].As1 + v[1].As2) ? v[0] : v[1];
   }
 
-  /* la cortante de la columna que descuenta: los Mpr de las vigas del nudo
-     repartidos en la altura entre puntos de inflexion (la altura libre) */
+  /* ---------------------------------------------------------------
+     LA CORTANTE DE LA COLUMNA QUE SE DESCUENTA.
+
+     Sale del EQUILIBRIO del nudo con las vigas ya en 1,25 fy, que es lo
+     que pide el Art. 21.7.4.3 y lo que dibuja su figura: se corta la
+     columna a media altura arriba y abajo -el punto de inflexion de un
+     piso corriente- y queda
+
+         Vcol = (Mpr izq + Mpr der) / altura de entrepiso
+
+     La cortante que trae ETABS NO sirve para esto: es la elastica con las
+     cargas de diseño, otro estado.  Se calcula aparte y se enseña al lado,
+     y si fuese mayor que la de equilibrio, se avisa.
+     --------------------------------------------------------------- */
   function vColumna(o) {
     o = o || {};
     var M = pos(o.mprIzq) + pos(o.mprDer), h = pos(o.hEntrepiso);
     if (!(h > 0)) return 0;
     return M / h;                                      /* t·m / m = t */
+  }
+  /* las dos cifras, para poder enseñarlas juntas */
+  function cortantesColumna(o) {
+    o = o || {};
+    var eq = vColumna(o), an = pos(o.deAnalisis);
+    return { equilibrio: eq, analisis: an || null, usada: eq,
+             mayorElAnalisis: !!(an && an > eq + 1e-9), art: ART.cortante };
   }
 
   /* ---------------------------------------------------------------
@@ -6523,6 +6574,14 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       var q = cortante({ fy: fy, As1: lados ? lados.As1 : v.As1,
                          As2: lados ? lados.As2 : v.As2, Vcol: Vc });
       if (lados) q.sentido = lados.nombre;
+      /* la del análisis, solo para enseñarla al lado */
+      q.vcol = cortantesColumna({ mprIzq: v.mprIzq, mprDer: v.mprDer, hEntrepiso: o.hEntrepiso,
+                                  deAnalisis: v.vColAnalisis });
+      if (q.vcol.mayorElAnalisis)
+        out.avisos.push({ g: "leve", t: "dirección " + d.toUpperCase() + ": ETABS da una cortante de columna " +
+          "de " + q.vcol.analisis.toFixed(2) + " t, mayor que la de equilibrio (" + q.vcol.equilibrio.toFixed(2) +
+          " t). El nudo se comprueba con la de equilibrio, que es la del " + ART.cortante + "; " +
+          "que la elástica sea mayor merece una mirada." });
       var r = g ? vn({ fc: fc, Aj: g.Aj, clase: cl.k }) : null;
       var phiVn = r ? PHI_V * r.Vn : null;
       var cf = columnaFuerte({ mnc: v.mnc, mnv: lados ? lados.mnv : v.mnv,
@@ -6608,7 +6667,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     ART: ART, PHI_V: PHI_V, FACTOR: FACTOR, SOBRE: SOBRE, COEF: COEF, S_NUDO: S_NUDO, DB_MIN: DB_MIN,
     confinan: confinan, clase: clase, aj: aj, vn: vn, cortante: cortante, vColumna: vColumna,
     barraPasante: barraPasante, ganchoTermina: ganchoTermina, anclaje: anclaje,
-    sentidos: sentidos, peorSentido: peorSentido,
+    sentidos: sentidos, peorSentido: peorSentido, cortantesColumna: cortantesColumna,
     columnaFuerte: columnaFuerte, barraPasante: barraPasante, estribos: estribos,
     revisar: revisar, salidas: salidas
   };
@@ -9957,7 +10016,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v262 · 18-09-2026";
+  var BUILD="v268 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -17837,10 +17896,15 @@ var TT={script:performance.now()};
         var sec=cAb.sec||{}, bCol=(sec.b||0), hCol=(sec.h||sec.b||0);
         if(sec.D>0){ bCol=sec.D; hCol=sec.D; }
         var caras=[];
-        if(vIzq)caras.push({dir:"x",b:vIzq.b}); if(vDer)caras.push({dir:"x",b:vDer.b});
-        if(vAb2)caras.push({dir:"y",b:vAb2.b}); if(vAr2)caras.push({dir:"y",b:vAr2.b});
+        if(vIzq)caras.push({dir:"x",b:vIzq.b,h:vIzq.h}); if(vDer)caras.push({dir:"x",b:vDer.b,h:vDer.h});
+        if(vAb2)caras.push({dir:"y",b:vAb2.b,h:vAb2.h}); if(vAr2)caras.push({dir:"y",b:vAr2.b,h:vAr2.h});
 
         function lado(v){ return v?{sup:v.sup, inf:v.inf, mnSup:v.mnSup, mnInf:v.mnInf}:null; }
+        /* el Ash que D3 calcula para la columna: el mayor de las dos direcciones (21.6.4.1 b) */
+        function ashDe(c){
+          var a=c&&c.estribos&&c.estribos.ash; if(!a)return 0;
+          return Math.max((a.b&&a.b.req)||0, (a.h&&a.h.req)||0);
+        }
         function anchoMax(a,b2){ return Math.max(a?a.b:0, b2?b2.b:0); }
         function dbMax(a,b2){ return Math.max(a&&a.db?a.db:0, b2&&b2.db?b2.db:0)||null; }
         function mpr(v,parte){ return v?MPR_NUDO*(parte==="sup"?v.mnSup:v.mnInf):0; }
@@ -17862,15 +17926,21 @@ var TT={script:performance.now()};
                   ? DISENO.barra(K.barras.columna.estribo).d : 0.95,
           x:{bViga:anchoMax(vIzq,vDer), izq:lado(vIzq), der:lado(vDer), mnc:mnc,
              aplica:aplicaCF, Pu:cfAb.Pu, tope:cfAb.tope,
+             /* la cortante que ETABS le da a esta columna en X (eje local 2), solo de referencia */
+             vColAnalisis:(cAb.cortante&&cAb.cortante.V2)||0,
              mprIzq:mpr(vIzq,"sup"), mprDer:mpr(vDer,"inf"), db:dbMax(vIzq,vDer),
-             ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0},
+             ashCol:ashDe(cAb), sCol:(cAb.estribos&&cAb.estribos.so)||0},
           y:{bViga:anchoMax(vAb2,vAr2), izq:lado(vAb2), der:lado(vAr2), mnc:mnc,
              aplica:aplicaCF, Pu:cfAb.Pu, tope:cfAb.tope,
+             vColAnalisis:(cAb.cortante&&cAb.cortante.V3)||0,
              mprIzq:mpr(vAb2,"sup"), mprDer:mpr(vAr2,"inf"), db:dbMax(vAb2,vAr2),
-             ashCol:(cAb.estribos&&cAb.estribos.ash)||0, sCol:(cAb.estribos&&cAb.estribos.so)||0}
+             ashCol:ashDe(cAb), sCol:(cAb.estribos&&cAb.estribos.so)||0}
         });
         var graves=r.avisos.filter(function(a){return a.g==="grave"}).length;
         out.lista.push({
+          bCol:bCol,
+          lados:{x:{izq:!!vIzq, der:!!vDer}, y:{izq:!!vAb2, der:!!vAr2}},
+          caras:caras,
           cod:"N"+(k+1)+"-NU-"+(nm.C[key(i,j)]||{}).eje, nivel:k+1, i:i, j:j,
           eje:(nm.C[key(i,j)]||{}).eje, colAbajo:cAb.cod, colArriba:cAr?cAr.cod:null,
           columna:(sec.D>0?("Ø "+sec.D):(bCol+" × "+hCol))+" cm",
@@ -17890,6 +17960,76 @@ var TT={script:performance.now()};
   }
   var MPR_NUDO=1.25;   /* el mismo 1,25 del Mpr (Art. 21.6.5.1) para la cortante de la columna */
 
+
+
+  /* =====================================================================
+     D4 · LA FIGURA DEL NUDO.  Sale de los mismos datos que la comprobación:
+     el peralte de la columna en la dirección que se mira, el ancho de las
+     vigas que llegan, el ancho efectivo bj -que es lo que de verdad
+     trabaja- y las barras, dibujadas como van a quedar: pasando de largo
+     si atraviesan, o dobladas dentro del núcleo si terminan ahí.
+     ===================================================================== */
+  function figuraNudo(n, d){
+    if(!n||!n.r||!n.r.dir||!n.r.dir[d])return "";
+    var q=n.r.dir[d], A=q.aj; if(!A)return "";
+    var hCol=A.h, bj=A.bj, bCol=(n.bCol||A.bj);
+    var vigas=(n.caras||[]).filter(function(c){return c.dir===d});
+    var hV=Math.max.apply(null,[30].concat(vigas.map(function(c){return c.h||0})));
+    /* el dibujo, en cm de la estructura: columna al centro, vigas a los lados */
+    var lado=Math.max(hCol*1.6,60), ancho=hCol+2*lado, alto=hCol+2*Math.max(hCol,70);
+    var esc=Math.min(300/ancho, 210/alto), W=ancho*esc+58, H=alto*esc+42;
+    var cx=W/2, cy=H/2;
+    function X(x){ return cx+x*esc; }
+    function Y(y){ return cy-y*esc; }
+    var s=['<svg viewBox="0 0 '+W.toFixed(0)+' '+H.toFixed(0)+'" class="dis-fig dis-fig-nudo" role="img" '+
+           'aria-label="Nudo en la dirección '+d.toUpperCase()+'">'];
+    var col=hCol/2, colAlto=alto/2;
+    /* la columna de abajo y la de arriba */
+    s.push('<rect x="'+X(-col)+'" y="'+Y(colAlto)+'" width="'+(hCol*esc)+'" height="'+(alto*esc)+
+           '" fill="var(--panel)" stroke="var(--col)" stroke-width="1.3"/>');
+    /* las vigas que llegan */
+    var izq=q.cortante&&q.cortante.T1>0, der=q.cortante&&q.cortante.C2>0;
+    var hayIzq=!!(n.lados&&n.lados[d]&&n.lados[d].izq), hayDer=!!(n.lados&&n.lados[d]&&n.lados[d].der);
+    if(hayIzq)
+      s.push('<rect x="'+X(-col-lado)+'" y="'+Y(hV/2)+'" width="'+(lado*esc)+'" height="'+(hV*esc)+
+             '" fill="var(--viga)" fill-opacity="0.30" stroke="var(--viga)" stroke-width="1.1"/>');
+    if(hayDer)
+      s.push('<rect x="'+X(col)+'" y="'+Y(hV/2)+'" width="'+(lado*esc)+'" height="'+(hV*esc)+
+             '" fill="var(--viga)" fill-opacity="0.30" stroke="var(--viga)" stroke-width="1.1"/>');
+    /* EL NUDO: el rectángulo que de verdad resiste, con su Aj */
+    s.push('<rect x="'+X(-col)+'" y="'+Y(hV/2)+'" width="'+(hCol*esc)+'" height="'+(hV*esc)+
+           '" fill="var(--acc)" fill-opacity="0.16" stroke="var(--acc)" stroke-width="1.2" stroke-dasharray="4 2"/>');
+    s.push('<text x="'+cx+'" y="'+(Y(0)+4)+'" text-anchor="middle" font-family="IBM Plex Mono,monospace" '+
+           'font-size="9" fill="var(--acc-ink)">Aj '+Math.round(A.Aj)+' cm²</text>');
+    /* las barras de viga: pasan de largo o se doblan dentro del núcleo */
+    var yb=hV/2-5, pasa=(q.barra&&q.barra.tipo==="pasa");
+    function barra(y){
+      if(pasa){
+        s.push('<line x1="'+X(-col-lado*0.92)+'" y1="'+Y(y)+'" x2="'+X(col+lado*0.92)+'" y2="'+Y(y)+
+               '" stroke="var(--ink)" stroke-width="1.6"/>');
+      }else{
+        var desde=hayIzq?-col-lado*0.92:col+lado*0.92, hasta=hayIzq?(col-4):(-col+4);
+        s.push('<path d="M '+X(desde)+' '+Y(y)+' L '+X(hasta)+' '+Y(y)+' L '+X(hasta)+' '+Y(-hV/2+6)+
+               '" fill="none" stroke="var(--ink)" stroke-width="1.6"/>');
+      }
+    }
+    barra(yb); barra(-yb);
+    /* el ancho efectivo, en un corte de planta pequeño al lado */
+    var px=W-30, py=26, pe=Math.min(22/Math.max(bCol,1), 22/Math.max(hCol,1));
+    s.push('<rect x="'+(px-bCol*pe/2)+'" y="'+(py-hCol*pe/2)+'" width="'+(bCol*pe)+'" height="'+(hCol*pe)+
+           '" fill="none" stroke="var(--col)" stroke-width="1"/>');
+    s.push('<rect x="'+(px-bj*pe/2)+'" y="'+(py-hCol*pe/2)+'" width="'+(bj*pe)+'" height="'+(hCol*pe)+
+           '" fill="var(--acc)" fill-opacity="0.22" stroke="none"/>');
+    s.push('<text x="'+px+'" y="'+(py+hCol*pe/2+9)+'" text-anchor="middle" '+
+           'font-family="IBM Plex Mono,monospace" font-size="8" fill="var(--ink-3)">bj '+Math.round(bj)+'</text>');
+    /* las cotas que importan */
+    s.push('<text x="'+cx+'" y="'+(H-8)+'" text-anchor="middle" font-family="IBM Plex Mono,monospace" '+
+           'font-size="9" fill="var(--ink-2)">columna '+Math.round(hCol)+' cm en '+d.toUpperCase()+'</text>');
+    s.push('<text x="8" y="14" font-family="IBM Plex Mono,monospace" font-size="9" fill="var(--ink-3)">'+
+           (pasa?"la barra atraviesa":"la barra termina en gancho")+'</text>');
+    s.push('</svg>');
+    return s.join("");
+  }
 
   /* D4b · LA PANTALLA DE NUDOS.  Arriba la tabla de todos los nudos con su veredicto por
      dirección, y debajo la ficha del que pinches: las cuatro comprobaciones del Capítulo 21
@@ -17948,6 +18088,7 @@ var TT={script:performance.now()};
         var n2=sel.r.dir[d]; if(!n2)return;
         var cf=n2.fuerte||{}, A=n2.aj||{}, V=n2.cortante||{};
         h+='<div class="dis-figw"><h4 style="margin:6px 0 4px">Dirección '+d.toUpperCase()+'</h4>'+
+          '<div class="dis-figs">'+figuraNudo(sel,d)+'</div>'+
           '<div class="etb-scroll"><table class="sis-t"><tbody>'+
           fila("Columna fuerte, viga débil",
                (cf.aplica===false
@@ -17960,6 +18101,11 @@ var TT={script:performance.now()};
                " cm²  ·  "+esc((n2.clase||{}).texto||""), null, NUDOS.ART.aj)+
           fila("Cortante","Vu = "+f(V.Vu)+" t  =  T1 "+f(V.T1)+" + C2 "+f(V.C2)+" − Vcol "+f(V.Vcol)+
                "  ·  φVn = "+f(n2.phiVn)+" t", n2.cumpleV, NUDOS.ART.cortante)+
+          fila("Vcol, de dónde sale",
+               "equilibrio con las vigas en 1,25 fy: "+f((V.vcol||{}).equilibrio)+" t"+
+               (((V.vcol||{}).analisis)?("  ·  ETABS da "+f(V.vcol.analisis)+" t en esta dirección"+
+                 (V.vcol.mayorElAnalisis?" (mayor: míralo)":"")):"  ·  sin cortante de ETABS para comparar"),
+               null, NUDOS.ART.cortante)+
           fila((n2.barra&&n2.barra.tipo==="termina")?"Barra que termina (gancho)":"Barra que atraviesa",
                !n2.barra ? "sin barras de viga conocidas"
                : (n2.barra.tipo==="pasa"
@@ -18955,6 +19101,32 @@ var TT={script:performance.now()};
                         propio:!!d.propio, secciones:d.secciones||null, texto:d.texto||null,
                         cortante:d.cortante?{Vdes:d.cortante.Vdes, texto:d.cortante.texto}:null,
                         avisos:(d.avisos||[]).map(function(a){return {nivel:a.nivel, texto:a.texto}})};
+              })};
+            })(),
+            /* D4: los nudos, para DISENO_NUDOS: solo lo que la hoja escribe */
+            disenoNudos:(function(){
+              var D=disenoNudos();
+              if(!D.hay||!D.lista.length)return null;
+              function dir(q){
+                if(!q)return null;
+                var cf=q.fuerte||{}, V=q.cortante||{}, A=q.aj||{}, b=q.barra, e=q.estribos||{},
+                    vc=V.vcol||{};
+                return {clase:(q.clase&&q.clase.texto)||"", bj:A.bj, Aj:A.Aj, manda:A.manda,
+                        aplicaCF:cf.aplica!==false, sumaMnc:cf.sumaMnc, sumaMnv:cf.sumaMnv,
+                        pide:cf.pide, ratioCF:cf.ratio, cumpleCF:cf.cumple,
+                        T1:V.T1, C2:V.C2, Vcol:V.Vcol, Vu:V.Vu,
+                        vcolEq:vc.equilibrio, vcolAna:vc.analisis,
+                        phiVn:q.phiVn, ratioV:q.ratioV, cumpleV:q.cumpleV,
+                        barra:b?{tipo:b.tipo, db:b.db, cumple:b.cumple, art:b.art,
+                                 pide:(b.tipo==="pasa")?b.min:b.pide,
+                                 hay:(b.tipo==="pasa")?b.hCol:b.hay}:null,
+                        estribos:{ash:e.ash, s:e.s, texto:e.texto}};
+              }
+              return {resumen:D.resumen, lista:D.lista.map(function(n){
+                /* "N1", como lo nombran las columnas: las dos hojas titulan su nivel igual */
+                return {cod:n.cod, nivel:"N"+n.nivel, eje:n.eje, columna:n.columna, vigas:n.vigas,
+                        estado:n.estado, x:dir(n.r.dir.x), y:dir(n.r.dir.y),
+                        avisos:(n.r.avisos||[]).map(function(a){return {g:a.g, t:a.t}})};
               })};
             })(),
             /* D3: el diseño de las columnas, para DISENO_COLUMNAS: solo lo que la hoja escribe */
@@ -20211,7 +20383,9 @@ var TT={script:performance.now()};
     /* D2: el diseño de las vigas, con resultados */
     {n:"DISENO_VIGAS",         tit:"Diseño de vigas",      t:"res", fz:"vigas"},
     /* D3: el diseño de las columnas, con resultados */
-    {n:"DISENO_COLUMNAS",      tit:"Diseño de columnas",   t:"res", fz:"columnas"}
+    {n:"DISENO_COLUMNAS",      tit:"Diseño de columnas",   t:"res", fz:"columnas"},
+    /* D4: el encuentro viga-columna, con las vigas y las columnas ya diseñadas */
+    {n:"DISENO_NUDOS",         tit:"Diseño de nudos",      t:"res", fz:"columnas"}
   ];
   /* Las diecisiete.  Se deja el mapa -en vez de darlas todas por buenas- porque
      es donde se ve de un vistazo que hay y que falta. */
@@ -20222,7 +20396,7 @@ var TT={script:performance.now()};
     PRE_COLUMNA_CIRCULAR:true,
     PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
     VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true,
-    CRITERIOS_DISENO:true,DISENO_VIGAS:true,DISENO_COLUMNAS:true};
+    CRITERIOS_DISENO:true,DISENO_VIGAS:true,DISENO_COLUMNAS:true,DISENO_NUDOS:true};
 
   /* Miniatura de la pizarra: franja de titulo, bandas de seccion y filas.
      No es el contenido real, es la FORMA -para reconocer la hoja de un vistazo. */
