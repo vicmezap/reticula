@@ -8217,8 +8217,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     envol.forEach(function (E) { Pmax1 = Math.max(Pmax1, E.P1); Pmax2 = Math.max(Pmax2, E.P2); });
     out.ancho1 = transversal(Pmax1, cl1, ct1);
     out.ancho2 = transversal(Pmax2, cl2, ct2);
-    out.aplast1 = aplastamiento({ Pu: Pmax1, b: cl1, h: ct1, Lx: L, Ly: B, fc: fc });
-    out.aplast2 = aplastamiento({ Pu: Pmax2, b: cl2, h: ct2, Lx: L, Ly: B, fc: fc });
+    out.aplast1 = aplastamiento({ Pu: Pmax1, b: cl1, h: ct1, Lx: L, Ly: B, fc: fc, fcCol: o.fcCol });
+    out.aplast2 = aplastamiento({ Pu: Pmax2, b: cl2, h: ct2, Lx: L, Ly: B, fc: fc, fcCol: o.fcCol });
     out.envolvente = envol.map(function (E) { return { n: E.n, sR: E.sR, tipo: E.pl.tipo }; });
     /* para dibujar: la envolvente de momentos a lo largo */
     var Mmax = [], Mmin = [], sArr = envol[0].dg.s;
@@ -8690,7 +8690,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       r.volado = v; r.franja = franja; r.Pu = Pu;
       r.malla = malla({ As: r.AsReq, ancho: franja * 100, H: H * 100, lista: lista, rec: 0 });
       r.anclaje = anclajeZapata({ db: r.malla.db, volado: v, rec: rec, fc: fc, fy: fy });
-      r.aplast = aplastamiento({ Pu: Pu, b: c.cl, h: c.ct, Lx: L, Ly: B, fc: fc });
+      r.aplast = aplastamiento({ Pu: Pu, b: c.cl, h: c.ct, Lx: L, Ly: B, fc: fc, fcCol: o.fcCol });
       return r;
     });
     out.fueraFranjas = asDe(0, 1); out.fueraFranjas.nota = "fuera de las franjas, el mínimo 0,0018·b·h";
@@ -12171,7 +12171,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v356 · 18-09-2026";
+  var BUILD="v357 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12304,7 +12304,7 @@ var TT={script:performance.now()};
      pestana recuerda la ultima.  Tampoco es del modelo: se guarda aparte, en
      «reticula_sub», y no viaja al libro. */
   var SUBMODOS={
-    proyecto:[["sitio","Proyecto y sitio"],["materiales","Materiales"],["permanentes","Cargas permanentes"],
+    proyecto:[["sitio","Proyecto y sitio"],["materiales","Materiales"],["zapata","Diseño de zapata"],["permanentes","Cargas permanentes"],
               ["biblioteca","Proyectos guardados"]],
     decisiones:[["plano","Plano"],["cuadro","Cuadro"],["criticas","Secciones críticas"]],
     sismo:[["parametros","Parámetros"],["estatico","Estático"],["dinamico","Dinámico"]],
@@ -21470,6 +21470,8 @@ var TT={script:performance.now()};
      el modelo y llega a la hoja CRITERIOS_DISENO por el paquete.
      ===================================================================== */
   var DZC={p:-1,v:null};
+  /* EL f'c DE LAS ZAPATAS (Datos › Diseño de zapata); en blanco, el del concreto */
+  function fcZapata(){ var v=+(S.proy&&S.proy.fcZap); return (v>=175&&v<=550)?v:(+S.fc||210); }
   function criteriosDiseno(){
     if(DZC.p===PASADA)return DZC.v;
     var st=sitio(), P=S.proy, r=resultadosEtabs(), FZ=null, MS=null;
@@ -21837,7 +21839,7 @@ var TT={script:performance.now()};
         regC.cols=colsC.map(function(c){ return {cod:c.cod, s:c.s, cl:c.cl, ct:c.ct}; });
         regC.vigasCon=(z.vigasCon||[]).map(function(v){ return {dir:v.dir, l:v.l,
           desde:(nm.C[key(v.desde[0],v.desde[1])]||{}).cod, hacia:(nm.C[key(v.i,v.j)]||{}).cod}; });
-        regC.r=ZAPATAS.disenarCorrida({cols:colsC, L:z.L, B:z.B, H:z.H, Hpropio:z.Hpropio, fc:K.fc, fy:K.fy,
+        regC.r=ZAPATAS.disenarCorrida({cols:colsC, L:z.L, B:z.B, H:z.H, Hpropio:z.Hpropio, fc:fcZapata(), fcCol:K.fc, fy:K.fy,
           rec:rec, sn:sn, barras:barras, borde:!!(z.q&&z.q.bordeT),
           vigas:(z.vigasCon||[]).map(function(v){
             var k=-1; colsC.forEach(function(c,ii){ if(c.nodo[0]===v.desde[0]&&c.nodo[1]===v.desde[1])k=ii; });
@@ -21871,11 +21873,11 @@ var TT={script:performance.now()};
           reg.lim=z.lim;
           reg.vigasCon=z.vigasCon.map(function(v){ return {dir:v.dir, l:v.l, hacia:(nm.C[key(v.i,v.j)]||{}).cod}; });
           reg.r=ZAPATAS.disenarConectada({casos:rq.casos, Lx:z.ax, Ly:z.ay, H:z.H, b:sc.b/100, h:sc.h/100,
-            fc:K.fc, fy:K.fy, rec:rec, sn:sn, dbCol:barCol[codC]||dbDef, barras:barras, Hpropio:z.Hpropio,
+            fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn, dbCol:barCol[codC]||dbDef, barras:barras, Hpropio:z.Hpropio,
             vigas:z.vigasCon.map(function(v){ return {dir:v.dir, l:v.l}; })});
         }else
         reg.r=ZAPATAS.disenar({casos:rq.casos, Lx:z.ax, Ly:z.ay, H:z.H, b:sc.b/100, h:sc.h/100,
-          fc:K.fc, fy:K.fy, rec:rec, sn:sn, alfaS:40, dbCol:barCol[codC]||dbDef, barras:barras,
+          fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn, alfaS:40, dbCol:barCol[codC]||dbDef, barras:barras,
           Hpropio:z.Hpropio});
       }else{
         var pa=parejaZapata(z.i,z.j,m);
@@ -21899,7 +21901,7 @@ var TT={script:performance.now()};
         reg.r=ZAPATAS.disenarCombinada({
           col1:{casos:orienta(ra.casos), cl:lg(sa), ct:tr(sa)},
           col2:{casos:orienta(rb.casos), cl:lg(sb), ct:tr(sb)},
-          sep:pa.sep, L:z.L, B:z.B, H:z.H, fc:K.fc, fy:K.fy, rec:rec, sn:sn,
+          sep:pa.sep, L:z.L, B:z.B, H:z.H, fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn,
           dbCol1:barCol[codA]||dbDef, dbCol2:barCol[codB]||dbDef, barras:barras});
         reg.dir=pa.dir; reg.cols=[{cl:lg(sa),ct:tr(sa)},{cl:lg(sb),ct:tr(sb)}];
       }
@@ -24855,6 +24857,28 @@ var TT={script:performance.now()};
       })()+
       '</section>';
 
+    /* --- DISEÑO DE ZAPATA (Victor, 18-09-2026: «crear los parámetros solo para las zapatas… diseño de zapata, fc») ---
+       El f'c de las zapatas puede ser otro que el de columnas y vigas.  El predimensionamiento de Oviedo no lo usa
+       (Az = 1,10 P / σ y H = (L − h)/4 no llevan f'c); lo usa el diseño D6: punzonamiento, cortante, flexión,
+       anclaje de las barras de la columna y aplastamiento en la cara de la zapata. */
+    if(sub==="zapata"){
+      var Kz=criteriosDiseno(), rz=(Kz.recub&&Kz.recub.zapata)||{}, bz=(Kz.barras&&Kz.barras.zapata&&Kz.barras.zapata.long)||[];
+      h+='<section class="pbox"><h3>Concreto de las zapatas</h3>'+
+        campo("pFcZ","f'c de las zapatas",(S.proy.fcZap===""||S.proy.fcZap==null)?"":S.proy.fcZap,"kg/cm²","number",
+              'min="175" max="550" step="5" placeholder="'+(+S.fc||210)+'"')+
+        fijo("f'c que se usa",fcZapata(),"kg/cm²",(fcZapata()===(+S.fc||210)&&!(+S.proy.fcZap>0))?"el del concreto (Materiales)":"propio de las zapatas")+
+        fijo("f'c de columnas y vigas",(+S.fc||210),"kg/cm²","Datos › Materiales")+
+        '<p class="nota">En blanco, las zapatas llevan el f&#39;c del concreto. Con uno propio, el diseño D6 lo usa en '+
+        'punzonamiento, cortante, flexión y en el anclaje de las barras de la columna; el aplastamiento en la cara de la '+
+        'columna sigue con el f&#39;c de la columna. <b>No cambia el predimensionamiento</b>: en Oviedo el área sale de '+
+        'P / σs y el peralte de H = (L − h)/4, sin f&#39;c.</p></section>';
+      h+='<section class="pbox"><h3>Lo demás de las zapatas</h3>'+
+        fijo("Recubrimiento",(rz.cm!=null?rz.cm:7),"cm","se cambia en Diseño E.060 › Criterios")+
+        fijo("Barras que se prueban",bz.join(", ")||"—","","se cambia en Diseño E.060 › Criterios")+
+        fijo("σs",(+S.sigma||3).toFixed(2),"kg/cm²","Datos › Materiales › Suelo")+
+        '<p class="nota">Están aquí para verlos juntos. Si quieres que se editen en este apartado, dímelo.</p></section>';
+    }
+
     /* --- E.030: sitio y sistema ------------------------------------- */
     if(sub==="sitio")h+='<section class="pbox"><h3>Sitio y sismo (E.030)</h3>'+
       '<label class="pf"><span class="pfe">Distrito</span>'+
@@ -24985,6 +25009,8 @@ var TT={script:performance.now()};
     al("pSisY",function(){ S.proy.sistemaY=this.value; guardar(); render(); });
     al("pFc",function(){
       var v=+this.value; S.fc=(v>=210&&v<=550)?v:210; guardar(); render(); });
+    al("pFcZ",function(){
+      var v=+this.value; S.proy.fcZap=(this.value===""||!(v>=175&&v<=550))?"":v; guardar(); render(); });
     al("pSig",function(){
       var v=+this.value; S.sigma=(v>=0.5&&v<=10)?v:3.0; guardar(); render(); });
     /* la cimentacion: todo en S.proy.cim, que viaja con el proyecto y a las hojas */
