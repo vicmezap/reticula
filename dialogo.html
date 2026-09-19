@@ -919,7 +919,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
         <button class="sopt" id="zapTodas">En todas las columnas</button>
         <button class="sopt" id="zapNinguna">Quitar todas</button>
         <p class="nota" style="margin:6px 2px 0;font-size:11px;line-height:1.35"><b>Shift</b> y arrastra de una columna a otra
-          del mismo eje: con dos columnas, combinada; con tres o más, corrida. Bajo una placa, un clic sobre ella.</p>
+          del mismo eje: combinada, con dos o más columnas. La corrida va solo bajo una placa: un clic sobre ella.</p>
       </div>
       <div class="rule" style="margin:8px 2px"></div>
       <div class="row" style="padding:0 2px">
@@ -12171,7 +12171,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v355 · 18-09-2026";
+  var BUILD="v356 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15365,7 +15365,7 @@ var TT={script:performance.now()};
         /* en rojo: se pisa con otra, esta en el lindero sin columna interior a la que conectarla, o no
            carga nada.  El porque lo dice su ficha; encima de la planta solo va la medida */
         var sinViga=!!(z.conectada&&!(z.vigasCon||[]).length);
-        var sinVolado=!!(z.corrida&&!(z.H>0));
+        var sinVolado=!!(z.corrida&&!(z.H>0));    /* (en la combinada de una fila: sin peralte, la formula no da) */
         var mal=!!pisadas[z.cod]||sinViga||!!z.vacia||sinVolado;
         var col=mal?"var(--no)":"var(--ink-3)";
         /* UNA ZAPATA TAN ANGOSTA COMO SU COLUMNA (la corrida sin volado) quedaba escondida debajo de los cuadrados
@@ -15384,7 +15384,7 @@ var TT={script:performance.now()};
           "pointer-events":"none"}));
         if(DIMS)
           txt(g,mg+z.x0*esc+3,mg+z.y1*esc-4,
-              z.vacia?"sin área trib.":((z.combinada?"combinada ":(z.corrida?"corrida ":""))+z.B.toFixed(2)+"×"+z.L.toFixed(2)),
+              z.vacia?"sin área trib.":((z.combinada||z.fila?"combinada ":(z.corrida?"corrida ":""))+z.B.toFixed(2)+"×"+z.L.toFixed(2)),
               (z.propia&&!z.cumple)?"var(--no)":col,8.5,"start");
       });
     }
@@ -15714,7 +15714,7 @@ var TT={script:performance.now()};
       if(!mz.cols[kz])return;                 /* sin columna no hay zapata */
       var enCorr=corridaEn(i,j,mz);
       if(enCorr){ if(primero){ var qc=quitaCorrida(enCorr.ai,enCorr.aj);
-        if(qc.ok)toast("Quitada la zapata corrida: sus columnas vuelven a sus zapatas."); } return; }
+        if(qc.ok)toast("Quitada: sus columnas vuelven a sus zapatas."); } return; }
       if(primero)modo=mz.zapatas[kz]?"off":"on";
       if(modo==="on")mz.zapatas[kz]={};else delete mz.zapatas[kz];
     }else if(S.tool==="zapata"&&d.t==="viga"){
@@ -17489,8 +17489,8 @@ var TT={script:performance.now()};
                     (rc.soltadas?" (se deshizo la combinada o corrida que pisaba)":"")+". Ctrl+Z la deshace."):rc.msg);
       return; }
     var rr=ponCorrida(r.nodos);
-    if(rr.ya){ S.sel={t:"col",i:a.i,j:a.j}; render(); toast(r.nombre+": esa zapata corrida ya está hecha; su ficha está a la derecha."); return; }
-    toast(rr.ok?((rr.rehecha?"Rehecha: ahora ":"")+"Zapata corrida "+r.nombre+" con "+r.n+" columnas"+
+    if(rr.ya){ S.sel={t:"col",i:a.i,j:a.j}; render(); toast(r.nombre+": esa combinada ya está hecha; su ficha está a la derecha."); return; }
+    toast(rr.ok?((rr.rehecha?"Rehecha: ahora ":"")+"Zapata combinada "+r.nombre+" con "+r.n+" columnas"+
       (rr.separadas?" (se separó la combinada que pisaba)":"")+". Ctrl+Z la deshace."):rr.msg);
   });
 
@@ -18517,6 +18517,37 @@ var TT={script:performance.now()};
     var c0=nm0.C[key(q.i,q.j)];
     return h+bloqueTrib(q.i,q.j,0,medCol(q.i,q.j,m0),(c0&&c0.eje)||ejeCol(q.i,q.j,m0));
   }
+  /* LA FICHA DE LA COMBINADA DE UNA FILA DE COLUMNAS (Oviedo p. 122, con todas sus columnas) */
+  function fichaCombinadaFila(q,t,pz,z){
+    var f2=function(v){return (+v).toFixed(2)};
+    function kv2(k,v){ return "<dt>"+k+"</dt><dd class=\"env\">"+v+"</dd>"; }
+    return '<div class="rule" style="margin:10px 0"></div>'+
+      '<div class="name">'+pz.cod+'</div><span class="tag" style="color:var(--ink-2)">Zapata combinada · '+z.nCol+' columnas · eje '+t.dir+'</span>'+
+      '<dl class="kv" style="margin-top:9px">'+
+      kv2("Comparten",z.cods.join(", "))+
+      kv2("Separación de ejes",f2(z.sep)+" m (de la primera a la última)")+
+      kv2("F sismo",f2(z.F_sismo))+
+      kv2("Área tributaria",f2(z.at)+" m² (la suma de sus "+t.nodos.length+" nudos)")+"</dl>"+
+      bloqueTribZapata(q,t.nodos,"combinada")+
+      '<dl class="kv" style="margin-top:4px">'+
+      kv2("Área requerida Az",z.Az.toFixed(3)+" m²")+
+      kv2("Dc",f2(z.sep+z.ancho)+" m (ejes + b)")+
+      kv2("Dimensiones",'<b>'+f2(z.menor)+" × "+f2(z.mayor)+" m</b>")+
+      kv2("Peralte H",f2(z.H)+" m")+
+      kv2("Área colocada",(z.mayor*z.menor).toFixed(3)+" m²")+"</dl>"+
+      (z.estrecha||z.sinPeralte
+        ? '<p class="aviso" style="margin-top:8px">La separación de '+f2(z.sep)+' m es mucha para la carga que llevan: '+
+          'el lado menor sale de '+f2(z.menor)+' m, tan angosto como sus columnas, y el peralte no da. Estas columnas no '+
+          'necesitan compartir zapata; si el terreno obliga a unirlas, lo que toca es una <b>zapata conectada</b>.</p>'
+        : "")+
+      (z.insuficiente
+        ? '<p class="aviso" style="margin-top:8px">Los lados redondeados dan '+z.area_redondeada.toFixed(3)+' m² y hacen falta '+
+          z.Az.toFixed(3)+' m². Sube el lado mayor a '+f2(z.mayor_corregido)+' m.</p>'
+        : "")+
+      '<div class="zc-unir"><button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Separar en zapatas aisladas</button></div>'+
+      '<p class="calcnote">Oviedo, pág. 122 (la combinada va bajo dos o más columnas, pág. 114): Az = 1.10 · P / σ con P de '+
+      'todas sus columnas; Dc = distancia de ejes + b; lados √Az ± (Dc − b)/2 y H = (lado menor − b)/4.</p>';
+  }
   /* despues de repintar la ficha mientras escribes: el campo vuelve a tener el foco, con lo que tecleaste tal cual y el
      cursor donde estaba */
   /* SOLO UNA VEZ, Y SOLO EN SU CAMPO: lo que tecleaste vuelve en el repintado que provoca esa tecla, y solo a la
@@ -18578,6 +18609,7 @@ var TT={script:performance.now()};
           var tcr=corridaEn(q.i,q.j,m);
           if(tcr){
             var pcr=piezaCorrida(tcr,m), zq=pcr&&pcr.q;
+            if(zq&&zq.fila)return fichaCombinadaFila(q,tcr,pcr,zq);
             if(zq)return '<div class="rule" style="margin:10px 0"></div>'+
               '<div class="name">'+pcr.cod+'</div><span class="tag" style="color:var(--ink-2)">Zapata corrida · eje '+
               tcr.dir+'</span><dl class="kv" style="margin-top:9px">'+
@@ -18713,7 +18745,7 @@ var TT={script:performance.now()};
               if(pa)return "";
               var h="";
               ["X","Y"].forEach(function(d){ var f=filaDeColumnas(q.i,q.j,d,m);
-                if(f.length>=3)h+='<button class="mini" data-zcorr="'+q.i+":"+q.j+":"+d+'">Corrida en '+d+
+                if(f.length>=3)h+='<button class="mini" data-zcorr="'+q.i+":"+q.j+":"+d+'">Combinada en '+d+
                   ' con '+f.length+' columnas</button>'; });
               return h?'<div class="zc-unir">'+h+'</div>':"";
             })()+
@@ -19722,6 +19754,11 @@ var TT={script:performance.now()};
   }
   function codigoCorrida(t,m){
     var nm=nombres(0), k;
+    /* la combinada de una fila de columnas se llama como la de dos: la zapata de su primera columna, con + */
+    var soloCols=true;
+    for(k=0;k<t.nodos.length-1;k++){ var nn=t.nodos[k]; if(m.placas[(t.dir==="X")?key("h",nn[0],nn[1]):key("v",nn[0],nn[1])])soloCols=false; }
+    if(soloCols)for(k=0;k<t.nodos.length;k++){ var c0=nm.C[key(t.nodos[k][0],t.nodos[k][1])];
+      if(c0&&c0.cod)return c0.cod.replace("-C-","-Z-")+"+"; }
     for(k=0;k<t.nodos.length;k++){ var c=nm.C[key(t.nodos[k][0],t.nodos[k][1])];
       if(c&&c.cod)return c.cod.replace("-C-","-ZC-"); }
     for(k=0;k<t.nodos.length-1;k++){
@@ -19754,6 +19791,33 @@ var TT={script:performance.now()};
     function media(i,j){ if(!m.cols[key(i,j)])return 0; var sc=seccionCol(i,j,m,0);
       return ((t.dir==="X")?sc.b:sc.h)/200; }
     var eA=media(t.ai,t.aj), eB=media(t.bi,t.bj), largo=sep+eA+eB;
+    /* UNA FILA DE COLUMNAS ES UNA COMBINADA, NO UNA CORRIDA (Victor, 18-09-2026: «yo siempre me referia a combinada»).
+       Oviedo p. 114: la combinada va «debajo de dos o mas columnas»; la corrida, debajo de «una placa o muro de corte».
+       Se calcula con la p. 122 -Dc = distancia de ejes + b, lados = √Az ± (Dc − b)/2, H = (lado menor − b)/4- con la
+       carga de TODAS sus columnas y la distancia entre las de los extremos. */
+    if(!nPla&&nCol>=2){
+      var sP=0, sL=0, nS=0;
+      t.nodos.forEach(function(n){ if(!m.cols[key(n[0],n[1])])return; var sc=seccionCol(n[0],n[1],m,0);
+        sP+=((t.dir==="X")?sc.h:sc.b)/100; sL+=((t.dir==="X")?sc.b:sc.h)/100; nS++; });
+      var colPerp=sP/nS, colPar=sL/nS;
+      var qf=CALCULO.zapata({subtipo:"combinada", niveles:S.niveles.length, area_trib:at, categoria:S.categoria,
+                             sigma_s:sigmaDiseno(), col_b:colPerp, col_h:colPerp, Dc:sep+colPerp});
+      qf.tipo="combinada"; qf.fila=true; qf.corrida=true; qf.tramo=t; qf.at=at; qf.sep=sep; qf.largo=largo; qf.ancho=colPerp;
+      qf.extA=eA; qf.extB=eB; qf.nCol=nCol; qf.nPla=0; qf.cods=cods; qf.presion=presionSuelo();
+      qf.col_b=colPerp*100; qf.col_h=colPar*100; qf.caras=sep+colPar;
+      qf.finA=false; qf.finB=false; qf.bordeT=null;
+      qf.tipoHoja="Combinada";
+      qf.estrecha=((qf.menor_teorico!=null?qf.menor_teorico:qf.menor)<colPerp-1e-9);
+      qf.sinPeralte=!(qf.H_teorico>0);
+      qf.menorCalc=qf.menor; qf.mayorCalc=qf.mayor; qf.Hcalc=qf.H;
+      var sdf=secDe(m.zapatas[key(t.ai,t.aj)]);
+      if(sdf){ if(sdf.B>0)qf.menor=sdf.B/100; if(sdf.L>0)qf.mayor=sdf.L/100; if(sdf.H>0)qf.H=sdf.H/100; }
+      qf.propia=!!(sdf&&(sdf.B>0||sdf.L>0||sdf.H>0));
+      qf.Hpropio=!!(sdf&&sdf.H>0);
+      qf.areaOk=(qf.menor*qf.mayor>=qf.Az-1e-9); qf.HOk=(qf.H>=qf.H_teorico-1e-9);
+      qf.cumple=(qf.areaOk&&qf.HOk&&!qf.estrecha&&!qf.sinPeralte);
+      return qf;
+    }
     /* EL LINDERO.  A lo largo: si un extremo esta en el limite la zapata no vuela por ahi y todo el
        X va al otro; si lo estan los dos no puede volar a lo largo (L = h) y se ensancha.  A lo ancho:
        si todo el tramo corre por el borde crece solo hacia adentro y queda excentrica, como una
@@ -19788,14 +19852,16 @@ var TT={script:performance.now()};
     if(t.dir==="X"){
       ax=q.mayor; ay=q.menor;
       var xs=na.x-q.extA, xe=nb.x+q.extB, yc=(na.y+nb.y)/2;
-      if(q.finA&&!q.finB){ x0=xs; } else if(q.finB&&!q.finA){ x0=xe-ax; } else { x0=(xs+xe)/2-ax/2; }
+      if(q.fila){ x0=(na.x+nb.x)/2-ax/2; }
+      else if(q.finA&&!q.finB){ x0=xs; } else if(q.finB&&!q.finA){ x0=xe-ax; } else { x0=(xs+xe)/2-ax/2; }
       x1=x0+ax;
       if(q.bordeT==="y0"){ y0=yc-q.ancho/2; } else if(q.bordeT==="y1"){ y0=yc+q.ancho/2-ay; } else { y0=yc-ay/2; }
       y1=y0+ay;
     }else{
       ax=q.menor; ay=q.mayor;
       var ys=na.y-q.extA, ye=nb.y+q.extB, xc=(na.x+nb.x)/2;
-      if(q.finA&&!q.finB){ y0=ys; } else if(q.finB&&!q.finA){ y0=ye-ay; } else { y0=(ys+ye)/2-ay/2; }
+      if(q.fila){ y0=(na.y+nb.y)/2-ay/2; }
+      else if(q.finA&&!q.finB){ y0=ys; } else if(q.finB&&!q.finA){ y0=ye-ay; } else { y0=(ys+ye)/2-ay/2; }
       y1=y0+ay;
       if(q.bordeT==="x0"){ x0=xc-q.ancho/2; } else if(q.bordeT==="x1"){ x0=xc+q.ancho/2-ax; } else { x0=xc-ax/2; }
       x1=x0+ax;
@@ -19804,7 +19870,7 @@ var TT={script:performance.now()};
        columna suya que tenga una columna interior en su eje (Harmsen 12.9).  Sin ninguna, queda en rojo. */
     /* SIN VIGAS DE CIMENTACION: no se ponen solas (Victor no las ha pedido) */
     var vigasC=[], conectada=false;
-    return {i:t.ai, j:t.aj, cod:codigoCorrida(t,m), tipo:"corrida", B:q.menor, L:q.mayor, H:q.H, Az:q.Az,
+    return {i:t.ai, j:t.aj, cod:codigoCorrida(t,m), tipo:q.fila?"combinada":"corrida", fila:!!q.fila, B:q.menor, L:q.mayor, H:q.H, Az:q.Az,
             combinada:false, corrida:true, con:q.cods, Hpropio:q.Hpropio, propia:q.propia,
             cumple:(q.cumple!==false), eje:t.dir, ax:ax, ay:ay, lim:q.bordeT?{x:(t.dir==="Y")?q.bordeT:null,y:(t.dir==="X")?q.bordeT:null}:null,
             conectada:conectada, vigasCon:vigasC,
@@ -19923,13 +19989,13 @@ var TT={script:performance.now()};
         stroke:r.ok?"var(--trib)":"var(--ink-3)", "stroke-opacity":0.55, "stroke-width":(14*kp).toFixed(2),
         "stroke-linecap":"round"}));
     }
-    marcaGuia(g,q,r.ok?"var(--trib)":"var(--ink-3)",kp, r.ok?((r.combinada?"Combinada ":"Corrida ")+r.nombre+(r.combinada?"":" · "+r.n+" columnas")):r.msg);
+    marcaGuia(g,q,r.ok?"var(--trib)":"var(--ink-3)",kp, r.ok?("Combinada "+r.nombre+" · "+r.n+" columnas"):r.msg);
     sv.appendChild(g);
   }
 
   function corridaDeColumnas(i,j,dir){
     var m=S.niveles[0], cols=filaDeColumnas(i,j,dir,m);
-    if(cols.length<3)return {ok:false,msg:"Para una corrida hacen falta tres columnas seguidas con zapata; con dos, usa Combinar."};
+    if(cols.length<3)return {ok:false,msg:"Con dos columnas, usa «Combinar con…»."};
     var a=cols[0], b=cols[cols.length-1];
     return ponCorrida(tramoCorrida(a,b).nodos);
   }
@@ -20169,7 +20235,9 @@ var TT={script:performance.now()};
         var codC=codigoCorrida(t,m);
         ZAC[codC]=[zc.P_servicio.toFixed(2),zc.Az.toFixed(3),zc.menorCalc.toFixed(2),zc.mayorCalc.toFixed(2),
                    zc.Hcalc.toFixed(2),(zc.mayorCalc*zc.menorCalc>=zc.Az-1e-9)?"CUMPLE":"REVISAR"];
-        ZA.push([codC,zc.tipoHoja,S.niveles.length,zc.at.toFixed(3),zc.F_sismo.toFixed(2),
+        if(zc.fila)ZA.push([codC,"Combinada",S.niveles.length,zc.at.toFixed(3),zc.F_sismo.toFixed(2),
+                 (zc.col_b/100).toFixed(2),(zc.col_h/100).toFixed(2),(+zc.sep).toFixed(2),(zc.cods||[]).join(" + ")]);
+        else ZA.push([codC,zc.tipoHoja,S.niveles.length,zc.at.toFixed(3),zc.F_sismo.toFixed(2),
                  zc.ancho.toFixed(2),zc.largo.toFixed(2),"0.00",(zc.cods||[]).join(" + ")]);
       });
     }
@@ -21745,7 +21813,7 @@ var TT={script:performance.now()};
     var m=S.niveles[0], nm=nombres(0);
     zapatasDelNivel().forEach(function(z){
       if(z.corrida){
-        var regC={cod:z.cod, tipo:"corrida", corrida:true, columna:(z.con||[]).join(" + "), B:z.B, L:z.L, H:z.H,
+        var regC={cod:z.cod, tipo:z.fila?"combinada":"corrida", corrida:true, fila:!!z.fila, columna:(z.con||[]).join(" + "), B:z.B, L:z.L, H:z.H,
                   i:z.i, j:z.j, dir:z.eje, conectada:!!z.conectada};
         var tC=z.tramo, colsC=[], faltaC=null, conPlaca=false;
         tC.nodos.forEach(function(n,k){
