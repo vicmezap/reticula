@@ -288,6 +288,39 @@
   .insp{border-left:1px solid var(--line);background:var(--panel);padding:12px;display:flex;
         flex-direction:column;gap:11px;min-width:0;overflow-x:hidden}
   .insp .kv dd .insp-at{width:6.5em;text-align:right;display:inline-block;padding:1px 5px}
+  /* el area tributaria por anchos (la maqueta «Anchos tributarios») */
+  .tr-bloque{border:1px solid var(--line);background:var(--sheet);padding:10px;margin:10px 0 6px;display:grid;gap:8px}
+  .tr-cab{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+  .tr-tit{font:600 13px/1 "Barlow Condensed",sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink)}
+  .tr-seg{display:inline-flex;border:1px solid var(--line)}
+  .tr-seg button{font:500 11.5px/1 "IBM Plex Sans",sans-serif;padding:5px 8px;border:0;background:transparent;color:var(--ink-2);cursor:pointer}
+  .tr-seg button+button{border-left:1px solid var(--line)}
+  .tr-seg button[aria-pressed="true"]{background:var(--acc);color:var(--acc-txt)}
+  .tr-cruz{display:grid;grid-template-columns:1fr auto 1fr;grid-template-areas:". arr ." "izq nudo der" ". aba .";gap:4px 6px;align-items:center}
+  .tr-lado{display:grid;gap:2px;justify-items:center;text-align:center}
+  .tr-arr{grid-area:arr}.tr-aba{grid-area:aba}.tr-izq{grid-area:izq}.tr-der{grid-area:der}
+  .tr-lado label{font:600 10.5px/1 "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  .tr-campo{display:flex;align-items:center;gap:3px;font:400 11.5px "IBM Plex Mono",monospace;color:var(--ink-3)}
+  .insp .tr-campo input{width:5.4em;font:500 12.5px "IBM Plex Mono",monospace;text-align:right;padding:3px 5px;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:2px}
+  .insp .tr-campo input:disabled{opacity:.5}
+  .tr-lado.tuyo input{border-color:var(--trib)!important;color:var(--trib)!important}
+  .tr-lado.borde input{border-style:dashed!important}
+  .tr-est{font:500 10px/1.2 "IBM Plex Sans",sans-serif;color:var(--ink-3);min-height:1.2em}
+  .tr-lado.tuyo .tr-est{color:var(--trib)}
+  .tr-lado.borde .tr-est{color:var(--rev)}
+  .tr-reset{font:500 11px/1 "IBM Plex Sans",sans-serif;border:0;background:none;color:var(--acc-ink);cursor:pointer;padding:1px 3px;text-decoration:underline}
+  .tr-nudo{grid-area:nudo;min-width:40px;height:40px;padding:0 4px;display:grid;place-items:center;background:var(--col);color:var(--acc-txt);font:600 11px/1 "IBM Plex Mono",monospace}
+  .tr-anchos{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font:400 11.5px "IBM Plex Mono",monospace;color:var(--ink-2);border-top:1px solid var(--line-soft);padding-top:6px}
+  .tr-anchos b{color:var(--ink);font-weight:500}
+  .tr-res{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+  .tr-res label{font:600 12px/1 "Barlow Condensed",sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+  .insp .tr-res .tr-campo input{width:6.5em;font:600 14px "IBM Plex Mono",monospace;color:var(--trib);border-color:var(--trib)}
+  .insp .tr-res .tr-campo input[readonly]{background:transparent;border-color:transparent}
+  .tr-origen{margin:0;font-size:12px;color:var(--ink-2)}
+  .tr-origen code{font:500 11.5px "IBM Plex Mono",monospace;color:var(--ink)}
+  .tr-nota{margin:0;font-size:11.5px;color:var(--ink-3)}
+  .tr-bloque .mini{justify-self:start}
   .insp .kv dd .insp-sel{width:auto;max-width:100%;padding:1px 4px}
   .insp h2{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.09em;
            font-size:12px;color:var(--ink-3);margin:0;font-weight:600;display:flex;justify-content:space-between;gap:8px}
@@ -12130,7 +12163,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v347 · 18-09-2026";
+  var BUILD="v352 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -13427,36 +13460,102 @@ var TT={script:performance.now()};
   /* LO QUE VICTOR PONE A MANO en la ficha de la columna (19-09-2026): el area tributaria y el tipo.  Lo
      automatico sigue calculandose y se ensena al lado; lo suyo lo reemplaza en TODO -la seccion de la
      columna, su zapata, las hojas y ETABS- porque todo sale de medCol(). */
-  var TIPOS_COL=["Interior","Exterior","Esquinera"];
+  var TIPOS_COL=["Interior","Exterior","Esquinera"], LADOS_TRIB=["arr","izq","der","aba"];
   function atManoDe(c){ return (c&&c.atMano!=null&&c.atMano!==""&&isFinite(+c.atMano)&&+c.atMano>=0)?+c.atMano:null; }
   function tipoManoDe(c){ return (c&&TIPOS_COL.indexOf(c.tipoMano)>=0)?c.tipoMano:null; }
+  /* LOS ANCHOS A MANO (Victor, 19-09-2026, sobre la maqueta «Anchos tributarios»): arriba, abajo, izquierda y
+     derecha, cada uno sobre el automatico.  Solo se guardan los que cambiaste. */
+  function anchosManoDe(c){
+    var r={}, a=c&&c.anchos;
+    if(a&&typeof a==="object")LADOS_TRIB.forEach(function(l){ var v=a[l];
+      if(v!=null&&v!==""&&isFinite(+v)&&+v>=0)r[l]=+v; });
+    return r;
+  }
+  /* COMO SE MIDE EL AREA: «auto» (la losa mas cercana), «anchos» -(izq + der) x (arr + aba), como a mano- o
+     «escrita».  Lo que escribiste en un modo se guarda aunque cambies de modo; un modelo de antes que solo
+     tiene atMano es «escrita». */
+  function modoTribDe(c){
+    var md=c&&c.modoAt, esc=atManoDe(c)!==null;
+    if(md==="anchos")return "anchos";
+    if(md==="auto")return "auto";
+    return esc?"escrita":"auto";
+  }
   function medCol(i,j,m){
     m=m||N();var ps=panos(i,j,m), n=ps.length, R=repartoLosa(m), k=key(i,j), es=(R.por[k]!==undefined);
     var lados={izq:es?ladoReparto(i,j,m,-1,0,R):0, der:es?ladoReparto(i,j,m,1,0,R):0,
                arr:es?ladoReparto(i,j,m,0,-1,R):0, aba:es?ladoReparto(i,j,m,0,1,R):0};
     var tipoAuto=n>=4?"Interior":n===1?"Esquinera":"Exterior", atAuto=es?R.por[k]:0,
-        c=m.cols[k], atM=atManoDe(c), tiM=tipoManoDe(c);
+        c=m.cols[k], atM=atManoDe(c), tiM=tipoManoDe(c), modo=modoTribDe(c), man=anchosManoDe(c), ef={};
+    LADOS_TRIB.forEach(function(l){ ef[l]=(man[l]!=null)?man[l]:lados[l]; });
+    var atAnchos=(ef.izq+ef.der)*(ef.arr+ef.aba), porAnchos=(modo==="anchos");
     return{tipo:tiM||tipoAuto, tipoAuto:tipoAuto, tipoMano:!!tiM,
-           at:atM!=null?atM:atAuto, atAuto:atAuto, atMano:atM!=null,
-           bx:lados.izq+lados.der, by:lados.arr+lados.aba, n:n, lados:lados,
-           piezas:es?R.piezas[k]:[]};
+           at:porAnchos?atAnchos:(modo==="escrita"?atM:atAuto), atAuto:atAuto, atMano:(modo!=="auto"),
+           modo:modo, atEscrita:atM, atAnchos:atAnchos, anchosMano:man, ladosEf:ef,
+           bx:porAnchos?ef.izq+ef.der:lados.izq+lados.der, by:porAnchos?ef.arr+ef.aba:lados.arr+lados.aba,
+           n:n, lados:lados, piezas:es?R.piezas[k]:[]};
   }
-  /* poner o quitar el area a mano.  En blanco -o igual a la automatica- vuelve a la automatica: asi no queda
-     guardado un numero que hoy coincide y mañana, al mover un eje, ya no. */
-  function ponAreaTrib(i,j,valor,niv){
-    var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(), c=m.cols[key(i,j)];
-    if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
-    var v=(valor===null||valor===undefined||String(valor).trim()==="")?null:leerNum(valor);
-    if(valor!==null&&valor!==undefined&&String(valor).trim()!==""&&v===null)
-      return {ok:false,msg:"El área tributaria tiene que ser un número, en m²."};
-    if(v!==null){ v=+v.toFixed(3); if(!(v>=0))return {ok:false,msg:"El área tributaria no puede ser negativa."}; }
-    var auto=medCol(i,j,m).atAuto;
-    if(v!==null&&Math.abs(v-auto)<0.0005)v=null;
-    if((v===null&&atManoDe(c)===null)||(v!==null&&atManoDe(c)===v))return {ok:true,cambio:false};
-    snap();
-    if(v===null)delete c.atMano; else c.atMano=v;
+  function colTrib(i,j,niv){ var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(); return {m:m,c:m.cols[key(i,j)]}; }
+  function leeTrib(valor,nombre,unidad){
+    var vacio=(valor===null||valor===undefined||String(valor).trim()==="");
+    if(vacio)return {ok:true,v:null};
+    var v=leerNum(valor);
+    if(v===null)return {ok:false,msg:nombre+" tiene que ser un número, en "+unidad+"."};
+    v=+v.toFixed(3);
+    if(!(v>=0))return {ok:false,msg:nombre+" no puede ser negativo."};
+    return {ok:true,v:v};
+  }
+  /* EL AREA ESCRITA.  En blanco vuelve a la automatica.  opt.vivo: mientras escribes -el paso de deshacer lo
+     toma quien empieza a escribir, uno por campo, no uno por tecla-. */
+  function ponAreaTrib(i,j,valor,niv,opt){
+    opt=opt||{};
+    var o=colTrib(i,j,niv), c=o.c; if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    var r=leeTrib(valor,"El área tributaria","m²"); if(!r.ok)return r;
+    if(r.v===null&&atManoDe(c)===null&&modoTribDe(c)==="auto")return {ok:true,cambio:false,at:medCol(i,j,o.m).at};
+    if(!opt.vivo)snap();
+    if(r.v===null){ delete c.atMano; if(c.modoAt==="escrita"||c.modoAt==="auto")delete c.modoAt; }
+    else { c.atMano=r.v; c.modoAt="escrita"; }
     render();
-    return {ok:true,cambio:true,at:v===null?auto:v,mano:v!==null};
+    var d=medCol(i,j,o.m);
+    return {ok:true,cambio:true,at:d.at,mano:d.atMano,modo:d.modo};
+  }
+  /* UN ANCHO A MANO: pasa el area a «por anchos».  En blanco o igual al automatico, ese lado vuelve al automatico. */
+  function ponAnchoTrib(i,j,lado,valor,niv,opt){
+    opt=opt||{};
+    if(LADOS_TRIB.indexOf(lado)<0)return {ok:false,msg:"El lado es arriba, abajo, izquierda o derecha."};
+    var o=colTrib(i,j,niv), c=o.c; if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    var r=leeTrib(valor,"El ancho","metros"); if(!r.ok)return r;
+    var auto=medCol(i,j,o.m).lados[lado];
+    if(!opt.vivo)snap();
+    if(!c.anchos||typeof c.anchos!=="object")c.anchos={};
+    if(r.v===null||Math.abs(r.v-auto)<0.0005)delete c.anchos[lado]; else c.anchos[lado]=r.v;
+    if(!Object.keys(c.anchos).length)delete c.anchos;
+    c.modoAt="anchos";
+    render();
+    var d=medCol(i,j,o.m);
+    return {ok:true,cambio:true,at:d.at,modo:d.modo,ancho:d.ladosEf[lado]};
+  }
+  /* CAMBIAR DE MODO no borra lo escrito: se puede ir y volver para comparar.  «Escrita» sin nada escrito arranca
+     con la automatica. */
+  function ponModoTrib(i,j,modo,niv){
+    if(["auto","anchos","escrita"].indexOf(modo)<0)return {ok:false,msg:"El área es automática, por anchos o escrita."};
+    var o=colTrib(i,j,niv), c=o.c; if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    if(modoTribDe(c)===modo)return {ok:true,cambio:false,modo:modo};
+    snap();
+    if(modo==="escrita"&&atManoDe(c)===null)c.atMano=+medCol(i,j,o.m).atAuto.toFixed(3);
+    c.modoAt=modo;
+    if(modo==="auto"&&atManoDe(c)===null&&!c.anchos)delete c.modoAt;
+    render();
+    var d=medCol(i,j,o.m);
+    return {ok:true,cambio:true,modo:d.modo,at:d.at};
+  }
+  /* «Volver a la automatica»: borra los anchos y el area escritos */
+  function autoTrib(i,j,niv){
+    var o=colTrib(i,j,niv), c=o.c; if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    if(atManoDe(c)===null&&!c.anchos&&!c.modoAt)return {ok:true,cambio:false,at:medCol(i,j,o.m).at};
+    snap();
+    delete c.atMano; delete c.anchos; delete c.modoAt;
+    render();
+    return {ok:true,cambio:true,at:medCol(i,j,o.m).at};
   }
   function ponTipoCol(i,j,tipo,niv){
     var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(), c=m.cols[key(i,j)];
@@ -14968,7 +15067,10 @@ var TT={script:performance.now()};
     var pt=el("pattern",{id:"hatch",width:"7",height:"7",patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"});
     pt.appendChild(el("rect",{width:"7",height:"7",fill:"var(--nerv-f)"}));
     pt.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"7",stroke:"var(--nerv)","stroke-width":"1.6"}));
-    defs.appendChild(pt);s.appendChild(defs);
+    defs.appendChild(pt);
+    var ptT=el("pattern",{id:"rayaTrib",width:"6",height:"6",patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"});
+    ptT.appendChild(el("line",{x1:"0",y1:"0",x2:"0",y2:"6",stroke:"var(--trib)","stroke-width":"1.3",opacity:".55"}));
+    defs.appendChild(ptT);s.appendChild(defs);
     /* El calco va PRIMERO: todo lo demas se dibuja encima. */
     (function(){var c=calco();if(!c)return;
       pintaCalcoFondo(s,mg,esc,c);
@@ -15237,31 +15339,59 @@ var TT={script:performance.now()};
          que es la unica direccion que la propia region deja despejada, y se
          ata con una guia para que se vea de quien habla.
          ================================================================= */
-      var d0=medCol(q.i,q.j);
+      var d0=medCol(q.i,q.j), porAnchos=(d0.modo==="anchos");
       /* se pinta aunque no tenga losa junto a su nudo: su area le llega por las vigas y hay que ver de donde */
-      if(d0.piezas.length){
-        var L=d0.lados, nd=nodo(q.i,q.j,m), nP=aPant(nd);
+      if(d0.piezas.length||porAnchos){
+        var L=porAnchos?d0.ladosEf:d0.lados, nd=nodo(q.i,q.j,m), nP=aPant(nd);
+        /* la direccion de cada eje en el nudo, hacia el vecino (o al reves, si el nudo es de borde) */
+        function dirEje(di,dj){
+          var a=q.i+di, b=q.j+dj, s=1;
+          if(a<0||b<0||a>=nx()||b>=ny()){ a=q.i-di; b=q.j-dj; s=-1; }
+          if(a<0||b<0||a>=nx()||b>=ny())return {x:di,y:dj};
+          var n2=nodo(a,b,m), vx=(n2.x-nd.x)*s, vy=(n2.y-nd.y)*s, Lg=Math.sqrt(vx*vx+vy*vy);
+          return Lg>1e-9?{x:vx/Lg,y:vy/Lg}:{x:di,y:dj};
+        }
 
         /* LA REGION ES LA UNION DE LOS TROZOS DEL REPARTO -la losa mas cerca de esta columna que de
            cualquier otra-, los mismos que suma medCol() para dar el area.  Se pintan y se les saca el
            borde de fuera: lo que se ve y lo que dice la placa son la misma figura. */
         var trozos=d0.piezas.map(function(p){ return p.P.map(aPant); }),
             anillos=contornos(trozos), borde=[];
-        anillos.forEach(function(r){ borde=borde.concat(r); });   /* la caja de todos los pedazos, para la placa */
-        trozos.forEach(function(A){
-          g.appendChild(el("polygon",{points:pts(A),fill:"var(--trib-fill)"}));
-        });
-        anillos.forEach(function(r){ g.appendChild(el("polygon",{points:pts(r),fill:"none",
-          stroke:"var(--trib)","stroke-width":1.8,
-          "stroke-dasharray":"8 4","stroke-linejoin":"round"})); });
+        if(porAnchos){
+          /* POR ANCHOS (Victor, 19-09-2026): el rectangulo que forman los cuatro anchos, a lo largo de los ejes
+             del nudo, que es lo que suma el area.  La region automatica queda punteada de referencia, y lo que
+             escribiste en un lado sin losa -un volado- va rayado: ahi no hay losa dibujada. */
+          var ux=dirEje(1,0), uy=dirEje(0,1);
+          function pto(a,b){ return aPant({x:nd.x+ux.x*a+uy.x*b, y:nd.y+ux.y*a+uy.y*b}); }
+          var Rq=[pto(-L.izq,-L.arr),pto(L.der,-L.arr),pto(L.der,L.aba),pto(-L.izq,L.aba)];
+          anillos.forEach(function(r){ g.appendChild(el("polygon",{points:pts(r),fill:"none",
+            stroke:"var(--ink-3)","stroke-width":1,"stroke-dasharray":"2 3"})); });
+          g.appendChild(el("polygon",{points:pts(Rq),fill:"var(--trib-fill)",stroke:"var(--trib)","stroke-width":1.8,
+            "stroke-dasharray":"8 4","stroke-linejoin":"round"}));
+          var franjas={arr:[pto(-L.izq,-L.arr),pto(L.der,-L.arr),pto(L.der,0),pto(-L.izq,0)],
+                       aba:[pto(-L.izq,0),pto(L.der,0),pto(L.der,L.aba),pto(-L.izq,L.aba)],
+                       izq:[pto(-L.izq,-L.arr),pto(0,-L.arr),pto(0,L.aba),pto(-L.izq,L.aba)],
+                       der:[pto(0,-L.arr),pto(L.der,-L.arr),pto(L.der,L.aba),pto(0,L.aba)]};
+          LADOS_TRIB.forEach(function(l){ if(d0.lados[l]===0&&L[l]>0)
+            g.appendChild(el("polygon",{points:pts(franjas[l]),fill:"url(#rayaTrib)",stroke:"none"})); });
+          borde=Rq;
+        }else{
+          anillos.forEach(function(r){ borde=borde.concat(r); });   /* la caja de todos los pedazos, para la placa */
+          trozos.forEach(function(A){
+            g.appendChild(el("polygon",{points:pts(A),fill:"var(--trib-fill)"}));
+          });
+          anillos.forEach(function(r){ g.appendChild(el("polygon",{points:pts(r),fill:"none",
+            stroke:"var(--trib)","stroke-width":1.8,
+            "stroke-dasharray":"8 4","stroke-linejoin":"round"})); });
+        }
 
         /* LAS MEDIAS: del nudo de la columna hasta donde llega su region por cada eje, que es la
-           mediatriz con la vecina (la media luz, en reticula regular) o el borde de la losa. */
+           mediatriz con la vecina (la media luz, en reticula regular) o el borde de la losa; por anchos, hasta
+           cada ancho, tambien hacia un lado sin losa */
         function medio(di,dj,t){
-          var a=q.i+di, b=q.j+dj;
-          if(a<0||b<0||a>=nx()||b>=ny()||!(t>0))return null;
-          var n2=nodo(a,b,m), ux=n2.x-nd.x, uy=n2.y-nd.y, Lg=Math.sqrt(ux*ux+uy*uy)||1;
-          return aPant({x:nd.x+ux/Lg*t, y:nd.y+uy/Lg*t});
+          if(!(t>0))return null;
+          var u=dirEje(di,dj);
+          return aPant({x:nd.x+u.x*t, y:nd.y+u.y*t});
         }
         var Mz=medio(-1,0,L.izq), Md=medio(1,0,L.der),
             Ma=medio(0,-1,L.arr), Mb=medio(0,1,L.aba);
@@ -15285,11 +15415,17 @@ var TT={script:performance.now()};
              cuanto la columna era interior: los dos numeros acababan uno
              encima del otro sobre el propio nudo.  Se mira hasta donde
              llega la region por ese lado y se aparta 15 px mas. */
-          var sep=0;
+          var sep=0, sepO=0;
           borde.forEach(function(P){
-            sep=Math.min(sep,(P.x-A.x)*ux+(P.y-A.y)*uy); });
+            var pr=(P.x-A.x)*ux+(P.y-A.y)*uy; sep=Math.min(sep,pr); sepO=Math.max(sepO,pr); });
           sep-=15;
           var a={x:A.x+ux*sep,y:A.y+uy*sep}, b={x:B.x+ux*sep,y:B.y+uy*sep};
+          /* si por ese lado se sale de la planta -encima de las burbujas de los ejes, que es donde cae cuando el area
+             sube por un borde-, va al otro lado */
+          if(Math.abs(ux)>Math.abs(uy)?(Math.min(a.x,b.x)<mg-4):(Math.min(a.y,b.y)<mg-4)){
+            sep=sepO+15; ux=-ux; uy=-uy; sep=-sep;
+            a={x:A.x+ux*sep,y:A.y+uy*sep}; b={x:B.x+ux*sep,y:B.y+uy*sep};
+          }
           /* las patillas van del punto medido hasta pasada la cota: el
              cruce hace de tope y no hace falta dibujarlo aparte */
           [[A,a],[B,b]].forEach(function(p){
@@ -15321,7 +15457,7 @@ var TT={script:performance.now()};
            llena no hay hueco libre: se coloca en la diagonal opuesta, que
            es la unica direccion que la propia region deja despejada, y se
            ata con una guia para que se vea de quien habla. */
-        var l1="A trib = "+d0.at.toFixed(3)+" m²"+(d0.atMano?" (tuya)":"");
+        var l1="A trib = "+d0.at.toFixed(3)+" m²"+(d0.modo==="anchos"?" (anchos)":(d0.modo==="escrita"?" (tuya)":""));
         var l2=d0.tipo+" · k = "
               +(d0.tipo==="Interior"?"0.30":d0.tipo==="Exterior"?"0.20":"0.10");
         var an=Math.max(l1.length*6.7,l2.length*5.9)+16, al=34;
@@ -17570,27 +17706,60 @@ var TT={script:performance.now()};
   /* EL INSPECTOR ESCRIBE HTML CRUDO y se repinta entero en cada render, asi que
      sus botones no pueden llevar onclick: se delega en el contenedor, una vez.
      data-zunir / data-zsep, y no data-unir, que ya es de la herramienta «Unir». */
-  /* el area tributaria y el tipo de la columna, escritos a mano en la ficha */
+  /* EL AREA Y LOS ANCHOS, EN VIVO (Victor, 19-09-2026: «si pongo 0.5 ya se marque en el 2D»).  Cada tecla que deja
+     un numero valido se aplica y se redibuja la planta; lo que va a medio escribir («0,», «-») espera.  Un solo
+     paso de deshacer por campo, y el campo conserva el foco y el cursor. */
+  $("#inspBody").addEventListener("input",function(ev){
+    var t=ev.target; if(!t||!t.dataset||(!t.dataset.trlado&&!t.dataset.atrib)||t.readOnly||t.disabled)return;
+    var raw=String(t.value), p=(t.dataset.trlado?t.dataset.trcol:t.dataset.atrib).split(":");
+    if(raw.trim()!==""&&leerNum(raw)===null)return;
+    var sesion=(t.dataset.trlado||"area")+"|"+p.join(":");
+    if(EDIT_TRIB!==sesion){ snap(); EDIT_TRIB=sesion; }
+    VIVO={sel:t.dataset.trlado?'[data-trlado="'+t.dataset.trlado+'"]':"[data-atrib]", raw:raw,
+          pos:(t.selectionStart!=null?t.selectionStart:raw.length)};
+    var r=t.dataset.trlado?ponAnchoTrib(+p[0],+p[1],t.dataset.trlado,raw,+p[2],{vivo:true})
+                          :ponAreaTrib(+p[0],+p[1],raw,+p[2],{vivo:true});
+    if(r&&!r.ok){ VIVO=null; toast(r.msg); }
+  });
+  /* al salir del campo, o con Enter: se escribe con sus tres decimales.  Se espera un instante para que el foco ya
+     este en el campo siguiente y se le devuelva despues de repintar */
   $("#inspBody").addEventListener("change",function(ev){
     var t=ev.target; if(!t||!t.dataset)return;
+    if(t.dataset.trlado||t.dataset.atrib){
+      if(REPINTA_INSP||t.isConnected===false)return;
+      VIVO=null; EDIT_TRIB=null;
+      setTimeout(function(){
+        var a=document.activeElement, sel=null;
+        if(a&&a.dataset&&a.closest&&a.closest("#inspBody"))
+          sel=a.dataset.trlado?'[data-trlado="'+a.dataset.trlado+'"]':(a.dataset.atrib?"[data-atrib]":null);
+        render();
+        if(sel){ var e=$("#inspBody").querySelector(sel); if(e)try{e.focus({preventScroll:true});}catch(x){} }
+      },0);
+      return;
+    }
     var r3=null, p3;
-    if(t.dataset.atrib){ p3=t.dataset.atrib.split(":"); r3=ponAreaTrib(+p3[0],+p3[1],t.value,+p3[2]); }
-    else if(t.dataset.tipocol){ p3=t.dataset.tipocol.split(":"); r3=ponTipoCol(+p3[0],+p3[1],t.value,+p3[2]); }
+    if(t.dataset.tipocol){ p3=t.dataset.tipocol.split(":"); r3=ponTipoCol(+p3[0],+p3[1],t.value,+p3[2]); }
     if(r3&&!r3.ok){ toast(r3.msg); render(); }
-    else if(r3&&r3.cambio)toast(t.dataset.atrib
-      ? (r3.mano?"Área tributaria tuya: "+nm(r3.at)+" m². Manda en la columna, su zapata y las hojas.":"Vuelve el área automática: "+nm(r3.at)+" m².")
-      : (r3.mano?"Tipo tuyo: "+r3.tipo.toLowerCase()+".":"Vuelve el tipo automático: "+r3.tipo.toLowerCase()+"."));
+    else if(r3&&r3.cambio)toast(r3.mano?"Tipo tuyo: "+r3.tipo.toLowerCase()+".":"Vuelve el tipo automático: "+r3.tipo.toLowerCase()+".");
   });
   $("#inspBody").addEventListener("keydown",function(ev){
     /* Enter aplica sin salir de la casilla */
-    if(ev.key==="Enter"&&ev.target&&ev.target.dataset&&ev.target.dataset.atrib){ ev.preventDefault(); ev.target.blur(); }
+    var t=ev.target;
+    if(ev.key==="Enter"&&t&&t.dataset&&(t.dataset.atrib||t.dataset.trlado)){ ev.preventDefault(); t.blur(); }
   });
   $("#inspBody").addEventListener("click",function(ev){
-    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-atauto]"):null;
+    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-atauto],[data-trmodo],[data-trreset]"):null;
     if(!b)return;
     var r2;
-    if(b.dataset.atauto){ var pa3=b.dataset.atauto.split(":"); r2=ponAreaTrib(+pa3[0],+pa3[1],null,+pa3[2]);
+    if(b.dataset.atauto){ var pa3=b.dataset.atauto.split(":"); VIVO=null; EDIT_TRIB=null; r2=autoTrib(+pa3[0],+pa3[1],+pa3[2]);
       if(r2&&r2.cambio)toast("Vuelve el área automática: "+nm(r2.at)+" m²."); return; }
+    if(b.dataset.trmodo){ var pm=b.dataset.trcol.split(":"); VIVO=null; EDIT_TRIB=null;
+      r2=ponModoTrib(+pm[0],+pm[1],b.dataset.trmodo,+pm[2]);
+      if(r2&&!r2.ok)toast(r2.msg);
+      else if(b.dataset.trmodo==="escrita"){ var ea=$("#inspBody").querySelector("[data-atrib]"); if(ea)try{ea.focus();ea.select();}catch(x){} }
+      return; }
+    if(b.dataset.trreset){ var pr3=b.dataset.trcol.split(":"); VIVO=null; EDIT_TRIB=null;
+      r2=ponAnchoTrib(+pr3[0],+pr3[1],b.dataset.trreset,null,+pr3[2]); if(r2&&!r2.ok)toast(r2.msg); return; }
     if(b.dataset.zrestr){ var pr=b.dataset.zrestr.split(":"); r2=restriccionZapata(+pr[0],+pr[1],!!b.checked); if(r2&&!r2.ok)toast(r2.msg); return; }
     if(b.dataset.zlado){ var pd=b.dataset.zlado.split(":"); r2=ladoRestriccion(+pd[0],+pd[1],pd[2]); if(r2&&!r2.ok)toast(r2.msg); return; }
     if(b.dataset.zcorr){ var pc=b.dataset.zcorr.split(":"); r2=corridaDeColumnas(+pc[0],+pc[1],pc[2]); }
@@ -18081,6 +18250,53 @@ var TT={script:performance.now()};
 
   /* ---------- inspector ---------- */
   function kv(k,v,env){return "<dt>"+k+"</dt><dd"+(env?' class="env"':"")+">"+v+"</dd>"}
+  /* EL AREA TRIBUTARIA DE LA COLUMNA, como en la maqueta «Anchos tributarios» que aprobo Victor (19-09-2026):
+     automatica, por anchos o escrita; los cuatro anchos en cruz, cada uno sobre el automatico; un lado sin losa
+     es «borde» y admite un ancho igual (un volado).  Todo se aplica mientras escribes y la planta se redibuja. */
+  var VIVO=null, EDIT_TRIB=null, REPINTA_INSP=false;
+  function bloqueTrib(i,j,niv,d,eje){
+    var ij=i+":"+j+":"+niv, ef=d.ladosEf, man=d.anchosMano, modo=d.modo, f3=function(v){return (+v).toFixed(3)};
+    var nom={arr:"Arriba",izq:"Izquierda",der:"Derecha",aba:"Abajo"};
+    function lado(l){
+      var tuyo=(man[l]!=null), borde=(d.lados[l]===0);
+      var est=tuyo?('tuyo · auto '+f3(d.lados[l])+' <button type="button" tabindex="-1" class="tr-reset" data-trreset="'+l+'" data-trcol="'+ij+
+                    '" aria-label="Volver '+nom[l].toLowerCase()+' al automático">↺</button>')
+                  :(borde?"borde · sin losa":"automático");
+      return '<div class="tr-lado tr-'+l+(tuyo?" tuyo":(borde?" borde":""))+'"><label for="tr-'+l+'">'+nom[l]+'</label>'+
+        '<div class="tr-campo"><input id="tr-'+l+'" type="text" inputmode="decimal" autocomplete="off" data-trlado="'+l+'" data-trcol="'+ij+
+        '" value="'+f3(ef[l])+'"'+(modo==="escrita"?" disabled":"")+' aria-label="Ancho tributario hacia '+nom[l].toLowerCase()+', en m"> m</div>'+
+        '<div class="tr-est">'+est+'</div></div>';
+    }
+    var boton=function(md,t){ return '<button type="button" data-trmodo="'+md+'" data-trcol="'+ij+'" aria-pressed="'+(modo===md)+'">'+t+'</button>'; };
+    var origen=(modo==="anchos")
+      ? '<b>Por anchos:</b> <code>('+f3(ef.izq)+' + '+f3(ef.der)+') × ('+f3(ef.arr)+' + '+f3(ef.aba)+') = '+f3(d.at)+' m²</code>. La automática es '+f3(d.atAuto)+' m².'
+      : (modo==="escrita"
+        ? '<b>Escrita por ti.</b> La automática es '+f3(d.atAuto)+' m².'
+        : (d.n===0&&d.atAuto>0
+          ? '<b>Automática:</b> no tiene losa junto a su nudo; carga la losa que le queda más cerca que a cualquier otra columna, que le llega por sus vigas.'
+          : '<b>Automática:</b> la losa que le queda más cerca que a cualquier otra columna, lo sombreado en la planta.'));
+    return '<section class="tr-bloque" aria-label="Área tributaria">'+
+      '<div class="tr-cab"><span class="tr-tit">Área tributaria</span><div class="tr-seg" role="group" aria-label="Cómo se mide el área">'+
+        boton("auto","Automática")+boton("anchos","Por anchos")+boton("escrita","Escrita")+'</div></div>'+
+      '<div class="tr-cruz">'+LADOS_TRIB.map(lado).join("")+'<div class="tr-nudo" aria-hidden="true">'+eje+'</div></div>'+
+      '<div class="tr-anchos"><span>Ancho ↔ <b>'+f3(ef.izq+ef.der)+' m</b></span><span>Ancho ↕ <b>'+f3(ef.arr+ef.aba)+' m</b></span></div>'+
+      '<div class="tr-res"><label for="tr-at">Área tributaria</label><div class="tr-campo"><input id="tr-at" type="text" inputmode="decimal" autocomplete="off" data-atrib="'+ij+
+        '" value="'+f3(d.at)+'"'+(modo==="escrita"?"":" readonly")+' aria-label="Área tributaria en m²"> m²</div></div>'+
+      '<p class="tr-origen">'+origen+'</p>'+
+      ((modo!=="auto"||Object.keys(man).length||d.atEscrita!=null)?'<button type="button" class="mini" data-atauto="'+ij+'">Volver a la automática</button>':'')+
+      '<p class="tr-nota">Cada ancho arranca en el automático: hasta la mitad de la distancia a la columna vecina en ese sentido, '+
+        'o hasta donde termina la losa. Un lado sin losa sale como <b>borde</b>, en 0; le puedes escribir un ancho igual, por ejemplo por un volado.</p>'+
+      '</section>';
+  }
+  /* despues de repintar la ficha mientras escribes: el campo vuelve a tener el foco, con lo que tecleaste tal cual y el
+     cursor donde estaba */
+  function restauraVivo(B){
+    if(!VIVO||!B)return;
+    var e=B.querySelector(VIVO.sel); if(!e)return;
+    e.value=VIVO.raw;
+    try{ e.focus({preventScroll:true}); }catch(x){ try{e.focus();}catch(y){} }
+    try{ e.setSelectionRange(VIVO.pos,VIVO.pos); }catch(x){}
+  }
   function inspector(){
     var T=$("#inspTitle"),B=$("#inspBody"),q=S.sel,m=N(),nm=nombres(S.act);
     if(!q){T.textContent="Elemento";B.innerHTML='<p class="empty">Selecciona un elemento de la planta.</p>';return}
@@ -18097,23 +18313,12 @@ var TT={script:performance.now()};
             '<option value="auto"'+(d.tipoMano?"":" selected")+'>Automático · '+d.tipoAuto+'</option>'+
             TIPOS_COL.map(function(t){ return '<option value="'+t+'"'+(d.tipoMano&&d.tipo===t?" selected":"")+'>'+t+'</option>'; }).join("")+
             '</select>';
-      var inAt='<input type="number" class="insp-at" data-atrib="'+ijN+'" min="0" step="0.01" value="'+d.at.toFixed(3)+
-            '" aria-label="Área tributaria en m²"> m²';
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+
         (d.tipoMano?" · tuyo":"")+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Tipo",selTipo,1)+
-        kv("Paños junto al nudo",d.n+" de 4")+
-        kv("Ancho tributario ↔",d.bx.toFixed(3)+" m",1)+kv("Ancho tributario ↕",d.by.toFixed(3)+" m",1)+
-        kv("Área tributaria",inAt,1)+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+
-        /* el area es la losa MAS CERCANA a esta columna que a cualquier otra: lo que se ve sombreado en la planta */
-        '</dl><p class="nota" style="margin:4px 0 0">'+(d.atMano
-          ? '<b>El área es tuya.</b> La automática es '+d.atAuto.toFixed(3)+' m²: la losa que le queda más cerca que a '+
-            'cualquier otra columna, que es lo que se ve sombreado. <button class="mini" data-atauto="'+ijN+'">Volver a la automática</button>'
-          : (d.n===0&&d.at>0
-            ? 'No tiene losa junto a su nudo: carga la losa que le queda más cerca que a cualquier otra columna, que le llega por sus vigas.'
-            : 'El área es la losa que le queda más cerca que a cualquier otra columna: hasta la mitad de la distancia a cada vecina.'))+
-        (d.tipoMano?' El tipo es tuyo; el automático es '+d.tipoAuto.toLowerCase()+'.':'')+
-        '</p><dl class="kv" style="margin-top:4px">'+
+        kv("Paños junto al nudo",d.n+" de 4")+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+'</dl>'+
+        bloqueTrib(q.i,q.j,S.act,d,nm.C[key(q.i,q.j)].eje)+
+        '<dl class="kv" style="margin-top:4px">'+
         kv("Peso en servicio P",pc.P.toFixed(2)+" t",1)+
         kv("Área requerida Ac",pc.Ac+" cm²",1)+
         (pc.forma==="circular"
@@ -18208,16 +18413,17 @@ var TT={script:performance.now()};
                mismo numero.  La de una combinada es la suma de sus dos columnas y se cambia en cada columna. */
             (pa
               ? kv("Área tributaria",z.at.toFixed(2)+" m² (la suma de sus dos columnas)",1)
-              : kv("Área tributaria",'<input type="number" class="insp-at" data-atrib="'+q.i+":"+q.j+':0" min="0" step="0.01" value="'+
+              : kv("Área tributaria",'<input type="text" inputmode="decimal" autocomplete="off" class="insp-at" data-atrib="'+q.i+":"+q.j+':0" value="'+
                    z.at.toFixed(2)+'" aria-label="Área tributaria en m²"> m²',1))+
             kv("Área requerida Az",z.Az.toFixed(3)+" m²",1)+
             kv("Dimensiones",'<b>'+z.menor.toFixed(2)+" × "+z.mayor.toFixed(2)+" m</b>",1)+
             kv("Peralte H",z.H.toFixed(2)+" m",1)+
             kv("Área colocada",(z.mayor*z.menor).toFixed(3)+" m²",1)+"</dl>"+
             (function(){ var dz=medCol(q.i,q.j,S.niveles[0]);
+              /* de donde sale: los anchos se editan en la ficha de su columna del 1er piso; aqui se escribe el area */
               return (!pa&&dz.atMano)
-                ? '<p class="nota" style="margin:6px 0 0"><b>El área es tuya</b> (es la de su columna del 1er piso). La '+
-                  'automática es '+dz.atAuto.toFixed(2)+' m². <button class="mini" data-atauto="'+q.i+":"+q.j+':0">Volver a la automática</button></p>'
+                ? '<p class="nota" style="margin:6px 0 0"><b>'+(dz.modo==="anchos"?"El área sale de los anchos de su columna del 1er piso":"El área la escribiste tú")+
+                  '.</b> La automática es '+dz.atAuto.toFixed(2)+' m². <button class="mini" data-atauto="'+q.i+":"+q.j+':0">Volver a la automática</button></p>'
                 : ""; })()+
             (!(z.at>0)
               ? '<p class="aviso" style="margin-top:8px">Esta columna no tiene losa alrededor: su área tributaria '+
@@ -18387,7 +18593,11 @@ var TT={script:performance.now()};
         (pl.sMax!=null?'S y hf son topes: el complemento adopta el límite y tú lo bajas si quieres. ':'')+
         'Va a la hoja PRE_LOSA_'+lo.tipo.toUpperCase()+'.</p>';
     }
-    B.innerHTML=html;
+    /* al reemplazar la ficha, el campo en el que escribes sale del documento y el navegador lo da por terminado
+       (dispara «change»): eso no es salir del campo, y se ignora */
+    REPINTA_INSP=true;
+    try{ B.innerHTML=html; }finally{ REPINTA_INSP=false; }
+    restauraVivo(B);
     var gb=$("#girar");
     if(gb)gb.onclick=function(){snap();var o=N().losas[key(q.i,q.j)];o.dir=o.dir==="y"?"x":"y";render()};
   }
@@ -25731,7 +25941,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,trib:{area:ponAreaTrib,tipo:ponTipoCol},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
 })();
 </script>
 
