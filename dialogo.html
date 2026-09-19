@@ -327,8 +327,32 @@
   .tr-nudo.tr-viga-v{width:26px;min-width:26px;height:112px;padding:4px 0;background:var(--viga)}
   .tr-nudo.tr-viga-v span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap}
   /* en la ficha de una combinada o una corrida: cuanto pone cada nudo, y su nombre lleva a su area */
-  .tr-zlista{margin:10px 0 0;font-size:12px;line-height:1.6;color:var(--ink-2)}
-  .tr-ir{font:inherit;font-weight:600;border:0;background:none;color:var(--acc-ink);cursor:pointer;padding:0;text-decoration:underline}
+  /* LA FICHA DE LA ZAPATA, por secciones */
+  .zf{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .zf-cab{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .zf-cab .tag{color:var(--ink-2)}
+  .zf-dim{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;background:var(--sheet);
+          border:1px solid var(--line);padding:8px 10px}
+  .zf-dim div{display:flex;flex-direction:column;gap:1px}
+  .zf-dim span{font:600 10.5px/1 "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  .zf-dim b{font:600 17px "IBM Plex Mono",monospace;color:var(--ink);font-variant-numeric:tabular-nums}
+  .zf-dim .zf-est{grid-column:2;grid-row:1 / span 2;align-self:center;font:600 11px/1.2 "IBM Plex Sans",sans-serif;
+          padding:5px 8px;border:1px solid currentColor;text-align:center}
+  .zf-est.ok{color:var(--ok)} .zf-est.no{color:var(--no)}
+  .zf-t{margin:8px 0 2px;font:600 12px/1 "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;
+        color:var(--ink);border-bottom:1px solid var(--line-soft);padding-bottom:4px}
+  .zf-cols{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+  .zf-cols li{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--ink-2)}
+  .zf-cols li span{flex:1}
+  .zf-cols li b{font:500 12.5px "IBM Plex Mono",monospace;color:var(--ink)}
+  .zf-cols li em{font:500 10px "IBM Plex Sans",sans-serif;font-style:normal;color:var(--trib);border:1px solid var(--trib);padding:0 4px}
+  .zf-suma{margin:2px 0 0;font-size:12px;color:var(--ink-2);text-align:right}
+  .zf-suma b{font:600 12.5px "IBM Plex Mono",monospace;color:var(--ink)}
+  .zf-u{font:400 11px "IBM Plex Sans",sans-serif;color:var(--ink-3)}
+  .zf-avisos{display:grid;gap:6px;margin-top:6px}
+  .zf-avisos .aviso{margin:0}
+  .zf-acc{display:flex;flex-wrap:wrap;gap:6px}
+  .zf-acc .zc-restr{flex-basis:100%}
   .insp .kv dd .insp-sel{width:auto;max-width:100%;padding:1px 4px}
   .insp h2{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.09em;
            font-size:12px;color:var(--ink-3);margin:0;font-weight:600;display:flex;justify-content:space-between;gap:8px}
@@ -12171,7 +12195,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v357 · 18-09-2026";
+  var BUILD="v358 · 18-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15419,8 +15443,9 @@ var TT={script:performance.now()};
        Cimentacion, la otra columna de una combinada-.  EN CIMENTACION se pinta la de la columna seleccionada, que es la
        de su zapata (Victor, 19-09-2026: «no lo implementaste para las zapatas»), siempre que tenga zapata. */
     var gT=el("g",{"pointer-events":"none"}); g.appendChild(gT);
-    var q=S.sel, NZ=CIM&&q&&q.t==="col"?nodosDeZapata(q.i,q.j):null;
-    if(CIM&&!(NZ&&NZ.length))q=null;
+    /* EN CIMENTACION NO SE PINTAN ZONAS TRIBUTARIAS (Victor, 18-09-2026: «no me interesa verlas ahí»): son cosa de
+       los pisos.  La planta de cimentación enseña solo las zapatas. */
+    var q=CIM?null:S.sel;
     /* la direccion de cada eje en el nudo (ii,jj), hacia el vecino (o al reves, si el nudo es de borde) */
     function dirEjeEn(ii,jj,di,dj){
       var nd0=nodo(ii,jj,m), a=ii+di, b=jj+dj, s=1;
@@ -15429,19 +15454,6 @@ var TT={script:performance.now()};
       var n2=nodo(a,b,m), vx=(n2.x-nd0.x)*s, vy=(n2.y-nd0.y)*s, Lg=Math.sqrt(vx*vx+vy*vy);
       return Lg>1e-9?{x:vx/Lg,y:vy/Lg}:{x:di,y:dj};
     }
-    /* EN UNA COMBINADA O UNA CORRIDA la zapata carga la suma de sus nudos: los otros se pintan tenues, sin cotas */
-    if(q&&NZ&&NZ.length>1)NZ.forEach(function(n){
-      if(n[0]===q.i&&n[1]===q.j)return;
-      var dd=medCol(n[0],n[1],m), P=[];
-      if(dd.modo==="anchos"){
-        var E=dd.ladosEf, ux=dirEjeEn(n[0],n[1],1,0), uy=dirEjeEn(n[0],n[1],0,1), c0=nodo(n[0],n[1],m);
-        var pt=function(a,b){ return aPant({x:c0.x+ux.x*a+uy.x*b, y:c0.y+ux.y*a+uy.y*b}); };
-        P=[[pt(-E.izq,-E.arr),pt(E.der,-E.arr),pt(E.der,E.aba),pt(-E.izq,E.aba)]];
-      }else P=contornos(dd.piezas.map(function(pz){ return pz.P.map(aPant); }));
-      dd.piezas.forEach(function(pz){ if(dd.modo!=="anchos")gT.appendChild(el("polygon",{points:pts(pz.P.map(aPant)),fill:"var(--trib-fill)",opacity:.6})); });
-      P.forEach(function(r){ gT.appendChild(el("polygon",{points:pts(r),fill:dd.modo==="anchos"?"var(--trib-fill)":"none",
-        "fill-opacity":.6,stroke:"var(--trib)","stroke-width":1.1,"stroke-dasharray":"4 3","stroke-opacity":.7,"class":"trib-tenue"})); });
-    });
     if(q&&q.t==="col"&&m.cols[key(q.i,q.j)]){
       /* =================================================================
          LA ZONA TRIBUTARIA DE UNA COLUMNA
@@ -15579,8 +15591,7 @@ var TT={script:performance.now()};
            es la unica direccion que la propia region deja despejada, y se
            ata con una guia para que se vea de quien habla. */
         var l1="A trib = "+d0.at.toFixed(3)+" m²"+(d0.modo==="anchos"?" (anchos)":(d0.modo==="escrita"?" (tuya)":""));
-        var l2=CIM?("Su columna del 1er piso · "+d0.tipo.toLowerCase())
-                  :(d0.tipo+" · k = "+(d0.tipo==="Interior"?"0.30":d0.tipo==="Exterior"?"0.20":"0.10"));
+        var l2=d0.tipo+" · k = "+(d0.tipo==="Interior"?"0.30":d0.tipo==="Exterior"?"0.20":"0.10");
         var an=Math.max(l1.length*6.7,l2.length*5.9)+16, al=34;
         var hx=(L.izq>=L.der)? +1 : -1;      /* columna a la derecha -> placa a la izq */
         var hy=(L.arr>=L.aba)? +1 : -1;
@@ -18495,58 +18506,68 @@ var TT={script:performance.now()};
         'Vale para la viga entera, de columna a columna.</p>'+
       '</section>';
   }
-  /* EL AREA DE LA ZAPATA (Victor, 19-09-2026: «no lo implementaste para las zapatas»): es la de su columna del 1er piso
-     -el mismo numero, se cambie aqui o en la columna- y se edita con el mismo bloque.  Una combinada o una corrida carga
-     la suma de sus nudos: se dice cuanto pone cada uno y se pasa de uno a otro pulsando su nombre. */
-  function bloqueTribZapata(q,nodos,que){
-    var m0=S.niveles[0], nm0=nombres(0), f2=function(v){return (+v).toFixed(2)}, tot=0;
-    function nombre(n){ var c=nm0.C[key(n[0],n[1])];
-      return String((m0.cols[key(n[0],n[1])]&&c&&c.cod)?c.cod:("placa "+ejeCol(n[0],n[1],m0))).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
-    var h, aqui=nombre([q.i,q.j]);
-    if(nodos.length>1){
-      var partes=nodos.map(function(n){
-        var d=medCol(n[0],n[1],m0), esta=(n[0]===q.i&&n[1]===q.j), nb=nombre(n);
-        tot+=d.at;
-        return (esta?'<b>'+nb+'</b>':(m0.cols[key(n[0],n[1])]
-                 ?'<button type="button" class="tr-ir" data-selcol="'+n[0]+':'+n[1]+'" title="Ver y editar el área de '+nb+'">'+nb+'</button>':nb))+
-               ' '+f2(d.at)+(d.modo==="anchos"?' (anchos)':(d.modo==="escrita"?' (tuya)':''));
-      });
-      h='<p class="nota tr-zlista">La '+que+' carga el área de '+(nodos.length===2?'sus dos columnas':'sus '+nodos.length+' nudos')+': '+
-        partes.join(' + ')+' = <b>'+f2(tot)+' m²</b>. Aquí editas la de <b>'+aqui+'</b>; pulsa otra para editar la suya.</p>';
-    }else h='<p class="nota tr-zlista">Es el área de su columna <b>'+aqui+'</b> del 1er piso: lo que cambies aquí cambia también en la columna.</p>';
-    var c0=nm0.C[key(q.i,q.j)];
-    return h+bloqueTrib(q.i,q.j,0,medCol(q.i,q.j,m0),(c0&&c0.eje)||ejeCol(q.i,q.j,m0));
+  /* LA FICHA DE LA ZAPATA, ORDENADA (Victor, 18-09-2026: «más orden, datos y detalles de las zapatas»).  Todas -aislada,
+     combinada, combinada de una fila y corrida- con las mismas secciones y en el mismo orden: las medidas arriba, luego
+     las columnas que carga, la carga, el suelo, el cálculo, los avisos y lo que se puede hacer con ella.  Sin áreas
+     tributarias editables: se ven y se cambian en la ficha de cada columna, en su piso. */
+  function fichaZapataOrden(o){
+    var z=o.z, f2=function(v){return (+v).toFixed(2)}, f3=function(v){return (+v).toFixed(3)}, m0=S.niveles[0], nm0=nombres(0);
+    function fila(k,v,u){ return '<dt>'+k+'</dt><dd>'+v+(u?' <span class="zf-u">'+u+'</span>':'')+'</dd>'; }
+    var colocada=z.mayor*z.menor, okA=(colocada>=z.Az-1e-9), pn=z.presion||presionSuelo();
+    var Ccat=CRITERIOS.CATEGORIA[S.categoria]||{}, peso=Ccat.peso;
+    var cols=o.nodos.map(function(n){
+      var c=nm0.C[key(n[0],n[1])], d=medCol(n[0],n[1],m0), esCol=!!m0.cols[key(n[0],n[1])];
+      return '<li><span>'+(esCol&&c?c.cod:("nudo de placa "+ejeCol(n[0],n[1],m0)))+'</span><b>'+f2(d.at)+' m²</b>'+
+        (d.modo!=="auto"?'<em>a mano</em>':'')+'</li>'; }).join("");
+    return '<div class="zf">'+
+      '<div class="zf-cab"><div class="name">'+o.cod+'</div><span class="tag">'+o.tipo+'</span></div>'+
+      '<div class="zf-dim">'+
+        '<div><span>B × L</span><b>'+f2(z.menor)+' × '+f2(z.mayor)+' m</b></div>'+
+        '<div><span>Peralte H</span><b>'+f2(z.H)+' m</b></div>'+
+        '<div class="zf-est '+(okA?'ok':'no')+'">'+(okA?'Área cumple':'Falta área')+'</div>'+
+      '</div>'+
+      '<h4 class="zf-t">'+(o.nodos.length>1?'Columnas que carga':'Columna que carga')+'</h4>'+
+      '<ul class="zf-cols">'+cols+'</ul>'+
+      (o.nodos.length>1?'<p class="zf-suma">Área tributaria total <b>'+f2(z.at)+' m²</b></p>':'')+
+      '<h4 class="zf-t">Carga</h4><dl class="kv">'+
+        fila("Pisos que carga",S.niveles.length)+
+        fila("Peso por m² ("+(S.categoria||"")+")",peso!=null?peso:"—","kg/m²")+
+        fila("Área tributaria",f2(z.at),"m²")+
+        fila("P en servicio",f2(z.P_servicio),"t")+
+        fila("F sismo",f2(z.F_sismo))+'</dl>'+
+      '<h4 class="zf-t">Suelo</h4><dl class="kv">'+
+        fila("σs del estudio",f2(+S.sigma||3),"kg/cm²")+
+        (pn&&pn.manda==="neta"
+          ? fila("σn presión neta",f2(pn.neta),"t/m²")+fila("Se resta",f2(pn.resta)+" ("+Math.round(pn.fraccion*100)+" %)","t/m²")
+          : fila("Presión de cálculo",f2(sigmaTm2()),"t/m²"))+'</dl>'+
+      '<h4 class="zf-t">Área y medidas</h4><dl class="kv">'+
+        fila("Az = 1,10 · P · F / σ",f3(z.Az),"m²")+
+        (o.geo||"")+
+        fila("Lados calculados",f2(z.menorCalc!=null?z.menorCalc:z.menor)+" × "+f2(z.mayorCalc!=null?z.mayorCalc:z.mayor),"m")+
+        (z.propia?fila("Lados adoptados",f2(z.menor)+" × "+f2(z.mayor),"m"):"")+
+        fila("Área colocada",f3(colocada),"m²")+
+        fila("Holgura",(colocada>0&&z.Az>0?((colocada/z.Az-1)*100).toFixed(1):"—"),"%")+'</dl>'+
+      (o.avisos?'<div class="zf-avisos">'+o.avisos+'</div>':'')+
+      (o.acciones?'<h4 class="zf-t">Qué puedes hacer</h4><div class="zf-acc">'+o.acciones+'</div>':'')+
+      '<p class="calcnote">'+o.formula+'</p>'+
+      '</div>';
   }
-  /* LA FICHA DE LA COMBINADA DE UNA FILA DE COLUMNAS (Oviedo p. 122, con todas sus columnas) */
+  /* LA COMBINADA DE UNA FILA DE COLUMNAS (Oviedo p. 122, con todas sus columnas) */
   function fichaCombinadaFila(q,t,pz,z){
     var f2=function(v){return (+v).toFixed(2)};
-    function kv2(k,v){ return "<dt>"+k+"</dt><dd class=\"env\">"+v+"</dd>"; }
-    return '<div class="rule" style="margin:10px 0"></div>'+
-      '<div class="name">'+pz.cod+'</div><span class="tag" style="color:var(--ink-2)">Zapata combinada · '+z.nCol+' columnas · eje '+t.dir+'</span>'+
-      '<dl class="kv" style="margin-top:9px">'+
-      kv2("Comparten",z.cods.join(", "))+
-      kv2("Separación de ejes",f2(z.sep)+" m (de la primera a la última)")+
-      kv2("F sismo",f2(z.F_sismo))+
-      kv2("Área tributaria",f2(z.at)+" m² (la suma de sus "+t.nodos.length+" nudos)")+"</dl>"+
-      bloqueTribZapata(q,t.nodos,"combinada")+
-      '<dl class="kv" style="margin-top:4px">'+
-      kv2("Área requerida Az",z.Az.toFixed(3)+" m²")+
-      kv2("Dc",f2(z.sep+z.ancho)+" m (ejes + b)")+
-      kv2("Dimensiones",'<b>'+f2(z.menor)+" × "+f2(z.mayor)+" m</b>")+
-      kv2("Peralte H",f2(z.H)+" m")+
-      kv2("Área colocada",(z.mayor*z.menor).toFixed(3)+" m²")+"</dl>"+
-      (z.estrecha||z.sinPeralte
-        ? '<p class="aviso" style="margin-top:8px">La separación de '+f2(z.sep)+' m es mucha para la carga que llevan: '+
-          'el lado menor sale de '+f2(z.menor)+' m, tan angosto como sus columnas, y el peralte no da. Estas columnas no '+
-          'necesitan compartir zapata; si el terreno obliga a unirlas, lo que toca es una <b>zapata conectada</b>.</p>'
-        : "")+
-      (z.insuficiente
-        ? '<p class="aviso" style="margin-top:8px">Los lados redondeados dan '+z.area_redondeada.toFixed(3)+' m² y hacen falta '+
-          z.Az.toFixed(3)+' m². Sube el lado mayor a '+f2(z.mayor_corregido)+' m.</p>'
-        : "")+
-      '<div class="zc-unir"><button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Separar en zapatas aisladas</button></div>'+
-      '<p class="calcnote">Oviedo, pág. 122 (la combinada va bajo dos o más columnas, pág. 114): Az = 1.10 · P / σ con P de '+
-      'todas sus columnas; Dc = distancia de ejes + b; lados √Az ± (Dc − b)/2 y H = (lado menor − b)/4.</p>';
+    function fila(k,v,u){ return '<dt>'+k+'</dt><dd>'+v+(u?' <span class="zf-u">'+u+'</span>':'')+'</dd>'; }
+    return fichaZapataOrden({cod:pz.cod, tipo:"Zapata combinada · "+z.nCol+" columnas · eje "+t.dir, nodos:t.nodos, z:z,
+      geo:fila("Separación de ejes (extremos)",f2(z.sep),"m")+fila("Dc = ejes + b",f2(z.sep+z.ancho),"m"),
+      avisos:(z.estrecha||z.sinPeralte
+          ? '<p class="aviso">La separación de '+f2(z.sep)+' m es mucha para la carga que llevan: el lado menor sale tan '+
+            'angosto como sus columnas y el peralte no da. Estas columnas no necesitan compartir zapata; si el terreno obliga '+
+            'a unirlas, lo que toca es una <b>zapata conectada</b>.</p>' : "")+
+        (z.insuficiente
+          ? '<p class="aviso">Los lados redondeados dan '+z.area_redondeada.toFixed(3)+' m² y hacen falta '+z.Az.toFixed(3)+
+            ' m². Sube el lado mayor a '+f2(z.mayor_corregido)+' m.</p>' : ""),
+      acciones:'<button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Separar en zapatas aisladas</button>',
+      formula:'Oviedo, pág. 122 (la combinada va bajo dos o más columnas, pág. 114): Az = 1,10 · P · F / σ con P de todas '+
+        'sus columnas; Dc = distancia de ejes + b; lados √Az ± (Dc − b)/2 y H = (lado menor − b)/4.'});
   }
   /* despues de repintar la ficha mientras escribes: el campo vuelve a tener el foco, con lo que tecleaste tal cual y el
      cursor donde estaba */
@@ -18610,42 +18631,18 @@ var TT={script:performance.now()};
           if(tcr){
             var pcr=piezaCorrida(tcr,m), zq=pcr&&pcr.q;
             if(zq&&zq.fila)return fichaCombinadaFila(q,tcr,pcr,zq);
-            if(zq)return '<div class="rule" style="margin:10px 0"></div>'+
-              '<div class="name">'+pcr.cod+'</div><span class="tag" style="color:var(--ink-2)">Zapata corrida · eje '+
-              tcr.dir+'</span><dl class="kv" style="margin-top:9px">'+
-              kv("Lleva",(zq.nPla?(zq.nPla+" tramo(s) de placa"+(zq.nCol?" y ":"")):"")+(zq.nCol?(zq.nCol+" columna(s): "+zq.cods.join(", ")):""),1)+
-              kv("Área tributaria",zq.at.toFixed(2)+" m² (la suma de sus "+tcr.nodos.length+" nudos)",1)+"</dl>"+
-              /* el area de cada nudo, y la de la columna seleccionada con el mismo bloque de la columna */
-              bloqueTribZapata(q,tcr.nodos,"corrida")+
-              '<dl class="kv" style="margin-top:4px">'+
-              kv("Área requerida Az",zq.Az.toFixed(3)+" m²",1)+
-              kv("Elemento h × b",zq.largo.toFixed(2)+" × "+zq.ancho.toFixed(2)+" m (de cara a cara)",1)+
-              (zq.entreLinderos
-                ? kv("A lo largo","no vuela: sus dos extremos están en el lindero (L = h, B = Az / h)",1)
-                : kv("X por tanteo",(zq.X!=null?zq.X.toFixed(2):"—")+" m",1))+
-              kv("Dimensiones",'<b>'+zq.menor.toFixed(2)+" × "+zq.mayor.toFixed(2)+" m</b>",1)+
-              kv("Peralte H",zq.H.toFixed(2)+" m",1)+"</dl>"+
-              ((zq.finA||zq.finB||zq.bordeT)
-                ? '<p class="nota" style="margin-top:8px">En el <b>lindero</b>: '+
-                  (zq.entreLinderos?"sus dos extremos están en el límite, así que no vuela a lo largo y el área la pone el ancho. ":
-                   ((zq.finA||zq.finB)?"un extremo está en el límite y todo el volado va al otro. ":""))+
-                  (zq.bordeT?"Corre por el borde: crece solo hacia adentro y queda excéntrica, como la medianera. ":"")+'</p>'
-                : "")+
-              (!(zq.X>0)&&!zq.entreLinderos
-                ? '<p class="aviso" style="margin-top:8px"><b>No tiene volado.</b> La carga de sus columnas cabe bajo su '+
-                  'propia huella: Az = '+zq.Az.toFixed(2)+' m² y las columnas ya ocupan '+(zq.largo*zq.ancho).toFixed(2)+' m², así '+
-                  'que la fórmula del libro da X = 0 (B = '+zq.menor.toFixed(2)+' m, el ancho de la columna). Por eso se ve tan '+
-                  'angosta. Revisa sus áreas tributarias ('+zq.at.toFixed(2)+' m² entre las '+zq.nCol+') y la capacidad del suelo; '+
-                  'con las reacciones de ETABS, D6 dará la medida de diseño.</p>'
-                : "")+
-              (zq.H<0.40-1e-9
-                ? '<p class="aviso" style="margin-top:8px">El peralte de la fórmula sale '+zq.H.toFixed(2)+' m. La E.060 '+
-                  '(Art. 15.7) pide al menos 300 mm por encima del acero inferior: con el recubrimiento, en obra no baja '+
-                  'de unos 0,40 m.</p>'
-                : "")+
-              '<div class="zc-unir"><button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Quitar la zapata corrida</button></div>'+
-              '<p class="calcnote">Oviedo, pág. 123: L = h + X, B = b + X y H = (L − h)/4, con X el mismo volado '+
-              'en los dos sentidos, tanteado de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az = 1.10 · P / σ.</p>';
+            if(zq)return fichaZapataOrden({cod:pcr.cod, tipo:"Zapata corrida · bajo placa · eje "+tcr.dir, nodos:tcr.nodos, z:zq,
+              geo:kv("Elemento h × b",zq.largo.toFixed(2)+" × "+zq.ancho.toFixed(2)+" m")+
+                  (zq.entreLinderos?kv("A lo largo","no vuela (L = h)"):kv("X por tanteo",(zq.X!=null?zq.X.toFixed(2):"—")+" m")),
+              avisos:(!(zq.X>0)&&!zq.entreLinderos
+                  ? '<p class="aviso"><b>No tiene volado.</b> Az = '+zq.Az.toFixed(2)+' m² cabe bajo la huella del elemento ('+
+                    (zq.largo*zq.ancho).toFixed(2)+' m²): la fórmula del libro da X = 0.</p>' : "")+
+                (zq.H<0.40-1e-9
+                  ? '<p class="aviso">El peralte de la fórmula sale '+zq.H.toFixed(2)+' m. La E.060 (Art. 15.7) pide al menos '+
+                    '300 mm sobre el acero inferior: con el recubrimiento, en obra no baja de unos 0,40 m.</p>' : ""),
+              acciones:'<button class="mini" data-zcorrq="'+q.i+":"+q.j+'">Quitar la zapata corrida</button>',
+              formula:'Oviedo, pág. 123 (la corrida va bajo una placa o muro, pág. 114): L = h + X, B = b + X y H = (L − h)/4, '+
+                'con X tanteado de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az.'});
           }
           var z=predimZapata(q.i,q.j);
           /* LA OTRA COLUMNA DE UNA COMBINADA: la calcula su dueña, pero es la misma zapata.  Antes esta ficha decia
@@ -18671,64 +18668,10 @@ var TT={script:performance.now()};
           var pisa={};
           choca.forEach(function(x){ var o=(x.a.cod===codZ)?x.b:x.a; pisa[o.i+":"+o.j]=1; });
           vec.sort(function(a,b){ return (pisa[b.i+":"+b.j]?1:0)-(pisa[a.i+":"+a.j]?1:0); });
-          return '<div class="rule" style="margin:10px 0"></div>'+
-            '<div class="name">'+codZ+'</div><span class="tag" style="color:var(--ink-2)">Zapata '+
-            z.tipo+'</span><dl class="kv" style="margin-top:9px">'+
-            (pa?kv("Comparte con",(z.cods||[]).join(" y "),1)+
-                kv("Separación de ejes",z.sep.toFixed(2)+" m",1):"")+
-            kv("F sismo",z.F_sismo.toFixed(2),1)+
-            (z.presion&&z.presion.manda==="neta"
-              ? kv("Presión de cálculo",'σn <b>'+z.presion.neta.toFixed(2)+'</b> t/m² (σs '+
-                   z.presion.bruta.toFixed(2)+' − '+z.presion.resta.toFixed(2)+')',1)
-              : "")+
-            (pa?kv("Área tributaria",z.at.toFixed(2)+" m² (la suma de sus dos columnas)",1):"")+"</dl>"+
-            /* EL AREA, con el mismo bloque de la columna: la aislada ES la de su columna del 1er piso -el mismo
-               numero-; la combinada, la suma de las dos, y aqui se edita la de la columna seleccionada */
-            bloqueTribZapata(q,pa?[[pa.ai,pa.aj],[pa.bi,pa.bj]]:[[q.i,q.j]],"combinada")+
-            '<dl class="kv" style="margin-top:4px">'+
-            kv("Área requerida Az",z.Az.toFixed(3)+" m²",1)+
-            kv("Dimensiones",'<b>'+z.menor.toFixed(2)+" × "+z.mayor.toFixed(2)+" m</b>",1)+
-            kv("Peralte H",z.H.toFixed(2)+" m",1)+
-            kv("Área colocada",(z.mayor*z.menor).toFixed(3)+" m²",1)+"</dl>"+
-            (!(z.at>0)
-              ? '<p class="aviso" style="margin-top:8px">Esta columna no tiene losa alrededor: su área tributaria '+
-                'es 0 y la fórmula de Oviedo da una zapata de 0 × 0. Si recibe vigas, pon su medida a mano; si no carga '+
-                'nada, quítale la zapata.</p>'
-              : "")+
-            (z.estrecha||z.sinPeralte
-              ? '<p class="aviso" style="margin-top:8px">La separación de '+z.sep.toFixed(2)+
-                ' m es mucha para la carga que llevan: el lado menor sale de '+z.menor.toFixed(2)+
-                ' m, más estrecho que la propia columna. Estas dos columnas no necesitan '+
-                'compartir zapata; y si el terreno obliga a unirlas, lo que toca es una '+
-                '<b>zapata conectada</b> —dos aisladas con una viga de cimentación—, que no '+
-                'está en el predimensionamiento.</p>'
-              : "")+
-            (z.insuficiente
-              ? '<p class="aviso" style="margin-top:8px">Los lados redondeados dan '+
-                z.area_redondeada.toFixed(3)+" m² y hacen falta "+z.Az.toFixed(3)+
-                " m². Sube el lado mayor a "+z.mayor_corregido.toFixed(2)+" m.</p>"
-              : "")+
-            (choca.length
-              ? '<p class="aviso" style="margin-top:8px">Se solapa con '+
-                choca.map(function(x){return x.a.cod===codZ?x.b.cod:x.a.cod}).join(", ")+
-                ". Dos zapatas que se pisan piden una <b>zapata combinada</b>.</p>"
-              : "")+
-            (vec.length
-              ? '<div class="zc-unir">'+vec.map(function(v){
-                  return '<button class="mini" data-zunir="'+q.i+":"+q.j+":"+v.i+":"+v.j+'">'+
-                    (pisa[v.i+":"+v.j]?"Combinar con ":"Unir con ")+nomCol(v)+'</button>';
-                }).join("")+'</div>'
-              : "")+
-            (pa
-              ? '<div class="zc-unir"><button class="mini" data-zsep="'+q.i+":"+q.j+
-                '">Separar en dos zapatas</button></div>'
-              : "")+
-            (function(){
+          var restr=(function(){
               if(pa)return "";
-              /* «ZAPATA CON RESTRICCION»: una casilla.  Activada, la zapata esta en el lindero -se pega al limite y
-                 lleva viga de conexion-; desactivada, va centrada.  Arranca con lo que dice la ubicacion de la columna. */
+              /* «ZAPATA CON RESTRICCION»: una casilla.  Activada, la zapata se pega al limite por los lados que marques */
               var lim=limiteDe(q.i,q.j,m), ij=q.i+":"+q.j;
-              var zzL=zs.filter(function(x){ return x.i===q.i&&x.j===q.j&&!x.corrida; })[0];
               var h='<div class="zc-restr"><label><input type="checkbox" data-zrestr="'+ij+'"'+(lim?" checked":"")+
                 '> <b>Zapata con restricción</b> (lindero)</label>';
               if(lim){
@@ -18739,25 +18682,40 @@ var TT={script:performance.now()};
                    'sin viga de cimentación. Su diseño en D6 queda pendiente hasta que decidas cómo tomar esa excentricidad.</p>';
               }else h+='<p class="nota" style="margin:6px 0 0">Sin restricción: va centrada bajo su columna.</p>';
               return h+'</div>';
-            })()+
-            (function(){
-              /* LA CORRIDA BAJO UNA FILA DE COLUMNAS: se ofrece si hay tres o mas seguidas con zapata suelta */
+            })();
+          var fil=(function(){
               if(pa)return "";
               var h="";
               ["X","Y"].forEach(function(d){ var f=filaDeColumnas(q.i,q.j,d,m);
                 if(f.length>=3)h+='<button class="mini" data-zcorr="'+q.i+":"+q.j+":"+d+'">Combinada en '+d+
                   ' con '+f.length+' columnas</button>'; });
-              return h?'<div class="zc-unir">'+h+'</div>':"";
-            })()+
-            '<p class="calcnote">Az = 1.10 · P · F sismo / σ, con '+
-            ((z.presion&&z.presion.manda==="neta")
-              ? ("la presión NETA σn = "+z.presion.neta.toFixed(2)+" t/m²: el relleno de "+
-                 (z.presion.Df-z.presion.hz).toFixed(2)+" m y la sobrecarga se comen el "+
-                 Math.round(z.presion.fraccion*100)+" % de σs = "+(+S.sigma||3.0).toFixed(2)+" kg/cm². ")
-              : ("σs = "+(+S.sigma||3.0).toFixed(2)+" kg/cm². "))+
-            (pa?("La combinada carga con las dos columnas y sus lados salen de √Az ± separación/2, "+
-                 "con H = (lado menor − columna) / 4.")
-               :"El tipo sale de dónde está la columna.")+"</p>";
+              return h;
+            })();
+          var f2z=function(v){return (+v).toFixed(2)};
+          return fichaZapataOrden({cod:codZ, tipo:pa?"Zapata combinada · 2 columnas · eje "+pa.dir:"Zapata aislada · "+z.tipo,
+            nodos:pa?[[pa.ai,pa.aj],[pa.bi,pa.bj]]:[[q.i,q.j]], z:z,
+            geo:pa?kv("Separación de ejes",f2z(z.sep)+" m")+kv("Dc = ejes + b",f2z(z.sep+z.col_b/100)+" m"):"",
+            avisos:(!(z.at>0)
+                ? '<p class="aviso">Esta columna no tiene losa alrededor: su área tributaria es 0 y la fórmula da una zapata de '+
+                  '0 × 0. Si recibe vigas, pon su área a mano en la ficha de la columna; si no carga nada, quítale la zapata.</p>' : "")+
+              (z.estrecha||z.sinPeralte
+                ? '<p class="aviso">La separación de '+f2z(z.sep)+' m es mucha para la carga que llevan: el lado menor sale de '+
+                  f2z(z.menor)+' m, más estrecho que la propia columna. Estas dos columnas no necesitan compartir zapata; si el '+
+                  'terreno obliga a unirlas, lo que toca es una <b>zapata conectada</b>.</p>' : "")+
+              (z.insuficiente
+                ? '<p class="aviso">Los lados redondeados dan '+z.area_redondeada.toFixed(3)+' m² y hacen falta '+z.Az.toFixed(3)+
+                  ' m². Sube el lado mayor a '+f2z(z.mayor_corregido)+' m.</p>' : "")+
+              (choca.length
+                ? '<p class="aviso">Se solapa con '+choca.map(function(x){return x.a.cod===codZ?x.b.cod:x.a.cod}).join(", ")+
+                  '. Dos zapatas que se pisan piden una <b>zapata combinada</b>.</p>' : ""),
+            acciones:(vec.length?vec.map(function(v){
+                  return '<button class="mini" data-zunir="'+q.i+":"+q.j+":"+v.i+":"+v.j+'">'+
+                    (pisa[v.i+":"+v.j]?"Combinar con ":"Unir con ")+nomCol(v)+'</button>'; }).join(""):"")+
+              (pa?'<button class="mini" data-zsep="'+q.i+":"+q.j+'">Separar en dos zapatas</button>':"")+fil+restr,
+            formula:pa?('Oviedo, pág. 122: Az = 1,10 · P · F / σ con P de las dos columnas; lados √Az ± (Dc − b)/2 y '+
+                        'H = (lado menor − b)/4.')
+                      :('Oviedo, pág. 119-121: Az = 1,10 · P · F / σ; el tipo (centrada, medianera o esquinera) sale de dónde '+
+                        'está la columna o de la restricción que marques.')});
         })()):"")+
         '<p class="calcnote">Ac = P / ('+pc.C.toFixed(2)+" f&#39;c) con f&#39;c = "+
         (+S.fc||210)+" kg/cm². La cuadrada es el valor por defecto: "+
