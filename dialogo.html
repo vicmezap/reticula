@@ -12201,7 +12201,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v369 · 18-09-2026";
+  var BUILD="v370 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15751,7 +15751,10 @@ var TT={script:performance.now()};
       if(modo==="on"){if(!m.placas[k4])m.placas[k4]={};}else delete m.placas[k4];
     }else if(S.tool==="losa"&&d.t==="losa"){
       var lk=key(i,j),tp=S.tipoLosa,ex=m.losas[lk];
-      if(tp==="vacio"){delete m.losas[lk];limpiarSueltos([[i,j]]);}
+      /* VACIO: solo quita la losa o la escalera de ese paño (Victor, 23-09-2026: «esa opción solo debería afectar a
+         las losas y escaleras»).  Antes tambien borraba las vigas, placas y columnas que quedaban sin losa alrededor:
+         se llevaba por delante lo que el usuario habia dibujado a proposito.  Lo que quede sin losa lo dice Revisar. */
+      if(tp==="vacio"){delete m.losas[lk];}
       else if(primero&&ex&&ex.tipo===tp){ex.dir=ex.dir==="y"?"x":"y";modo="giro";}
       else if(modo!=="giro"){m.losas[lk]={dir:ex?ex.dir:"y",tipo:tp};
         if(tp==="escalera"&&ex&&ex.esc)m.losas[lk].esc=ex.esc;}
