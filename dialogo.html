@@ -12204,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v372 · 23-09-2026";
+  var BUILD="v373 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -13504,6 +13504,25 @@ var TT={script:performance.now()};
   /* LO REPARTIDO EN TODO EL NIVEL (Victor, 23-09-2026: «ver todas las áreas tributarias… para ver si se está
      abarcando todo»): lo que recibe cada apoyo, cuanto suma y que paños quedan sin repartir -los que no tienen
      ninguna columna ni placa que los reciba-.  La suma de las areas tiene que dar el area techada del nivel. */
+  /* la direccion del eje en el nudo (i,j) hacia (di,dj) -o al reves, si es de borde-, en coordenadas del modelo */
+  function ejeNudo(i,j,m,di,dj){
+    var nX=m.dx.length+1, nY=m.dy.length+1, nd=nodo(i,j,m), a=i+di, b=j+dj, s=1;
+    if(a<0||b<0||a>=nX||b>=nY){ a=i-di; b=j-dj; s=-1; }
+    if(a<0||b<0||a>=nX||b>=nY)return {x:di,y:dj};
+    var n2=nodo(a,b,m), vx=(n2.x-nd.x)*s, vy=(n2.y-nd.y)*s, L=Math.sqrt(vx*vx+vy*vy);
+    return L>1e-9?{x:vx/L,y:vy/L}:{x:di,y:dj};
+  }
+  /* LA REGION QUE MANDA de una columna: por anchos, el rectangulo de sus cuatro anchos -es lo que suma su area-;
+     si no, los trozos del reparto por cercania.  Devuelve anillos de puntos {x,y} en coordenadas del modelo. */
+  function regionTrib(i,j,m,d){
+    d=d||medCol(i,j,m);
+    if(d.modo==="anchos"){
+      var L=d.ladosEf, nd=nodo(i,j,m), ux=ejeNudo(i,j,m,1,0), uy=ejeNudo(i,j,m,0,1);
+      function pt(a,b){ return {x:nd.x+ux.x*a+uy.x*b, y:nd.y+ux.y*a+uy.y*b}; }
+      return [[pt(-L.izq,-L.arr),pt(L.der,-L.arr),pt(L.der,L.aba),pt(-L.izq,L.aba)]];
+    }
+    return contornos(d.piezas.map(function(pz){ return pz.P.map(function(q){ return {x:q.x,y:q.y}; }); }));
+  }
   function repartoNivel(m){
     m=m||N();
     var R=repartoLosa(m), techada=areaNivel(m), sitios=[], suma=0, i, j;
@@ -13511,6 +13530,9 @@ var TT={script:performance.now()};
       var d=(st.t==="col")?medCol(st.i,st.j,m):null;
       var a=(d?d.at:(R.por[st.k]||0));
       sitios.push({i:st.i, j:st.j, tipo:st.t, at:a, auto:R.por[st.k]||0, piezas:R.piezas[st.k]||[],
+                   /* lo que se dibuja: por anchos, TU rectangulo; si no, los trozos del reparto */
+                   region:(d&&d.modo==="anchos")?regionTrib(st.i,st.j,m,d)
+                          :contornos((R.piezas[st.k]||[]).map(function(pz){ return pz.P.map(function(q){ return {x:q.x,y:q.y}; }); })),
                    mano:!!(d&&d.atMano), modo:d?d.modo:"auto"});
       suma+=R.por[st.k]||0;
     });
@@ -15485,12 +15507,15 @@ var TT={script:performance.now()};
     if(S.verTrib&&!CIM&&(S.modo==="modelo"||S.modo==="decisiones")){
       var RN=repartoNivel(m), gV=el("g",{"pointer-events":"none"});
       RN.sitios.forEach(function(st){
-        var trz=st.piezas.map(function(pz){ return pz.P.map(aPant); });
-        if(!trz.length)return;
+        var anillos=(st.region||[]).map(function(r){ return r.map(aPant); });
+        if(!anillos.length)return;
         var esCol=(st.tipo==="col"), col=esCol?"var(--trib)":"var(--placa)";
-        trz.forEach(function(A){ gV.appendChild(el("polygon",{points:pts(A),fill:esCol?"var(--trib-fill)":"var(--alig-f)"})); });
-        contornos(trz).forEach(function(r){ gV.appendChild(el("polygon",{points:pts(r),fill:"none",stroke:col,
-          "stroke-width":1,"stroke-dasharray":"5 3","stroke-opacity":.75,"class":"trib-todas"})); });
+        /* por anchos, el relleno es TU rectangulo; si no, los trozos del reparto */
+        if(st.modo==="anchos")anillos.forEach(function(A){ gV.appendChild(el("polygon",{points:pts(A),fill:"var(--trib-fill)"})); });
+        else st.piezas.forEach(function(pz){ gV.appendChild(el("polygon",{points:pts(pz.P.map(aPant)),
+          fill:esCol?"var(--trib-fill)":"var(--alig-f)"})); });
+        anillos.forEach(function(r){ gV.appendChild(el("polygon",{points:pts(r),fill:"none",stroke:col,
+          "stroke-width":st.modo==="anchos"?1.4:1,"stroke-dasharray":"5 3","stroke-opacity":.75,"class":"trib-todas"})); });
         /* el area, en el nudo */
         var nd=aPant(nodo(st.i,st.j,m));
         txt(gV,nd.x,nd.y-9,st.at.toFixed(2)+(st.mano?"*":""),col,9,null,true);
@@ -25461,12 +25486,11 @@ var TT={script:performance.now()};
     function r4(v){return Math.round(v*10000)/10000+0}
     function aP(q){ return [r4(q.x+o.x), r4(-(q.y+o.y))]; }
     RN.sitios.forEach(function(st){
-      var anillos=contornos(st.piezas.map(function(pz){ return pz.P.map(function(q){ return {x:q.x,y:q.y}; }); }))
-                    .map(function(r){ return r.map(aP); });
+      var anillos=(st.region||[]).map(function(r){ return r.map(aP); });
       if(!anillos.length)return;
       var esCol=(st.tipo==="col"), reg=esCol?(nm.C[key(st.i,st.j)]||{}):{}, sc=esCol?seccionCol(st.i,st.j,m,niv):null;
       out.push({cod:esCol?(reg.cod||""):("placa "+ejeCol(st.i,st.j,m)), eje:reg.eje||ejeCol(st.i,st.j,m), col:esCol,
-                tipo:esCol?medCol(st.i,st.j,m).tipo:"placa", at:st.at, mano:st.mano, pisos:pisos,
+                tipo:esCol?medCol(st.i,st.j,m).tipo:"placa", at:st.at, mano:st.mano, modo:st.modo, pisos:pisos,
                 P:sc?sc.P:0, nudo:aP(nodo(st.i,st.j,m)), anillos:anillos});
     });
     return {lista:out, suma:RN.suma, techada:RN.techada, pct:RN.pct,
@@ -25831,7 +25855,7 @@ var TT={script:performance.now()};
           P.push({k:"pol",capa:q.col?"RET-TRIB":"RET-TRIB-PLACA",p:r,cerrada:true});
         });
         nTrib++;
-        var t1=codAc(q.cod)+(q.mano?" *":""), t2=secAc(q.at)+" m²";
+        var t1=codAc(q.cod)+(q.modo==="anchos"?" (anchos)":(q.modo==="escrita"?" *":"")), t2=secAc(q.at)+" m²";
         P.push(texto("RET-TRIB-TEXTO",t1,[q.nudo[0],q.nudo[1]+tam(2.2)],H,0,13));
         P.push(texto("RET-TRIB-TEXTO",t2,[q.nudo[0],q.nudo[1]-tam(3.4)],H*1.1,0,13));
       });
@@ -25886,7 +25910,7 @@ var TT={script:performance.now()};
       var sum=0;
       (trib.lista||[]).filter(function(q){return q.col}).forEach(function(q){
         ty-=tpaso; sum+=q.at;
-        [codAc(q.cod)+(q.mano?" *":""),q.tipo,secAc(q.at),String(q.pisos),(+q.P).toFixed(2)]
+        [codAc(q.cod)+(q.modo==="anchos"?" (anchos)":(q.modo==="escrita"?" *":"")),q.tipo,secAc(q.at),String(q.pisos),(+q.P).toFixed(2)]
           .forEach(function(t,k){ P.push(texto("RET-CUADRO",t,[tc[k],ty],H,0,12)); });
       });
       ty-=tam(2); P.push({k:"linea",capa:"RET-CUADRO",p:[[tx0,ty],[tx0+tan,ty]]});
@@ -25900,7 +25924,7 @@ var TT={script:performance.now()};
       if((trib.sueltos||[]).length){ ty-=tam(4);
         P.push(texto("RET-CUADRO",trib.sueltos.length+" paño(s) sin columna ni placa que los reciba (en rojo)",[tx0,ty],tam(2),0,12)); }
       ty-=tam(4);
-      P.push(texto("RET-CUADRO","* el área la escribió el proyectista; las demás salen del reparto por cercanía.",[tx0,ty],tam(1.8),0,12));
+      P.push(texto("RET-CUADRO","(anchos): el área y la región salen de los anchos que puso el proyectista. * : área escrita por él.",[tx0,ty],tam(1.8),0,12));
       ty-=tam(4);
       P.push(texto("RET-CUADRO","A cada apoyo le toca la losa que le queda más cerca que a cualquier otro.",[tx0,ty],tam(1.8),0,12));
       return {nombre:(L.nombre||("N"+trib.piso))+" · áreas tributarias", numero:numero, prims:P, caja:cajaAc(P),
