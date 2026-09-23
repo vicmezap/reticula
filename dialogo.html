@@ -12204,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v371 · 23-09-2026";
+  var BUILD="v372 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -25390,6 +25390,8 @@ var TT={script:performance.now()};
                flecha, sin viguetas a trazos.  El selector se queda por si algun dia hacen falta. */
             viguetas:["todas","banda"].indexOf(o.viguetas)>=0?o.viguetas:"no",
             escala:[50,75,100].indexOf(+o.escala)>=0?+o.escala:50,
+            /* la lamina de areas tributarias: por ahora, columnas */
+            trib:!!o.trib, tribElem:(o.tribElem==="columnas")?o.tribElem:"columnas",
             fuera:Array.isArray(o.fuera)?o.fuera.filter(function(x){return +x>=0}).map(Number):[]};
   }
   function secAc(v){ if(v==null||!isFinite(v))return "?"; var s=(+v).toFixed(2); return s.indexOf("0.")===0?s.slice(1):s; }
@@ -25451,6 +25453,27 @@ var TT={script:performance.now()};
     if(a.tipo==="aislada")return k+"|"+mallaAc(a.mx)+"|"+mallaAc(a.my)+"|"+(a.franja&&a.franja.aplica?"f":"");
     return k+"|"+mallaAc(a.abajo)+"|"+mallaAc(a.arriba)+"|"+a.trans.map(function(t){return mallaAc(t.malla)}).join(",")+"|"+mallaAc(a.fuera);
   }
+  /* LAS AREAS TRIBUTARIAS DE UN NIVEL PARA AUTOCAD: la region de cada columna (el reparto por cercania), su area y
+     lo que carga, en las coordenadas del plano (como exportaEtabs) */
+  function tribAutocad(niv){
+    var m=S.niveles[niv]; if(!m)return null;
+    var o=origenNivel(m), nm=nombres(niv), RN=repartoNivel(m), out=[], pisos=pisosQueCarga(niv);
+    function r4(v){return Math.round(v*10000)/10000+0}
+    function aP(q){ return [r4(q.x+o.x), r4(-(q.y+o.y))]; }
+    RN.sitios.forEach(function(st){
+      var anillos=contornos(st.piezas.map(function(pz){ return pz.P.map(function(q){ return {x:q.x,y:q.y}; }); }))
+                    .map(function(r){ return r.map(aP); });
+      if(!anillos.length)return;
+      var esCol=(st.tipo==="col"), reg=esCol?(nm.C[key(st.i,st.j)]||{}):{}, sc=esCol?seccionCol(st.i,st.j,m,niv):null;
+      out.push({cod:esCol?(reg.cod||""):("placa "+ejeCol(st.i,st.j,m)), eje:reg.eje||ejeCol(st.i,st.j,m), col:esCol,
+                tipo:esCol?medCol(st.i,st.j,m).tipo:"placa", at:st.at, mano:st.mano, pisos:pisos,
+                P:sc?sc.P:0, nudo:aP(nodo(st.i,st.j,m)), anillos:anillos});
+    });
+    return {lista:out, suma:RN.suma, techada:RN.techada, pct:RN.pct,
+            sueltos:RN.sueltos.map(function(q){ return q4pModelo(q.i,q.j,m).map(aP); })};
+  }
+  /* las cuatro esquinas de un paño, en coordenadas del modelo */
+  function q4pModelo(i,j,m){ return [nodo(i,j,m),nodo(i+1,j,m),nodo(i+1,j+1,m),nodo(i,j+1,m)]; }
   function zapatasAutocad(){
     var m0=S.niveles[0]; if(!m0)return [];
     var o=origenNivel(m0), out=[];
@@ -25487,7 +25510,7 @@ var TT={script:performance.now()};
     });
     return out;
   }
-  function plantaAutocad(L,numero,T,opc,ejesEdif){
+  function plantaAutocad(L,numero,T,opc,ejesEdif,trib){
     function tam(mm){ return mm*opc.escala/1000; }
     function res(a,b){return [a[0]-b[0],a[1]-b[1]]} function sum(a,b){return [a[0]+b[0],a[1]+b[1]]}
     function por(a,k){return [a[0]*k,a[1]*k]} function lar(a){return Math.sqrt(a[0]*a[0]+a[1]*a[1])}
@@ -25798,6 +25821,26 @@ var TT={script:performance.now()};
       P.push(texto("RET-TEXTOS",rotulo(t),[z.x0+tam(0.8),z.y0+tam(0.8)],H,0,12)); nRot++;
     });
 
+    /* LA LAMINA DE AREAS TRIBUTARIAS: la region de cada apoyo, rayada suave, con su rotulo.  Va debajo de las
+       columnas, que se dibujan despues.  Los paños que no recibio nadie, en rojo. */
+    var nTrib=0;
+    if(trib){
+      (trib.lista||[]).forEach(function(q){
+        q.anillos.forEach(function(r){
+          P.push({k:"sombreado",capa:"RET-TRIB-TRAMA",patron:"ANSI31",escala:+(0.16*opc.escala/50).toFixed(4),p:r});
+          P.push({k:"pol",capa:q.col?"RET-TRIB":"RET-TRIB-PLACA",p:r,cerrada:true});
+        });
+        nTrib++;
+        var t1=codAc(q.cod)+(q.mano?" *":""), t2=secAc(q.at)+" m²";
+        P.push(texto("RET-TRIB-TEXTO",t1,[q.nudo[0],q.nudo[1]+tam(2.2)],H,0,13));
+        P.push(texto("RET-TRIB-TEXTO",t2,[q.nudo[0],q.nudo[1]-tam(3.4)],H*1.1,0,13));
+      });
+      (trib.sueltos||[]).forEach(function(r){
+        P.push({k:"sombreado",capa:"RET-TRIB-SUELTO",patron:"ANSI37",escala:+(0.16*opc.escala/50).toFixed(4),p:r});
+        P.push({k:"pol",capa:"RET-TRIB-SUELTO",p:r,cerrada:true});
+      });
+    }
+
     /* COLUMNAS: rellenas y encima de todo */
     cols.forEach(function(c){
       var x=c.x, y=c.y, circ=c.forma==="circular", mx, my;
@@ -25827,8 +25870,44 @@ var TT={script:performance.now()};
 
     /* TITULO y CUADRO DE ELEMENTOS */
     var cj=cajaAc(P), cx=(cj[0]+cj[2])/2;
-    P.push(texto("RET-TITULOS",numero===0?"PLANTA DE CIMENTACIÓN":"PLANTA "+ordAcad(numero)+" PISO",[cx,cj[1]-tam(24)],tam(5)));
-    P.push(texto("RET-TITULOS",(numero===0?"ZAPATAS":(L.nombre||"N"+numero))+" · ESC. 1/"+opc.escala+" · cotas en metros",[cx,cj[1]-tam(36)],tam(2.5)));
+    P.push(texto("RET-TITULOS",trib?("ÁREAS TRIBUTARIAS · "+trib.titulo+" · "+ordAcad(trib.piso)+" PISO")
+                                   :(numero===0?"PLANTA DE CIMENTACIÓN":"PLANTA "+ordAcad(numero)+" PISO"),[cx,cj[1]-tam(24)],tam(5)));
+    P.push(texto("RET-TITULOS",(trib?((L.nombre||"N"+trib.piso)+" · lo que carga cada elemento")
+                                    :(numero===0?"ZAPATAS":(L.nombre||"N"+numero)))+" · ESC. 1/"+opc.escala+" · cotas en metros",
+                 [cx,cj[1]-tam(36)],tam(2.5)));
+    /* EL CUADRO DE LA LAMINA DE AREAS: lo que alimenta la hoja PRE_COLUMNA */
+    if(trib){
+      var tx0=cj[2]+tam(15), ty=cj[3], tan=tam(120), tpaso=tam(5.5),
+          tc=[tx0+tam(2),tx0+tam(30),tx0+tam(58),tx0+tam(82),tx0+tam(104)];
+      P.push(texto("RET-CUADRO","CUADRO DE ÁREAS TRIBUTARIAS · "+trib.titulo,[tx0,ty],tam(3),0,12));
+      ty-=tam(3); P.push({k:"linea",capa:"RET-CUADRO",p:[[tx0,ty],[tx0+tan,ty]]}); ty-=tpaso;
+      ["CÓDIGO","UBICACIÓN","A TRIB (m²)","N° PISOS","P (t)"].forEach(function(t,k){ P.push(texto("RET-CUADRO",t,[tc[k],ty],tam(2.2),0,12)); });
+      ty-=tam(2); P.push({k:"linea",capa:"RET-CUADRO",p:[[tx0,ty],[tx0+tan,ty]]});
+      var sum=0;
+      (trib.lista||[]).filter(function(q){return q.col}).forEach(function(q){
+        ty-=tpaso; sum+=q.at;
+        [codAc(q.cod)+(q.mano?" *":""),q.tipo,secAc(q.at),String(q.pisos),(+q.P).toFixed(2)]
+          .forEach(function(t,k){ P.push(texto("RET-CUADRO",t,[tc[k],ty],H,0,12)); });
+      });
+      ty-=tam(2); P.push({k:"linea",capa:"RET-CUADRO",p:[[tx0,ty],[tx0+tan,ty]]});
+      ty-=tpaso;
+      P.push(texto("RET-CUADRO","SUMA",[tc[0],ty],H,0,12));
+      P.push(texto("RET-CUADRO",secAc(sum),[tc[2],ty],H,0,12));
+      ty-=tam(2); P.push({k:"linea",capa:"RET-CUADRO",p:[[tx0,ty],[tx0+tan,ty]]});
+      ty-=tam(6);
+      P.push(texto("RET-CUADRO",secAc(trib.suma)+" m² repartidos de "+secAc(trib.techada)+" m² techados · "+
+                   trib.pct.toFixed(1)+" % cubierto",[tx0,ty],tam(2.2),0,12));
+      if((trib.sueltos||[]).length){ ty-=tam(4);
+        P.push(texto("RET-CUADRO",trib.sueltos.length+" paño(s) sin columna ni placa que los reciba (en rojo)",[tx0,ty],tam(2),0,12)); }
+      ty-=tam(4);
+      P.push(texto("RET-CUADRO","* el área la escribió el proyectista; las demás salen del reparto por cercanía.",[tx0,ty],tam(1.8),0,12));
+      ty-=tam(4);
+      P.push(texto("RET-CUADRO","A cada apoyo le toca la losa que le queda más cerca que a cualquier otro.",[tx0,ty],tam(1.8),0,12));
+      return {nombre:(L.nombre||("N"+trib.piso))+" · áreas tributarias", numero:numero, prims:P, caja:cajaAc(P),
+              cuenta:{ejesX:X.length, ejesY:Y.length, burbujas:nBurb, cotas:cotas.length, rotulos:nTrib, tipos:0,
+                      columnas:cols.length, vigas:0, chatas:0, placas:placas.length, losas:0, escaleras:0, zapatas:0,
+                      areas:nTrib, sueltos:(trib.sueltos||[]).length}};
+    }
     var ORDF={Z:-1,C:0,VP:1,VCH:2,PL:3,LA:4,LM:5,LN:6};
     var filas=Object.keys(usados).map(function(k){return usados[k]}).sort(function(a,b){
       return (ORDF[a.f]-ORDF[b.f])||(+a.t.nombre.split("-")[1]-(+b.t.nombre.split("-")[1])); });
@@ -25910,7 +25989,10 @@ var TT={script:performance.now()};
     /* las zapatas: contorno continuo, verde oliva, mas delgado que las columnas que llevan encima */
     {n:"RET-ZAPATAS",color:94,lw:35},
     /* el acero de las zapatas: rojo, fino, continuo */
-    {n:"RET-ACERO",color:1,lw:25}];
+    {n:"RET-ACERO",color:1,lw:25},
+    /* la lamina de areas tributarias */
+    {n:"RET-TRIB",color:1,lw:25}, {n:"RET-TRIB-PLACA",color:5,lw:18}, {n:"RET-TRIB-TRAMA",color:8,lw:9},
+    {n:"RET-TRIB-TEXTO",color:1,lw:18}, {n:"RET-TRIB-SUELTO",color:1,lw:35}];
   var ACI_HEX={94:"#556b2f",1:"#d32f2f",2:"#b8a100",3:"var(--ok)",4:"#0277bd",5:"#283593",6:"#8e24aa",7:"#111111",8:"#757575",30:"#e65100"};
   /* =====================================================================
      EL DETALLE DE ZAPATAS (una hoja, a 1/25): por cada tipo diseñado, su planta con la malla barra por barra y el
@@ -26084,6 +26166,15 @@ var TT={script:performance.now()};
     ex.niveles.forEach(function(L,k){
       if(opc.fuera.indexOf(k+1)>=0)return;
       plantas.push(plantaAutocad(L,k+1,T,opc,ex.ejes));
+      /* LA LAMINA DE AREAS TRIBUTARIAS de ese piso, si esta marcada (Victor, 23-09-2026) */
+      if(opc.trib&&opc.fuera.indexOf(200+k+1)<0){
+        var tr=tribAutocad(k);
+        if(tr&&tr.lista.length){
+          tr.titulo="COLUMNAS"; tr.piso=k+1;
+          plantas.push(plantaAutocad({nombre:L.nombre, ejes:L.ejes, columnas:L.columnas, placas:L.placas,
+                                      vigas:[], losas:[], escaleras:[]},200+k+1,T,opc,ex.ejes,tr));
+        }
+      }
     });
     if(plantas.length){
       var paso=Math.max.apply(null,plantas.map(function(p){return p.caja[2]-p.caja[0]}))+tam(160);
@@ -26145,7 +26236,7 @@ var TT={script:performance.now()};
   function pintaAutocad(){
     var P=$("#panelAcad"); if(!P)return;
     var opc=opcAutocad(), D=null, err="", n=S.niveles.length,
-        ver=(S.acadVer===0||S.acadVer===99)?S.acadVer:Math.min(Math.max(+S.acadVer||1,1),n);
+        ver=(S.acadVer===0||S.acadVer===99||S.acadVer>=200)?S.acadVer:Math.min(Math.max(+S.acadVer||1,1),n);
     try{ D=planoAutocad(opc); }catch(e){ err=String((e&&e.message)||e); }
     function radio(id,nombre,valor,actual,txt){
       return '<label class="crit-r"><input type="radio" id="'+id+'" name="'+nombre+'" value="'+valor+'"'+(actual===valor?" checked":"")+'> '+txt+'</label>';
@@ -26163,6 +26254,9 @@ var TT={script:performance.now()};
         '<span><b>Viguetas</b>'+radio("acVigT","acVig","todas",opc.viguetas,"todas")+
           radio("acVigB","acVig","banda",opc.viguetas,"una banda")+
           radio("acVigN","acVig","no",opc.viguetas,"solo la flecha")+'</span>'+
+        '<span><b>Áreas tributarias</b>'+
+          '<label class="crit-r"><input type="checkbox" id="acTrib"'+(opc.trib?" checked":"")+'> dibujar su lámina por piso</label>'+
+          '<select id="acTribEl" aria-label="De qué elementos"><option value="columnas">Columnas</option></select></span>'+
         '<label class="crit-r"><b>Escala</b><select id="acEsc">'+[50,75,100].map(function(e){
           return '<option value="'+e+'"'+(e===opc.escala?" selected":"")+'>1/'+e+'</option>'}).join("")+'</select></label>'+
       '</div>'+
@@ -26176,9 +26270,14 @@ var TT={script:performance.now()};
             'Detalle de zapatas</button></span>' : '')+
         S.niveles.map(function(m,k){
         var num=k+1, dentro=opc.fuera.indexOf(num)<0;
-        return '<span class="acad-piso'+(num===ver?" on":"")+'"><input type="checkbox" id="acIncl'+num+'" data-incl="'+num+'"'+
+        var nt=200+num, chip='<span class="acad-piso'+(num===ver?" on":"")+'"><input type="checkbox" id="acIncl'+num+'" data-incl="'+num+'"'+
                (dentro?" checked":"")+' aria-label="Dibujar el '+ordAcad(num)+' piso en AutoCAD"><button class="btn" data-ver="'+num+'">'+
                ordAcad(num)+' piso</button></span>';
+        /* su lamina de areas tributarias, si esta marcada la opcion */
+        if(opc.trib)chip+='<span class="acad-piso'+(nt===ver?" on":"")+'"><input type="checkbox" id="acIncl'+nt+'" data-incl="'+nt+'"'+
+               (opc.fuera.indexOf(nt)<0?" checked":"")+' aria-label="Dibujar las áreas tributarias del '+ordAcad(num)+' piso"><button class="btn" data-ver="'+nt+'">'+
+               'Áreas '+ordAcad(num)+'</button></span>';
+        return chip;
       }).join("")+'</div>';
     if(err)h+='<p class="aviso">No se pudo armar el plano: '+esc(err)+'</p>';
     else{
@@ -26206,6 +26305,8 @@ var TT={script:performance.now()};
       P.querySelectorAll('input[name="'+q[0]+'"]').forEach(function(inp){ inp.onchange=function(){ var o={}; o[q[1]]=this.value; cambia(o); }; });
     });
     var se=P.querySelector("#acEsc"); if(se)se.onchange=function(){ cambia({escala:+this.value}); };
+    var tb=P.querySelector("#acTrib"); if(tb)tb.onchange=function(){ cambia({trib:!!this.checked}); };
+    var tel=P.querySelector("#acTribEl"); if(tel)tel.onchange=function(){ cambia({tribElem:this.value}); };
     P.querySelectorAll("input[data-incl]").forEach(function(inp){
       inp.onchange=function(){ var num=+this.dataset.incl, f=opcAutocad().fuera.filter(function(x){return x!==num});
         if(!this.checked)f.push(num); f.sort(function(a,b){return a-b}); cambia({fuera:f}); };
