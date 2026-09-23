@@ -1114,6 +1114,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           <input type="checkbox" id="todos"> Todos los niveles</label>
         <label class="lbl" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)">
           <input type="checkbox" id="verDims" checked> Ver dimensiones</label>
+        <label class="lbl noCim" style="display:flex;align-items:center;gap:6px;color:var(--ink-2)"
+               title="Pinta a la vez el área tributaria de todas las columnas y dice cuánto de la losa está repartido">
+          <input type="checkbox" id="verTrib"> Ver todas las áreas tributarias</label>
         <label class="lbl" hidden style="display:flex;align-items:center;gap:6px;color:var(--ink-2)"
                title="La cimentación tiene su propia planta: Nivel › Cimentación">
           <input type="checkbox" id="verCim" checked> Ver cimentación</label>
@@ -12201,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v370 · 23-09-2026";
+  var BUILD="v371 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12281,7 +12284,7 @@ var TT={script:performance.now()};
        modo:"modelo",uso:"",amb:"",manual:{},
        /* lado de columna supuesto: lo unico del descuento que el modelador
           no puede saber solo, porque la seccion la calcula Excel */
-       ladoCol:0.50,verDims:true,verCim:true,
+       ladoCol:0.50,verDims:true,verCim:true,verTrib:false,
        /* f'c: lo unico del predimensionamiento de columnas que no sale de la
           planta.  E.060 pide 210 como minimo en elementos sismorresistentes. */
        fc:210,
@@ -13112,7 +13115,7 @@ var TT={script:performance.now()};
             /* el uso con el que estabas pintando: si no viaja, cada vez que se abre la ventana
                vuelve al primero de la tabla */
             us:S.uso,am:S.amb,
-            vd:S.verDims,vc:S.verCim,fc:S.fc,sg:S.sigma,cat:S.categoria,
+            vd:S.verDims,vc:S.verCim,vt:S.verTrib,fc:S.fc,sg:S.sigma,cat:S.categoria,
             he:S.heredaEjes!==false,
             pr:S.proy,et:S.etabs,in:S.intentos,bib:S.pid||null};
   }
@@ -13163,6 +13166,7 @@ var TT={script:performance.now()};
       if(d.us){S.uso=d.us;S.amb=d.am||"";}
       if(d.man)S.manual=d.man; if(+d.lc>0)S.ladoCol=+d.lc;
       if(d.vd!==undefined)S.verDims=!!d.vd;
+      if(d.vt!==undefined)S.verTrib=!!d.vt;
       if(d.vc!==undefined)S.verCim=!!d.vc;
       if(d.he!==undefined)S.heredaEjes=!!d.he;
       if(d.fc)S.fc=d.fc; if(d.sg)S.sigma=d.sg; if(d.cat)S.categoria=d.cat;
@@ -13496,6 +13500,33 @@ var TT={script:performance.now()};
       suma+=seg; a=a2; b=b2;
     }
     return Math.min(suma,tmax);
+  }
+  /* LO REPARTIDO EN TODO EL NIVEL (Victor, 23-09-2026: «ver todas las áreas tributarias… para ver si se está
+     abarcando todo»): lo que recibe cada apoyo, cuanto suma y que paños quedan sin repartir -los que no tienen
+     ninguna columna ni placa que los reciba-.  La suma de las areas tiene que dar el area techada del nivel. */
+  function repartoNivel(m){
+    m=m||N();
+    var R=repartoLosa(m), techada=areaNivel(m), sitios=[], suma=0, i, j;
+    R.sitios.forEach(function(st){
+      var d=(st.t==="col")?medCol(st.i,st.j,m):null;
+      var a=(d?d.at:(R.por[st.k]||0));
+      sitios.push({i:st.i, j:st.j, tipo:st.t, at:a, auto:R.por[st.k]||0, piezas:R.piezas[st.k]||[],
+                   mano:!!(d&&d.atMano), modo:d?d.modo:"auto"});
+      suma+=R.por[st.k]||0;
+    });
+    /* los paños que no recibio nadie */
+    var repartido={}, sueltos=[];
+    R.sitios.forEach(function(st){ (R.piezas[st.k]||[]).forEach(function(pz){
+      var k=key(pz.i,pz.j); repartido[k]=(repartido[k]||0)+areaPoli(pz.P); }); });
+    for(i=0;i<m.dx.length;i++)for(j=0;j<m.dy.length;j++){
+      if(!m.losas[key(i,j)])continue;
+      var ap=areaPano(i,j,m), tiene=repartido[key(i,j)]||0;
+      if(ap-tiene>0.005)sueltos.push({i:i, j:j, falta:+(ap-tiene).toFixed(3)});
+    }
+    return {sitios:sitios, suma:+suma.toFixed(3), techada:+techada.toFixed(3), sueltos:sueltos,
+            /* lo que de verdad carga cada apoyo, con lo escrito a mano */
+            sumaConMano:+sitios.reduce(function(t,x){return t+x.at},0).toFixed(3),
+            pct:techada>0?+(100*suma/techada).toFixed(1):0};
   }
   /* LO QUE VICTOR PONE A MANO en la ficha de la columna (19-09-2026): el area tributaria y el tipo.  Lo
      automatico sigue calculandose y se ensena al lado; lo suyo lo reemplaza en TODO -la seccion de la
@@ -15449,6 +15480,37 @@ var TT={script:performance.now()};
        Cimentacion, la otra columna de una combinada-.  EN CIMENTACION se pinta la de la columna seleccionada, que es la
        de su zapata (Victor, 19-09-2026: «no lo implementaste para las zapatas»), siempre que tenga zapata. */
     var gT=el("g",{"pointer-events":"none"}); g.appendChild(gT);
+    /* TODAS LAS AREAS TRIBUTARIAS A LA VEZ: cada apoyo con su region y su area; la seleccionada sigue saliendo
+       completa, con sus cotas, encima de estas.  En rojo, la losa que no recibio ningun apoyo. */
+    if(S.verTrib&&!CIM&&(S.modo==="modelo"||S.modo==="decisiones")){
+      var RN=repartoNivel(m), gV=el("g",{"pointer-events":"none"});
+      RN.sitios.forEach(function(st){
+        var trz=st.piezas.map(function(pz){ return pz.P.map(aPant); });
+        if(!trz.length)return;
+        var esCol=(st.tipo==="col"), col=esCol?"var(--trib)":"var(--placa)";
+        trz.forEach(function(A){ gV.appendChild(el("polygon",{points:pts(A),fill:esCol?"var(--trib-fill)":"var(--alig-f)"})); });
+        contornos(trz).forEach(function(r){ gV.appendChild(el("polygon",{points:pts(r),fill:"none",stroke:col,
+          "stroke-width":1,"stroke-dasharray":"5 3","stroke-opacity":.75,"class":"trib-todas"})); });
+        /* el area, en el nudo */
+        var nd=aPant(nodo(st.i,st.j,m));
+        txt(gV,nd.x,nd.y-9,st.at.toFixed(2)+(st.mano?"*":""),col,9,null,true);
+      });
+      RN.sueltos.forEach(function(q){
+        gV.appendChild(el("polygon",{points:pts(q4p(q.i,q.j)),fill:"url(#rayaTrib)",stroke:"var(--no)",
+          "stroke-width":1.6,"stroke-dasharray":"4 3","class":"trib-suelta"}));
+      });
+      /* el resumen, arriba a la izquierda del lienzo */
+      var okTodo=!RN.sueltos.length&&Math.abs(RN.techada-RN.suma)<=0.01;
+      var msg=RN.sitios.length+" apoyos · "+RN.suma.toFixed(2)+" m² repartidos de "+RN.techada.toFixed(2)+" m² techados · "+
+              RN.pct.toFixed(1)+" % cubierto";
+      var anR=Math.max(msg.length*5.6,220)+16;
+      gV.appendChild(el("rect",{x:4,y:4,width:anR,height:RN.sueltos.length?34:20,rx:3,fill:"var(--sheet)",
+        stroke:okTodo?"var(--ok)":"var(--no)","stroke-width":1.2,"fill-opacity":.97}));
+      txt(gV,10,17,msg,okTodo?"var(--ok)":"var(--no)",10,"start");
+      if(RN.sueltos.length)txt(gV,10,30,RN.sueltos.length+" paño(s) sin apoyo que los reciba, en rojo: ponles columna o placa",
+                               "var(--no)",9.5,"start");
+      g.appendChild(gV);
+    }
     /* EN CIMENTACION NO SE PINTAN ZONAS TRIBUTARIAS (Victor, 18-09-2026: «no me interesa verlas ahí»): son cosa de
        los pisos.  La planta de cimentación enseña solo las zapatas. */
     var q=CIM?null:S.sel;
@@ -23944,6 +24006,7 @@ var TT={script:performance.now()};
   }
   $("#todos").addEventListener("change",tabla);
   $("#verDims").addEventListener("change",function(){S.verDims=this.checked;render()});
+  $("#verTrib").addEventListener("change",function(){S.verTrib=this.checked;render()});
   $("#verCim").addEventListener("change",function(){S.verCim=this.checked;render()});
   $("#sc").addEventListener("change",function(){guardar();render()});
 
@@ -26718,7 +26781,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
 })();
 </script>
 
