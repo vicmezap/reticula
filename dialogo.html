@@ -12204,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v373 · 23-09-2026";
+  var BUILD="v374 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -13173,7 +13173,11 @@ var TT={script:performance.now()};
       if(d.et&&typeof d.et==="object")S.etabs=d.et;
       if(Array.isArray(d.in))S.intentos=d.in;
       S.pid=(typeof d.bib==="string"&&d.bib)?d.bib:null;
-      if(d.pr)for(var kp in d.pr)if(S.proy[kp]!==undefined)S.proy[kp]=d.pr[kp];
+      /* TODO LO DEL PROYECTO VUELVE, no solo lo que ya existia por defecto: con el filtro de antes se perdian las
+         claves que nacen vacias -la cimentacion (Df, relleno, s/c, σ neta), las opciones de AutoCAD y el f'c de las
+         zapatas-.  Se guardaban en el libro pero no se leian, y el .bat dibujaba con los valores por defecto
+         (Victor, 23-09-2026: «el .bat no me modela las áreas tributarias»). */
+      if(d.pr)for(var kp in d.pr)if(d.pr[kp]!==undefined)S.proy[kp]=d.pr[kp];
       /* Un modelo guardado ANTES de la E.030 trae categoria pero no uso.
          Como ahora la categoria sigue al uso, dejarlo asi le cambiaria la
          categoria en silencio: un proyecto esencial pasaria a comun solo
@@ -26188,8 +26192,8 @@ var TT={script:performance.now()};
     /* EL DETALLE DE ZAPATAS (99), justo despues de la planta de cimentacion */
     if(zaps.length&&opc.fuera.indexOf(99)<0)plantas.push(detalleZapatasAutocad(opc,zaps,T));
     ex.niveles.forEach(function(L,k){
-      if(opc.fuera.indexOf(k+1)>=0)return;
-      plantas.push(plantaAutocad(L,k+1,T,opc,ex.ejes));
+      /* LA PLANTA Y SU LAMINA SE MARCAN POR SEPARADO: desmarcar el piso ya no se lleva por delante sus areas */
+      if(opc.fuera.indexOf(k+1)<0)plantas.push(plantaAutocad(L,k+1,T,opc,ex.ejes));
       /* LA LAMINA DE AREAS TRIBUTARIAS de ese piso, si esta marcada (Victor, 23-09-2026) */
       if(opc.trib&&opc.fuera.indexOf(200+k+1)<0){
         var tr=tribAutocad(k);
