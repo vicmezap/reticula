@@ -12204,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v374 · 23-09-2026";
+  var BUILD="v380 · 23-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -18009,6 +18009,8 @@ var TT={script:performance.now()};
     }
     var r3=null, p3;
     if(t.dataset.tipocol){ p3=t.dataset.tipocol.split(":"); r3=ponTipoCol(+p3[0],+p3[1],t.value,+p3[2]); }
+    if(t.dataset.relcol){ var pr4=t.dataset.relcol.split(":"); r3=ponRelCol(+pr4[0],+pr4[1],t.value,+pr4[2]);
+      if(r3&&r3.ok)toast("Relación h/b = "+r3.rel.toFixed(2)+": "+r3.b+" × "+r3.h+" cm."); }
     if(r3&&!r3.ok){ toast(r3.msg); render(); }
     else if(r3&&r3.cambio)toast(r3.mano?"Tipo tuyo: "+r3.tipo.toLowerCase()+".":"Vuelve el tipo automático: "+r3.tipo.toLowerCase()+".");
   });
@@ -18018,7 +18020,7 @@ var TT={script:performance.now()};
     if(ev.key==="Enter"&&campoTrib(t)){ ev.preventDefault(); t.blur(); }
   });
   $("#inspBody").addEventListener("click",function(ev){
-    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol]"):null;
+    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol],[data-formacol],[data-largocol]"):null;
     if(!b)return;
     var r2;
     /* EL ANCHO DE LA VIGA: volver al automatico, el modo y el ↺ de un lado */
@@ -18032,6 +18034,15 @@ var TT={script:performance.now()};
     if(b.dataset.trvreset){ var pvr=b.dataset.trviga.split(":"); VIVO=null; EDIT_TRIB=null;
       r2=ponAnchoViga(pvr[0],+pvr[1],+pvr[2],b.dataset.trvreset,null,+pvr[3]); if(r2&&!r2.ok)toast(r2.msg); return; }
     /* EN UNA COMBINADA O UNA CORRIDA: pasar a otra de sus columnas para ver y editar su area */
+    /* LA FORMA DE LA COLUMNA, desde su ficha */
+    if(b.dataset.formacol){ var pf=b.dataset.formacol.split(":"); VIVO=null; EDIT_TRIB=null;
+      r2=ponFormaCol(+pf[0],+pf[1],pf[3],+pf[2]);
+      if(r2&&!r2.ok)toast(r2.msg); else toast("Columna "+pf[3]+": "+(r2.D?("Ø "+r2.D):(r2.b+" × "+r2.h))+" cm.");
+      return; }
+    if(b.dataset.largocol){ var pl2=b.dataset.largocol.split(":"); VIVO=null; EDIT_TRIB=null;
+      r2=ponLargoCol(+pl2[0],+pl2[1],pl2[3],+pl2[2]);
+      if(r2&&!r2.ok)toast(r2.msg); else toast("Lado largo en "+pl2[3].toUpperCase()+": "+r2.b+" × "+r2.h+" cm.");
+      return; }
     if(b.dataset.selcol){ var ps=b.dataset.selcol.split(":"); VIVO=null; EDIT_TRIB=null;
       S.sel={t:"col",i:+ps[0],j:+ps[1]}; render(); return; }
     if(b.dataset.atauto){ var pa3=b.dataset.atauto.split(":"); VIVO=null; EDIT_TRIB=null; r2=autoTrib(+pa3[0],+pa3[1],+pa3[2]);
@@ -18728,11 +18739,31 @@ var TT={script:performance.now()};
             '<option value="auto"'+(d.tipoMano?"":" selected")+'>Automático · '+d.tipoAuto+'</option>'+
             TIPOS_COL.map(function(t){ return '<option value="'+t+'"'+(d.tipoMano&&d.tipo===t?" selected":"")+'>'+t+'</option>'; }).join("")+
             '</select>';
+      /* LA FORMA, EN EL 2D: cuadrada, rectangular (con su relación y su orientación) o circular */
+      var formaAct=(pc.forma==="circular")?"circular":(pc.rect?"rectangular":"cuadrada");
+      var bForma=function(f,t){ return '<button type="button" data-formacol="'+ijN+':'+f+'" aria-pressed="'+(formaAct===f)+'">'+t+'</button>'; };
+      var blqForma='<section class="tr-bloque" aria-label="Forma de la columna">'+
+        '<div class="tr-cab"><span class="tr-tit">Sección</span><div class="tr-seg" role="group" aria-label="Forma de la columna">'+
+          bForma("cuadrada","Cuadrada")+bForma("rectangular","Rectangular")+bForma("circular","Circular")+'</div></div>'+
+        (formaAct==="rectangular"
+          ? '<div class="tr-res"><label for="relcol">Relación h / b</label><div class="tr-campo">'+
+            '<input id="relcol" type="text" inputmode="decimal" autocomplete="off" data-relcol="'+ijN+'" value="'+pc.rel.toFixed(2)+
+            '" aria-label="Relación entre el lado largo y el corto"></div></div>'+
+            '<div class="tr-anchos"><span>Lado largo</span><span>'+
+            ['x','y'].map(function(dd){ return '<button type="button" class="mini" data-largocol="'+ijN+':'+dd+'" aria-pressed="'+
+              (pc.largo===dd)+'">en '+dd.toUpperCase()+'</button>'; }).join(" ")+'</span></div>'+
+            '<p class="tr-origen"><b>Rectangular:</b> <code>b = √(Ac / '+pc.rel.toFixed(2)+') = '+pc.corto+
+            ' cm · h = '+pc.largoLado+' cm</code>, al múltiplo de 5 cm y con el mínimo de '+Math.round(CRITERIOS.MINIMOS.anchoColumna*100)+' cm.</p>'
+          : (formaAct==="circular"
+            ? '<p class="tr-origen"><b>Circular:</b> la misma Ac en un círculo, <code>Ø '+pc.D+' cm</code>.</p>'
+            : '<p class="tr-origen"><b>Cuadrada:</b> <code>lado = √Ac = '+pc.cuadrada+' cm</code>, el valor por defecto del libro.</p>'))+
+        '<p class="tr-nota">La sección se recalcula sola si cambia el área tributaria. Si escribes una sección en '+
+        '<b>Decisiones</b>, esa manda sobre esto.</p></section>';
       html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--trib)">'+d.tipo+
         (d.tipoMano?" · tuyo":"")+"</span>"+
         '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.C[key(q.i,q.j)].eje,1)+kv("Tipo",selTipo,1)+
         kv("Paños junto al nudo",d.n+" de 4")+kv("N° de pisos que carga",pisosQueCarga(S.act),1)+'</dl>'+
-        bloqueTrib(q.i,q.j,S.act,d,nm.C[key(q.i,q.j)].eje)+
+        bloqueTrib(q.i,q.j,S.act,d,nm.C[key(q.i,q.j)].eje)+blqForma+
         '<dl class="kv" style="margin-top:4px">'+
         kv("Peso en servicio P",pc.P.toFixed(2)+" t",1)+
         kv("Área requerida Ac",pc.Ac+" cm²",1)+
@@ -18741,7 +18772,7 @@ var TT={script:performance.now()};
             kv("Área colocada",Math.round(pc.area)+" cm²",1)+
             kv("Equivalente cuadrada",pc.cuadrada+" × "+pc.cuadrada+" cm",1)
           : kv("Sección",'<b>'+pc.b+" × "+pc.h+" cm</b>"+
-              (pc.propia?"  (tuya)":"  (cuadrada)"),1)+
+              (pc.propia?"  (tuya)":(pc.rect?("  (rectangular h/b "+pc.rel.toFixed(2)+")"):"  (cuadrada)")),1)+
             kv("Área colocada",Math.round(pc.area)+" cm²",1)+
             kv("Equivalente circular","Ø "+pc.circular+" cm",1))+"</dl>"+
         (pc.propia&&!pc.cumple
@@ -19373,6 +19404,56 @@ var TT={script:performance.now()};
   /* La forma vive en la columna y "rect" es el defecto, que no se guarda.
      Asi un modelo anterior a las circulares se lee sin migrarlo. */
   function formaDe(c){ return c && c.forma === "circular" ? "circular" : "rect" }
+  /* LA PROPORCION DE UNA COLUMNA RECTANGULAR (Victor, 23-09-2026): h/b.  1 es la cuadrada, que es lo de siempre y
+     no se guarda; el lado largo va en Y salvo que digas otra cosa. */
+  var REL_COL={min:1, max:4};
+  function relCol(c){ var v=+(c&&c.rel); return (v>=REL_COL.min&&v<=REL_COL.max)?v:1; }
+  function largoCol(c){ return (c&&c.largo==="x")?"x":"y"; }
+  /* la forma, desde la ficha: «cuadrada», «rectangular» o «circular» */
+  function ponFormaCol(i,j,forma,niv){
+    var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(), c=m.cols[key(i,j)];
+    if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    if(["cuadrada","rectangular","circular"].indexOf(forma)<0)return {ok:false,msg:"La forma es cuadrada, rectangular o circular."};
+    snap();
+    if(forma==="circular"){ delete c.rel; delete c.largo; c.forma="circular"; if(c.sec&&!(c.sec.D>0))delete c.sec; }
+    else{
+      delete c.forma;
+      if(forma==="cuadrada")delete c.rel;
+      else if(relCol(c)<=1.0001)c.rel=1.5;          /* la primera vez, una proporcion usual */
+      if(c.sec&&(c.sec.b>0||c.sec.h>0||c.sec.D>0))delete c.sec;   /* lo escrito a mano tapaba la forma nueva */
+    }
+    render();
+    var sc=seccionCol(i,j,m,(niv!=null)?niv:nivelDe(m));
+    return {ok:true, forma:forma, b:sc.b, h:sc.h, D:sc.D};
+  }
+  /* la relacion h/b */
+  function ponRelCol(i,j,valor,niv){
+    var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(), c=m.cols[key(i,j)];
+    if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    if(formaDe(c)==="circular")return {ok:false,msg:"La circular no tiene relación h/b."};
+    var v=leerNum(valor);
+    if(v===null)return {ok:false,msg:"La relación h/b tiene que ser un número."};
+    v=+v.toFixed(2);
+    if(!(v>=REL_COL.min&&v<=REL_COL.max))return {ok:false,msg:"La relación h/b va de 1 a "+REL_COL.max+"."};
+    snap();
+    if(v<=1.0001)delete c.rel; else c.rel=v;
+    if(c.sec&&(c.sec.b>0||c.sec.h>0))delete c.sec;
+    render();
+    var sc=seccionCol(i,j,m,(niv!=null)?niv:nivelDe(m));
+    return {ok:true, rel:relCol(c), b:sc.b, h:sc.h};
+  }
+  /* hacia donde va el lado largo */
+  function ponLargoCol(i,j,dir,niv){
+    var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N(), c=m.cols[key(i,j)];
+    if(!c)return {ok:false,msg:"En ese cruce no hay columna."};
+    if(["x","y"].indexOf(dir)<0)return {ok:false,msg:"El lado largo va en X o en Y."};
+    snap();
+    if(dir==="x")c.largo="x"; else delete c.largo;
+    if(c.sec&&(c.sec.b>0||c.sec.h>0))delete c.sec;
+    render();
+    var sc=seccionCol(i,j,m,(niv!=null)?niv:nivelDe(m));
+    return {ok:true, largo:largoCol(c), b:sc.b, h:sc.h};
+  }
 
   /* Seccion de una columna.  Si la tocaste a mano manda la tuya; si no, la
      cuadrada que deriva el motor.  Va con cache propia porque ladoCol la
@@ -19391,6 +19472,15 @@ var TT={script:performance.now()};
     var lado = Math.round(Math.max(q.cuadrada, min)*100);
     var diam = Math.round(Math.max(q.circular, min)*100);
     var forma = formaDe(c), propia, b, h, D = 0, ver;
+    /* RECTANGULAR: la misma Ac repartida con la relacion h/b que pidas.  b = √(Ac/r), h = r·b, los dos al
+       múltiplo de 5 cm superior y nunca por debajo del mínimo; el lado LARGO va donde digas (por defecto, en Y).
+       Con r = 1 es exactamente la cuadrada de siempre. */
+    var rel = relCol(c), largo = largoCol(c), corto = lado, largoL = lado;
+    if(forma !== "circular" && rel > 1.0001){
+      var b0 = Math.sqrt(q.Ac / rel), h0 = rel * b0;
+      corto = Math.max(Math.ceil(b0 / 5 - 1e-9) * 5, Math.round(min * 100));
+      largoL = Math.max(Math.ceil(h0 / 5 - 1e-9) * 5, Math.round(min * 100));
+    }
 
     if(forma === "circular"){
       propia = !!(c.sec && c.sec.D > 0);
@@ -19403,12 +19493,15 @@ var TT={script:performance.now()};
       ver = q.verificaCircular(D/100);
     }else{
       propia = !!(c.sec && c.sec.b > 0 && c.sec.h > 0);
-      b = propia ? c.sec.b : lado;
-      h = propia ? c.sec.h : lado;
+      /* b va en X y h en Y: el lado largo se pone en el eje que elijas */
+      b = propia ? c.sec.b : (largo === "x" ? largoL : corto);
+      h = propia ? c.sec.h : (largo === "x" ? corto : largoL);
       ver = q.verifica(b/100, h/100);
     }
     var r = {forma:forma, b:b, h:h, D:D, propia:propia, Ac:q.Ac, P:q.P_servicio,
              ubicacion:d.tipo, at:d.at, C:q.C, area:ver.area,
+             rel:rel, largo:largo, rect:(forma !== "circular" && rel > 1.0001),
+             corto:corto, largoLado:largoL,
              cuadrada:lado, circular:diam,
              cumple:ver.cumple, anchoOk:ver.anchoOk};
     PD.cols[ck] = r;
@@ -20336,9 +20429,12 @@ var TT={script:performance.now()};
         LS={aligerada:[],maciza:[],nervada:[]},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){var d=medCol(i,j,m),a=nm.C[i+":"+j];
       /* la forma va como DATO: la hoja ramifica su formula sobre esta celda */
+      var scC=seccionCol(i,j,m,niv);
       C.push([a.cod,d.tipo,
               formaDe(m.cols[i+":"+j])==="circular"?"Circular":"Rectangular",
-              pisos,d.at.toFixed(3)]);}
+              pisos,d.at.toFixed(3),
+              /* la proporcion y el lado largo: la hoja calcula b y h como el modelador */
+              scC.rel.toFixed(2), scC.largo==="x"?"X":"Y"]);}
     function pushViga(o,i,j){
       var k=o+":"+i+":"+j,vv=medViga(o,i,j,m),b=nm.V[k];
       /* la chata no lleva ancho tributario: su peralte es el espesor de la losa,
@@ -26910,7 +27006,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
 })();
 </script>
 

@@ -5092,6 +5092,7 @@
       ["Peso en servicio", "P servicio = N.º de pisos × área tributaria × peso/m²"],
       ["Área de la columna", "Ac = P servicio / (k · f'c)"],
       ["Sección cuadrada", "b = √Ac        (área colocada = b × h)"],
+      ["Sección rectangular", "b = √(Ac / r) y h = r · b, con r = h/b de la ficha de cada columna"],
       ["Ancho mínimo", "b ≥ " + C.MINIMOS.anchoColumna.toFixed(2) + " m"],
       /* La circular NO se calcula aqui, y decirlo cuesta una fila.  Antes
          esta tabla anunciaba Dc = raiz(4 Ac / pi) y la lista de abajo daba
@@ -5115,11 +5116,23 @@
        "Ac (cm²)", "b (cm)", "h (cm)"],
       fs,
       function (f, i) {
+        /* LA SECCION LA MANDA EL 2D (Victor, 23-09-2026: «una cosa no puede decir algo y la otra otra»).  Con
+           h/b = 1 es la cuadrada de Oviedo (pag. 83), lado = √Ac; con h/b > 1, la rectangular que eligio el
+           proyectista: corto = √(Ac / r), largo = r · corto, los dos al múltiplo de 5 cm y con el mínimo.  El lado
+           LARGO va en X o en Y segun diga su ficha; la hoja solo lo escribe. */
+        /* la relacion h/b de su ficha va DENTRO de la formula: la tabla se queda en sus ocho columnas */
+        var rel = +(f[5] || 1), enX = (f[6] === "X");
+        var corto = (rel > 1.0001)
+              ? "MAX(CEILING(SQRT(H" + i + "/" + rel + "),5)," + cmin + ")"
+              : "MAX(CEILING(SQRT(H" + i + "),5)," + cmin + ")",
+            largo = (rel > 1.0001)
+              ? "MAX(CEILING(" + rel + "*SQRT(H" + i + "/" + rel + "),5)," + cmin + ")"
+              : "MAX(CEILING(SQRT(H" + i + "),5)," + cmin + ")";
         return [f[0], f[1], +f[3], +f[4],
           "=IFERROR(E" + i + "*F" + i + "*$F$" + fPeso + '/1000,"")',
           "=IFERROR(G" + i + "*1000/((" + K.replace(/#/g, i) + ")*$F$" + ffc + '),"")',
-          "=IF(N(H" + i + ')=0,"",MAX(CEILING(SQRT(H' + i + "),5)," + cmin + "))",
-          "=IF(N(I" + i + ')=0,"",MAX(CEILING(H' + i + "/I" + i + ",5)," + cmin + "))"];
+          "=IF(N(H" + i + ')=0,"",' + (enX ? largo : corto) + ")",
+          "=IF(N(H" + i + ')=0,"",' + (enX ? corto : largo) + ")"];
       }, { 2: "0", 3: "0.000", 4: "0.00", 5: "0" });
     r = L.fin + 1;
     r = manda(h, r, L8,
@@ -7518,7 +7531,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v374 · 23-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v380 · 23-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
