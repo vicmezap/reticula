@@ -12204,7 +12204,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v380 · 23-09-2026";
+  var BUILD="v382 · 25-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15451,7 +15451,8 @@ var TT={script:performance.now()};
       zs.forEach(function(z){
         /* en rojo: se pisa con otra, esta en el lindero sin columna interior a la que conectarla, o no
            carga nada.  El porque lo dice su ficha; encima de la planta solo va la medida */
-        var sinViga=!!(z.conectada&&!(z.vigasCon||[]).length);
+        /* con restriccion y sin TODAS sus vigas, hay una excentricidad que no toma nadie: en rojo */
+        var sinViga=!excTomada(z);
         var sinVolado=!!(z.corrida&&!(z.H>0));    /* (en la combinada de una fila: sin peralte, la formula no da) */
         var mal=!!pisadas[z.cod]||sinViga||!!z.vacia||sinVolado;
         var col=mal?"var(--no)":"var(--ink-3)";
@@ -18020,7 +18021,7 @@ var TT={script:performance.now()};
     if(ev.key==="Enter"&&campoTrib(t)){ ev.preventDefault(); t.blur(); }
   });
   $("#inspBody").addEventListener("click",function(ev){
-    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol],[data-formacol],[data-largocol]"):null;
+    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-zvcon],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol],[data-formacol],[data-largocol]"):null;
     if(!b)return;
     var r2;
     /* EL ANCHO DE LA VIGA: volver al automatico, el modo y el ↺ de un lado */
@@ -18056,6 +18057,12 @@ var TT={script:performance.now()};
       r2=ponAnchoTrib(+pr3[0],+pr3[1],b.dataset.trreset,null,+pr3[2]); if(r2&&!r2.ok)toast(r2.msg); return; }
     if(b.dataset.zrestr){ var pr=b.dataset.zrestr.split(":"); r2=restriccionZapata(+pr[0],+pr[1],!!b.checked); if(r2&&!r2.ok)toast(r2.msg); return; }
     if(b.dataset.zlado){ var pd=b.dataset.zlado.split(":"); r2=ladoRestriccion(+pd[0],+pd[1],pd[2]); if(r2&&!r2.ok)toast(r2.msg); return; }
+    /* LA VIGA DE CIMENTACION de una zapata con restriccion */
+    if(b.dataset.zvcon){ var pv=b.dataset.zvcon.split(":"); r2=vigaConexionZapata(+pv[0],+pv[1],pv[2]);
+      if(r2&&!r2.ok)toast(r2.msg);
+      else toast(r2.puesta?("Viga de cimentación en "+r2.dir+" hasta "+r2.cod+", "+(+r2.l).toFixed(2)+" m.")
+                          :"Viga de cimentación quitada.");
+      return; }
     if(b.dataset.zcorr){ var pc=b.dataset.zcorr.split(":"); r2=corridaDeColumnas(+pc[0],+pc[1],pc[2]); }
     else if(b.dataset.zcorrq){ var pq=b.dataset.zcorrq.split(":"); r2=quitaCorrida(+pq[0],+pq[1]); }
     else if(b.dataset.zlibre){ var pl=b.dataset.zlibre.split(":"); r2=liberaZapata(+pl[0],+pl[1]); }
@@ -18834,13 +18841,29 @@ var TT={script:performance.now()};
               /* «ZAPATA CON RESTRICCION»: una casilla.  Activada, la zapata se pega al limite por los lados que marques */
               var lim=limiteDe(q.i,q.j,m), ij=q.i+":"+q.j;
               var h='<div class="zc-restr"><label><input type="checkbox" data-zrestr="'+ij+'"'+(lim?" checked":"")+
-                '> <b>Zapata con restricción</b> (lindero)</label>';
+                '> <b>Zapata con restricción</b> (límite del terreno)</label>';
               if(lim){
                 h+='<div class="zc-lados">'+[["x0","izq."],["x1","der."],["y0","arriba"],["y1","abajo"]].map(function(p){
                   var on=(lim.x===p[0]||lim.y===p[0]);
                   return '<button class="mini" aria-pressed="'+on+'" data-zlado="'+ij+':'+p[0]+'">'+p[1]+'</button>'; }).join("")+'</div>';
-                h+='<p class="nota" style="margin:6px 0 0">Se pega al límite por la '+ladoLindero(lim)+' y queda excéntrica, '+
-                   'sin viga de cimentación. Su diseño en D6 queda pendiente hasta que decidas cómo tomar esa excentricidad.</p>';
+                /* LA VIGA DE CIMENTACION (E.060 15.2.6; Harmsen 12.9): se PROPONE, no se pone sola.  Con ella, la
+                   excentricidad se la lleva la viga hasta la columna interior y D6 ya puede diseñar la zapata. */
+                var vgs=vigasDeRestriccion(q.i,q.j,m), puestas=vgs.filter(function(v){ return v.puesta; }).length;
+                var faltan=(lim.x?1:0)+(lim.y?1:0)-vgs.length;
+                var nLados=ladosRestr(lim);
+                h+='<p class="nota" style="margin:6px 0 0">Se pega al límite por la '+ladoLindero(lim)+' y queda excéntrica. '+
+                   (puestas>=nLados
+                     ? 'Esa excentricidad se la lleva su <b>viga de cimentación</b> hasta la columna interior.'
+                     : (puestas
+                        ? 'Le falta la viga de la otra dirección: por ese lado la excentricidad todavía no la toma nada.'
+                        : 'Sin viga de cimentación su diseño queda pendiente: esa excentricidad tiene que tomarla algo.'))+'</p>';
+                if(vgs.length)h+='<div class="zc-lados">'+vgs.map(function(v){
+                  return '<button class="mini" aria-pressed="'+v.puesta+'" data-zvcon="'+ij+':'+v.dir+'">'+
+                    (v.puesta?"Quitar":"Poner")+' viga en '+v.dir+' hacia '+nomCol(v)+' ('+(+v.l).toFixed(2)+' m)</button>';
+                  }).join("")+'</div>';
+                if(faltan>0)h+='<p class="nota" style="margin:6px 0 0">Por '+(vgs.length?"el otro lado":"ese lado")+
+                   ' no hay ninguna columna interior en su línea: ahí no cabe viga de cimentación. Lo que toca entonces '+
+                   'es una <b>zapata combinada</b> con la vecina.</p>';
               }else h+='<p class="nota" style="margin:6px 0 0">Sin restricción: va centrada bajo su columna.</p>';
               return h+'</div>';
             })();
@@ -19683,7 +19706,7 @@ var TT={script:performance.now()};
     if(!z)return {ok:false,msg:"Esa columna no tiene zapata."};
     snap();
     delete z.libre;
-    if(!activa)delete z.restr;
+    if(!activa){ delete z.restr; delete z.vcon; }   /* sin restricción no hay viga de cimentación que valga */
     else if(!limiteDe(i,j,m))z.restr=ladoPropuesto(i,j,m);
     guardar(); render();
     return {ok:true};
@@ -19696,7 +19719,10 @@ var TT={script:performance.now()};
     r[eje]=(r[eje]===lado)?null:lado;
     snap();
     delete z.libre;
-    if(!r.x&&!r.y)delete z.restr;
+    /* el lado que se apaga se lleva su viga */
+    if(z.vcon){ if(!r.x)delete z.vcon.x; if(!r.y)delete z.vcon.y;
+                if(!z.vcon.x&&!z.vcon.y)delete z.vcon; }
+    if(!r.x&&!r.y){ delete z.restr; delete z.vcon; }
     else z.restr=r;
     guardar(); render();
     return {ok:true};
@@ -19718,6 +19744,44 @@ var TT={script:performance.now()};
         return {dir:dir, i:ii, j:jj, l:Math.sqrt((b.x-a.x)*(b.x-a.x)+(b.y-a.y)*(b.y-a.y))}; }
     }
     return null;
+  }
+  /* LAS VIGAS DE CIMENTACION QUE PUEDE TENER una zapata con restriccion (E.060 15.2.6; Harmsen 12.9): una por
+     cada lado restringido, perpendicular al limite y hacia adentro, hasta la primera columna que encuentre.
+     NO SE PONEN SOLAS (Victor decide que va en el modelo): aqui solo se proponen, y «puesta» dice si la acepto. */
+  function vigasDeRestriccion(i,j,m){
+    m=m||S.niveles[0]; if(!m)return [];
+    var lim=limiteDe(i,j,m); if(!lim)return [];
+    var z=m.zapatas&&m.zapatas[key(i,j)], vc=(z&&z.vcon)||{}, out=[], v;
+    /* hacia adentro: con el limite a la izquierda (x0) se avanza en +i; arriba (y0), en +j */
+    if(lim.x){ v=vigaConexionDe(i,j,m,"X",(lim.x==="x0")?1:-1); if(v){ v.puesta=!!vc.x; out.push(v); } }
+    if(lim.y){ v=vigaConexionDe(i,j,m,"Y",(lim.y==="y0")?1:-1); if(v){ v.puesta=!!vc.y; out.push(v); } }
+    return out;
+  }
+  /* solo las que Victor acepto: son las que existen para el modelo, para D6 y para el plano */
+  function vigasPuestas(i,j,m){
+    return vigasDeRestriccion(i,j,m).filter(function(v){ return v.puesta; });
+  }
+  /* cuantos lados tiene restringidos: en una esquina son dos, y CADA UNO necesita su viga */
+  function ladosRestr(lim){ return lim?((lim.x?1:0)+(lim.y?1:0)):0; }
+  /* ¿la excentricidad la toma algo en TODAS las direcciones restringidas? */
+  function excTomada(z){ return !z.lim || ((z.vigasCon||[]).length>=ladosRestr(z.lim)); }
+  /* poner o quitar la viga de cimentacion de un lado */
+  function vigaConexionZapata(i,j,dir,activa){
+    var m=S.niveles[0], z=m&&m.zapatas&&m.zapatas[key(i,j)];
+    if(!z)return {ok:false,msg:"Esa columna no tiene zapata."};
+    if(!limiteDe(i,j,m))return {ok:false,msg:"Esa zapata no tiene restricción de local."};
+    if(["X","Y"].indexOf(dir)<0)return {ok:false,msg:"La viga de cimentación va en X o en Y."};
+    var cand=vigasDeRestriccion(i,j,m).filter(function(v){ return v.dir===dir; })[0];
+    if(!cand)return {ok:false,msg:"En esa línea no hay ninguna columna interior a la que llevar la viga."};
+    var lado=(dir==="X")?"x":"y", nv={}, k;
+    if(z.vcon)for(k in z.vcon)if(z.vcon[k])nv[k]=true;
+    if(activa===undefined)activa=!nv[lado];
+    if(activa)nv[lado]=true; else delete nv[lado];
+    snap();
+    if(!nv.x&&!nv.y)delete z.vcon; else z.vcon=nv;
+    guardar(); render();
+    return {ok:true, dir:dir, puesta:!!nv[lado], l:cand.l,
+            cod:(nombres(0).C[key(cand.i,cand.j)]||{}).cod||""};
   }
   /* la presion con la que se dimensiona: la neta si el relleno pesa, la bruta si no.
      Es la MISMA formula de Oviedo -Az = 1,10·P·F/σ- con σ = σn en vez de σs. */
@@ -20377,15 +20441,17 @@ var TT={script:performance.now()};
       var vigasC=[];
       if(lim){
         var scl=seccionCol(i,j,m,0), hb=scl.b/200, hh=scl.h/200;
-        /* con restriccion se pega al limite; SIN viga de cimentacion (no se pone sola) */
+        /* con restriccion se pega al limite por ese lado */
         if(lim.x)cx=(lim.x==="x0")?nd.x-hb+ax/2:nd.x+hb-ax/2;
         if(lim.y)cy=(lim.y==="y0")?nd.y-hh+ay/2:nd.y+hh-ay/2;
+        /* las vigas de cimentacion QUE VICTOR ACEPTO: no se ponen solas */
+        vigasC=vigasPuestas(i,j,m);
       }
       r.push({i:i,j:j,cod:nm.C[key(i,j)].cod.replace("-C-","-Z-")+(z.pareja?"+":""),
               tipo:z.tipo, B:z.menor, L:z.mayor, H:z.H, Az:z.Az,
               combinada:!!z.pareja, con:z.pareja?z.cods:null, Hpropio:!!z.Hpropio,
               propia:!!z.propia, cumple:(z.cumple!==false),
-              eje:eje, ax:ax, ay:ay, lim:lim, conectada:false, vigasCon:vigasC, vacia:vacia,
+              eje:eje, ax:ax, ay:ay, lim:lim, conectada:vigasC.length>0, vigasCon:vigasC, vacia:vacia,
               harmsen:z.harmsen||null, s1:(z.harmsen?-z.harmsen.ini:null),
               x0:cx-ax/2, x1:cx+ax/2, y0:cy-ay/2, y1:cy+ay/2});
     }
@@ -22124,16 +22190,21 @@ var TT={script:performance.now()};
                conectada:!!z.conectada, lim:z.lim};
       if(!z.combinada){
         var rq=reac[codC];
-        if(z.lim){
-          /* CON RESTRICCION (pegada al limite, excentrica) y sin viga: como tomar esa excentricidad lo decide
-             Victor; hasta entonces D6 no la disena como si estuviera centrada, que seria inseguro */
+        if(z.lim&&!excTomada(z)){
+          /* CON RESTRICCION (pegada al limite, excentrica) y sin TODAS sus vigas: como tomar esa excentricidad lo
+             decide Victor; hasta entonces D6 no la disena como si estuviera centrada, que seria inseguro.  En una
+             ESQUINA hacen falta las dos: con una sola, la excentricidad de la otra direccion no la toma nada. */
           reg.estado="falta"; reg.lim=z.lim;
-          reg.porque="zapata con restricción (excéntrica, sin viga de cimentación): su diseño queda pendiente hasta que "+
-            "decidas cómo tomar la excentricidad";
+          reg.porque=((z.vigasCon||[]).length
+            ? "está restringida por dos lados y solo una dirección tiene viga de cimentación: la excentricidad de la "+
+              "otra no la toma nada. Ponle también la viga que falta, o únela con la vecina en una combinada"
+            : "zapata con restricción (excéntrica, sin viga de cimentación): su diseño queda pendiente hasta que "+
+              "decidas cómo tomar la excentricidad. En su ficha puedes ponerle la viga de cimentación");
           out.lista.push(reg); return;
         }
         if(!rq){ reg.estado="falta"; reg.porque="ETABS no trae la reacción de "+codC; out.lista.push(reg); return; }
-        if(false){
+        if(z.lim){
+          /* ZAPATA CONECTADA (E.060 15.2.6; Harmsen 12.9): la viga que pusiste se lleva el momento P·e */
           reg.conectada=true;
           if(!z.vigasCon.length){ reg.estado="falta";
             reg.porque="está en el límite y no hay columna interior en su línea para la viga de conexión";
@@ -25626,11 +25697,20 @@ var TT={script:performance.now()};
                trans:tr, fuera:q.mallaFuera};
         }
       }
-      /* la medida de D6 se pone en el mismo centro */
-      var cx=(z.x0+z.x1)/2, cy=(z.y0+z.y1)/2, B0=Math.min(ax,ay), L0=Math.max(ax,ay);
+      /* la medida de D6 se pone en el mismo centro... SALVO CON RESTRICCION DE LOCAL: ahi el lado del límite se
+         queda donde está y la zapata crece solo hacia adentro.  Centrandola se salía del límite de propiedad. */
+      var cx=(z.x0+z.x1)/2, cy=(z.y0+z.y1)/2, B0=Math.min(ax,ay), L0=Math.max(ax,ay), lz=z.lim||{};
+      var qx0=cx-ax/2, qy0=cy-ay/2;
+      if(lz.x==="x0")qx0=z.x0; else if(lz.x==="x1")qx0=z.x1-ax;
+      if(lz.y==="y0")qy0=z.y0; else if(lz.y==="y1")qy0=z.y1-ay;
       out.push({cod:z.cod, tipo:z.tipo, B:+B0.toFixed(2), L:+L0.toFixed(2), H:+(+H).toFixed(2), arm:arm, pend:!q,
-                porque:(!q&&z.cod)?"sin diseño D6":"",
-                x0:r4(cx-ax/2+o.x), x1:r4(cx+ax/2+o.x), y0:r4(-(cy+ay/2+o.y)), y1:r4(-(cy-ay/2+o.y))});
+                porque:(!q&&z.cod)?"sin diseño D6":"", lim:z.lim||null,
+                vigas:(z.vigasCon||[]).map(function(v,kv){ var na=nodo(z.i,z.j,m0), nb=nodo(v.i,v.j,m0),
+                    vd=(q&&q.vigas&&q.vigas[kv])||null;
+                  return {dir:v.dir, l:+(+v.l).toFixed(3), hacia:(nombres(0).C[key(v.i,v.j)]||{}).cod||"",
+                          b:vd?+(+vd.b).toFixed(2):0, h:vd?+(+vd.h).toFixed(2):0,
+                          a:[r4(na.x+o.x), r4(-(na.y+o.y))], p2:[r4(nb.x+o.x), r4(-(nb.y+o.y))]}; }),
+                x0:r4(qx0+o.x), x1:r4(qx0+ax+o.x), y0:r4(-(qy0+ay+o.y)), y1:r4(-(qy0+o.y))});
     });
     return out;
   }
@@ -25945,6 +26025,20 @@ var TT={script:performance.now()};
       P.push(texto("RET-TEXTOS",rotulo(t),[z.x0+tam(0.8),z.y0+tam(0.8)],H,0,12)); nRot++;
     });
 
+    /* LAS VIGAS DE CIMENTACION (E.060 15.2.6): la zapata con restricción está en el modelo con su viga, así que
+       la viga va en el plano.  De eje a eje entre las dos columnas, con el ancho que le dio D6. */
+    var nVig=0;
+    (L.zapatas||[]).forEach(function(z){
+      (z.vigas||[]).forEach(function(v){
+        if(!(v.b>0))return;
+        var a=v.a, b2=v.p2, u=uni(res(b2,a)), n=por(nor(u),v.b/2);
+        P.push({k:"pol",capa:"RET-VIGAS-CIM",p:[sum(a,n),sum(b2,n),res(b2,n),res(a,n)],cerrada:true});
+        nVig++;
+        P.push(texto("RET-VIGAS-CIM","VC "+secAc(v.b)+"x"+secAc(v.h),
+               sum(por(sum(a,b2),0.5),por(nor(u),v.b/2+tam(0.8))),H,Math.atan2(u[1],u[0]),13)); nRot++;
+      });
+    });
+
     /* LA LAMINA DE AREAS TRIBUTARIAS: la region de cada apoyo, rayada suave, con su rotulo.  Va debajo de las
        columnas, que se dibujan despues.  Los paños que no recibio nadie, en rojo. */
     var nTrib=0;
@@ -26078,6 +26172,7 @@ var TT={script:performance.now()};
           P.push({k:"solido",capa:"RET-LOSAS",p:[q[0],sum(bs,al),res(bs,al),res(bs,al)]}); }); }});
       if(escs.length)LEY.push({t:"Escalera", f:function(xa,ya){ P.push({k:"pol",capa:"RET-ESCALERAS",p:caja(xa,ya),cerrada:true}); }});
       if(nZap)LEY.push({t:"Zapata (contorno a escala)", f:function(xa,ya){ P.push({k:"pol",capa:"RET-ZAPATAS",p:caja(xa,ya),cerrada:true}); }});
+      if(nVig)LEY.push({t:"Viga de cimentación (E.060 15.2.6)", f:function(xa,ya){ P.push({k:"pol",capa:"RET-VIGAS-CIM",p:caja(xa,ya),cerrada:true}); }});
       y-=tam(9);
       var desdeLey=P.length;
       P.push(texto("RET-CUADRO","LEYENDA",[x0,y],tam(3),0,12));
@@ -26097,7 +26192,7 @@ var TT={script:performance.now()};
     return {nombre:L.nombre||"N"+numero, numero:numero, prims:P, caja:cajaAc(P),
             cuenta:{ejesX:X.length, ejesY:Y.length, burbujas:nBurb, cotas:cotas.length, rotulos:nRot, tipos:filas.length,
                     columnas:cols.length, vigas:vigas.length, chatas:chatas, placas:placas.length, losas:losas.length,
-                    escaleras:escs.length, zapatas:nZap}};
+                    escaleras:escs.length, zapatas:nZap, vigasCim:nVig}};
   }
   /* las capas del plano: color ACI y grosor en centesimas de mm (Victor: «lineas mas gruesas para diferenciar
      cada elemento» y la losa en negro, no en amarillo).  El .bat las crea tal cual. */
@@ -26112,6 +26207,7 @@ var TT={script:performance.now()};
     {n:"RET-CUADRO",color:7,lw:25}, {n:"RET-CUADRO-FINO",color:8,lw:9},
     /* las zapatas: contorno continuo, verde oliva, mas delgado que las columnas que llevan encima */
     {n:"RET-ZAPATAS",color:94,lw:35},
+    {n:"RET-VIGAS-CIM",color:92,lw:35},
     /* el acero de las zapatas: rojo, fino, continuo */
     {n:"RET-ACERO",color:1,lw:25},
     /* la lamina de areas tributarias */
@@ -27006,7 +27102,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}}};
 })();
 </script>
 
