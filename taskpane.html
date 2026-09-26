@@ -6974,6 +6974,70 @@
      largo y con su franja por columna a lo ancho.  Son los resultados de
      oviedo/zapatas.js; la hoja no recalcula.
      ===================================================================== */
+  /* =====================================================================
+     DISENO_LOSAS — el aligerado (D1) con la E.060.  La UNICA hoja de diseno
+     que no necesita los resultados de ETABS: los momentos son los
+     coeficientes aproximados del Art. 8.3.4, que es para lo que estan.
+     ===================================================================== */
+  function disenoLosas(P) {
+    var DL = P && P.disenoLosas, K = P && P.diseno;
+    /* esta hoja NO depende de ETABS: si falta, es que no hay aligerado dibujado */
+    if (!DL || !DL.lista || !DL.lista.length)
+      throw new Error("no hay aligerado dibujado: dibújalo en Planta (herramienta Losa) y vuelve a generar");
+    function coma(x, n) { return (x == null || !isFinite(x)) ? "—" : (+x).toFixed(n == null ? 2 : n).replace(".", ","); }
+    var h = F.hoja("DISENO_LOSAS"), r = 6, sec = 2;
+    h.titulo("DISEÑO DEL ALIGERADO · E.060");
+    r = h.nota(r, "La vigueta no se diseña paño a paño: se diseña la FRANJA que cruza de punta a punta, "
+      + "porque los coeficientes del Art. 8.3.4 necesitan los tramos seguidos. Los momentos y las cortantes "
+      + "salen de esa tabla -ETABS no devuelve momentos de losa- y cada sección dice qué coeficiente usó y por "
+      + "qué. La carga es 1,4 CM + 1,7 CV (Art. 9.2.1) por el ancho de la vigueta. El positivo comprime la "
+      + "losita, así que se calcula con el ala; el negativo comprime el alma. El acero mínimo es el mayor entre "
+      + "1,2 Mcr (Art. 10.5.1) y 0,22 √f'c/fy·bw·d (Art. 10.5.2), con la salida del tercio de más del Art. "
+      + "10.5.3. La cortante se toma a d de la cara (Art. 11.1.3.1) y Vc lleva el 10 % de más de las nervaduras "
+      + "(Art. 8.11.8). La malla de temperatura va perpendicular a las viguetas (Art. 9.7.2 y 8.11.6).");
+
+    var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
+    var L8 = [[3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9], [10, 10]];
+    r = h.seccion(r, (sec++) + ". CON QUÉ SE DISEÑA");
+    r = h.encabezado(r, LD, ["Dato", "Valor", "Nota"], 22.0);
+    if (K) {
+      r = h.fila(r, LD, ["f'c (kg/cm²)", K.fc, "de Criterios de diseño"], null, IZQ3);
+      r = h.fila(r, LD, ["fy (kg/cm²)", K.fy, "acero de refuerzo"], null, IZQ3);
+      if (K.recub && K.recub.losa)
+        r = h.fila(r, LD, ["Recubrimiento de losas (cm)", K.recub.losa.cm, "no expuesta (Art. 7.7.1 c)"], null, IZQ3);
+    }
+    var g0 = (DL.lista[0] && DL.lista[0].seccion) || {};
+    r = h.fila(r, LD, ["Vigueta (cm)", coma(g0.bw, 0) + " × " + coma(g0.h, 0),
+                       "alma ≥ 10 cm y h ≤ 3,5 bw (Art. 8.11.2)"], null, IZQ3);
+    r = h.fila(r, LD, ["Separación entre viguetas (cm)", coma(g0.b, 0),
+                       "libre ≤ 75 cm (Art. 8.11.3)"], null, IZQ3);
+    r = h.fila(r, LD, ["Losita (cm)", coma(g0.hf, 0), "≥ s/12 y 5 cm (Art. 8.11.5)"], null, IZQ3);
+
+    r = h.seccion(r, (sec++) + ". LAS FRANJAS DE VIGUETAS");
+    r = h.encabezado(r, L8, ["Franja", "Viguetas en", "Tramos", "h (cm)", "wu (t/m)",
+                             "Corrida abajo", "Temperatura", "Estado"], 20.0);
+    DL.lista.forEach(function (x) {
+      r = h.fila(r, L8, [x.cod, x.dir, x.nTramos, x.h, coma(x.wu, 3), x.corrida, x.temperatura,
+                         x.estado], null, { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] });
+    });
+
+    DL.lista.forEach(function (x) {
+      r = h.seccion(r, (sec++) + ". " + x.cod);
+      r = h.encabezado(r, L8, ["Sección", "ln (m)", "Coef. 8.3.4", "Mu (t·m)", "As (cm²)",
+                               "Manda", "Armado", "Vu / φVc (t)"], 20.0);
+      (x.lineas || []).forEach(function (L) {
+        r = h.fila(r, L8, L, null, { alinear: ["Left", "Center", "Left", "Center", "Center", "Left", "Center", "Center"] });
+      });
+      (x.avisos || []).forEach(function (a) { r = h.nota(r, a); });
+    });
+    r = h.nota(r, "El Art. 8.3.4 pide dos o más tramos, luces que no se diferencien en más del 20 %, carga "
+      + "repartida e igual en todos los tramos, carga viva que no pase de tres veces la muerta y sección "
+      + "constante. Cuando una franja no las cumple, se dice arriba: con ellas fuera los momentos hay que "
+      + "sacarlos de un análisis. En una franja de un solo tramo se toma el momento isostático wu·ln²/8, que "
+      + "es el mayor que puede darse ahí.");
+    return h.cerrar(r);
+  }
+
   function disenoZapatas(P) {
     var DZ = P && P.disenoZapatas, FZ = P && P.fuerzas, K = P && P.diseno;
     if (!DZ || !DZ.lista || !DZ.lista.length || !FZ) throw sinResultados("reacciones para diseñar las zapatas");
@@ -7516,7 +7580,8 @@
            analisisSismico: analisisSismico, verificacionSismica: verificacionSismica,
            fuerzasVigas: fuerzasVigas, fuerzasColumnas: fuerzasColumnas, fuerzasPlacas: fuerzasPlacas,
            reacciones: reacciones, criteriosDiseno: criteriosDiseno, disenoVigas: disenoVigas,
-           disenoColumnas: disenoColumnas, disenoNudos: disenoNudos, disenoPlacas: disenoPlacas, disenoZapatas: disenoZapatas };
+           disenoColumnas: disenoColumnas, disenoNudos: disenoNudos, disenoPlacas: disenoPlacas, disenoZapatas: disenoZapatas,
+           disenoLosas: disenoLosas };
 });
 </script>
 <script>
@@ -7531,7 +7596,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v382 · 25-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v394 · 26-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -7945,6 +8010,7 @@ var REGISTRO = {
   "FUERZAS_PLACAS":     function(p){ return HOJAS.fuerzasPlacas(p); },
   "REACCIONES":         function(p){ return HOJAS.reacciones(p); },
   "CRITERIOS_DISENO":   function(p){ return HOJAS.criteriosDiseno(p); },
+  "DISENO_LOSAS":       function(p){ return HOJAS.disenoLosas(p); },
   "DISENO_VIGAS":       function(p){ return HOJAS.disenoVigas(p); },
   "DISENO_COLUMNAS":    function(p){ return HOJAS.disenoColumnas(p); },
   "DISENO_NUDOS":       function(p){ return HOJAS.disenoNudos(p); },
