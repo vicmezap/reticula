@@ -932,6 +932,8 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       </div>
       <button class="tool noCim" data-tool="placa" aria-pressed="false"><span class="swatch" style="background:var(--placa)"></span>
         <span>Placa<small>clic o arrastra</small></span></button>
+      <button class="tool noCim" data-tool="vacio" aria-pressed="false"><span class="swatch" style="background:transparent;border:1px dashed var(--ink-3)"></span>
+        <span>Vacío<small>clic o arrastra</small></span></button>
       <button class="tool noCim" data-tool="unir" aria-pressed="false"><span class="swatch" style="background:var(--sheet);border-style:dashed"></span>
         <span>Unir / separar<small>losas o vigas seguidas</small></span></button>
       <div class="sub" id="subUnir" hidden role="group" aria-label="Unir o separar">
@@ -12659,7 +12661,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v400 · 26-09-2026";
+  var BUILD="v401 · 26-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15879,9 +15881,8 @@ var TT={script:performance.now()};
 
     for(i=0;i<nx()-1;i++)for(j=0;j<ny()-1;j++){
       var lk=key(i,j),o=m.losas[lk],sl=S.sel&&S.sel.t==="losa"&&S.sel.i===i&&S.sel.j===j;
-      /* LA X DEL VACIO: un hueco cerrado por vigas o placas se marca con el aspa de siempre.  Antes un
-         paño sin losa quedaba igual que el fondo y no se distinguia de uno sin dibujar. */
-      if(!o&&ve("losa")&&!CIM&&vacioCerrado(i,j,m)){
+      /* LA X DEL VACIO: el aspa de siempre, donde TU lo marcaste con la herramienta Vacío. */
+      if(!o&&ve("losa")&&!CIM&&esVacio(i,j,m)){
         var QV=q4p(i,j), gv=el("g",{"pointer-events":"none"});
         [[0,2],[1,3]].forEach(function(d2){
           gv.appendChild(el("line",{x1:QV[d2[0]].x,y1:QV[d2[0]].y,x2:QV[d2[1]].x,y2:QV[d2[1]].y,
@@ -16497,8 +16498,20 @@ var TT={script:performance.now()};
       var k4=key(d.o,i,j);
       if(primero)modo=m.placas[k4]?"off":"on";
       if(modo==="on"){if(!m.placas[k4])m.placas[k4]={};}else delete m.placas[k4];
+    }else if(S.tool==="vacio"&&d.t==="losa"){
+      /* EL VACIO: clic lo pone, otro clic lo quita, y arrastrando se pinta como las demas.  Un paño
+         marcado como vacio no lleva losa: es un hueco. */
+      var vk=key(i,j);
+      if(!m.vacios||typeof m.vacios!=="object")m.vacios={};
+      if(primero)modo=m.vacios[vk]?"off":"on";
+      if(modo==="on"){ m.vacios[vk]=true; delete m.losas[vk]; }
+      else delete m.vacios[vk];
+      if(!Object.keys(m.vacios).length)delete m.vacios;
     }else if(S.tool==="losa"&&d.t==="losa"){
       var lk=key(i,j),tp=S.tipoLosa,ex=m.losas[lk];
+      /* dibujar una losa donde habia un vacio lo deshace: ya no es un hueco */
+      if(m.vacios&&m.vacios[lk]&&S.tipoLosa!=="vacio"){ delete m.vacios[lk];
+        if(!Object.keys(m.vacios).length)delete m.vacios; }
       /* VACIO: solo quita la losa o la escalera de ese paño (Victor, 23-09-2026: «esa opción solo debería afectar a
          las losas y escaleras»).  Antes tambien borraba las vigas, placas y columnas que quedaban sin losa alrededor:
          se llevaba por delante lo que el usuario habia dibujado a proposito.  Lo que quede sin losa lo dice Revisar. */
@@ -22768,13 +22781,23 @@ var TT={script:performance.now()};
      necesitan los tramos seguidos y su continuidad.  La norma vive en
      oviedo/losas.js; aqui solo se arma la franja y se le pasan las cargas.
      ===================================================================== */
-  /* UN VACIO DE VERDAD es un hueco CERRADO: los cuatro lados del paño tienen viga o placa.  Sin losa y
-     sin bordes no es un vacio, es un sitio donde todavia no has dibujado, y ese no se marca. */
-  function vacioCerrado(i,j,m){
-    m=m||N();
-    if(m.losas&&m.losas[key(i,j)])return false;
-    function lado(k){ return !!(m.vigas[k]||(m.placas&&m.placas[k])); }
-    return lado(key("h",i,j))&&lado(key("h",i,j+1))&&lado(key("v",i,j))&&lado(key("v",i+1,j));
+  /* EL VACIO LO MARCA EL PROYECTISTA, no se adivina: es la herramienta Vacío de DIBUJAR.  (Antes salia
+     solo en cuanto cuatro vigas cerraban un paño, y eso marcaba como hueco lo que solo era una losa
+     que aun no habias dibujado.) */
+  function esVacio(i,j,m){ m=m||N(); return !!(m.vacios&&m.vacios[key(i,j)]); }
+  /* poner o quitar el vacio de un paño */
+  function ponVacio(i,j,poner,niv){
+    var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N();
+    if(i<0||j<0||i>=m.dx.length||j>=m.dy.length)return {ok:false,msg:"Ahí no hay paño."};
+    snap();
+    if(!m.vacios||typeof m.vacios!=="object")m.vacios={};
+    var k=key(i,j), hay=!!m.vacios[k];
+    if(poner===undefined)poner=!hay;
+    if(poner){ m.vacios[k]=true; delete m.losas[k]; }    /* un vacio es un hueco: ahi no hay losa */
+    else delete m.vacios[k];
+    if(!Object.keys(m.vacios).length)delete m.vacios;
+    guardar(); render();
+    return {ok:true, vacio:!!poner};
   }
   function esAligerado(o){ return !!o && !esEscalera(o) && (o.tipo||"aligerada")==="aligerada"; }
   /* la franja que pasa por ese paño: sus tramos seguidos, en orden */
@@ -27993,7 +28016,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}}};
 })();
 </script>
 
