@@ -9546,6 +9546,78 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== ubicacion.js (inlinado) ===== */
+/* =====================================================================
+   ubicacion.js — ENCONTRAR EL DISTRITO.  Sin interfaz: lo usa Datos ›
+   Proyecto y sitio, sobre la lista del Anexo II que trae e030.js.
+
+   Por que existe (Victor, 26-09-2026): la lista dice «provincia · distrito»
+   y no dice el departamento.  Buscando Pucallpa escribio «Ucayali» y le
+   salio la PROVINCIA Ucayali, que es de Loreto; y «Pucallpa» no aparece
+   porque el distrito se llama Callería.  Con 1832 distritos, eso es perder
+   la zona sismica sin darse cuenta.
+
+   Aqui: el departamento delante de cada distrito, y una busqueda por
+   palabras -departamento, provincia, distrito o ciudad-, sin tildes ni
+   mayusculas.  El VALOR que se guarda no cambia: sigue siendo
+   «PROVINCIA · DISTRITO», que es lo que lee e030.js.
+
+   Los departamentos van por el codigo del INEI que trae cada distrito en
+   e030.js (01 Amazonas … 25 Ucayali), comprobado con sus provincias.
+
+     node scripts/complemento/oviedo/probar_ubicacion.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.UBICACION = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var DEPARTAMENTOS = {
+    "01": "AMAZONAS", "02": "ÁNCASH", "03": "APURÍMAC", "04": "AREQUIPA", "05": "AYACUCHO",
+    "06": "CAJAMARCA", "07": "CALLAO", "08": "CUSCO", "09": "HUANCAVELICA", "10": "HUÁNUCO",
+    "11": "ICA", "12": "JUNÍN", "13": "LA LIBERTAD", "14": "LAMBAYEQUE", "15": "LIMA",
+    "16": "LORETO", "17": "MADRE DE DIOS", "18": "MOQUEGUA", "19": "PASCO", "20": "PIURA",
+    "21": "PUNO", "22": "SAN MARTÍN", "23": "TACNA", "24": "TUMBES", "25": "UCAYALI"
+  };
+  /* LAS CIUDADES QUE NO SE LLAMAN COMO SU DISTRITO: solo las que se buscan por su nombre de ciudad y no lo
+     encontrarian.  Clave: el distrito tal como esta en la lista. */
+  var CIUDAD = {
+    "CORONEL PORTILLO · CALLERÍA": "PUCALLPA",
+    "CORONEL PORTILLO · YARINACOCHA": "PUCALLPA",
+    "CORONEL PORTILLO · MANANTAY": "PUCALLPA",
+    "TAMBOPATA · TAMBOPATA": "PUERTO MALDONADO"
+  };
+
+  /* sin tildes y en minusculas: «Callería» y «CALLERIA» son lo mismo */
+  function llano(t) {
+    return String(t == null ? "" : t).toLowerCase()
+      .replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i")
+      .replace(/[óòö]/g, "o").replace(/[úùü]/g, "u").replace(/ñ/g, "n");
+  }
+  function departamento(fila) { return DEPARTAMENTOS[fila[2]] || ""; }
+  /* lo que se ENSEÑA: «UCAYALI › CORONEL PORTILLO · CALLERÍA (Pucallpa)» */
+  function etiqueta(fila) {
+    var d = departamento(fila), c = CIUDAD[fila[0]];
+    return (d ? d + " › " : "") + fila[0] + (c ? " (" + c.charAt(0) + c.slice(1).toLowerCase().replace(/ (\w)/g,
+      function (x, l) { return " " + l.toUpperCase(); }) + ")" : "");
+  }
+  /* los distritos (filas de e030.js) cuyo departamento, provincia, distrito o ciudad contienen TODAS las palabras
+     buscadas, en el orden de la lista.  Sin texto, todos. */
+  function buscar(filas, texto) {
+    var pal = llano(texto).split(/[\s·›,]+/).filter(Boolean);
+    if (!pal.length) return filas.slice();
+    return filas.filter(function (f) {
+      var h = llano(departamento(f) + " " + f[0] + " " + (CIUDAD[f[0]] || ""));
+      return pal.every(function (p) { return h.indexOf(p) >= 0; });
+    });
+  }
+
+  return { DEPARTAMENTOS: DEPARTAMENTOS, CIUDAD: CIUDAD, llano: llano, departamento: departamento,
+           etiqueta: etiqueta, buscar: buscar };
+});
+</script>
+<script>
 /* ===== aci.js (inlinado) ===== */
 /* =====================================================================
    aci.js — EL ACI 318-19 COMO REFERENCIA, NUNCA COMO CALCULO
@@ -13008,7 +13080,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v413 · 26-09-2026";
+  var BUILD="v414 · 26-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -16483,9 +16555,16 @@ var TT={script:performance.now()};
               return p2[0]===S.sel.i&&p2[1]===S.sel.j; })),
             mal=!!(q&&(q.falta||!q.cumple)), cont=(q&&q.contorno&&q.contorno.length)?q.contorno:(pz.anillos[0]||[]);
         if(!cont.length)return;
-        gPla.appendChild(el("polygon",{points:cont.map(function(p2){ return (mg+p2[0]*esc)+","+(mg+p2[1]*esc); }).join(" "),
+        /* CON SUS HUECOS: los paños sin pintar que quedan dentro no son platea, y se tienen que ver (el relleno del
+           contorno solo los hacia pasar por platea; el 3D, que si los dejaba huecos, era el que tenia razon) */
+        var ordP=pz.anillos.slice().sort(function(a,b){ return Math.abs(PLATEAS.areaPoli(b))-Math.abs(PLATEAS.areaPoli(a)); });
+        function anilloD(r){ return "M"+r.map(function(p2){ return (mg+p2[0]*esc).toFixed(2)+","+(mg+p2[1]*esc).toFixed(2); }).join("L")+"Z"; }
+        gPla.appendChild(el("path",{d:anilloD(cont)+ordP.slice(1).map(anilloD).join(""),"fill-rule":"evenodd",
           fill:"var(--platea)","fill-opacity":selP?0.34:0.16,
           stroke:mal?"var(--no)":(selP?"var(--acc)":"var(--platea)"),"stroke-width":selP?2.6:1.6}));
+        /* y el borde de cada hueco, cortado: que no se confunda con el contorno */
+        ordP.slice(1).forEach(function(r){ gPla.appendChild(el("path",{d:anilloD(r),fill:"none",
+          stroke:mal?"var(--no)":"var(--platea)","stroke-width":1.4,"stroke-dasharray":"4 3"})); });
         /* el rotulo en el centro de su primer paño: el centro del contorno cae en una columna si la platea es en L */
         if(DIMS&&q&&!q.falta){
           var Qd=quadPano(pz.i,pz.j,m), cx2=0, cy2=0; Qd.forEach(function(v){ cx2+=v.x; cy2+=v.y; });
@@ -21722,6 +21801,7 @@ var TT={script:performance.now()};
     q.Az=+hz.Az.toFixed(3);
     return q;
   }
+  var BUSCA_DIS="";
   function pesoCategoria(){ var C=CRITERIOS.CATEGORIA[S.categoria]||{}; return +C.peso||1000; }
   /* el predimensionamiento de la combinada, con el subtipo del libro */
   function predimZapataComb(pa){
@@ -26801,6 +26881,16 @@ var TT={script:performance.now()};
       '</section>';
 
     var st=sitio();
+    /* el selector de distrito, filtrado por lo que se busca; el elegido va siempre, aunque no coincida */
+    function selDistrito(sel){
+      var F=E030.DISTRITOS, U=(typeof UBICACION!=="undefined")?UBICACION:null;
+      var l=U?U.buscar(F,BUSCA_DIS):F.slice(), esta=l.some(function(f){ return f[0]===sel; });
+      if(!esta){ var fs=F.filter(function(f){ return f[0]===sel; })[0]; if(fs)l.unshift(fs); }
+      return '<select id="pDis" class="pfi">'+(l.length?"":'<option value="" disabled selected>ningún distrito coincide</option>')+
+        l.map(function(f){ var v=f[0];
+          return '<option value="'+v.replace(/"/g,"&quot;")+'"'+(sel===v?" selected":"")+'>'+escapa(U?U.etiqueta(f):v)+
+                 ' — zona '+f[1]+'</option>'; }).join("")+'</select>';
+    }
     function opts(id,lista,sel){
       return '<select id="'+id+'" class="pfi">'+lista.map(function(v){
         return '<option value="'+v.replace(/"/g,"&quot;")+'"'+
@@ -26877,8 +26967,14 @@ var TT={script:performance.now()};
 
     /* --- E.030: sitio y sistema ------------------------------------- */
     if(sub==="sitio")h+='<section class="pbox"><h3>Sitio y sismo (E.030)</h3>'+
+      /* EL DISTRITO: con su departamento delante y un buscador encima (Victor, 26-09-2026: buscando Pucallpa le salio
+         la provincia Ucayali, que es de Loreto).  El valor que se guarda sigue siendo «PROVINCIA · DISTRITO» */
+      '<label class="pf"><span class="pfe">Buscar distrito</span>'+
+      '<input id="pDisBus" class="pfi" type="search" autocomplete="off" value="'+escapa(BUSCA_DIS)+'" '+
+      'placeholder="departamento, provincia, distrito o ciudad (p. ej. Pucallpa)" aria-label="Buscar el distrito">'+
+      '<span class="pfu"></span></label>'+
       '<label class="pf"><span class="pfe">Distrito</span>'+
-      opts("pDis",E030.distritos(),P.distrito)+
+      selDistrito(P.distrito)+
       '<span class="pfu">Anexo II</span></label>'+
       fijo("Zona sísmica",st.zona||"—","","del distrito")+
       fijo("Factor Z",st.Z!=null?st.Z.toFixed(2):"—","","Tabla N.º 1")+
@@ -26997,7 +27093,14 @@ var TT={script:performance.now()};
     function al(id,fn){ var e=$("#"+id); if(e)e.onchange=fn; }
     al("pUso",function(){
       S.proy.uso=this.value; sincronizaCategoria(); guardar(); render(); });
-    al("pDis",function(){ S.proy.distrito=this.value; guardar(); render(); });
+    al("pDis",function(){ if(!this.value)return; S.proy.distrito=this.value; guardar(); render(); });
+    /* el buscador solo rehace la lista: sin repintar el panel, para no perder lo que se escribe */
+    (function(){ var b=$("#pDisBus"); if(!b)return;
+      b.addEventListener("input",function(){ BUSCA_DIS=this.value;
+        var s=$("#pDis"); if(!s)return;
+        var t=document.createElement("div"); t.innerHTML=selDistrito(S.proy.distrito);
+        var n=t.firstChild; if(n&&n.innerHTML!=null)s.innerHTML=n.innerHTML; });
+    })();
     al("pSue",function(){ S.proy.suelo=this.value; guardar(); render(); });
     al("pVs",function(){
       var v=+this.value; S.proy.vs=(this.value===""||!(v>0))?"":v; guardar(); render(); });
