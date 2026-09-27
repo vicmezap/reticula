@@ -750,6 +750,27 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 #panelDeci{overflow:auto;padding:18px 20px}
 .cdr{margin:0 0 18px;max-width:760px;overflow-x:auto}
 .cdr tr[data-ir]{cursor:pointer}
+/* SECCIONES CRITICAS EDITABLES: la seccion se escribe en la fila y se aplica en vivo */
+.crit-in{width:48px;padding:2px 4px;font:600 13px "IBM Plex Mono",monospace;text-align:right;
+         border:1px solid var(--line);background:var(--sheet);color:var(--ink)}
+.crit-in:focus{outline:2px solid var(--acc);outline-offset:0}
+select.crit-in{width:auto;text-align:left}
+.crit-x{margin:0 3px;color:var(--ink-3)}
+.crit-fijo{font:600 13px "IBM Plex Mono",monospace;color:var(--ink-2)}
+.crit-sec{white-space:nowrap}
+.crit-nom{display:block;color:var(--ink-3);font:400 11px "IBM Plex Sans",sans-serif;margin-top:1px}
+.crit-ps{display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center;margin:0 0 12px;padding:8px 12px;
+         border:1px solid var(--line);background:var(--sheet);font:500 13px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.crit-ps small{color:var(--ink-3);font-family:"IBM Plex Sans",sans-serif}
+.crit-mas{color:var(--no)} .crit-menos{color:var(--ok)}
+.crit-tog,.crit-ir{background:none;border:0;padding:0 2px;cursor:pointer;color:var(--acc-ink);font:inherit}
+.crit-ir{text-decoration:underline dotted}
+.crit-av td{padding-top:0;border-top:0}
+.crit-av span{display:block;color:var(--no);font-size:12px;line-height:1.45}
+.crit-av small{color:var(--ink-3)}
+.crit-det>td{background:var(--sheet)}
+.crit-det table{width:100%;font-size:12px}
+.crit-exc td{background:var(--acc-soft)}
 /* AUTOCAD: la vista previa del plano que dibuja MODELADO AUTOCAD.bat */
 #panelAcad{overflow:auto;padding:18px 20px}
 .acad-opc{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center;margin:0 0 12px;max-width:1100px}
@@ -6192,8 +6213,9 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
                                      "nudo (" + (reg === "21.4" ? ART.rho214 : ART.rhoSismo) + ").");
     if (!circular && Math.min(b, h) < 25) av.push("La menor dimensión es " + Math.min(b, h).toFixed(0) +
                                                   " cm: la E.060 pide 250 mm (Art. 21.6.1.2).");
-    if (!circular && Math.min(b, h) / Math.max(b, h) < 0.3)
-      av.push("La relación entre lados es menor que 0,3 (Art. 21.6.1.3).");
+    /* 21.6.1.3, leido en el texto oficial: «no debe ser menor que 0,25» (aqui decia 0,3) */
+    if (!circular && Math.min(b, h) / Math.max(b, h) < 0.25)
+      av.push("La relación entre lados es menor que 0,25 (Art. 21.6.1.3).");
     if (esb && !esb.despreciable)
       av.push("Esbeltez k·lu/r = " + esb.lambda.toFixed(0) + " > " + esb.limite.toFixed(0) + " (" + esb.art +
               "): hay que amplificar los momentos, o traerlos de un análisis con P-Δ.");
@@ -12201,6 +12223,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
           gl.uniform1f(uA, 1);
           gl.drawArrays(gl.TRIANGLES, r[0], r[1]);
         }
+        /* 2b - un GRUPO entero con el mismo tinte (Secciones criticas › 3D), si no hay una pieza elegida */
+        if (sel === null && o.grupo && o.grupo.length) {
+          gl.uniform1f(uU, 0.85); gl.uniform3fv(uT, new Float32Array(rgb(o.acento || "#F2B705")));
+          gl.uniform1f(uA, 1);
+          o.grupo.forEach(function (k) { var rg = dat.rangos[k]; if (rg) gl.drawArrays(gl.TRIANGLES, rg[0], rg[1]); });
+        }
         gl.disable(gl.POLYGON_OFFSET_FILL);
 
         /* 3 - las lineas: las aristas de las piezas y despues cada grupo con su color */
@@ -13080,7 +13108,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v414 · 26-09-2026";
+  var BUILD="v419 · 27-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -15427,6 +15455,16 @@ var TT={script:performance.now()};
     if(fam==="placa")return (t.t-s.t)/100*x.largo*x.alto;
     return 0;
   }
+  /* el objeto del modelo donde vive la decision de un miembro: la columna, el dueño de la viga o de la losa unida,
+     la placa.  Ahi se marca tambien la EXCEPCION (critExc): el miembro que se queda con su propia seccion */
+  function objCrit(fam,x){
+    var m=S.niveles[x.niv], e=x.e; if(!m)return null;
+    if(fam==="col")return m.cols[key(e.i,e.j)]||null;
+    if(fam==="viga"||fam==="chata")return vigaDuena(e.o,e.i,e.j,m)||null;
+    if(fam==="losa")return losaDuena(e.i,e.j,m)||null;
+    if(fam==="placa")return m.placas[key(e.o,e.i,e.j)]||null;
+    return null;
+  }
   function gruposCriticos(opc){
     opc=opc||opcCriticas();
     var G={}, lista=[], FAMO={col:0,viga:1,chata:2,losa:3,placa:4};
@@ -15434,6 +15472,7 @@ var TT={script:performance.now()};
       var g=G[clave];
       if(!g){ g=G[clave]={clave:clave, fam:fam, titulo:titulo, piso:opc.todos?"Todos":"N"+(niv+1),
                           orden:[opc.todos?0:niv,FAMO[fam],sub], miembros:[]}; lista.push(g); }
+      var ob=objCrit(fam,x); x.exc=!!(ob&&ob.critExc);
       g.miembros.push(x);
     }
     S.niveles.forEach(function(m,niv){
@@ -15444,7 +15483,8 @@ var TT={script:performance.now()};
              "Columnas"+(circ?" circulares":"")+(porUb?" "+(UBIC_CRIT[ub]||String(ub).toLowerCase()):(opc.todos?"":" del piso")),
              niv, (porUb?({Esquinera:0,Exterior:1,Interior:2}[ub]||0):0)+(circ?10:0),
              {niv:niv, e:{t:"col",i:i,j:j}, cod:nmx.C[key(i,j)].cod, propia:!!sc.propia, alto:alto,
-              sec:circ?{D:sc.D}:{b:sc.b,h:sc.h}, motivo:"Ac "+Math.round(sc.Ac)+" cm²", exig:+sc.Ac||0});
+              sec:circ?{D:sc.D}:{b:sc.b,h:sc.h}, calc:circ?{D:sc.circular}:{b:sc.bCalc,h:sc.hCalc},
+              cumple:!!(sc.cumple&&sc.anchoOk), motivo:"Ac "+Math.round(sc.Ac)+" cm²", exig:+sc.Ac||0});
       }
       ["h","v"].forEach(function(o){
         var iM=(o==="h")?nX-1:nX, jM=(o==="h")?nY:nY-1, a, b;
@@ -15452,18 +15492,27 @@ var TT={script:performance.now()};
           var kk=key(o,a,b);
           if(m.vigas[kk]&&tramoViga(o,a,b,m).dueno){
             var pv=predimViga(o,a,b,m), fam=(pv.tipo==="chata")?"chata":"viga", porEje=opc.viga==="eje",
-                eje=(o==="h")?eY(b,m):eX(a,m);
+                eje=(o==="h")?eY(b,m):eX(a,m), tv=tramoViga(o,a,b,m), ap=[];
+            /* las columnas que la reciben: su lado PERPENDICULAR a la viga, para el ancho que admite el nudo */
+            [tv.desde,tv.hasta].forEach(function(n){ var ci=(o==="h")?n:a, cj=(o==="h")?b:n;
+              if(m.cols[key(ci,cj)]){ var s2=seccionCol(ci,cj,m,niv);
+                ap.push({cod:nmx.C[key(ci,cj)].cod, c2:(s2.forma==="circular")?s2.D:((o==="h")?s2.h:s2.b),
+                         c1:(s2.forma==="circular")?s2.D:((o==="h")?s2.b:s2.h)}); } });
             mete(fam+"|"+pk+"|"+o+(porEje?"|"+eje:""), fam,
                  (fam==="chata"?"Vigas chatas":"Vigas")+(porEje?" del eje "+eje:" en "+(o==="h"?"X":"Y")),
                  niv, (o==="h"?0:1000)+(porEje?(o==="h"?b:a):0),
                  {niv:niv, e:{t:"viga",o:o,i:a,j:b}, cod:nmx.V[kk].cod, propia:!!pv.propia, largo:+pv.Ln||0,
-                  sec:{b:Math.round(pv.b*100),h:Math.round(pv.h*100)}, motivo:"Ln "+(+pv.Ln||0).toFixed(2)+" m", exig:+pv.Ln||0});
+                  sec:{b:Math.round(pv.b*100),h:Math.round(pv.h*100)},
+                  calc:{b:Math.round(pv.bCalc*100),h:Math.round(((fam==="chata")?pv.h:pv.hCalc)*100)},
+                  cumple:pv.cumple!==false, ln:+pv.Ln||0, eLosa:espesorParaChata(o,a,b,m), apoyos:ap,
+                  motivo:"Ln "+(+pv.Ln||0).toFixed(2)+" m", exig:+pv.Ln||0});
           }
           if(m.placas[kk]){
             var pp=predimPlaca(o,a,b,m);
             mete("placa|"+pk, "placa", "Placas", niv, 0,
                  {niv:niv, e:{t:"placa",o:o,i:a,j:b}, cod:nmx.P[kk].cod, propia:!!pp.propia, largo:+pp.lm||0, alto:+pp.hm||alto,
-                  sec:{t:Math.round(pp.t*100)}, motivo:"lm "+(+pp.lm||0).toFixed(2)+" m", exig:+pp.lm||0});
+                  sec:{t:Math.round(pp.t*100)}, calc:{t:Math.round(pp.tCalc*100)}, cumple:pp.cumple!==false,
+                  motivo:"lm "+(+pp.lm||0).toFixed(2)+" m", exig:+pp.lm||0});
           }
         }
       });
@@ -15472,23 +15521,92 @@ var TT={script:performance.now()};
         if(!ol||esEscalera(ol)||!tramoLosa(dirLosa(ol),i,j,m).dueno)continue;
         var pl=predimLosa(i,j,m); if(!pl)continue;
         mete("losa|"+pk+"|"+pl.tipo, "losa", "Losa "+pl.tipo, niv, {aligerada:0,maciza:1,nervada:2}[pl.tipo]||0,
-             {niv:niv, e:{t:"losa",i:i,j:j}, cod:nmx.L[key(i,j)].cod, propia:!!pl.propia,
-              sec:{e:pl.e}, motivo:"Ln "+(+pl.Ln||0).toFixed(2)+" m", exig:+pl.Ln||0});
+             {niv:niv, e:{t:"losa",i:i,j:j}, cod:nmx.L[key(i,j)].cod, propia:!!pl.propia, tipo:pl.tipo,
+              sec:{e:pl.e}, calc:{e:pl.eCalc}, cumple:pl.cumple!==false, ln:+pl.Ln||0,
+              motivo:"Ln "+(+pl.Ln||0).toFixed(2)+" m", exig:+pl.Ln||0});
       }
     });
     lista.forEach(function(g){
-      var c=null;
-      g.miembros.forEach(function(x){
+      /* LAS EXCEPCIONES no cuentan: ni para la critica ni para lo que se escribe en el grupo */
+      var act=g.miembros.filter(function(x){return !x.exc}); if(!act.length)act=g.miembros;
+      g.activos=act; g.nExc=g.miembros.length-g.miembros.filter(function(x){return !x.exc}).length;
+      var c=null, cc=null;
+      act.forEach(function(x){
         var tx=tamSecCrit(g.fam,x.sec), tc=c?tamSecCrit(g.fam,c.sec):-1;
         if(!c||tx>tc+1e-9||(Math.abs(tx-tc)<=1e-9&&x.exig>c.exig))c=x;
+        var ux=tamSecCrit(g.fam,x.calc), uc=cc?tamSecCrit(g.fam,cc.calc):-1;
+        if(!cc||ux>uc+1e-9||(Math.abs(ux-uc)<=1e-9&&x.exig>cc.exig))cc=x;
       });
       g.critica=c; g.sec=JSON.parse(JSON.stringify(c.sec)); g.txt=txtSecCrit(g.fam,g.sec);
-      g.cambian=g.miembros.filter(function(x){return !mismaSecCrit(g.fam,x.sec,g.sec)}).length;
-      g.adoptada=(g.cambian===0&&g.miembros.every(function(x){return x.propia}));
-      g.concreto=(g.fam==="losa")?null:+g.miembros.reduce(function(t,x){return t+volCrit(g.fam,x,g.sec)},0).toFixed(3);
+      /* la critica de lo CALCULADO, de referencia: la que pediria el libro sin ninguna decision */
+      g.criticaCalc=cc; g.secCalc=JSON.parse(JSON.stringify(cc.calc)); g.txtCalc=txtSecCrit(g.fam,g.secCalc);
+      g.cambian=act.filter(function(x){return !mismaSecCrit(g.fam,x.sec,g.sec)}).length;
+      g.adoptada=(g.cambian===0&&act.every(function(x){return x.propia}));
+      g.noCumplen=act.filter(function(x){return !x.cumple}).length;
+      g.concreto=(g.fam==="losa")?null:+act.reduce(function(t,x){return t+volCrit(g.fam,x,g.sec)},0).toFixed(3);
+      g.avisos=avisosCrit(g);
     });
     lista.sort(function(a,b){ for(var k=0;k<3;k++)if(a.orden[k]!==b.orden[k])return a.orden[k]-b.orden[k]; return 0; });
     return lista;
+  }
+  /* LOS AVISOS DE UN GRUPO, con la seccion que tiene cada miembro: cuantos y cuales.  Las reglas de la norma van en
+     REGLAS_CRIT (leidas en la E.060 del repo); la de la viga mas baja que la losa es de practica, no de norma. */
+  /* LAS REGLAS DE LA E.060 (2009), leidas en el texto oficial del repo (documentacion/bibliografia, pags. 166, 171,
+     173 y 179).  Por 21.2.5, las de 21.5 y 21.6 son de los edificios de PORTICOS (R = 8) y DUALES TIPO II: se miran
+     con el regimen de cada direccion (Diseño › Criterios).  RG: el regimen de x e y. */
+  var REGLAS_CRIT=[
+    /* 21.5.1.2 «La luz libre del elemento ℓn no debe ser menor que cuatro veces su peralte» */
+    {fam:"viga", clave:"ln4h", art:"E.060 21.5.1.2",
+     prueba:function(s,x,RG){ var d=RG[(x.e.o==="h")?"x":"y"]||{}; if(d.vigas!=="21.5")return null;
+       return (x.ln*100<4*s.h-1e-9)?("con luz libre menor que 4 veces el peralte"):null; }},
+    /* 21.5.1.3 «El ancho del elemento, bw, no debe ser menor de 0,25 veces el peralte ni de 250 mm» */
+    {fam:"viga", clave:"bmin", art:"E.060 21.5.1.3",
+     prueba:function(s,x,RG){ var d=RG[(x.e.o==="h")?"x":"y"]||{}; if(d.vigas!=="21.5")return null;
+       return (s.b<25-1e-9||s.b<0.25*s.h-1e-9)?"más angostas que 25 cm o que 0,25 veces su peralte":null; }},
+    /* 21.5.1.4 «bw no debe exceder el ancho del elemento de apoyo (medido en un plano perpendicular al eje longitudinal
+       del elemento en flexión) más una distancia a cada lado del elemento de apoyo igual a las tres cuartas partes del
+       peralte del elemento en flexión» */
+    {fam:"viga", clave:"bmax", art:"E.060 21.5.1.4",
+     prueba:function(s,x,RG){ var d=RG[(x.e.o==="h")?"x":"y"]||{}; if(d.vigas!=="21.5")return null;
+       var peor=null; (x.apoyos||[]).forEach(function(a){ var lim=a.c2+1.5*s.h; if(s.b>lim+1e-9&&(!peor||lim<peor))peor=lim; });
+       return peor?"más anchas que su columna más 3/4 del peralte a cada lado":null; }},
+    /* 21.6.1.2 «La dimensión menor de la sección transversal ... no debe ser menor de 250 mm» */
+    {fam:"col", clave:"cmin", art:"E.060 21.6.1.2",
+     prueba:function(s,x,RG){ if((RG.x||{}).columnas!=="21.6"&&(RG.y||{}).columnas!=="21.6")return null;
+       var mn=s.D?s.D:Math.min(s.b,s.h); return (mn<25-1e-9)?"con su dimensión menor por debajo de 25 cm":null; }},
+    /* 21.6.1.3 «La relación entre la dimensión menor de la sección transversal y la dimensión perpendicular no debe ser
+       menor que 0,25» */
+    {fam:"col", clave:"crel", art:"E.060 21.6.1.3",
+     prueba:function(s,x,RG){ if(s.D)return null; if((RG.x||{}).columnas!=="21.6"&&(RG.y||{}).columnas!=="21.6")return null;
+       return (Math.min(s.b,s.h)/Math.max(s.b,s.h)<0.25-1e-9)?"con la relación entre lados menor que 0,25":null; }},
+    /* 21.9.3.2 «El espesor del alma de los muros de corte no deberá ser menor de 1/25 de la altura entre elementos que le
+       proporcionen apoyo lateral ni menor de 150 mm», 100 mm en muros de ductilidad limitada */
+    {fam:"placa", clave:"tmin", art:"E.060 21.9.3.2",
+     prueba:function(s,x,RG){ var emdl=(RG.x||{}).muros==="21.10"||(RG.y||{}).muros==="21.10";
+       var lim=Math.max(emdl?10:15, (x.alto||0)*100/25);
+       return (s.t<lim-1e-9)?("más delgadas que 1/25 de su altura o que "+(emdl?"100":"150")+" mm"):null; }}
+  ];
+  function avisosCrit(g){
+    var out=[], K=null; try{ K=criteriosDiseno(); }catch(e){}
+    var RG=(K&&K.regimen)||{};
+    function junta(clave,txt,art,x){
+      var a=out.filter(function(q){return q.clave===clave})[0];
+      if(!a){ a={clave:clave,txt:txt,art:art||"",n:0,cods:[]}; out.push(a); }
+      a.n++; if(a.cods.length<6)a.cods.push(x.cod);
+      x.avisos.push(art||"más baja que la losa");
+    }
+    g.miembros.forEach(function(x){ x.avisos=[]; });
+    g.activos.forEach(function(x){
+      var s=x.sec;
+      if(g.fam==="viga"&&x.eLosa>0&&s.h<x.eLosa)
+        junta("bajaLosa","con menos peralte que la losa que reciben: quedan metidas en ella","",x);
+      REGLAS_CRIT.forEach(function(r){
+        if(r.fam!==g.fam)return;
+        var t=null; try{ t=r.prueba(s,x,RG); }catch(e){ t=null; }
+        if(t)junta(r.clave,typeof t==="string"?t:r.txt,r.art,x);
+      });
+    });
+    return out;
   }
   /* t: la seccion a escribir, o null para borrar la decision */
   function escribeSecCrit(g,x,t){
@@ -15509,30 +15627,120 @@ var TT={script:performance.now()};
     if(!gs||!gs.length)return {ok:false,msg:"No hay grupos que adoptar."};
     snap();
     var n=0;
-    gs.forEach(function(g){ g.miembros.forEach(function(x){ if(escribeSecCrit(g,x,g.sec))n++; }); });
+    gs.forEach(function(g){ (g.activos||g.miembros).forEach(function(x){ if(escribeSecCrit(g,x,g.sec))n++; }); });
     PASADA++;
     return {ok:true,n:n};
   }
+  /* vuelve a lo calculado lo del grupo; las excepciones se quedan con lo suyo (se sueltan con su casilla) */
   function volverCalculadas(gs){
     if(gs&&!Array.isArray(gs))gs=[gs];
     if(!gs||!gs.length)return {ok:false,msg:"No hay grupos."};
     snap();
     var n=0;
-    gs.forEach(function(g){ g.miembros.forEach(function(x){ if(escribeSecCrit(g,x,null))n++; }); });
+    gs.forEach(function(g){ g.miembros.forEach(function(x){ if(!x.exc&&escribeSecCrit(g,x,null))n++; }); });
     PASADA++;
     return {ok:true,n:n};
   }
+  /* ESCRIBIR LA SECCION DEL GRUPO (o de una excepcion) desde la tabla.  El dato que no se toca sale de la critica
+     de ahora: escribir solo el peralte uniformiza tambien el ancho. */
+  var LIM_CRIT={col:{b:[15,300],h:[15,300],D:[15,300]}, viga:{b:[10,300],h:[10,300]}, chata:{b:[10,300]},
+                losa:{e:[5,60]}, placa:{t:[10,100]}};
+  function leeCrit(fam,campo,valor){
+    var v=leerNum(valor), L=(LIM_CRIT[fam]||{})[campo];
+    if(!L)return {ok:false,msg:"Ese dato no se escribe en este grupo."};
+    if(v===null)return {ok:false,msg:"Escribe un número, en centímetros."};
+    v=Math.round(v);
+    if(v<L[0]||v>L[1])return {ok:false,msg:"Va entre "+L[0]+" y "+L[1]+" cm."};
+    return {ok:true,v:v};
+  }
+  function grupoPorClave(clave){ return gruposCriticos().filter(function(g){return g.clave===clave})[0]||null; }
+  function ponSecGrupo(clave,campo,valor,sinSnap){
+    var g=grupoPorClave(clave); if(!g)return {ok:false,msg:"Ese grupo ya no existe."};
+    var r=leeCrit(g.fam,campo,valor); if(!r.ok)return r;
+    var t=JSON.parse(JSON.stringify(g.sec)); t[campo]=r.v;
+    if(!sinSnap)snap();
+    var n=0; g.activos.forEach(function(x){ if(escribeSecCrit(g,x,t))n++; });
+    PASADA++;
+    return {ok:true,n:n,sec:t,txt:txtSecCrit(g.fam,t),titulo:g.titulo};
+  }
+  function ponSecMiembro(clave,idx,campo,valor,sinSnap){
+    var g=grupoPorClave(clave), x=g&&g.miembros[+idx];
+    if(!x)return {ok:false,msg:"Ese elemento ya no está en el grupo."};
+    var r=leeCrit(g.fam,campo,valor); if(!r.ok)return r;
+    var t=JSON.parse(JSON.stringify(x.sec)); t[campo]=r.v;
+    if(!sinSnap)snap();
+    escribeSecCrit(g,x,t); PASADA++;
+    return {ok:true,cod:x.cod,txt:txtSecCrit(g.fam,t)};
+  }
+  /* LA EXCEPCION: el miembro se queda con su seccion y el grupo ya no lo toca; al soltarla, toma la del grupo */
+  function excCrit(clave,idx,on){
+    var g=grupoPorClave(clave), x=g&&g.miembros[+idx];
+    if(!x)return {ok:false,msg:"Ese elemento ya no está en el grupo."};
+    var ob=objCrit(g.fam,x); if(!ob)return {ok:false,msg:"No encuentro ese elemento en el modelo."};
+    snap();
+    if(on){ ob.critExc=true; if(!x.propia)escribeSecCrit(g,x,x.sec); }
+    else{ delete ob.critExc; escribeSecCrit(g,x,g.sec); }
+    PASADA++;
+    return {ok:true,cod:x.cod,exc:!!on};
+  }
+  /* EL NOMBRE que lleva cada pieza en ETABS (C1, V2, LA1…) y en el plano de AutoCAD (C-1, VP-2, LA-1…), por codigo */
+  function nombresSecciones(){
+    var r={}, ex=null, T=null;
+    try{ ex=exportaEtabs(); }catch(e){ return r; }
+    try{ T=tiposAutocad({niveles:ex.niveles, zapatas:[], plateas:[]}); }catch(e){ T=null; }
+    function pl(f,k){ return (T&&T[f]&&T[f][k])?T[f][k].nombre:null; }
+    (ex.niveles||[]).forEach(function(L){
+      (L.columnas||[]).forEach(function(c){ var o=c.forma==="circular";
+        r[c.cod]={etabs:c.sec||null, plano:pl("C",o?"o"+c.D:c.b+"x"+c.h)}; });
+      (L.vigas||[]).forEach(function(v){ r[v.cod]={etabs:v.sec||null, plano:pl(v.tipo==="chata"?"VCH":"VP",v.b+"x"+v.h)}; });
+      (L.placas||[]).forEach(function(p){ r[p.cod]={etabs:p.sec||null, plano:pl("PL",String(p.t))}; });
+      (L.losas||[]).forEach(function(l){ r[l.cod]={etabs:l.sec||null, plano:pl((T&&T.PREF&&T.PREF[l.tipo])||"LA",String(l.e))}; });
+    });
+    return r;
+  }
+  /* el peso sismico y la cortante del complemento (Sismo E.030 › Estatico), para ver en vivo lo que mueve una seccion */
+  function pesoSismoCrit(){
+    try{ var s=calculoSismo(), e=s&&s.est; if(!e)return null;
+      return {P:+e.P||0, Vx:(e.x&&+e.x.V)||0, Vy:(e.y&&+e.y.V)||0}; }catch(err){ return null; }
+  }
+  /* RESALTAR UN GRUPO en el plano de Decisiones o en el 3D */
+  var RESALTA=null;
+  function resaltaGrupo(clave,donde){
+    var g=grupoPorClave(clave); if(!g)return {ok:false,msg:"Ese grupo ya no existe."};
+    var r={clave:clave, titulo:g.titulo+(g.piso==="Todos"?"":" ("+g.piso+")"), porNivel:{}, cods:{}, n:g.miembros.length};
+    g.miembros.forEach(function(x){ (r.porNivel[x.niv]=r.porNivel[x.niv]||[]).push({fam:g.fam,e:x.e}); r.cods[x.niv+"|"+x.cod]=1; });
+    var niv=g.critica?g.critica.niv:0;
+    S.modo="decisiones"; S.act=Math.min(niv,S.niveles.length-1); S.cim=false;
+    elegirSub("decisiones","plano",true);
+    S.vista=(donde==="3d")?"3d":"plano"; S.sel=null;
+    RESALTA=r;
+    render();
+    toast("Resaltado: "+r.titulo+", "+r.n+" elemento(s)"+(donde==="3d"?"":" · cambia de piso para ver los demás")+
+          ". Vuelve a Secciones críticas para quitarlo.");
+    return {ok:true,n:r.n};
+  }
+  var CRIT_BASE=null, CRIT_VIVO=null, CRIT_ED=null, CRIT_T=0, CRIT_ABIERTO={}, REPINTA_CRIT=false;
   function pintaCriticas(){
     var P=$("#panelDeci"); if(!P)return;
-    var opc=opcCriticas(), G=gruposCriticos(opc), pend=0;
+    RESALTA=null;
+    var opc=opcCriticas(), G=gruposCriticos(opc), pend=0, NOM=nombresSecciones(), ps=pesoSismoCrit();
+    if(!CRIT_BASE&&ps)CRIT_BASE=ps;
     function radio(id,nombre,valor,actual,txt){
       return '<label class="crit-r"><input type="radio" id="'+id+'" name="'+nombre+'" value="'+valor+'"'+
              (actual===valor?" checked":"")+'> '+txt+'</label>';
     }
+    function num(v){ return (+v).toFixed(2); }
+    function cmp(a,b,u){
+      if(a==null||Math.abs(b-a)<0.005)return '<b>'+num(b)+'</b> '+u;
+      var d=(a>0)?(b/a-1)*100:0;
+      return num(a)+' → <b>'+num(b)+'</b> '+u+' <span class="'+(d>0?"crit-mas":"crit-menos")+'">('+(d>0?"+":"")+d.toFixed(1)+' %)</span>';
+    }
     var h='<h3>Secciones críticas · '+S.niveles.length+' nivel(es)</h3>'+
-      '<p class="nota" style="margin:0 0 12px;max-width:780px">Cada grupo toma la sección de su elemento más exigido y la '+
-      'adopta en todos. <b>Nunca achica</b>: si decidiste a mano una sección mayor, esa pasa a ser la crítica. «Adoptar» '+
-      'escribe la decisión como si la pusieras en cada elemento —la toman ETABS, las hojas y AutoCAD— y Ctrl+Z la deshace.</p>'+
+      '<p class="nota" style="margin:0 0 10px;max-width:880px">Cada grupo toma la sección de su elemento más exigido. '+
+      '<b>Escribe tu sección en la tabla</b>: se aplica en vivo a todo el grupo -con «igual en todos los pisos», en todos- y '+
+      'lo que depende se mueve solo (la viga chata toma el espesor de su losa). Ctrl+Z deshace cada cambio. «Adoptar» '+
+      'uniformiza con la crítica; «Calculadas» vuelve a lo del libro. Despliega un grupo (▸) para dejar un elemento con '+
+      'su propia sección.</p>'+
       '<div class="crit-opc">'+
         '<span><b>Columnas</b>'+radio("critColUb","critCol","ubicacion",opc.col,"por ubicación")+
           radio("critColPiso","critCol","piso",opc.col,"todas las del piso")+'</span>'+
@@ -15540,33 +15748,146 @@ var TT={script:performance.now()};
           radio("critVigaEje","critViga","eje",opc.viga,"por eje")+'</span>'+
         '<label class="crit-r"><input type="checkbox" id="critTodos"'+(opc.todos?" checked":"")+'> igual en todos los pisos</label>'+
       '</div>';
+    /* EL PESO Y EL SISMO, EN VIVO: lo que mueve una seccion en el peso que carga la E.030 */
+    if(ps){
+      var mov=CRIT_BASE&&(Math.abs(ps.P-CRIT_BASE.P)>=0.005||Math.abs(ps.Vx-CRIT_BASE.Vx)>=0.005||Math.abs(ps.Vy-CRIT_BASE.Vy)>=0.005);
+      h+='<div class="crit-ps" aria-live="polite"><span>Peso sísmico P '+cmp(CRIT_BASE&&CRIT_BASE.P,ps.P,"t")+'</span>'+
+         '<span>V en X '+cmp(CRIT_BASE&&CRIT_BASE.Vx,ps.Vx,"t")+'</span><span>V en Y '+cmp(CRIT_BASE&&CRIT_BASE.Vy,ps.Vy,"t")+'</span>'+
+         (mov?'<button class="mini" id="critBase" title="Lo de ahora pasa a ser la referencia">Tomar como referencia</button>':
+              '<small>desde que abriste esta pestaña</small>')+'</div>';
+    }
     if(!G.length){ P.innerHTML=h+'<p class="empty">Dibuja la planta: no hay elementos que agrupar.</p>'; return; }
+    function csq(t){ return String(t).replace(/&/g,"&amp;").replace(/"/g,"&quot;"); }
+    function entrada(cs,val,etq){
+      return '<input class="crit-in" type="text" inputmode="numeric" autocomplete="off" data-cs="'+csq(cs)+'" value="'+val+
+             '" aria-label="'+etq+'">';
+    }
+    function entradas(g,base,sec){
+      if(g.fam==="col")return sec.D?'Ø '+entrada(base+"D",sec.D,"Diámetro, cm"):
+        entrada(base+"b",sec.b,"b, cm")+'<span class="crit-x">×</span>'+entrada(base+"h",sec.h,"h, cm");
+      if(g.fam==="viga")return entrada(base+"b",sec.b,"b, cm")+'<span class="crit-x">×</span>'+entrada(base+"h",sec.h,"h, cm");
+      if(g.fam==="chata")return entrada(base+"b",sec.b,"b, cm")+'<span class="crit-x">×</span><span class="crit-fijo" '+
+        'title="El peralte de la chata es el espesor de su losa">'+sec.h+'</span>';
+      if(g.fam==="losa"){
+        var tipo=(g.activos[0]||{}).tipo||"aligerada";
+        if(tipo==="aligerada"){
+          var ls=[17,20,25,30,35]; if(ls.indexOf(+sec.e)<0){ ls.push(+sec.e); ls.sort(function(a,b){return a-b}); }
+          return 'e <select class="crit-in crit-sel" data-cs="'+csq(base+"e")+'" aria-label="Espesor del aligerado, cm">'+
+            ls.map(function(v){ return '<option value="'+v+'"'+(v===+sec.e?" selected":"")+'>'+v+'</option>'; }).join("")+'</select>';
+        }
+        return 'e '+entrada(base+"e",sec.e,"Espesor, cm");
+      }
+      return 't '+entrada(base+"t",sec.t,"Espesor, cm");
+    }
+    function nombresDe(g){
+      var et={}, pl={};
+      g.miembros.forEach(function(x){ var q=NOM[x.cod]; if(!q)return; if(q.etabs)et[q.etabs]=1; if(q.plano)pl[q.plano]=1; });
+      var a=Object.keys(et), b=Object.keys(pl);
+      return (a.length||b.length)?'<small class="crit-nom">ETABS '+(a.join(", ")||"—")+' · plano '+(b.join(", ")||"—")+'</small>':"";
+    }
     var filas=G.map(function(g,k){
       if(!g.adoptada)pend++;
-      var c=g.critica;
-      return '<tr><td>'+g.piso+'</td><td>'+g.titulo+'</td><td>'+c.cod+' <small>· '+c.motivo+'</small></td>'+
-        '<td><b>'+g.txt+'</b></td><td class="num">'+g.miembros.length+'</td><td class="num">'+g.cambian+'</td>'+
+      var cc=g.criticaCalc, ab=!!CRIT_ABIERTO[g.clave], base=g.clave+"|g|";
+      var f='<tr class="crit-g'+(g.noCumplen||g.avisos.length?" crit-mal":"")+'"><td>'+g.piso+'</td>'+
+        '<td><button class="crit-tog" data-tog="'+csq(g.clave)+'" aria-expanded="'+ab+'" title="Ver sus elementos">'+(ab?"▾":"▸")+'</button> '+
+          g.titulo+nombresDe(g)+'</td>'+
+        '<td>'+cc.cod+' <small>· '+cc.motivo+'</small><small class="crit-nom">pide '+g.txtCalc+'</small></td>'+
+        '<td class="crit-sec">'+entradas(g,base,g.sec)+'</td>'+
+        '<td class="num">'+g.miembros.length+(g.nExc?'<small class="crit-nom">'+g.nExc+' aparte</small>':'')+'</td>'+
+        '<td class="num">'+g.cambian+'</td>'+
+        '<td class="num">'+(g.noCumplen?'<span class="deci-no">'+g.noCumplen+'</span>':'<span class="deci-ok">0</span>')+'</td>'+
         '<td class="num">'+(g.concreto==null?"—":((g.concreto>0?"+":"")+g.concreto.toFixed(2)+" m³"))+'</td>'+
         '<td class="crit-acc">'+(g.adoptada?'<span class="deci-ok">ADOPTADA</span> ':
           '<button class="btn" data-crit="'+k+'">Adoptar</button> ')+
-        '<button class="btn" data-calc="'+k+'" title="Borra las decisiones de este grupo: vuelve a mandar lo calculado">'+
-        'Calculadas</button></td></tr>';
+        '<button class="btn" data-calc="'+k+'" title="Borra las decisiones de este grupo: vuelve a mandar lo calculado">Calculadas</button> '+
+        '<button class="btn" data-ver="'+k+'" data-donde="plano" title="Resalta sus elementos en el plano">Plano</button> '+
+        '<button class="btn" data-ver="'+k+'" data-donde="3d" title="Resalta sus elementos en el 3D">3D</button></td></tr>';
+      if(g.avisos.length)f+='<tr class="crit-av"><td></td><td colspan="8">'+g.avisos.map(function(a){
+        return '<span>'+a.n+' '+(a.n===1?"elemento":"elementos")+' '+a.txt+(a.art?' <b>('+a.art+')</b>':'')+
+               ' <small>'+a.cods.join(", ")+(a.n>a.cods.length?"…":"")+'</small></span>'; }).join("")+'</td></tr>';
+      if(ab){
+        f+='<tr class="crit-det"><td></td><td colspan="8"><table><thead><tr><th>Elemento</th><th>Piso</th><th>Calculada</th>'+
+           '<th>Sección</th><th>Estado</th><th>Avisos</th><th>ETABS · plano</th><th>Aparte</th></tr></thead><tbody>'+
+          g.miembros.map(function(x,q){
+            var nm=NOM[x.cod]||{};
+            return '<tr'+(x.exc?' class="crit-exc"':'')+'><td><button class="crit-ir" data-ir="'+k+':'+q+'">'+x.cod+'</button></td>'+
+              '<td>N'+(x.niv+1)+'</td><td>'+txtSecCrit(g.fam,x.calc)+'</td>'+
+              '<td class="crit-sec">'+(x.exc?entradas(g,g.clave+"|m"+q+"|",x.sec):txtSecCrit(g.fam,x.sec))+'</td>'+
+              '<td>'+(x.cumple?'<span class="deci-ok">CUMPLE</span>':'<span class="deci-no">NO CUMPLE</span>')+'</td>'+
+              '<td>'+((x.avisos&&x.avisos.length)?'<span class="deci-no">'+x.avisos.join(" · ")+'</span>':'—')+'</td>'+
+              '<td>'+(nm.etabs||"—")+' · '+(nm.plano||"—")+'</td>'+
+              '<td><label class="crit-r"><input type="checkbox" data-exc="'+k+':'+q+'"'+(x.exc?" checked":"")+
+              ' aria-label="Dejar '+x.cod+' con su propia sección"> su propia sección</label></td></tr>';
+          }).join("")+'</tbody></table></td></tr>';
+      }
+      return f;
     }).join("");
-    h+='<div class="cdr" style="max-width:none"><table><thead><tr><th>Piso</th><th>Grupo</th><th>Crítica (por qué)</th>'+
-       '<th>Sección (cm)</th><th>Elementos</th><th>Cambian</th><th>+ concreto</th><th></th></tr></thead><tbody>'+
+    h+='<div class="cdr" style="max-width:none"><table class="crit-t"><thead><tr><th>Piso</th><th>Grupo</th><th>Crítica calculada</th>'+
+       '<th>Sección (cm)</th><th>Elementos</th><th>Cambian</th><th>No cumplen</th><th>+ concreto</th><th></th></tr></thead><tbody>'+
        filas+'</tbody></table></div>'+
        '<div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" id="critTodas"'+(pend?"":" disabled")+
        '>Adoptar todas</button><button class="btn" id="critCalcTodas">Volver todas a las calculadas</button></div>';
-    P.innerHTML=h;
+    /* al quitar la casilla que tiene el foco, el navegador le dispara un «change»: sin esta guarda cerraba la edicion en
+       vivo -y se perdia el foco- a cada repintado */
+    REPINTA_CRIT=true;
+    try{ P.innerHTML=h; }finally{ REPINTA_CRIT=false; }
     function aplica(r,txt){ if(!r.ok)return toast(r.msg); guardar(); render(); toast(txt); }
     P.querySelectorAll("button[data-crit]").forEach(function(b){
       b.onclick=function(){ var g=G[+this.dataset.crit]; if(!g)return;
-        aplica(adoptarGrupos([g]), g.titulo+" ("+g.piso+"): "+g.txt+" en "+g.miembros.length+" elementos. Ctrl+Z lo deshace."); };
+        aplica(adoptarGrupos([g]), g.titulo+" ("+g.piso+"): "+g.txt+" en "+g.activos.length+" elementos. Ctrl+Z lo deshace."); };
     });
     P.querySelectorAll("button[data-calc]").forEach(function(b){
       b.onclick=function(){ var g=G[+this.dataset.calc]; if(!g)return;
         aplica(volverCalculadas([g]), g.titulo+" ("+g.piso+") vuelve a lo calculado. Ctrl+Z lo deshace."); };
     });
+    P.querySelectorAll("button[data-ver]").forEach(function(b){
+      b.onclick=function(){ var g=G[+this.dataset.ver]; if(!g)return; var r=resaltaGrupo(g.clave,this.dataset.donde); if(!r.ok)toast(r.msg); };
+    });
+    P.querySelectorAll("button[data-tog]").forEach(function(b){
+      b.onclick=function(){ var c=this.dataset.tog; CRIT_ABIERTO[c]=!CRIT_ABIERTO[c]; pintaCriticas(); };
+    });
+    P.querySelectorAll("button[data-ir]").forEach(function(b){
+      b.onclick=function(){ var p=this.dataset.ir.split(":"), g=G[+p[0]], x=g&&g.miembros[+p[1]]; if(!x)return;
+        S.act=x.niv; elegirSub("decisiones","plano",true);
+        S.sel=(g.fam==="placa")?{t:"viga",o:x.e.o,i:x.e.i,j:x.e.j}:x.e; render(); };
+    });
+    P.querySelectorAll("input[data-exc]").forEach(function(c){
+      c.onchange=function(){ var p=this.dataset.exc.split(":"), g=G[+p[0]], x=g&&g.miembros[+p[1]]; if(!x)return;
+        var r=excCrit(g.clave,+p[1],this.checked); if(!r.ok)return toast(r.msg);
+        guardar(); render();
+        toast(r.exc?(x.cod+" queda con su propia sección: el grupo ya no lo toca."):(x.cod+" vuelve al grupo y toma "+g.txt+".")); };
+    });
+    /* EN VIVO: al dejar de escribir -medio segundo- se aplica; con Enter, al salir de la casilla o al elegir, al momento.
+       Un cambio es UN Ctrl+Z aunque se escriba en varias pulsaciones */
+    function aplicaVivo(fin){
+      var v=CRIT_VIVO; if(!v)return;
+      var p=v.cs.split("|"), campo=p.pop(), quien=p.pop(), clave=p.join("|");
+      if(String(v.raw).trim()===""){ if(fin){ CRIT_VIVO=null; CRIT_ED=null; render(); } return; }
+      var mismo=(CRIT_ED===v.cs), r=(quien==="g")?ponSecGrupo(clave,campo,v.raw,mismo):ponSecMiembro(clave,quien.slice(1),campo,v.raw,mismo);
+      if(!r.ok){ if(fin){ toast(r.msg); CRIT_VIVO=null; CRIT_ED=null; render(); } return; }
+      CRIT_ED=v.cs;
+      if(fin){ CRIT_VIVO=null; CRIT_ED=null; }
+      guardar(); render();
+    }
+    P.querySelectorAll(".crit-in").forEach(function(inp){
+      if(inp.tagName==="SELECT"){
+        inp.onchange=function(){ if(REPINTA_CRIT||this.isConnected===false)return;
+          clearTimeout(CRIT_T); CRIT_VIVO={cs:this.dataset.cs, raw:this.value, pos:null}; CRIT_ED=null; aplicaVivo(true); };
+        return;
+      }
+      inp.addEventListener("input",function(){
+        CRIT_VIVO={cs:this.dataset.cs, raw:this.value, pos:(this.selectionStart!=null?this.selectionStart:null)};
+        clearTimeout(CRIT_T); CRIT_T=setTimeout(function(){ aplicaVivo(false); },500);
+      });
+      inp.addEventListener("change",function(){
+        if(REPINTA_CRIT||this.isConnected===false)return;
+        if(!CRIT_VIVO||CRIT_VIVO.cs!==this.dataset.cs)CRIT_VIVO={cs:this.dataset.cs, raw:this.value, pos:null};
+        clearTimeout(CRIT_T); aplicaVivo(true);
+      });
+      inp.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); this.blur(); } });
+    });
+    var bb=P.querySelector("#critBase");
+    if(bb)bb.onclick=function(){ CRIT_BASE=pesoSismoCrit(); pintaCriticas(); };
     var bt=P.querySelector("#critTodas");
     if(bt)bt.onclick=function(){ aplica(adoptarGrupos(G), "Secciones críticas adoptadas en "+G.length+" grupos. Ctrl+Z lo deshace."); };
     var bc=P.querySelector("#critCalcTodas");
@@ -15583,6 +15904,16 @@ var TT={script:performance.now()};
         guardar(); render();
       };
     });
+    /* la casilla que se estaba escribiendo sigue con el foco y con lo escrito, tras repintar */
+    if(CRIT_VIVO){
+      var el2=null;
+      P.querySelectorAll(".crit-in").forEach(function(x){ if(x.dataset&&x.dataset.cs===CRIT_VIVO.cs)el2=x; });
+      if(el2){
+        if(el2.tagName!=="SELECT")el2.value=CRIT_VIVO.raw;
+        try{ el2.focus({preventScroll:true});
+             if(el2.setSelectionRange&&CRIT_VIVO.pos!=null)el2.setSelectionRange(CRIT_VIVO.pos,CRIT_VIVO.pos); }catch(e){}
+      }
+    }
   }
   function pintaDecisiones(){
     var P=$("#inspDeci"); if(!P)return;
@@ -16642,6 +16973,27 @@ var TT={script:performance.now()};
     /* LA ZONA TRIBUTARIA VA EN SU CAPA, que no se pincha: el sombreado tapaba los clics de lo que queda debajo -en
        Cimentacion, la otra columna de una combinada-.  EN CIMENTACION se pinta la de la columna seleccionada, que es la
        de su zapata (Victor, 19-09-2026: «no lo implementaste para las zapatas»), siempre que tenga zapata. */
+    /* EL GRUPO RESALTADO desde Secciones criticas: sus elementos de este piso, con un halo amarillo */
+    if(RESALTA&&S.modo==="decisiones"&&RESALTA.porNivel[S.act]&&!CIM){
+      var gR=el("g",{"pointer-events":"none"}), cR="var(--resalte3d, #F2B705)";
+      RESALTA.porNivel[S.act].forEach(function(q){
+        var e=q.e;
+        if(q.fam==="col"){ var cq=XY(e.i,e.j);
+          gR.appendChild(el("circle",{cx:cq.x,cy:cq.y,r:13,fill:"none",stroke:cR,"stroke-width":3.2})); }
+        else if(q.fam==="viga"||q.fam==="chata"||q.fam==="placa"){
+          var ab=(e.o==="h")?e.i:e.j, tv=(q.fam==="placa")?{desde:ab,hasta:ab+1}:tramoViga(e.o,e.i,e.j,m);
+          var pa=(e.o==="h")?XY(tv.desde,e.j):XY(e.i,tv.desde), pb=(e.o==="h")?XY(tv.hasta,e.j):XY(e.i,tv.hasta);
+          gR.appendChild(el("line",{x1:pa.x,y1:pa.y,x2:pb.x,y2:pb.y,stroke:cR,"stroke-width":8,"stroke-linecap":"round",opacity:.6}));
+        }else if(q.fam==="losa"){
+          var o2=m.losas[key(e.i,e.j)]; if(!o2)return;
+          var dl=dirLosa(o2), tl=tramoLosa(dl,e.i,e.j,m);
+          var QR=(dl==="y")?[XY(tl.lat0,tl.desde),XY(tl.lat1,tl.desde),XY(tl.lat1,tl.hasta),XY(tl.lat0,tl.hasta)]
+                           :[XY(tl.desde,tl.lat0),XY(tl.hasta,tl.lat0),XY(tl.hasta,tl.lat1),XY(tl.desde,tl.lat1)];
+          gR.appendChild(el("polygon",{points:pts(QR),fill:cR,"fill-opacity":.2,stroke:cR,"stroke-width":2}));
+        }
+      });
+      g.appendChild(gR);
+    }
     var gT=el("g",{"pointer-events":"none"}); g.appendChild(gT);
     /* TODAS LAS AREAS TRIBUTARIAS A LA VEZ: cada apoyo con su region y su area; la seleccionada sigue saliendo
        completa, con sus cotas, encima de estas.  En rojo, la losa que no recibio ningun apoyo. */
@@ -20805,6 +21157,8 @@ var TT={script:performance.now()};
              rel:rel, largo:largo, rect:(forma !== "circular" && rel > 1.0001),
              corto:corto, largoLado:largoL,
              cuadrada:lado, circular:diam,
+             /* la CALCULADA aunque haya una decidida: la referencia de Secciones criticas */
+             bCalc:(largo === "x" ? largoL : corto), hCalc:(largo === "x" ? corto : largoL),
              cumple:ver.cumple, anchoOk:ver.anchoOk};
     PD.cols[ck] = r;
     return r;
@@ -28636,6 +28990,9 @@ var TT={script:performance.now()};
       /* el fondo lo pone el CSS con su degradado: el lienzo se deja transparente */
       fondo:null, nieblaColor:c.fondo, niebla:[V3D.cam.dist+0.6*R, V3D.cam.dist+4.2*R],
       tinta:c.tinta, acento:c.resalte, sel:V3D.selIdx,
+      /* el grupo resaltado desde Secciones criticas, teñido entero */
+      grupo:(RESALTA&&S.modo==="decisiones"&&V3D.esc)?V3D.esc.solidos.map(function(s,i){ return RESALTA.cods[s.nivel+"|"+s.cod]?i:-1; })
+                                                .filter(function(i){ return i>=0; }):null,
       separar:sep3D(), corte:corte3D(), aristas:V3D.aristas, aislar:V3D.selIdx!==null,
       }); }catch(e){}
     burbujas3D();
@@ -28901,6 +29258,8 @@ var TT={script:performance.now()};
     pintaNiveles();
     if(!etab)pintaSubmodos();             /* ETABS la pinta con sus errores */
     marcaAvisos();
+    /* la referencia del peso y el sismo de Secciones criticas es «desde que abriste la pestaña» */
+    if(!(deci&&solo&&subDe("decisiones")==="criticas")&&!(RESALTA&&S.modo==="decisiones"))CRIT_BASE=null;
     if(comp){pintaComprobacion();}
     else if(proy){pintaProyecto();}
     else if(hojas){pintaHojas();}
@@ -28925,7 +29284,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
 })();
 </script>
 
