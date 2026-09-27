@@ -265,6 +265,13 @@
   .stage{position:relative;min-height:470px;padding:10px;overflow:auto;background:var(--sheet)}
   svg#plano{display:block;width:100%;height:auto;touch-action:none;user-select:none}
   .hit{cursor:pointer;fill:transparent}
+  /* LO QUE SE VA A ELEGIR: al pasar el raton, la zona de clic se tiñe; con Tab se cambia entre las superpuestas */
+  .hit.hover{fill:rgba(242,183,5,.28);stroke:rgba(242,183,5,.45)}
+  line.hit.hover{fill:none}
+  #hoverTip{position:fixed;z-index:60;pointer-events:none;padding:3px 8px;border-radius:3px;
+            background:var(--ink);color:var(--sheet);font:500 11.5px "IBM Plex Sans",sans-serif;white-space:nowrap;
+            box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  #hoverTip small{opacity:.75;margin-left:6px}
   /* los avisos de la pestana de comprobacion */
   .avisos{display:grid;gap:6px;margin-top:8px}
   .av{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;
@@ -750,6 +757,16 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 #panelDeci{overflow:auto;padding:18px 20px}
 .cdr{margin:0 0 18px;max-width:760px;overflow-x:auto}
 .cdr tr[data-ir]{cursor:pointer}
+/* LA POSICION RESPECTO AL EJE: una rejilla de 3 x 3 con el cruce de ejes; el cuadrito es la columna */
+.alg{display:grid;grid-template-columns:repeat(3,30px);gap:3px;margin:4px 0 6px}
+.alg button{position:relative;width:30px;height:30px;padding:0;border:1px solid var(--line);background:var(--sheet);cursor:pointer;
+  background-image:linear-gradient(var(--ink-3),var(--ink-3)),linear-gradient(var(--ink-3),var(--ink-3));
+  background-size:1px 100%,100% 1px;background-position:center;background-repeat:no-repeat}
+.alg button i{position:absolute;width:11px;height:11px;background:var(--col);border:1px solid var(--sheet)}
+.alg button[aria-pressed="true"]{outline:2px solid var(--acc);outline-offset:0;background-color:var(--acc-soft)}
+.alv{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 6px}
+.alv button[aria-pressed="true"]{outline:2px solid var(--acc);background:var(--acc-soft)}
+#cajaSel{position:fixed;z-index:55;pointer-events:none;border:1.5px dashed var(--acc);background:rgba(15,110,140,.08)}
 /* SECCIONES CRITICAS EDITABLES: la seccion se escribe en la fila y se aplica en vivo */
 .crit-in{width:48px;padding:2px 4px;font:600 13px "IBM Plex Mono",monospace;text-align:right;
          border:1px solid var(--line);background:var(--sheet);color:var(--ink)}
@@ -1043,6 +1060,8 @@ select.crit-in{width:auto;text-align:left}
       <label class="fil"><input type="checkbox" data-ver="losa" checked><span class="swatch" style="background:var(--alig)"></span>Losas</label>
       <label class="fil"><input type="checkbox" data-ver="placa" checked><span class="swatch" style="background:var(--placa)"></span>Placas</label>
       <label class="fil"><input type="checkbox" data-ver="zapata" checked><span class="swatch" style="background:var(--zapata)"></span>Zapatas</label>
+      <label class="fil" title="Cada columna y cada viga con su sección real; desmarcada, el esquema de Planta">
+        <input type="checkbox" id="verReal" checked><span class="swatch" style="background:linear-gradient(90deg,var(--viga) 0 50%,var(--col) 50%)"></span>A escala real</label>
       <div class="rule" style="margin:8px 0"></div>
       <span class="lbl" style="padding:2px 8px 6px">En este nivel</span>
       <div id="deciResumen"></div>
@@ -11763,8 +11782,8 @@ select.crit-in{width:auto;text-align:left}
       var z0 = +L.z0, z1 = +L.z1, nombre = L.nombre || ("N" + (k + 1));
       if (mostrar("col", k)) (L.columnas || []).forEach(function (c) {
         var circ = c.forma === "circular";
-        var g = circ ? prisma(circulo(+c.x, +c.y, +c.D / 2, LADOS_CIRCULO), z0, z1 - BAJA_COL, false)
-                     : prisma(rect(+c.x, +c.y, +c.b, +c.h), z0, z1 - BAJA_COL);
+        var g = circ ? prisma(circulo(+c.x + (+c.dx || 0), +c.y + (+c.dy || 0), +c.D / 2, LADOS_CIRCULO), z0, z1 - BAJA_COL, false)
+                     : prisma(rect(+c.x + (+c.dx || 0), +c.y + (+c.dy || 0), +c.b, +c.h), z0, z1 - BAJA_COL);
         mete("col", c.cod, k, "Columna " + c.cod, (circ ? "Ø " + cm(c.D) : cm(c.b) + " × " + cm(c.h)) + " cm · " + nombre +
              ", de " + m2(z0) + " a " + m2(z1) + " m", C.col, g);
       });
@@ -11773,7 +11792,7 @@ select.crit-in{width:auto;text-align:left}
         var chata = v.tipo === "chata", Lv = Math.sqrt(Math.pow(v.x2 - v.x1, 2) + Math.pow(v.y2 - v.y1, 2));
         mete("viga", v.cod, k, (chata ? "Viga chata " : "Viga ") + v.cod,
              cm(v.b) + " × " + cm(v.h) + " cm · " + m2(Lv) + " m de eje a eje · " + nombre,
-             chata ? C.chata : C.viga, prisma(tira(+v.x1, +v.y1, +v.x2, +v.y2, +v.b), z1 - v.h, z1 - BAJA_VIGA));
+             chata ? C.chata : C.viga, prisma(tira(+v.x1 + (+v.dx || 0), +v.y1 + (+v.dy || 0), +v.x2 + (+v.dx || 0), +v.y2 + (+v.dy || 0), +v.b), z1 - v.h, z1 - BAJA_VIGA));
       });
       if (mostrar("losa", k)) (L.losas || []).forEach(function (l) {
         if (!(l.e > 0) || !l.xs || l.xs.length < 3) { avisos.losasSinEspesor++; return; }
@@ -13108,7 +13127,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v419 · 27-09-2026";
+  var BUILD="v424 · 27-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -14788,7 +14807,12 @@ var TT={script:performance.now()};
     var t=tramoViga(o,i,j,m),L=t.L,c1,c2,real=false,d;
     if(o==="h"){c1=ladoCol(t.desde,j,m); c2=ladoCol(t.hasta,j,m);}
     else       {c1=ladoCol(i,t.desde,m); c2=ladoCol(i,t.hasta,m);}
-    if(c1!==null&&c2!==null){d=(c1+c2)/2;real=true;}
+    if(c1!==null&&c2!==null){
+      /* LA COLUMNA CORRIDA entra mas (o menos) en la luz: con la cara en el eje, entra su lado entero o nada */
+      d=(o==="h")?caraEnLuz(o,t.desde,j,m,1,c1)+caraEnLuz(o,t.hasta,j,m,-1,c2)
+                 :caraEnLuz(o,i,t.desde,m,1,c1)+caraEnLuz(o,i,t.hasta,m,-1,c2);
+      real=true;
+    }
     else d=S.ladoCol;
     var tb=tribViga(o,i,j,m);
     return{L:L,Ln:Math.max(L-d,PISO_LUZ),B:tb.B,Ba:tb.a,Bb:tb.b,trib:tb,desc:d,real:real,tramo:t};
@@ -14971,6 +14995,64 @@ var TT={script:performance.now()};
   /* Aqui vivian huella, dimsVigentes, marcarEnvio, estadoDims y aplicarDims:
      todo el andamiaje de "traer de Excel lo que Excel calculo".  Se fue entero
      cuando el calculo se mudo aqui dentro. */
+  /* =====================================================================
+     LA POSICION RESPECTO AL EJE (Victor, 27-09-2026).  Por defecto todo va centrado en su eje, como siempre;
+     una columna puede ir con una cara o una esquina en el eje, y una viga a un lado.  El NUDO no se mueve: es
+     la barra la que se corre, en el dibujo, en ETABS (desplazamiento en sus extremos) y en la luz libre.
+     ===================================================================== */
+  function alCol(c){ var a=c&&c.al; return {x:(a&&(a.x===1||a.x===-1))?a.x:0, y:(a&&(a.y===1||a.y===-1))?a.y:0}; }
+  /* cuanto se corre el centro de la columna desde su cruce, en m y en las coordenadas de la planta (y hacia abajo) */
+  function desfaseCol(i,j,m,niv){
+    m=m||N(); var c=m.cols[key(i,j)]; if(!c)return {x:0,y:0};
+    var a=alCol(c); if(!a.x&&!a.y)return {x:0,y:0};
+    var s=seccionCol(i,j,m,niv); if(!s)return {x:0,y:0};
+    var bx=(s.forma==="circular")?s.D:s.b, hy=(s.forma==="circular")?s.D:s.h;
+    return {x:a.x*bx/200, y:a.y*hy/200};
+  }
+  function alViga(o,i,j,m){ var v=vigaDuena(o,i,j,m||N()), a=v&&v.al; return (a===1||a===-1)?a:0; }
+  /* cuanto se corre el eje de la viga, perpendicular a ella: y en las vigas en X, x en las vigas en Y */
+  function desfaseViga(o,i,j,m){
+    m=m||N(); var a=alViga(o,i,j,m); if(!a)return {x:0,y:0};
+    var pv=predimViga(o,i,j,m), d=a*((pv&&pv.b)||0.25)/2;
+    return (o==="h")?{x:0,y:d}:{x:d,y:0};
+  }
+  /* cuanto entra la columna del nudo (ni,nj) en la luz de una viga: -1, 0 o +1 veces media columna mas.
+     sentido +1 si la viga sale de ese nudo hacia + (X o Y), -1 si llega a el */
+  function entraEnLuz(o,ni,nj,m,sentido){
+    var c=m.cols[key(ni,nj)]; if(!c)return 0;
+    var a=alCol(c); return ((o==="h")?a.x:a.y)*sentido;
+  }
+  /* cambia la posicion de una lista de elementos: al = {col:{x,y}} o {vh:-1|0|1} (vigas en X) o {vv:..} (en Y) */
+  function ponAlineacion(lista,al){
+    if(!lista||!lista.length)return {ok:false,msg:"No hay nada seleccionado."};
+    snap(); var n=0;
+    lista.forEach(function(q){
+      var m=S.niveles[(q.niv==null)?S.act:q.niv]; if(!m)return;
+      if(q.t==="col"&&al&&al.col){ var c=m.cols[key(q.i,q.j)]; if(!c)return;
+        if(!al.col.x&&!al.col.y)delete c.al; else c.al={x:al.col.x|0,y:al.col.y|0}; n++; }
+      else if(q.t==="viga"&&al){ var av=(q.o==="h")?al.vh:al.vv; if(av==null)return;
+        var v=vigaDuena(q.o,q.i,q.j,m); if(!v)return;
+        if(!av)delete v.al; else v.al=(av>0)?1:-1; n++; }
+    });
+    PASADA++; guardar(); render();
+    return {ok:true,n:n};
+  }
+  /* cuanto descuenta de la luz la columna del nudo: centrada, la mitad de su lado (como siempre); corrida, su lado
+     a lo largo de la viga entero (si queda del lado de la luz) o nada (si queda del otro) */
+  function caraEnLuz(o,ni,nj,m,sentido,c){
+    var s=entraEnLuz(o,ni,nj,m,sentido); if(!s)return c/2;
+    var sc=seccionCol(ni,nj,m,null); if(!sc)return c/2;
+    var dim=(sc.forma==="circular")?sc.D:((o==="h")?sc.b:sc.h);
+    return (+dim||0)/100*(1+s)/2;
+  }
+  /* lo que queda en el eje, que es como lo dice el ingeniero: «cara izquierda en el eje», «esquina en el cruce» */
+  function textoAlCol(a){
+    if(!a.x&&!a.y)return "centrada en el cruce";
+    if(a.x&&a.y)return "esquina "+(a.y>0?"superior":"inferior")+" "+(a.x>0?"izquierda":"derecha")+" en el cruce (queda "+
+                       (a.y>0?"abajo":"arriba")+" a la "+(a.x>0?"derecha":"izquierda")+")";
+    if(a.x)return "cara "+(a.x>0?"izquierda":"derecha")+" en el eje (queda a la "+(a.x>0?"derecha":"izquierda")+")";
+    return "cara "+(a.y>0?"superior":"inferior")+" en el eje (queda "+(a.y>0?"abajo":"arriba")+")";
+  }
   function ladoCol(i,j,m){
     var s=seccionCol(i,j,m,null);
     if(!s)return null;
@@ -15949,14 +16031,56 @@ var TT={script:performance.now()};
       });
     }
 
+    var h='';
+    /* LA REJILLA DE POSICION: el cuadrito es la columna, las lineas el cruce de ejes */
+    function rejillaCol(act,attr){
+      var out='<div class="alg" role="group" aria-label="Posición de la columna respecto al cruce de ejes">';
+      [-1,0,1].forEach(function(y){ [-1,0,1].forEach(function(x){
+        var sel=(act&&act.x===x&&act.y===y);
+        var l=(x<0?2:(x>0?17:9.5)), t=(y<0?2:(y>0?17:9.5));
+        out+='<button type="button" '+attr+'="'+x+':'+y+'" aria-pressed="'+sel+'" title="'+textoAlCol({x:x,y:y})+
+             '" aria-label="'+textoAlCol({x:x,y:y})+'"><i style="left:'+l+'px;top:'+t+'px"></i></button>'; }); });
+      return out+'</div>';
+    }
+    function botonesViga(o,act,attr){
+      var op=(o==="h")?[[-1,"Arriba del eje"],[0,"Centrada"],[1,"Abajo del eje"]]
+                      :[[-1,"A la izquierda"],[0,"Centrada"],[1,"A la derecha"]];
+      return '<div class="alv" role="group">'+op.map(function(p){
+        return '<button type="button" class="mini" '+attr+'="'+p[0]+'" aria-pressed="'+(act===p[0])+'">'+p[1]+'</button>'; }).join("")+'</div>';
+    }
+    /* VARIOS A LA VEZ: lo elegido con el recuadro */
+    if(!q&&S.selMulti&&S.selMulti.length){
+      var mc=S.selMulti.filter(function(x){return x.t==="col"}), mvh=S.selMulti.filter(function(x){return x.t==="viga"&&x.o==="h"}),
+          mvv=S.selMulti.filter(function(x){return x.t==="viga"&&x.o==="v"});
+      function igual(l,f){ if(!l.length)return null; var v0=JSON.stringify(f(l[0]));
+        return l.every(function(x){return JSON.stringify(f(x))===v0})?f(l[0]):null; }
+      var aC=igual(mc,function(x){ var mm=S.niveles[x.niv]; return alCol(mm.cols[key(x.i,x.j)]); });
+      h='<div class="name">'+S.selMulti.length+' elementos</div><span class="tag">'+
+        [mc.length?mc.length+" columna(s)":"",mvh.length?mvh.length+" viga(s) en X":"",mvv.length?mvv.length+" viga(s) en Y":""]
+          .filter(Boolean).join(" · ")+'</span>';
+      if(mc.length)h+=bloque("Posición de las columnas respecto al eje",rejillaCol(aC,"data-alm")+
+        '<p class="calcnote">'+(aC?"Ahora: "+textoAlCol(aC):"Ahora tienen posiciones distintas")+'. El botón se aplica a las '+mc.length+'.</p>');
+      if(mvh.length)h+=bloque("Vigas en X respecto a su eje",botonesViga("h",igual(mvh,function(x){return alViga("h",x.i,x.j,S.niveles[x.niv])}),"data-almvh"));
+      if(mvv.length)h+=bloque("Vigas en Y respecto a su eje",botonesViga("v",igual(mvv,function(x){return alViga("v",x.i,x.j,S.niveles[x.niv])}),"data-almvv"));
+      h+='<div class="row"><button class="btn" id="quitaMulti">Quitar la selección</button></div>'+
+         '<p class="calcnote">Arrastra un recuadro sobre la planta para elegir otros; Esc la quita. El nudo no se mueve: '+
+         'se corre la sección, en el dibujo, en la luz libre y en ETABS.</p>';
+      P.innerHTML='<h2>Decisión</h2>'+h;
+      function aplicaM(al,txt){ var r=ponAlineacion(S.selMulti,al); toast(r.ok?(txt+" en "+r.n+" elemento(s). Ctrl+Z lo deshace."):r.msg); }
+      P.querySelectorAll("[data-alm]").forEach(function(b){ b.onclick=function(){ var p=this.dataset.alm.split(":");
+        var a={x:+p[0],y:+p[1]}; aplicaM({col:a},"Columnas con "+textoAlCol(a)); }; });
+      P.querySelectorAll("[data-almvh]").forEach(function(b){ b.onclick=function(){ aplicaM({vh:+this.dataset.almvh},"Vigas en X "+this.textContent.toLowerCase()); }; });
+      P.querySelectorAll("[data-almvv]").forEach(function(b){ b.onclick=function(){ aplicaM({vv:+this.dataset.almvv},"Vigas en Y "+this.textContent.toLowerCase()); }; });
+      var qm=P.querySelector("#quitaMulti"); if(qm)qm.onclick=function(){ S.selMulti=null; render(); };
+      return;
+    }
     if(!q){
-      P.innerHTML='<h2>Decisión</h2><p class="empty">Selecciona un elemento de la planta: verás lo que '+
-        'pide el predimensionamiento y podrás escribir la sección que adoptas.</p>'+
+      P.innerHTML='<h2>Decisión</h2><p class="empty">Selecciona un elemento de la planta, o arrastra un recuadro para '+
+        'elegir varios: verás lo que pide el predimensionamiento y podrás escribir la sección que adoptas.</p>'+
         '<p class="calcnote">Lo que decides aquí manda en el resto del modelo y en ETABS. Las hojas '+
         'de Excel siguen con la teoría.</p>';
       return;
     }
-    var h='';
     if(q.t==="col"){
       var k=key(q.i,q.j), c=m.cols[k];
       if(!c){P.innerHTML='<h2>Decisión</h2><p class="empty">Ese cruce no tiene columna.</p>';return}
@@ -15974,6 +16098,10 @@ var TT={script:performance.now()};
           (circ?entrada("col","D",pc.D,"Ø"):(entrada("col","b",pc.b,"b")+entrada("col","h",pc.h,"h")))+
           '<dl class="kv">'+kv("Área colocada",Math.round(pc.area)+" cm² de "+pc.Ac,1)+'</dl>'+
           '<div>'+estado(pc.cumple,"área")+estado(pc.anchoOk,"ancho mínimo")+'</div>'+borra("col",pc.propia));
+        var aCol=alCol(c);
+        h+=bloque("Posición respecto al eje",rejillaCol(aCol,"data-alc")+
+          '<p class="calcnote">Ahora: '+textoAlCol(aCol)+'. El nudo no se mueve: se corre la columna, en el dibujo, en la luz '+
+          'libre de sus vigas y en ETABS.</p>');
       }
       if(S.act===0&&m.zapatas&&m.zapatas[k]&&ve("zapata")){
         var z=predimZapata(q.i,q.j);
@@ -16016,6 +16144,7 @@ var TT={script:performance.now()};
           h+=bloque("Decisión",entrada("viga","b",Math.round(pv.b*100),"b")+
             '<p class="calcnote">El peralte de una chata es el espesor de la losa: se decide en la losa.</p>'+
             '<div>'+estado(pv.cumple,"Ln ≤ h × k")+'</div>'+borra("viga",pv.propia));
+          h+=bloque("Posición respecto al eje",botonesViga(q.o,alViga(q.o,q.i,q.j,m),"data-alv"));
         }else{
           h+=bloque("Predimensionamiento",'<dl class="kv">'+kv("Luz libre Ln",n2(pv.Ln)+" m",1)+
             kv("Ancho tributario B",pv.B.toFixed(3)+" m",1)+kv("α",pv.alfa,1)+
@@ -16029,6 +16158,8 @@ var TT={script:performance.now()};
             kv("b adoptado vs B/"+CRITERIOS.PROPORCION.baseVigaPrincipal,
                Math.round(pv.b*100)+" cm ≥ "+(pv.bReq*100).toFixed(1)+" cm",1)+'</dl>'+
             '<div>'+estado(pv.hOk,"peralte")+estado(pv.bOk,"ancho")+'</div>'+borra("viga",pv.propia));
+          h+=bloque("Posición respecto al eje",botonesViga(q.o,alViga(q.o,q.i,q.j,m),"data-alv")+
+            '<p class="calcnote">Una viga de borde va al ras de la fachada con su cara en el eje.</p>');
         }
       }
       if(plc&&ve("placa")){
@@ -16094,6 +16225,10 @@ var TT={script:performance.now()};
         var r=decidir(elem(this.dataset.borra),null,m); if(!r.ok)toast(r.msg);
         guardar(); render(); };
     });
+    P.querySelectorAll("[data-alc]").forEach(function(b){ b.onclick=function(){ var p=this.dataset.alc.split(":"), a={x:+p[0],y:+p[1]};
+      var r=ponAlineacion([{t:"col",i:q.i,j:q.j,niv:S.act}],{col:a}); toast(r.ok?("Columna con "+textoAlCol(a)+". Ctrl+Z lo deshace."):r.msg); }; });
+    P.querySelectorAll("[data-alv]").forEach(function(b){ b.onclick=function(){ var v=+this.dataset.alv, al=(q.o==="h")?{vh:v}:{vv:v};
+      var r=ponAlineacion([{t:"viga",o:q.o,i:q.i,j:q.j,niv:S.act}],al); toast(r.ok?("Viga: "+this.textContent.toLowerCase()+". Ctrl+Z lo deshace."):r.msg); }; });
   }
   /* =====================================================================
      LA PESTANA DE COMPROBACION
@@ -16570,6 +16705,8 @@ var TT={script:performance.now()};
   function draw(){
     /* en DECISIONES las medidas se ven siempre -son lo que se decide- y solo
        se dibuja y se pincha lo que dejan pasar los filtros */
+    /* A ESCALA REAL: en Predimensionamiento cada elemento con su seccion; en Planta, el esquema de siempre */
+    var REAL=(S.modo==="decisiones")&&S.verReal!==false&&!enCim();
     var DIMS=S.verDims||S.modo==="decisiones",
         FV=(S.modo==="decisiones")?(S.verDeci||{}):null;
     function ve(t){return !FV||FV[t]!==false}
@@ -16772,6 +16909,21 @@ var TT={script:performance.now()};
     if(by2!==m.dy)for(j=0;j<ny()-1;j++)
       txt(g,w-14,(Y(j,nx()-1)+Y(j+1,nx()-1))/2+3,nm(by2[j]),"var(--ink-3)",9.5,"end");
 
+    /* media columna a lo largo de la viga, en px: lo que se recorta en ese extremo */
+    function mediaCol(ni,nj,o,sentido){
+      if(!m.cols[key(ni,nj)])return 0;
+      var sc=seccionCol(ni,nj,m,S.act); if(!sc)return 0;
+      var cm=(sc.forma==="circular")?sc.D:((o==="h")?sc.b:sc.h);
+      /* corrida respecto al eje, entra su lado entero o nada en la luz */
+      return (+cm||0)/200*esc*(1+entraEnLuz(o,ni,nj,m,sentido||1));
+    }
+    /* la franja de ancho real de p1 a p2, recortada t1 y t2 en cada extremo; devuelve los 4 vertices o null */
+    function franja(p1,p2,ancho,t1,t2){
+      var ux=p2.x-p1.x, uy=p2.y-p1.y, L=Math.sqrt(ux*ux+uy*uy)||1; ux/=L; uy/=L;
+      if(L-t1-t2<0.5)return null;
+      var a={x:p1.x+ux*t1,y:p1.y+uy*t1}, b={x:p2.x-ux*t2,y:p2.y-uy*t2}, nx=-uy*ancho/2, ny=ux*ancho/2;
+      return [{x:a.x+nx,y:a.y+ny},{x:b.x+nx,y:b.y+ny},{x:b.x-nx,y:b.y-ny},{x:a.x-nx,y:a.y-ny}];
+    }
     function viga(o,i,j){
       var x1,y1,x2,y2,k=key(o,i,j);
       /* cada extremo con sus DOS indices: en planta irregular la viga
@@ -16786,7 +16938,14 @@ var TT={script:performance.now()};
          m.vigas[key(o,S.sel.i,S.sel.j)])
         sl=(o==="h")?(S.sel.j===j&&S.sel.i>=tv.desde&&S.sel.i<tv.hasta)
                     :(S.sel.i===i&&S.sel.j>=tv.desde&&S.sel.j<tv.hasta);
+      var anchoReal=0;                      /* en px, para la zona de clic */
       if(m.placas[k]&&ve("placa")){          /* la placa va debajo y mas gruesa: es el muro */
+        if(REAL){
+          var ppR=predimPlaca(o,i,j,m), tR=Math.max(4,((ppR&&ppR.t)||0.15)*esc), QP=franja({x:x1,y:y1},{x:x2,y:y2},tR,0,0);
+          if(QP)g.appendChild(el("polygon",{points:pts(QP),fill:sl?"var(--trib)":"var(--placa)",opacity:sl?1:.9,
+            stroke:"var(--sheet)","stroke-width":.8}));
+          anchoReal=Math.max(anchoReal,tR);
+        }else
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"var(--placa)",
           "stroke-width":9,opacity:CIM?.3:(sl?1:.9),"stroke-linecap":"butt"}));
       }
@@ -16798,7 +16957,24 @@ var TT={script:performance.now()};
         }
         return;
       }
-      if(m.vigas[k]&&ve("viga")){
+      if(m.vigas[k]&&ve("viga")&&REAL){
+        /* A ESCALA: su ancho real, de cara a cara de columna; la invertida con un borde cortado encima */
+        var tvR=tipoViga(m.vigas[k]), chR=(tvR==="chata"), invR=(tvR==="invertida"), pvR=predimViga(o,i,j,m);
+        var bR=((pvR&&pvR.b)||0.25)*esc, bVis=Math.max(3,bR);
+        var tA=(o==="h")?mediaCol(i,j,"h",1):mediaCol(i,j,"v",1), tB=(o==="h")?mediaCol(i+1,j,"h",-1):mediaCol(i,j+1,"v",-1);
+        var dvR=desfaseViga(o,i,j,m), ddx=dvR.x*esc, ddy=dvR.y*esc;
+        var QV=franja({x:x1+ddx,y:y1+ddy},{x:x2+ddx,y:y2+ddy},bVis,tA,tB);
+        if(QV){
+          var atV={points:pts(QV),
+            fill:sl?"var(--trib)":(chR?"var(--chata)":(invR?"var(--invert)":"var(--viga)")),
+            /* sin borde entre tramos: la viga se lee como UNA franja, como en Revit; la invertida lleva el suyo cortado */
+            "fill-opacity":sl?1:(chR?.75:.85),stroke:invR?"var(--invert)":"none","stroke-width":invR?1.4:0};
+          if(invR)atV["stroke-dasharray"]="4 3";
+          g.appendChild(el("polygon",atV));
+        }
+        anchoReal=Math.max(anchoReal,bVis);
+      }
+      else if(m.vigas[k]&&ve("viga")){
         var tvg=tipoViga(m.vigas[k]), ch=(tvg==="chata"), inv=(tvg==="invertida");
         /* chata: mas delgada y en otro tono, porque no descuelga.  Invertida: su color y una linea
            fina por encima, que es por donde sube. */
@@ -16817,8 +16993,8 @@ var TT={script:performance.now()};
       var pv2=(m.vigas[k]&&ve("viga"))?predimViga(o,i,j,m):null;
       if(DIMS&&pv2&&tv&&tv.dueno){
         var T1=(o==="h")?XY(tv.desde,j):XY(i,tv.desde), T2=(o==="h")?XY(tv.hasta,j):XY(i,tv.hasta);
-        var vx=(T1.x+T2.x)/2,vy=(T1.y+T2.y)/2;
-        txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,
+        var vx=(T1.x+T2.x)/2,vy=(T1.y+T2.y)/2, sepR=REAL?Math.max(0,((pv2.b||0)*esc)/2-6):0;
+        txt(g,o==="h"?vx:vx-24-sepR,o==="h"?vy+13+sepR:vy,
             Math.round(pv2.b*100)+"×"+Math.round(pv2.h*100)+(esInvertida(m.vigas[k])?" \u2191":""),
             ((pv2.tipo==="chata"||pv2.propia)&&!pv2.cumple)?"var(--no)":"var(--acc-ink)",9);
       }
@@ -16830,7 +17006,8 @@ var TT={script:performance.now()};
             (pp2.propia&&!pp2.cumple)?"var(--no)":"var(--acc-ink)",9.5);
       }
       if(!FV||(m.vigas[k]&&ve("viga"))||(m.placas[k]&&ve("placa"))){
-        var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent","stroke-width":anchoFranja(o,i,j),"class":"hit"});
+        var hb=el("line",{x1:x1,y1:y1,x2:x2,y2:y2,stroke:"transparent",
+          "stroke-width":REAL?Math.max(anchoFranja(o,i,j),anchoReal):anchoFranja(o,i,j),"class":"hit"});
         hb.dataset.t="viga";hb.dataset.o=o;hb.dataset.i=i;hb.dataset.j=j;g.appendChild(hb);
       }
     }
@@ -16950,7 +17127,15 @@ var TT={script:performance.now()};
         /* el cuadrado se ve pero no se pincha: en un vano chico tapaba el tramo de al lado y el clic
            se perdia; la columna se pincha con su circulo de clic, que va encima */
         var pin={fill:sel?"var(--trib)":"var(--col)",stroke:"var(--sheet)","stroke-width":1,"pointer-events":"none"};
-        if(formaDe(m.cols[key(i,j)])==="circular"){
+        var scR=REAL?seccionCol(i,j,m,S.act):null;
+        if(scR){
+          /* A ESCALA: su b en X y su h en Y, centrada en el nudo; nunca menos de 6 px, para que no desaparezca */
+          pin["stroke-width"]=sel?2:1;
+          var dcR=desfaseCol(i,j,m,S.act), cxR=X(i,j)+dcR.x*esc, cyR=Y(j,i)+dcR.y*esc;
+          if(scR.forma==="circular"){ pin.cx=cxR;pin.cy=cyR;pin.r=Math.max(3,(scR.D/200)*esc); g.appendChild(el("circle",pin)); }
+          else{ var bpx=Math.max(6,scR.b/100*esc), hpx=Math.max(6,scR.h/100*esc);
+            pin.x=cxR-bpx/2;pin.y=cyR-hpx/2;pin.width=bpx;pin.height=hpx; g.appendChild(el("rect",pin)); }
+        }else if(formaDe(m.cols[key(i,j)])==="circular"){
           pin.cx=X(i,j);pin.cy=Y(j,i);pin.r=lado/2;
           g.appendChild(el("circle",pin));
         }else{
@@ -16960,12 +17145,17 @@ var TT={script:performance.now()};
       }
       var pc2=(m.cols[key(i,j)]&&ve("col"))?seccionCol(i,j,m,null):null;
       if(DIMS&&pc2)
-        txt(g,X(i,j),Y(j,i)-11,
+        txt(g,X(i,j),Y(j,i)-(REAL?Math.max(11,(pc2.forma==="circular"?pc2.D:pc2.h)/200*esc+5):11),
             pc2.forma==="circular"?("Ø"+pc2.D):(pc2.b+"×"+pc2.h),
             (pc2.propia&&!pc2.cumple)?"var(--no)":"var(--acc-ink)",9.5);
       /* en Cimentacion solo se pincha donde hay columna: un cruce vacio no lleva zapata */
       if(CIM?!!m.cols[key(i,j)]:(!FV||(m.cols[key(i,j)]&&(ve("col")||(ve("zapata")&&S.act===0&&m.zapatas&&m.zapatas[key(i,j)]))))){
-        var hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:radioNudo(i,j),"class":"hit"});
+        var hc, scH=(REAL&&m.cols[key(i,j)])?seccionCol(i,j,m,S.act):null;
+        if(scH&&scH.forma!=="circular"){
+          /* a escala la columna se pincha por su forma entera, no solo por su centro */
+          var bh=Math.max(10,scH.b/100*esc), hh=Math.max(10,scH.h/100*esc), dcH=desfaseCol(i,j,m,S.act);
+          hc=el("rect",{x:X(i,j)+dcH.x*esc-bh/2,y:Y(j,i)+dcH.y*esc-hh/2,width:bh,height:hh,"class":"hit"});
+        }else hc=el("circle",{cx:X(i,j),cy:Y(j,i),r:scH?Math.max(radioNudo(i,j),scH.D/200*esc):radioNudo(i,j),"class":"hit"});
         hc.dataset.t="col";hc.dataset.i=i;hc.dataset.j=j;g.appendChild(hc);
       }
     }
@@ -16973,6 +17163,19 @@ var TT={script:performance.now()};
     /* LA ZONA TRIBUTARIA VA EN SU CAPA, que no se pincha: el sombreado tapaba los clics de lo que queda debajo -en
        Cimentacion, la otra columna de una combinada-.  EN CIMENTACION se pinta la de la columna seleccionada, que es la
        de su zapata (Victor, 19-09-2026: «no lo implementaste para las zapatas»), siempre que tenga zapata. */
+    /* LA SELECCION POR RECUADRO de Predimensionamiento: sus elementos, con un halo del color de la seleccion */
+    if(S.modo==="decisiones"&&S.selMulti&&S.selMulti.length&&!CIM){
+      var gM=el("g",{"pointer-events":"none"});
+      S.selMulti.forEach(function(q){
+        if(q.niv!==S.act)return;
+        if(q.t==="col"){ var cq=XY(q.i,q.j);
+          gM.appendChild(el("circle",{cx:cq.x,cy:cq.y,r:12,fill:"none",stroke:"var(--trib)","stroke-width":2.6})); }
+        else if(q.t==="viga"){ var tq=tramoViga(q.o,q.i,q.j,m);
+          var pa2=(q.o==="h")?XY(tq.desde,q.j):XY(q.i,tq.desde), pb2=(q.o==="h")?XY(tq.hasta,q.j):XY(q.i,tq.hasta);
+          gM.appendChild(el("line",{x1:pa2.x,y1:pa2.y,x2:pb2.x,y2:pb2.y,stroke:"var(--trib)","stroke-width":7,"stroke-linecap":"round",opacity:.45})); }
+      });
+      g.appendChild(gM);
+    }
     /* EL GRUPO RESALTADO desde Secciones criticas: sus elementos de este piso, con un halo amarillo */
     if(RESALTA&&S.modo==="decisiones"&&RESALTA.porNivel[S.act]&&!CIM){
       var gR=el("g",{"pointer-events":"none"}), cR="var(--resalte3d, #F2B705)";
@@ -19090,20 +19293,108 @@ var TT={script:performance.now()};
       if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}}
       return;
     }
+    /* EL RECUADRO: en Predimensionamiento el clic selecciona como siempre; si arrastras mas de 5 px, lo que queda
+       dentro del recuadro reemplaza la seleccion (aunque empieces sobre una losa) */
+    if(S.modo==="decisiones"&&S.vista==="plano"){
+      CAJA={x0:e.clientX,y0:e.clientY,m0:xyModelo(e),activa:false,vacio:!(e.target.dataset&&e.target.dataset.t)};
+      if(CAJA.vacio){ if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}} return; }
+    }
     if(!e.target.dataset||!e.target.dataset.t)return;
     /* Unir guarda su propio paso de deshacer, y solo cuando une o separa */
     if(S.tool!=="sel"&&S.tool!=="unir"&&S.modo!=="decisiones")snap();
     UNIR_SHIFT=!!e.shiftKey;
-    pintando=true;modo=null;tocados={};aplicar(e.target,true);
+    /* con varias zonas superpuestas, el clic elige la que Tab dejo marcada */
+    if(S.modo==="decisiones"&&S.selMulti)S.selMulti=null;
+    var objetivo=(seleccionando()&&HOVER.lista.length>1&&HOVER.lista.indexOf(e.target)>=0)?HOVER.lista[HOVER.k]:e.target;
+    pintando=true;modo=null;tocados={};aplicar(objetivo,true);
     if(svg.setPointerCapture&&e.pointerId!=null){try{svg.setPointerCapture(e.pointerId)}catch(x){}}
   });
-  var CORR_ARR=null;
+  var CORR_ARR=null, CAJA=null;
+  function pintaCaja(e){
+    var d=$("#cajaSel");
+    if(!CAJA){ if(d)d.hidden=true; return; }
+    if(!d){ d=document.createElement("div"); d.id="cajaSel"; document.body.appendChild(d); }
+    d.hidden=false; d.style.left=Math.min(CAJA.x0,e.clientX)+"px"; d.style.top=Math.min(CAJA.y0,e.clientY)+"px";
+    d.style.width=Math.abs(e.clientX-CAJA.x0)+"px"; d.style.height=Math.abs(e.clientY-CAJA.y0)+"px";
+  }
+  /* lo que queda dentro del recuadro: columnas por su nudo, vigas por el centro de su tramo (una vez por viga) */
+  function eligeEnCaja(a,b){
+    var m=N(), x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x), y0=Math.min(a.y,b.y), y1=Math.max(a.y,b.y), out=[], i, j;
+    function dentro(p){ return p.x>=x0&&p.x<=x1&&p.y>=y0&&p.y<=y1; }
+    var nX=m.dx.length+1, nY=m.dy.length+1;
+    for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[key(i,j)]&&dentro(nodo(i,j,m)))out.push({t:"col",i:i,j:j,niv:S.act});
+    ["h","v"].forEach(function(o){
+      var iM=(o==="h")?nX-1:nX, jM=(o==="h")?nY:nY-1, p, q2;
+      for(p=0;p<iM;p++)for(q2=0;q2<jM;q2++){
+        if(!m.vigas[key(o,p,q2)])continue; var tv=tramoViga(o,p,q2,m); if(!tv.dueno)continue;
+        var na=(o==="h")?nodo(tv.desde,q2,m):nodo(p,tv.desde,m), nb=(o==="h")?nodo(tv.hasta,q2,m):nodo(p,tv.hasta,m);
+        if(dentro({x:(na.x+nb.x)/2,y:(na.y+nb.y)/2}))out.push({t:"viga",o:o,i:p,j:q2,niv:S.act});
+      }
+    });
+    return out;
+  }
+  /* LO QUE SE VA A ELEGIR.  Al pasar el raton sobre la planta (herramienta Seleccion o Predimensionamiento) se
+     tiñe la zona de clic de arriba y un rotulo dice que es; si hay varias superpuestas -dos ejes a 0,38 m-, Tab
+     cambia de una a otra y el clic elige la marcada. */
+  var HOVER={lista:[],k:0,x:0,y:0};
+  function nombreDeHit(h){
+    var d=h&&h.dataset; if(!d||!d.t)return "";
+    try{ var nm=nombres(S.act), i=+d.i, j=+d.j, m=N();
+      if(d.t==="col")return (m.cols[key(i,j)]?(nm.C[key(i,j)]||{}).cod:"cruce "+ejeCol(i,j))||"columna";
+      if(d.t==="viga"){ var k=key(d.o,i,j), v=(nm.V[k]||nm.P[k]||{}).cod;
+        return v||("tramo "+(d.o==="h"?"en X":"en Y")); }
+      if(d.t==="losa"||d.t==="platea")return (nm.L[key(i,j)]||{}).cod||("paño "+(i+1)+"·"+(j+1));
+    }catch(err){}
+    return d.t;
+  }
+  function tipHover(){
+    var t=$("#hoverTip");
+    if(!HOVER.lista.length){ if(t)t.hidden=true; return; }
+    if(!t){ t=document.createElement("div"); t.id="hoverTip"; document.body.appendChild(t); }
+    var n=HOVER.lista.length;
+    t.innerHTML=escapa(nombreDeHit(HOVER.lista[HOVER.k]))+(n>1?'<small>Tab: '+(HOVER.k+1)+' de '+n+'</small>':'');
+    t.hidden=false; t.style.left=(HOVER.x+14)+"px"; t.style.top=(HOVER.y+14)+"px";
+  }
+  function marcaHover(){
+    document.querySelectorAll("#plano .hit.hover").forEach(function(h){ h.classList.remove("hover"); });
+    var h=HOVER.lista[HOVER.k]; if(h&&h.classList)h.classList.add("hover");
+    tipHover();
+  }
+  function seleccionando(){ return S.tool==="sel"||S.modo==="decisiones"; }
   svg.addEventListener("pointermove",function(e){
+    if(!pintando&&!CORR_ARR&&seleccionando()){
+      var lst=(document.elementsFromPoint?document.elementsFromPoint(e.clientX,e.clientY):[])
+        .filter(function(x){ return x.classList&&x.classList.contains("hit")&&x.dataset&&x.dataset.t; });
+      var igual=lst.length===HOVER.lista.length&&lst.every(function(x,q){ return x===HOVER.lista[q]; });
+      HOVER.x=e.clientX; HOVER.y=e.clientY;
+      if(!igual){ HOVER.lista=lst; HOVER.k=0; marcaHover(); } else tipHover();
+    }
+    if(CAJA){
+      if(!CAJA.activa&&Math.abs(e.clientX-CAJA.x0)<5&&Math.abs(e.clientY-CAJA.y0)<5)return;
+      CAJA.activa=true; pintaCaja(e); return; }
     if(CORR_ARR){ pintaGuiaCorr(CORR_ARR,xyModelo(e)); return; }
     if(!pintando||S.tool==="sel"||S.tool==="unir"||S.modo==="decisiones")return;
     var n=document.elementFromPoint(e.clientX,e.clientY);aplicar(n,false);
   });
   window.addEventListener("pointerup",function(){if(pintando){pintando=false;tocados={};guardar()}});
+  svg.addEventListener("pointerleave",function(){ HOVER.lista=[]; HOVER.k=0; marcaHover(); });
+  window.addEventListener("pointerup",function(e){
+    if(!CAJA)return;
+    var a=CAJA; CAJA=null; pintaCaja(e);
+    if(!a.activa){ if(a.vacio&&S.selMulti){ S.selMulti=null; render(); } return; }
+    var l=eligeEnCaja(a.m0,xyModelo(e));
+    S.sel=null; S.selMulti=l.length?l:null; render();
+    if(!l.length)toast("No quedó ninguna columna ni viga dentro del recuadro.");
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"&&S.selMulti){ S.selMulti=null; render(); }
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key!=="Tab"||HOVER.lista.length<2||!seleccionando())return;
+    var a=document.activeElement; if(a&&(a.tagName==="INPUT"||a.tagName==="SELECT"||a.tagName==="TEXTAREA"))return;
+    e.preventDefault();
+    HOVER.k=(HOVER.k+(e.shiftKey?HOVER.lista.length-1:1))%HOVER.lista.length; marcaHover();
+  });
   window.addEventListener("pointerup",function(e){
     if(!CORR_ARR)return;
     var a=CORR_ARR; CORR_ARR=null; pintaGuiaCorr(null);
@@ -19344,6 +19635,7 @@ var TT={script:performance.now()};
     c.addEventListener("change",function(){
       if(c.dataset.ver){S.verDeci[c.dataset.ver]=!!c.checked;render();}});
   });
+  (function(){ var r=$("#verReal"); if(r)r.addEventListener("change",function(){ S.verReal=!!this.checked; render(); }); })();
   var PISTAS={sel:"Clic en un elemento para ver sus medidas",
     col:"Clic o arrastra sobre los cruces de ejes",
     viga:"Clic o arrastra sobre los tramos · el mismo tipo lo quita, otro tipo lo convierte",
@@ -25908,6 +26200,8 @@ var TT={script:performance.now()};
         var sc=seccionCol(i,j,m,k), p=pt(m,i,j);
         L.columnas.push({cod:nm.C[key(i,j)].cod, x:p[0], y:p[1], forma:sc.forma,
           b:r4(sc.b/100), h:r4(sc.h/100), D:r4((sc.D||0)/100)});
+        /* CORRIDA RESPECTO A SU EJE: el nudo es el mismo; dx, dy es cuanto se corre la seccion (y de ETABS hacia arriba) */
+        var dsC=desfaseCol(i,j,m,k); if(dsC.x||dsC.y){ var cU=L.columnas[L.columnas.length-1]; cU.dx=r4(dsC.x); cU.dy=r4(-dsC.y); }
       }
 
       /* VIGAS y PLACAS van sobre los mismos tramos de eje. */
@@ -25924,6 +26218,7 @@ var TT={script:performance.now()};
                 vb=(o==="h")?pt(m,tv.hasta,jj):pt(m,ii,tv.hasta);
             L.vigas.push({cod:nm.V[kk].cod, tipo:pv.tipo, inv:esInvertida(m.vigas[kk])||undefined,
               x1:va[0],y1:va[1],x2:vb[0],y2:vb[1], b:r4(pv.b), h:r4(pv.h)});
+            var dsV=desfaseViga(o,ii,jj,m); if(dsV.x||dsV.y){ var vU=L.vigas[L.vigas.length-1]; vU.dx=r4(dsV.x); vU.dy=r4(-dsV.y); }
           }
           if(m.placas[kk]){
             var pp=predimPlaca(o,ii,jj,m);
@@ -28064,8 +28359,9 @@ var TT={script:performance.now()};
       placas.forEach(function(pl){ if(pasaPor(pl,p))m=Math.max(m,pl.t/2); });
       return m;
     }
-    cols.forEach(function(c){ var bb=c.forma==="circular"?(c.D||c.b):c.b, hh=c.forma==="circular"?(c.D||c.b):c.h;
-      rectAc(c.x-bb/2,c.y-hh/2,c.x+bb/2,c.y+hh/2,4,"RET-COLUMNAS"); });
+    cols.forEach(function(c){ var bb=c.forma==="circular"?(c.D||c.b):c.b, hh=c.forma==="circular"?(c.D||c.b):c.h,
+        cx=c.x+(+c.dx||0), cy=c.y+(+c.dy||0);                  /* corrida respecto a su eje */
+      rectAc(cx-bb/2,cy-hh/2,cx+bb/2,cy+hh/2,4,"RET-COLUMNAS"); });
     placas.forEach(function(pl){
       if(Math.abs(pl.y2-pl.y1)<=ORTO)rectAc(pl.x1,pl.y1-pl.t/2,pl.x2,pl.y1+pl.t/2,3,"RET-PLACAS");
       else if(Math.abs(pl.x2-pl.x1)<=ORTO)rectAc(pl.x1-pl.t/2,pl.y1,pl.x1+pl.t/2,pl.y2,3,"RET-PLACAS");
@@ -28077,8 +28373,9 @@ var TT={script:performance.now()};
       var hz=Math.abs(v.y2-v.y1)<=ORTO, vt=Math.abs(v.x2-v.x1)<=ORTO;
       if(hz||vt){
         var lo=hz?(v.x1<=v.x2?a:b):(v.y1<=v.y2?a:b), hi=(lo===a)?b:a, ml=medioEn(lo,v), mh=medioEn(hi,v);
-        if(hz)rectAc(lo[0]-ml,v.y1-v.b/2,hi[0]+mh,v.y1+v.b/2,chata?1:2,capa);
-        else rectAc(v.x1-v.b/2,lo[1]-ml,v.x1+v.b/2,hi[1]+mh,chata?1:2,capa);
+        var dyv=+v.dy||0, dxv=+v.dx||0;                        /* corrida respecto a su eje */
+        if(hz)rectAc(lo[0]-ml,v.y1+dyv-v.b/2,hi[0]+mh,v.y1+dyv+v.b/2,chata?1:2,capa);
+        else rectAc(v.x1+dxv-v.b/2,lo[1]-ml,v.x1+dxv+v.b/2,hi[1]+mh,chata?1:2,capa);
         return;
       }
       var lg=legible(a,b), u=lg[2], n=nor(u), a2=sum(lg[0],por(u,recorte(lg[0],u,v))), b2=res(lg[1],por(u,recorte(lg[1],u,v)));
@@ -28213,10 +28510,11 @@ var TT={script:performance.now()};
 
     /* COLUMNAS: rellenas y encima de todo */
     cols.forEach(function(c){
-      var x=c.x, y=c.y, circ=c.forma==="circular", mx, my;
-      if(circ){ var D=c.D||c.b; P.push({k:"sombreado",capa:"RET-COLUMNAS",relleno:"RET-RELLENO",patron:"SOLID",c:[x,y],r:D/2}); mx=my=D/2; }
+      /* x, y es el nudo (ahi llegan las vigas); X, Y el centro de la seccion, corrida si va con una cara en el eje */
+      var x=c.x, y=c.y, X=x+(+c.dx||0), Y=y+(+c.dy||0), circ=c.forma==="circular", mx, my;
+      if(circ){ var D=c.D||c.b; P.push({k:"sombreado",capa:"RET-COLUMNAS",relleno:"RET-RELLENO",patron:"SOLID",c:[X,Y],r:D/2}); mx=my=D/2; }
       else{
-        var e=[[x-c.b/2,y-c.h/2],[x+c.b/2,y-c.h/2],[x+c.b/2,y+c.h/2],[x-c.b/2,y+c.h/2]];
+        var e=[[X-c.b/2,Y-c.h/2],[X+c.b/2,Y-c.h/2],[X+c.b/2,Y+c.h/2],[X-c.b/2,Y+c.h/2]];
         P.push({k:"solido",capa:"RET-RELLENO",p:[e[0],e[1],e[3],e[2]]});
         P.push({k:"pol",capa:"RET-COLUMNAS",p:e,cerrada:true}); mx=c.b/2; my=c.h/2;
       }
@@ -28235,7 +28533,7 @@ var TT={script:performance.now()};
       var esq=[[1,1,"d","a"],[-1,1,"i","a"],[1,-1,"d","b"],[-1,-1,"i","b"]], mejor=esq[0], pen=9;
       esq.forEach(function(e){ var pn=llega[e[2]]+llega[e[3]]; if(pn<pen){pen=pn; mejor=e;} });
       var sx=mejor[0], sy=mejor[1], dx=Math.max(mx,rb)+tam(0.8), dy=Math.max(my,rb)+tam(0.8);
-      P.push(texto("RET-TEXTOS",rotulo(t),[x+sx*dx,y+sy*dy+(sy<0?-H:0)],H,0,sx>0?12:14)); nRot++;
+      P.push(texto("RET-TEXTOS",rotulo(t),[X+sx*dx,Y+sy*dy+(sy<0?-H:0)],H,0,sx>0?12:14)); nRot++;
     });
 
     /* TITULO y CUADRO DE ELEMENTOS */
@@ -29284,7 +29582,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},alineacion:{poner:ponAlineacion,col:alCol,viga:alViga,desfaseCol:desfaseCol,desfaseViga:desfaseViga,enCaja:eligeEnCaja},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
 })();
 </script>
 
