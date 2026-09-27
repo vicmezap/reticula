@@ -5,7 +5,7 @@
     --paper:#EEF1F4; --sheet:#FFFFFF; --panel:#F7F9FA; --line:#C9D2DA; --line-soft:#E1E7EC;
     --ink:#1A2029; --ink-2:#4A5763; --ink-3:#6B7883;   /* 7B8894 daba 3.6:1 sobre blanco */
     --acc:#0F6E8C; --acc-soft:#DCEBF1; --acc-ink:#0A4E64;
-    --col:#0F6E8C; --viga:#A85A2B; --chata:#D9A579; --placa:#3A4750;
+    --col:#0F6E8C; --viga:#A85A2B; --chata:#D9A579; --invert:#7A4E86; --platea:#5B7F3A; --placa:#3A4750;
     --zapata:#6B7B5A;
     --alig:#7FA0AE; --alig-f:rgba(127,160,174,.20);
     --maci:#5B7686; --maci-f:rgba(91,118,134,.34);
@@ -35,7 +35,7 @@
       --paper:#0B0C0D; --sheet:#15171A; --panel:#101214; --line:#2B2F33; --line-soft:#1F2326;
       --ink:#EAECEE; --ink-2:#AEB3B8; --ink-3:#7F858B;
       --acc:#55BDB4; --acc-soft:#10302C; --acc-ink:#8FDDD4;
-      --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A9096; --zapata:#9AAE85;
+      --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --invert:#B79BD6; --platea:#A7C77E; --placa:#8A9096; --zapata:#9AAE85;
       --alig:#828A90; --alig-f:rgba(130,138,144,.26);
       --maci:#A9AEB3; --maci-f:rgba(169,174,179,.30);
       --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.24); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
@@ -52,7 +52,7 @@
     --paper:#0B0C0D; --sheet:#15171A; --panel:#101214; --line:#2B2F33; --line-soft:#1F2326;
     --ink:#EAECEE; --ink-2:#AEB3B8; --ink-3:#7F858B;
     --acc:#55BDB4; --acc-soft:#10302C; --acc-ink:#8FDDD4;
-    --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --placa:#8A9096; --zapata:#9AAE85;
+    --col:#55BDB4; --viga:#D08A5A; --chata:#E0B48C; --invert:#B79BD6; --platea:#A7C77E; --placa:#8A9096; --zapata:#9AAE85;
     --alig:#828A90; --alig-f:rgba(130,138,144,.26);
     --maci:#A9AEB3; --maci-f:rgba(169,174,179,.30);
     --nerv:#8FB3A6; --nerv-f:rgba(143,179,166,.24); --esc:#A99BD6; --esc-f:rgba(169,155,214,.22);
@@ -355,6 +355,9 @@
   .zf-acc{display:flex;flex-wrap:wrap;gap:6px}
   .zf-acc .zc-restr{flex-basis:100%}
   .insp .kv dd .insp-sel{width:auto;max-width:100%;padding:1px 4px}
+  /* LA FICHA DE LA PLATEA: lo que se adopta se escribe en la misma fila; en blanco vuelve lo calculado */
+  .pl-in{width:64px;padding:1px 4px;font:500 12.5px "IBM Plex Mono",monospace;text-align:right}
+  .pl-auto{font:400 10.5px "IBM Plex Sans",sans-serif;color:var(--ink-3);margin-left:4px}
   .insp h2{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.09em;
            font-size:12px;color:var(--ink-3);margin:0;font-weight:600;display:flex;justify-content:space-between;gap:8px}
   .name{font:600 14.5px "IBM Plex Mono",monospace;color:var(--acc-ink);word-break:break-all;line-height:1.3}
@@ -920,6 +923,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <div class="sub" id="subViga" hidden role="group" aria-label="Tipo de viga">
         <button class="sopt" data-viga="principal" aria-pressed="true"><span class="sdot" style="background:var(--viga)"></span>Principal</button>
         <button class="sopt" data-viga="chata" aria-pressed="false"><span class="sdot" style="background:var(--chata)"></span>Chata</button>
+        <button class="sopt" data-viga="invertida" aria-pressed="false"><span class="sdot" style="background:var(--invert)"></span>Invertida</button>
       </div>
       <button class="tool noCim" data-tool="losa" aria-pressed="false"><span class="swatch" id="swLosa" style="background:var(--alig)"></span>
         <span>Losa<small>clic o arrastra</small></span></button>
@@ -942,6 +946,13 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       </div>
       <button class="tool soloCim" data-tool="zapata" aria-pressed="false"><span class="swatch" style="background:var(--zapata)"></span>
         <span>Zapata<small>bajo columna o placa</small></span></button>
+      <button class="tool soloCim" data-tool="platea" aria-pressed="false"><span class="swatch" style="background:var(--platea)"></span>
+        <span>Platea<small>arrastra sobre los paños</small></span></button>
+      <div class="sub" id="subPlatea" hidden role="group" aria-label="Plateas">
+        <button class="sopt" id="plaNinguna">Quitar todas</button>
+        <p class="nota" style="margin:6px 2px 0;font-size:11px;line-height:1.35">Arrastra sobre los paños: los que se tocan son
+          una platea. Las zapatas que queden debajo se quitan (Ctrl+Z las recupera).</p>
+      </div>
       <div class="sub" id="subZapata" hidden role="group" aria-label="Zapatas">
         <button class="sopt" id="zapTodas">En todas las columnas</button>
         <button class="sopt" id="zapNinguna">Quitar todas</button>
@@ -1106,6 +1117,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       <button class="tab" role="tab" aria-selected="false" data-t="nervada">PRE_LOSA_NERVADA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="placa">PRE_PLACA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="zapata">PRE_ZAPATA</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="platea">PRE_PLATEA</button>
       <button class="tab" role="tab" aria-selected="false" data-t="metrado">METRADO_CARGAS</button>
     </div>
     <div class="tabwrap"><table id="tabla"><thead></thead><tbody></tbody></table></div>
@@ -9236,6 +9248,304 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 });
 </script>
 <script>
+/* ===== plateas.js (inlinado) ===== */
+/* =====================================================================
+   plateas.js — LA PLATEA (losa de cimentacion): su predimensionamiento.
+   Sin interfaz: lo usan la planta de Cimentacion y la hoja PRE_PLATEA.
+
+   El METODO es el de Oviedo, que lo trata como un tipo de LOSA y no de
+   zapata (2025, Cap. II, apartado 5 «Losas de cimentacion», p. 28; sus
+   ejemplos 9 y 10 en las p. 40-41).  Leido en el PDF y comprobado por
+   un segundo lector, con los dos ejemplos rehechos:
+
+     Pt = Ps · A · N         el peso del edificio: peso en servicio por
+                             m² y por piso, por el area de techo, por los
+                             pisos.  SIN el 1,10 de las zapatas.
+     A  = Pt / σt            y «deberá ser mínimo el área de la losa de
+                             techo»: si sale menos, la platea es la huella;
+                             si sale mas, se agranda (ej. 10: de 20x30 a
+                             22x32, un metro por lado; el libro no da la
+                             regla del agrandamiento).
+     h  > ldg + r + 2 ØVp    el anclaje con gancho de la barra de la
+                             columna, mas el recubrimiento contra el suelo,
+                             mas las dos capas de la malla.  Al multiplo de
+                             5 cm de arriba.
+
+   Oviedo no trae mas: ni punzonamiento, ni relacion con la luz.  Lo que
+   se añade sale de la NORMA, leida en el texto oficial del repo:
+
+     ℓdg = 0,075 fy db / √f'c, no menos de 8 db ni 150 mm .. E.060 12.5.2
+       (la version en kgf/cm² que publica la propia norma en su anexo)
+     300 mm sobre el refuerzo inferior .......... E.060 15.7, que alcanza
+       a las losas de cimentacion por 15.1.1 y 15.10.1
+     recubrimiento contra el suelo, 70 mm ........ E.060 7.7.1 a
+     el area se fija con cargas de SERVICIO ...... E.060 15.2.2
+     el corte se revisa segun 11.12 .............. E.060 15.5.1
+     punzonamiento: el menor de 0,53 (1 + 2/β) √f'c bo d,
+       0,27 (αs d / bo + 2) √f'c bo d y 1,06 √f'c bo d,
+       αs = 40 interior, 30 de borde, 20 de esquina  E.060 11.12.2.1
+     φ = 0,85 ................................... E.060 9.3.2.3
+     U = 1,4 CM + 1,7 CV ......................... E.060 9.2.1
+
+   Lo que no dice ni el libro ni la norma y se toma, dicho aqui:
+     · Pt se arma columna por columna -pisos · area tributaria · Ps-, la
+       misma metodologia de la zapata.  Con la platea bajo todo el
+       edificio las areas tributarias suman la huella y sale el Ps·A·N de
+       Oviedo; con una platea parcial, carga lo que de verdad le baja.
+     · El agrandamiento: el VOLADO minimo, igual por todos los lados, al
+       multiplo de 5 cm, que llega al area pedida.  El proyectista puede
+       adoptar otro (Oviedo adopto 1,00 m en su ejemplo 10).
+     · Pu para el punzonamiento, mientras no haya ETABS: la carga de la
+       columna repartida en muerta y viva con la sobrecarga del proyecto
+       -CV = pisos · at · s/c, CM = el resto de Ps- y amplificada con
+       9.2.1.  La reaccion del suelo, la de la platea entera: ΣPu / A.
+     · Una columna en el borde de la platea pierde el lado de la seccion
+       critica que no cabe: si del eje al canto hay menos que media
+       columna mas d/2, ese lado no cuenta y αs baja a 30 o 20.
+     · El peralte que se adopta es el MAYOR entre el de Oviedo y el que
+       pide el punzonamiento.
+
+   Pruebas:
+     node scripts/complemento/oviedo/probar_plateas.js
+   ===================================================================== */
+(function (raiz, definir) {
+  if (typeof module === "object" && module.exports) module.exports = definir();
+  else raiz.PLATEAS = definir();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+
+  var ART = {
+    metodo: "Oviedo 2025, Cap. II, 5 «Losas de cimentación», p. 28",
+    ejemplos: "Oviedo 2025, ejemplos 9 y 10, p. 40-41",
+    peso: "Oviedo p. 28: Pt = Ps · A · N",
+    area: "Oviedo p. 28: A = Pt / σt, «mínimo el área de la losa de techo»",
+    peralte: "Oviedo p. 28: h > ldg + r + 2 ØVp",
+    ldg: "E.060 Art. 12.5.2",
+    min157: "E.060 Art. 15.7",
+    servicio: "E.060 Art. 15.2.2",
+    corte: "E.060 Art. 15.5.1",
+    punz: "E.060 Art. 11.12.2.1",
+    phi: "E.060 Art. 9.3.2.3",
+    combo: "E.060 Art. 9.2.1",
+    rec: "E.060 Art. 7.7.1 a",
+    losa: "E.060 Art. 15.10.1"
+  };
+  var PHI_V = 0.85, PASO_H = 5, PASO_V = 0.05, H_MIN_SOBRE_ACERO = 30, H_TOPE = 300;
+
+  function num(x) { var v = +x; return (x === null || x === undefined || x === "" || !isFinite(v)) ? null : v; }
+  function pos(x) { var v = num(x); return (v !== null && v > 0) ? v : 0; }
+  function arriba(v, p) { return Math.ceil(v / p - 1e-9) * p; }
+
+  /* --- geometria: el contorno y el volado ------------------------------- */
+  /* area con signo (formula del cordon de zapato) de [[x,y],...] */
+  function areaPoli(P) {
+    var a = 0, i, n = P.length;
+    for (i = 0; i < n; i++) { var p = P[i], q = P[(i + 1) % n]; a += p[0] * q[1] - q[0] * p[1]; }
+    return a / 2;
+  }
+  function perimetro(P) {
+    var s = 0, i, n = P.length;
+    for (i = 0; i < n; i++) { var p = P[i], q = P[(i + 1) % n]; s += Math.sqrt((q[0] - p[0]) * (q[0] - p[0]) + (q[1] - p[1]) * (q[1] - p[1])); }
+    return s;
+  }
+  /* el contorno corrido v hacia AFUERA, con las esquinas a inglete: cada lado se traslada por su normal
+     exterior y cada vertice es el cruce de sus dos lados.  Vale igual en una planta sesgada. */
+  function offsetPoli(P, v) {
+    var n = P.length; if (n < 3 || !(v > 0)) return P.map(function (p) { return [p[0], p[1]]; });
+    var sg = areaPoli(P) > 0 ? 1 : -1, L = [], i;
+    for (i = 0; i < n; i++) {
+      var a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = sg * dy / l, ny = -sg * dx / l;            /* normal exterior */
+      L.push({ p: [a[0] + nx * v, a[1] + ny * v], u: [dx / l, dy / l] });
+    }
+    var out = [];
+    for (i = 0; i < n; i++) {
+      var A = L[(i + n - 1) % n], B = L[i], den = A.u[0] * B.u[1] - A.u[1] * B.u[0];
+      if (Math.abs(den) < 1e-12) { out.push(B.p); continue; }
+      var wx = B.p[0] - A.p[0], wy = B.p[1] - A.p[1], t = (wx * B.u[1] - wy * B.u[0]) / den;
+      out.push([A.p[0] + A.u[0] * t, A.p[1] + A.u[1] * t]);
+    }
+    return out;
+  }
+  /* los anillos de la huella: el mayor es el borde; los que van dentro, huecos (un vacio en medio de la
+     platea).  El volado agranda el borde; los huecos se dejan como estan, que es lo del lado seguro. */
+  function areaConVolado(anillos, v) {
+    if (!anillos || !anillos.length) return 0;
+    var ord = anillos.slice().sort(function (a, b) { return Math.abs(areaPoli(b)) - Math.abs(areaPoli(a)); });
+    var A = Math.abs(areaPoli(offsetPoli(ord[0], v)));
+    for (var k = 1; k < ord.length; k++) A -= Math.abs(areaPoli(ord[k]));
+    return A;
+  }
+  /* el volado MINIMO, igual en todo el borde y al multiplo de 5 cm, que llega al area pedida */
+  function voladoMinimo(anillos, Areq) {
+    if (!(Areq > 0) || areaConVolado(anillos, 0) >= Areq - 1e-9) return 0;
+    for (var v = PASO_V; v <= 20 + 1e-9; v += PASO_V) {
+      var vv = +v.toFixed(2);
+      if (areaConVolado(anillos, vv) >= Areq - 1e-9) return vv;
+    }
+    return null;
+  }
+
+  /* --- el peralte por anclaje (Oviedo) ---------------------------------- */
+  /* ℓdg en cm (E.060 12.5.2, kgf/cm²): 0,075 fy db / √f'c, no menos de 8 db ni 15 cm */
+  function ldg(dbCm, fc, fy) {
+    var db = pos(dbCm); if (!db) return 0;
+    return Math.max(0.075 * fy * db / Math.sqrt(fc), 8 * db, 15);
+  }
+  /* h > ldg + r + 2 ØVp, y nunca menos de 300 mm sobre el acero (15.7).  Todo en cm. */
+  function peralteAnclaje(o) {
+    var fc = pos(o.fc) || 210, fy = pos(o.fy) || 4200, rec = pos(o.rec) || 7;
+    var dbC = pos(o.dbCol), dbM = pos(o.dbMalla);
+    var l = ldg(dbC, fc, fy);
+    var porAnclaje = l + rec + 2 * dbM;                  /* Oviedo */
+    var porNorma = H_MIN_SOBRE_ACERO + rec;              /* 15.7, como en la zapata */
+    var base = Math.max(porAnclaje, porNorma);
+    return { ldg: l, rec: rec, dbCol: dbC, dbMalla: dbM, porAnclaje: porAnclaje, porNorma: porNorma,
+             hBase: base, h: arriba(base, PASO_H),
+             manda: porAnclaje >= porNorma ? "el anclaje de la columna (Oviedo)" : "los 300 mm sobre el acero (15.7)",
+             art: ART.peralte, artLdg: ART.ldg, artNorma: ART.min157 };
+  }
+
+  /* --- el punzonamiento (E.060 11.12.2.1) ------------------------------- */
+  /* o: {Pu (t), qu (t/m²), b, h (m, en X y en Y), d (m), fc, abiertos: {x:0-2, y:0-2}}
+     abiertos.x: cuantos de los dos lados PARALELOS A Y no caben (la columna esta en un borde en X). */
+  function punzonamiento(o) {
+    var b = pos(o.b), h = pos(o.h), d = pos(o.d), fc = pos(o.fc) || 210, qu = pos(o.qu), Pu = pos(o.Pu);
+    var ox = Math.min(Math.max(o.abiertos && o.abiertos.x || 0, 0), 2), oy = Math.min(Math.max(o.abiertos && o.abiertos.y || 0, 0), 2);
+    var x1 = b + d / 2 * (2 - ox), y1 = h + d / 2 * (2 - oy);
+    var bo = x1 * (2 - oy) + y1 * (2 - ox), Ao = x1 * y1;
+    var lados = 4 - ox - oy, alfa = lados >= 4 ? 40 : (lados === 3 ? 30 : 20);
+    var Vu = Math.max(Pu - qu * Ao, 0);
+    var beta = Math.max(b, h) / Math.max(Math.min(b, h), 1e-9);
+    var rc = Math.sqrt(fc), boc = bo * 100, dc = d * 100;
+    var v1 = 0.53 * (1 + 2 / beta) * rc * boc * dc, v2 = 0.27 * (alfa * dc / boc + 2) * rc * boc * dc,
+        v3 = 1.06 * rc * boc * dc, Vc = Math.min(v1, v2, v3) / 1000;
+    return { Vu: Vu, Vc: Vc, phiVc: PHI_V * Vc, ratio: Vu / Math.max(PHI_V * Vc, 1e-9),
+             cumple: Vu <= PHI_V * Vc + 1e-9, bo: bo, Ao: Ao, x1: x1, y1: y1, lados: lados, alfaS: alfa,
+             beta: beta, manda: (Vc * 1000 === v1) ? "0,53(1+2/β)" : ((Vc * 1000 === v2) ? "0,27(αs·d/bo+2)" : "1,06"),
+             art: ART.punz };
+  }
+  /* d efectivo: hasta el medio de las dos capas de la malla inferior */
+  function peralteEfectivo(hCm, rec, dbMalla) { return Math.max(hCm - rec - dbMalla, 1) / 100; }
+  /* los lados que NO caben de una columna en el borde: del eje al canto hay v; si no llega a media columna
+     mas d/2, ese lado de la seccion critica se sale de la platea */
+  function abiertosDe(c, v, d) {
+    function cabe(media) { return (v - media) >= d / 2 - 1e-9; }
+    var bx = c.borde || {}, ox = 0, oy = 0;
+    if (bx.mx && !cabe(c.b / 2)) ox++;
+    if (bx.px && !cabe(c.b / 2)) ox++;
+    if (bx.my && !cabe(c.h / 2)) oy++;
+    if (bx.py && !cabe(c.h / 2)) oy++;
+    return { x: ox, y: oy };
+  }
+  /* el menor peralte (al multiplo de 5 cm) con el que TODAS las columnas pasan el punzonamiento,
+     empezando por el de Oviedo.  Una PLACA carga la platea pero no punzona: su carga baja repartida en todo
+     su largo, y la seccion critica de 11.12 es la de una columna (sinPunz) */
+  function peralteParaPunzonamiento(o) {
+    var cols = (o.cols || []).filter(function (c) { return !c.sinPunz && pos(c.b) > 0 && pos(c.h) > 0; }), rec = pos(o.rec) || 7, dbM = pos(o.dbMalla) || 1.905, fc = pos(o.fc) || 210;
+    var h = arriba(Math.max(pos(o.hIni) || 0, H_MIN_SOBRE_ACERO + rec), PASO_H), v = pos(o.volado);
+    function revisa(hc) {
+      var d = peralteEfectivo(hc, rec, dbM), peor = null;
+      var filas = cols.map(function (c) {
+        var r = punzonamiento({ Pu: c.Pu, qu: o.qu, b: c.b, h: c.h, d: d, fc: fc, abiertos: abiertosDe(c, v, d) });
+        r.cod = c.cod; if (!peor || r.ratio > peor.ratio) peor = r;
+        return r;
+      });
+      return { h: hc, d: d, filas: filas, peor: peor, cumple: filas.every(function (r) { return r.cumple; }) };
+    }
+    var r = revisa(h);
+    while (!r.cumple && h < H_TOPE) { h += PASO_H; r = revisa(h); }
+    r.alcanza = r.cumple;
+    return r;
+  }
+
+  /* =====================================================================
+     LA PLATEA ENTERA
+
+     o: {niveles N, peso Ps (kg/m²), sc (kg/m²), sigma (t/m², la presion de
+         calculo), anillos (m, la huella de sus paños), cols: [{cod, at (m²),
+         b, h (m), borde: {mx, px, my, py}}], volado (m, adoptado o null),
+         hAdopt (cm o null), dbCol, dbMalla (cm), rec (cm), fc, fy}
+     ===================================================================== */
+  function predimensionar(o) {
+    o = o || {};
+    var N = pos(o.niveles), Ps = pos(o.peso), sc = Math.min(pos(o.sc), Ps), sigma = pos(o.sigma);
+    var out = { art: ART, avisos: [] };
+    var cols = (o.cols || []).filter(function (c) { return c && pos(c.at) > 0; });
+    var anillos = (o.anillos || []).filter(function (r) { return r && r.length >= 3; });
+    if (!anillos.length) { out.falta = "la platea no tiene paños"; return out; }
+    if (!(sigma > 0)) { out.falta = "falta la capacidad portante del suelo (Datos › Materiales › Suelo)"; return out; }
+    if (!cols.length) { out.falta = "no carga ninguna columna ni placa con área tributaria"; return out; }
+
+    /* a · la carga, columna por columna: la misma cuenta de la zapata, sin su 1,10 */
+    var Pt = 0, Put = 0;
+    out.cols = cols.map(function (c) {
+      var P = N * c.at * Ps / 1000, Pu = N * c.at * (1.4 * (Ps - sc) + 1.7 * sc) / 1000;
+      Pt += P; Put += Pu;
+      return { cod: c.cod, at: c.at, P: P, Pu: Pu, b: c.b, h: c.h, borde: c.borde || {}, sinPunz: !!c.sinPunz };
+    });
+    out.Pt = Pt; out.Pu = Put; out.niveles = N; out.peso = Ps; out.sc = sc; out.sigma = sigma;
+    out.factorU = Pt > 0 ? Put / Pt : 0;
+
+    /* b · el area: A = Pt / σ, y como minimo la huella */
+    var Ah = areaConVolado(anillos, 0);
+    out.Ahuella = Ah; out.perimetro = perimetro(anillos.slice().sort(function (a, b) {
+      return Math.abs(areaPoli(b)) - Math.abs(areaPoli(a)); })[0]);
+    /* el area con volado es una parabola exacta en v (esquinas a inglete): A(v) = huella + perimetro · v + k · v²,
+       con k = 4 en una planta ortogonal.  La hoja la usa para despejar el volado con una formula */
+    out.kEsq = areaConVolado(anillos, 1) - Ah - out.perimetro;
+    out.Areq = Pt / sigma;
+    out.vCalc = voladoMinimo(anillos, out.Areq);
+    if (out.vCalc === null) { out.vCalc = 20; out.avisos.push({ g: "grave", t: "ni con 20 m de volado llega al área: revisa σ o las cargas" }); }
+    var vAdopt = num(o.volado);
+    out.volado = (vAdopt !== null && vAdopt >= 0) ? vAdopt : out.vCalc;
+    out.voladoPropio = (vAdopt !== null && vAdopt >= 0);
+    out.Acol = areaConVolado(anillos, out.volado);
+    out.areaOk = out.Acol >= out.Areq - 1e-9;
+    out.holgura = out.Areq > 0 ? out.Acol / out.Areq - 1 : 0;
+    out.q = Pt / out.Acol;                                       /* presion media de servicio */
+    out.contorno = offsetPoli(anillos.slice().sort(function (a, b) {
+      return Math.abs(areaPoli(b)) - Math.abs(areaPoli(a)); })[0], out.volado);
+    if (!out.areaOk) out.avisos.push({ g: "grave", t: "con " + out.volado.toFixed(2) + " m de volado la platea tiene " +
+      out.Acol.toFixed(2) + " m² y hacen falta " + out.Areq.toFixed(2) + " m²: el volado mínimo es " + out.vCalc.toFixed(2) + " m" });
+
+    /* c · el peralte: el mayor entre el de Oviedo y el del punzonamiento */
+    var rec = pos(o.rec) || 7, dbM = pos(o.dbMalla) || 1.905;
+    out.anclaje = peralteAnclaje({ fc: o.fc, fy: o.fy, rec: rec, dbCol: o.dbCol, dbMalla: dbM });
+    out.qu = Put / out.Acol;                                     /* la reaccion amplificada del suelo */
+    /* el del punzonamiento, por su cuenta: desde el minimo de 15.7, no desde el del anclaje, para que la hoja
+       pueda enseñar los dos y quedarse con el mayor */
+    out.punz = peralteParaPunzonamiento({ cols: out.cols, qu: out.qu, rec: rec, dbMalla: dbM, fc: o.fc,
+                                          hIni: 0, volado: out.volado });
+    if (!out.punz.alcanza) out.avisos.push({ g: "grave", t: "ni con " + (H_TOPE / 100).toFixed(2) + " m de peralte pasa el " +
+      "punzonamiento: las cargas son demasiado grandes para una platea maciza" });
+    out.hCalc = Math.max(out.anclaje.h, out.punz.h);
+    out.manda = out.punz.h > out.anclaje.h ? "el punzonamiento" : out.anclaje.manda;
+    var hA = num(o.hAdopt);
+    out.hPropio = (hA !== null && hA > 0);
+    out.h = out.hPropio ? hA : out.hCalc;
+    /* con el peralte adoptado, la revision final */
+    out.revision = peralteParaPunzonamiento({ cols: out.cols, qu: out.qu, rec: rec, dbMalla: dbM, fc: o.fc,
+                                              hIni: out.h, volado: out.volado });
+    out.revision.cumple = out.revision.h === out.h && out.revision.cumple;
+    if (out.hPropio && out.h < out.anclaje.hBase - 1e-9)
+      out.avisos.push({ g: "grave", t: "el peralte adoptado de " + out.h + " cm no deja anclar la barra de la columna: " +
+        "hacen falta " + out.anclaje.hBase.toFixed(1) + " cm (Oviedo, h > ldg + r + 2ØVp)" });
+    if (out.hPropio && !out.revision.cumple)
+      out.avisos.push({ g: "grave", t: "con " + out.h + " cm no pasa el punzonamiento en " +
+        ((out.revision.peor || {}).cod || "una columna") + ": pide " + out.punz.h + " cm" });
+    out.cumple = out.areaOk && (out.h >= out.anclaje.hBase - 1e-9) && out.revision.cumple;
+    return out;
+  }
+
+  return { ART: ART, PHI_V: PHI_V, PASO_H: PASO_H, PASO_V: PASO_V,
+           areaPoli: areaPoli, perimetro: perimetro, offsetPoli: offsetPoli, areaConVolado: areaConVolado,
+           voladoMinimo: voladoMinimo, ldg: ldg, peralteAnclaje: peralteAnclaje, punzonamiento: punzonamiento,
+           peralteEfectivo: peralteEfectivo, abiertosDe: abiertosDe,
+           peralteParaPunzonamiento: peralteParaPunzonamiento, predimensionar: predimensionar };
+});
+</script>
+<script>
 /* ===== aci.js (inlinado) ===== */
 /* =====================================================================
    aci.js — EL ACI 318-19 COMO REFERENCIA, NUNCA COMO CALCULO
@@ -10765,7 +11075,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
 
   var V = 1;
   /* lo que un nivel tiene de elementos; el resto es reticula */
-  var ELEMENTOS = ["cols", "vigas", "losas", "placas", "zapatas", "juntas"];
+  var ELEMENTOS = ["cols", "vigas", "losas", "placas", "zapatas", "plateas", "vacios", "juntas"];
   var CUENTA = 0;
 
   function nueva() { return { v: V, copiaEnLibro: true, proyectos: [], plantillas: [], borrados: {} }; }
@@ -11173,12 +11483,12 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
   "use strict";
 
   var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
-                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", escalera: "#7C6FA8",
+                  nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", platea: "#5B7F3A", escalera: "#7C6FA8",
                   /* los ejes en el suelo, del rojo de las burbujas del plano; y el aviso, mas encendido */
                   eje: "#C2443D", aviso: "#D23B2E",
                   /* el terreno donde se apoya el edificio, su rejilla de un metro y las cotas de vano */
                   suelo: "#E4EAEF", rejilla: "#C2CFD9", cota: "#8C97A2" };
-  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "escalera", "eje"];
+  var FAMILIAS = ["col", "viga", "losa", "placa", "zapata", "platea", "escalera", "eje"];
   /* la losa tapa la cara de arriba de vigas, columnas y placas: se bajan un pelo para que no parpadeen */
   var BAJA_VIGA = 0.003, BAJA_COL = 0.006, LADOS_CIRCULO = 20;
   /* el eje sale un poco fuera de la planta y su burbuja va un poco mas alla; el prisma es plano y fino */
@@ -11232,6 +11542,38 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
       aristas.push([ab[i], ab[j]], [ar[i], ar[j]]);
       if (verticales !== false) aristas.push([ab[i], ar[i]]);
     }
+    return { tris: tris, aristas: aristas };
+  }
+  /* UNA LOSA DE CONTORNO CUALQUIERA -la platea, que puede ser en L o tener un hueco-.  prisma() solo sabe de
+     convexos, asi que las tapas se arman con piezas convexas (los paños y las franjas del volado) y las paredes
+     solo por los bordes: el de fuera y los de los huecos.  Una sola pieza, sin costuras por dentro.  Llega en
+     las coordenadas de la planta (Y hacia abajo) y se voltea como las zapatas. */
+  function losaPoli(piezas, bordes, z0, z1) {
+    var tris = [], aristas = [];
+    function voltea(P) { return P.map(function (p) { return [+p[0], -p[1]]; }); }
+    function area(P) {
+      var a = 0, i; for (i = 0; i < P.length; i++) { var q = P[(i + 1) % P.length]; a += P[i][0] * q[1] - q[0] * P[i][1]; }
+      return a / 2;
+    }
+    (piezas || []).forEach(function (P0) {
+      var P = voltea(P0), i; if (P.length < 3 || Math.abs(area(P)) < 1e-9) return;
+      if (area(P) < 0) P = P.slice().reverse();
+      for (i = 1; i + 1 < P.length; i++) {
+        tris.push([[P[0][0], P[0][1], z1], [P[i][0], P[i][1], z1], [P[i + 1][0], P[i + 1][1], z1]]);
+        tris.push([[P[0][0], P[0][1], z0], [P[i + 1][0], P[i + 1][1], z0], [P[i][0], P[i][1], z0]]);
+      }
+    });
+    (bordes || []).forEach(function (B0, k) {
+      var B = voltea(B0), i; if (B.length < 3) return;
+      /* el de fuera antihorario y los huecos al reves: asi las paredes miran siempre fuera del solido */
+      if ((area(B) > 0) !== (k === 0)) B = B.slice().reverse();
+      for (i = 0; i < B.length; i++) {
+        var j = (i + 1) % B.length, a0 = [B[i][0], B[i][1], z0], b0 = [B[j][0], B[j][1], z0],
+            a1 = [B[i][0], B[i][1], z1], b1 = [B[j][0], B[j][1], z1];
+        tris.push([a0, b0, b1]); tris.push([a0, b1, a1]);
+        aristas.push([a0, b0], [a1, b1], [a0, a1]);
+      }
+    });
     return { tris: tris, aristas: aristas };
   }
   /* un solido de ocho vertices -la garganta inclinada de un tramo-: abajo 0..3 y arriba 4..7 en el mismo orden;
@@ -11297,7 +11639,7 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
     return { lista: lista, porCod: porCod, nace: cuantos("nace"), muere: cuantos("muere") };
   }
 
-  /* LA ESCENA.  ex: la exportacion a ETABS.  o: {zapatas: zapatasDelNivel(), colores, filtro: {familia: false},
+  /* LA ESCENA.  ex: la exportacion a ETABS.  o: {zapatas: zapatasDelNivel(), plateas: plateas3D(), colores, filtro: {familia: false},
      niveles: "todos" | "hasta:k" | "solo:k"}  ->  {solidos: [{fam, cod, nivel, titulo, detalle, color, tris, aristas,
      min, max}], caja: {min, max, centro, radio} | null, niveles: [{nombre, z0, z1}], avisos: {losasSinEspesor}} */
   function escena(ex, o) {
@@ -11404,6 +11746,11 @@ details.sis-tabla summary{cursor:pointer;font:500 12px "IBM Plex Sans",sans-seri
              "de su columna a la interior · l = " + m2(v.l) + " m · sección de referencia 0,30 × " + m2(hv) + " m",
              C.zapata, prisma(tira(+v.xa, -v.ya, +v.xb, -v.yb, 0.30), -hv, 0), { ij: [z.i, z.j] });
       });
+    });
+    /* LAS PLATEAS: una losa con su cara de arriba en z = 0, como la zapata, y su volado */
+    if (niv.length && mostrar("platea", 0)) (o.plateas || []).forEach(function (q) {
+      var hP = (+q.h > 0) ? +q.h : 0.30;
+      mete("platea", q.cod, 0, "Platea " + q.cod, q.detalle || "", C.platea, losaPoli(q.piezas, q.bordes, -hP, 0));
     });
     /* LOS EJES, tumbados en el suelo.  Sin ellos el edificio flota y no sabes si miras la fachada del A o la
        del C.  Van como prismas planos y finos y NO como aristas, porque el visor dibuja todas las aristas del
@@ -12661,7 +13008,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v401 · 26-09-2026";
+  var BUILD="v413 · 26-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -12719,11 +13066,18 @@ var TT={script:performance.now()};
      Ahora cols y placas tambien son objetos, para poder colgarles la seccion
      que se lee de Excel. */
   function tipoViga(x){return (x&&x.t)?x.t:"principal"}
+  /* LA INVERTIDA es una PRINCIPAL puesta por encima de la losa: mismo predimensionamiento y mismo
+     diseño, distinto sitio.  Solo el dibujo, la ficha y el plano la distinguen. */
+  function esInvertida(x){ return tipoViga(x)==="invertida"; }
+  function nombreTipoViga(x){ var t=tipoViga(x);
+    return t==="chata"?"chata":(t==="invertida"?"invertida":"principal"); }
   function clon(o){return (o&&typeof o==="object")?JSON.parse(JSON.stringify(o)):o}
   function migrar(m){
     if(!m.placas)m.placas={};
     /* la cimentacion se dibuja: un modelo sin este mapa es anterior */
     if(!m.zapatas)m.zapatas={};
+    /* las plateas, por paño, como las losas.  Sin relleno automatico: las dibuja el proyectista */
+    if(!m.plateas||typeof m.plateas!=="object")m.plateas={};
     /* las uniones de losas y vigas: ver JUNTAS */
     if(!m.juntas||typeof m.juntas!=="object")m.juntas={};
     var k;
@@ -13722,7 +14076,8 @@ var TT={script:performance.now()};
   function zapatasEnTodas(){
     var m=S.niveles[0]; if(!m)return;
     m.zapatas=m.zapatas||{};
-    for(var k in m.cols)m.zapatas[k]={};
+    /* bajo una platea no: la platea ya es la cimentacion de esas columnas */
+    for(var k in m.cols){ var pk=k.split(":"); if(!nudoEnPlatea(+pk[0],+pk[1],m))m.zapatas[k]={}; }
   }
   function zapatasNinguna(){
     var m=S.niveles[0]; if(m)m.zapatas={};
@@ -14607,13 +14962,17 @@ var TT={script:performance.now()};
   function nombres(niv){return memoG("nm:"+niv,function(){return nombresCalc(niv)})}
   function nombresCalc(niv){
     var m=S.niveles[niv],p="N"+(niv+1),nX=m.dx.length+1,nY=m.dy.length+1,
-        C={},V={},L={},P={},c=0,v={principal:0,chata:0},pl=0,
+        C={},V={},L={},P={},c=0,v={principal:0,chata:0,invertida:0},pl=0,
         l={aligerada:0,maciza:0,nervada:0,escalera:0},i,j;
     for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]){c++;
       var tp=medCol(i,j,m).tipo,sf=tp==="Interior"?"INT":(tp==="Exterior"?"EXT":"ESQ");
       C[i+":"+j]={cod:p+"-C-"+nn(c)+"-"+sf,eje:ejeCol(i,j,m)};}
-    function regViga(k,tv,ej){v[tv]++;
-      V[k]={cod:p+"-"+(tv==="chata"?"VCH":"VP")+"-"+nn(v[tv]),eje:ej,tipo:tv};}
+    /* la invertida lleva su propio codigo -VI- y su propia numeracion: en obra es otra cosa, y el
+       que lee el plano tiene que verlo sin buscarlo.  (Sin su casilla en el contador, v[tv]++ daba NaN
+       y la viga salia como «N1-VP-NaN».) */
+    var PREF_V={chata:"VCH",invertida:"VI",principal:"VP"};
+    function regViga(k,tv,ej){ if(v[tv]==null)v[tv]=0; v[tv]++;
+      V[k]={cod:p+"-"+(PREF_V[tv]||"VP")+"-"+nn(v[tv]),eje:ej,tipo:tv};}
     /* UNA VIGA UNIDA ES UNA: sus tramos comparten el codigo del primero.
        Antes cada tramo gastaba un numero y los codigos salian con huecos. */
     function vigaUnida(o,i2,j2){
@@ -15237,8 +15596,14 @@ var TT={script:performance.now()};
       var kk=key(q.o,q.i,q.j), vg=m.vigas[kk], plc=m.placas[kk];
       if(vg&&ve("viga")){
         var pv=predimViga(q.o,q.i,q.j,m), chv=(pv.tipo==="chata"), tv=tramoViga(q.o,q.i,q.j,m);
+        var invv=esInvertida(vg);
         h+='<div class="name">'+nmx.V[kk].cod+'</div><span class="tag" style="color:var('+
-           (chv?"--chata":"--viga")+')">Viga '+(chv?"chata":"principal")+' · '+nmx.V[kk].eje+'</span>';
+           (chv?"--chata":(invv?"--invert":"--viga"))+')">Viga '+
+           (chv?"chata":(invv?"invertida":"principal"))+' · '+nmx.V[kk].eje+'</span>';
+        if(invv)h+='<p class="nota" style="margin:6px 0 0">Va <b>por encima de la losa</b>. El '+
+           'predimensionamiento y el diseño son los de una principal -mismo Ln/α y mismo B/20-: lo que '+
+           'cambia es dónde se construye, y eso manda en el plano. A ETABS va en el nivel de la losa, '+
+           'sin desfase vertical.</p>';
         if(chv){
           h+=bloque("Predimensionamiento",'<dl class="kv">'+kv("Luz libre Ln",n2(pv.Ln)+" m",1)+
             kv("Peralte h (= losa)",pv.hLosaCm+" cm",1)+
@@ -15414,6 +15779,8 @@ var TT={script:performance.now()};
            seleccion va DESPUES, o el boton te deja en el sitio correcto
            mirando nada, que es lo que hacia. */
         elegirModo("modelo");
+        /* la platea se ve y se elige en la planta de Cimentacion */
+        if(a.ir.t==="platea"){ S.cim=true; S.act=0; }
         S.sel=a.ir; render();
       };
     });
@@ -15874,6 +16241,8 @@ var TT={script:performance.now()};
       pintaCalcoFondo(s,mg,esc,c);
       pintaCandidatos(s,mg,esc,c);})();
     var g=el("g",{});s.appendChild(g);
+    /* LAS PLATEAS van DEBAJO de todo -ejes, burbujas, columnas-: con su volado se meten bajo las burbujas */
+    var gPla=el("g",{"pointer-events":"none"});g.appendChild(gPla);
     var i,j;
     /* flechas, espesores y contornos van ENCIMA de todos los paños: la de
        una losa unida cruza los paños que se pintan despues de ella */
@@ -15936,6 +16305,12 @@ var TT={script:performance.now()};
       /* La zona de clic sigue al paño.  Un rectangulo recto sobre una
          planta sesgada deja fuera una punta del paño y se mete en el de al
          lado: pinchabas uno y se seleccionaba el vecino. */
+      /* en Cimentacion los paños se pinchan para la PLATEA (nunca como «losa»: la planta de cimentacion no
+         tiene losas que tocar) */
+      if(CIM&&(S.tool==="platea"||(S.tool==="sel"&&esPlatea(i,j,m)))){
+        var hitP=el("polygon",{points:pts(encogeLosa(q4p(i,j),7)),"class":"hit"});
+        hitP.dataset.t="platea";hitP.dataset.i=i;hitP.dataset.j=j;g.appendChild(hitP);
+      }
       if(ve("losa")&&!CIM){
         var hit=el("polygon",{points:pts(encogeLosa(q4p(i,j),7)),"class":"hit"});
         hit.dataset.t="losa";hit.dataset.i=i;hit.dataset.j=j;g.appendChild(hit);
@@ -16021,11 +16396,18 @@ var TT={script:performance.now()};
         return;
       }
       if(m.vigas[k]&&ve("viga")){
-        var ch=tipoViga(m.vigas[k])==="chata";
-        /* chata: mas delgada y en otro tono, porque no descuelga */
+        var tvg=tipoViga(m.vigas[k]), ch=(tvg==="chata"), inv=(tvg==="invertida");
+        /* chata: mas delgada y en otro tono, porque no descuelga.  Invertida: su color y una linea
+           fina por encima, que es por donde sube. */
         g.appendChild(el("line",{x1:x1,y1:y1,x2:x2,y2:y2,
-          stroke:sl?"var(--trib)":(ch?"var(--chata)":"var(--viga)"),
+          stroke:sl?"var(--trib)":(ch?"var(--chata)":(inv?"var(--invert)":"var(--viga)")),
           "stroke-width":sl?6:(ch?2:4),opacity:sl?1:.85}));
+        if(inv&&!sl){
+          /* la raya de encima dice que sube: en planta una invertida se ve desde arriba */
+          var ux=(x2-x1), uy=(y2-y1), ul=Math.sqrt(ux*ux+uy*uy)||1, nx2=-uy/ul*4.5, ny2=ux/ul*4.5;
+          g.appendChild(el("line",{x1:x1+nx2,y1:y1+ny2,x2:x2+nx2,y2:y2+ny2,
+            stroke:"var(--invert)","stroke-width":1.2,"stroke-dasharray":"4 3",opacity:.9}));
+        }
       }
       /* La cota sale del calculo, no de lo que devolviera Excel: ya no hay
          estado "obsoleta", porque se recalcula con cada cambio. */
@@ -16034,7 +16416,7 @@ var TT={script:performance.now()};
         var T1=(o==="h")?XY(tv.desde,j):XY(i,tv.desde), T2=(o==="h")?XY(tv.hasta,j):XY(i,tv.hasta);
         var vx=(T1.x+T2.x)/2,vy=(T1.y+T2.y)/2;
         txt(g,o==="h"?vx:vx-24,o==="h"?vy+13:vy,
-            Math.round(pv2.b*100)+"×"+Math.round(pv2.h*100),
+            Math.round(pv2.b*100)+"×"+Math.round(pv2.h*100)+(esInvertida(m.vigas[k])?" \u2191":""),
             ((pv2.tipo==="chata"||pv2.propia)&&!pv2.cumple)?"var(--no)":"var(--acc-ink)",9);
       }
       var pp2=(m.placas[k]&&ve("placa"))?predimPlaca(o,i,j,m):null;
@@ -16094,6 +16476,24 @@ var TT={script:performance.now()};
     /* en el modelador la cimentacion se ve SOLO en su planta; en los pisos ya no (Victor, 18-09-2026) */
     var verZap=(S.modo==="decisiones")?ve("zapata"):CIM;
     if(verZap&&S.act===0){
+      /* LAS PLATEAS van debajo de todo: su contorno con el volado, relleno suave y borde continuo (no el
+         trazo cortado de la zapata), en rojo si no le alcanza el area o el peralte */
+      plateasDelNivel(m).forEach(function(pz){
+        var q=predimPlatea(pz,m), selP=!!(S.sel&&S.sel.t==="platea"&&pz.panos.some(function(p2){
+              return p2[0]===S.sel.i&&p2[1]===S.sel.j; })),
+            mal=!!(q&&(q.falta||!q.cumple)), cont=(q&&q.contorno&&q.contorno.length)?q.contorno:(pz.anillos[0]||[]);
+        if(!cont.length)return;
+        gPla.appendChild(el("polygon",{points:cont.map(function(p2){ return (mg+p2[0]*esc)+","+(mg+p2[1]*esc); }).join(" "),
+          fill:"var(--platea)","fill-opacity":selP?0.34:0.16,
+          stroke:mal?"var(--no)":(selP?"var(--acc)":"var(--platea)"),"stroke-width":selP?2.6:1.6}));
+        /* el rotulo en el centro de su primer paño: el centro del contorno cae en una columna si la platea es en L */
+        if(DIMS&&q&&!q.falta){
+          var Qd=quadPano(pz.i,pz.j,m), cx2=0, cy2=0; Qd.forEach(function(v){ cx2+=v.x; cy2+=v.y; });
+          cx2=mg+cx2/4*esc; cy2=mg+cy2/4*esc;
+          txt(g,cx2,cy2-6,pz.cod+" · platea",mal?"var(--no)":"var(--acc-ink)",10);
+          txt(g,cx2,cy2+8,"h = "+(q.h/100).toFixed(2)+" m · "+q.Acol.toFixed(1)+" m²",mal?"var(--no)":"var(--acc-ink)",9.5);
+        }
+      });
       var zs=zapatasDelNivel(), sol=solapesZapata(zs), pisadas={};
       sol.forEach(function(x){ pisadas[x.a.cod]=1; pisadas[x.b.cod]=1; });
       /* la viga de conexion, de columna a columna: va antes para quedar debajo */
@@ -16446,9 +16846,14 @@ var TT={script:performance.now()};
     /* PLANTA DE CIMENTACION: la estructura del piso no se toca; se selecciona una columna para ver su zapata
        o se trabaja con la herramienta Zapata.  Y la Zapata solo trabaja ahi. */
     if(enCim()){
-      if(S.tool==="sel"){ if(primero&&d.t==="col"){S.sel={t:"col",i:i,j:j};render();} return; }
-      if(S.tool!=="zapata")return;
-    }else if(S.tool==="zapata")return;
+      if(S.tool==="sel"){
+        if(primero&&d.t==="col"){S.sel={t:"col",i:i,j:j};render();}
+        /* un paño de platea se selecciona para ver su ficha */
+        else if(primero&&d.t==="platea"&&esPlatea(i,j,S.niveles[0])){S.sel={t:"platea",i:i,j:j};render();}
+        return;
+      }
+      if(S.tool!=="zapata"&&S.tool!=="platea")return;
+    }else if(S.tool==="zapata"||S.tool==="platea")return;
     if(S.tool==="sel"){S.sel=d.t==="viga"?{t:"viga",o:d.o,i:i,j:j}:{t:d.t,i:i,j:j};render();return}
     if(S.tool==="unir"){if(primero)unirClic(d,i,j,UNIR_SHIFT);return}
     if(S.tool==="col"&&d.t==="col"){
@@ -16478,6 +16883,8 @@ var TT={script:performance.now()};
       var mz=S.niveles[0]; mz.zapatas=mz.zapatas||{};
       var kz=key(i,j);
       if(!mz.cols[kz])return;                 /* sin columna no hay zapata */
+      if(nudoEnPlatea(i,j,mz)){ if(primero){ var pzz=plateaDeNudo(i,j,mz);
+        toast("Esa columna va sobre la platea "+(pzz?pzz.cod:"")+": no lleva zapata."); } return; }
       var enCorr=corridaEn(i,j,mz);
       if(enCorr){ if(primero){ var qc=quitaCorrida(enCorr.ai,enCorr.aj);
         if(qc.ok)toast("Quitada: sus columnas vuelven a sus zapatas."); } return; }
@@ -16498,6 +16905,13 @@ var TT={script:performance.now()};
       var k4=key(d.o,i,j);
       if(primero)modo=m.placas[k4]?"off":"on";
       if(modo==="on"){if(!m.placas[k4])m.placas[k4]={};}else delete m.placas[k4];
+    }else if(S.tool==="platea"&&d.t==="platea"){
+      /* LA PLATEA: clic o arrastre sobre los paños, como la losa.  El primer toque decide si pinta o borra */
+      if(S.act!==0)return;
+      if(primero){ modo=esPlatea(i,j,S.niveles[0])?"off":"on"; PLATEA_QUITADAS=[]; }
+      var antesQ=PLATEA_QUITADAS.length;
+      pintaPanoPlatea(i,j,modo==="on");
+      if(PLATEA_QUITADAS.length>antesQ)toast(avisoQuitadas(PLATEA_QUITADAS));
     }else if(S.tool==="vacio"&&d.t==="losa"){
       /* EL VACIO: clic lo pone, otro clic lo quita, y arrastrando se pinta como las demas.  Un paño
          marcado como vacio no lleva losa: es un hueco. */
@@ -18099,6 +18513,8 @@ var TT={script:performance.now()};
       for(var q in o){var s=q.split(":"),h=s[0]==="h";
         if(fuera(+s[1],+s[2],h?nX-1:nX,h?nY:nY-1))delete o[q];}
     });
+    [m.vacios,m.plateas].forEach(function(o){ if(!o||typeof o!=="object")return;
+      for(var q in o){var s=q.split(":"); if(fuera(+s[0],+s[1],nX-1,nY-1))delete o[q];} });
     if(m.zapatas)for(k in m.zapatas){ p=k.split(":");
       if(fuera(+p[0],+p[1],nX,nY)){ delete m.zapatas[k]; continue; }
       if(!m.cols[k]&&!(m.zapatas[k]&&m.zapatas[k].corr))delete m.zapatas[k]; }
@@ -18418,7 +18834,7 @@ var TT={script:performance.now()};
     b.removeAttribute("style"); b.style.margin="4px 2px 0";
     snap();
     var m=N();
-    m.cols={}; m.vigas={}; m.losas={}; m.placas={}; m.zapatas={};
+    m.cols={}; m.vigas={}; m.losas={}; m.placas={}; m.zapatas={}; m.plateas={}; delete m.vacios;
     S.sel=null; render();
     toast("Nivel en blanco. Los ejes siguen ahí · Ctrl+Z lo devuelve.");
   };
@@ -18503,8 +18919,10 @@ var TT={script:performance.now()};
     placa:"Clic o arrastra sobre los tramos entre ejes",
     losa:"Clic o arrastra sobre los paños · clic en el mismo tipo gira el armado",
     zapata:"Clic o arrastra sobre las columnas del 1er piso · solo hay zapata donde hay columna",
+    platea:"Clic o arrastra sobre los paños · los que se tocan son UNA platea; reemplaza las zapatas de debajo",
     unir:"Clic en una losa y en otra (la que sigue, la última o la esquina opuesta): quedan como UNA · si hay vigas o columnas en medio, otro clic las quita · Esc termina · Shift+clic separa"};
   function elegirTool(t){
+    var antes=S.tool;
     S.tool=t; UNIR=null; UNIR_CONFIRMA=null;
     if(S.vista!=="plano"){S.vista="plano";render();}
     document.querySelectorAll(".tool").forEach(function(o){
@@ -18515,8 +18933,12 @@ var TT={script:performance.now()};
     ver("#subLosa",t==="losa");
     ver("#subUnir",t==="unir");
     ver("#subZapata",t==="zapata");
-    /* la zapata se dibuja en la planta de Cimentacion: la herramienta lleva alli */
-    if(t==="zapata"&&!S.cim){S.cim=true;S.act=0;S.sel=null;if(S.vista==="plano")render();}
+    ver("#subPlatea",t==="platea");
+    /* la zapata y la platea se dibujan en la planta de Cimentacion: la herramienta lleva alli */
+    if((t==="zapata"||t==="platea")&&!S.cim){S.cim=true;S.act=0;S.sel=null;if(S.vista==="plano")render();}
+    /* los paños de Cimentacion solo se pinchan con la Platea: al entrar o salir de ella el plano se repinta, o
+       la herramienta quedaba elegida sin nada donde pinchar */
+    else if(enCim()&&t!==antes&&(t==="platea"||antes==="platea"))render();
     $("#hint").textContent=PISTAS[t]||"";
   }
 
@@ -18682,6 +19104,11 @@ var TT={script:performance.now()};
     if(t.dataset.vigueta){ var pv=t.dataset.vigueta.split(":");
       r3=ponVigueta(+pv[0],+pv[1],pv[2],t.value);
       if(r3&&!r3.ok)toast(r3.msg); else if(r3)toast(r3.n+" vigueta(s) @ "+r3.s.toFixed(2)+" m."); }
+    /* LA PLATEA: volado, peralte o barras, desde su ficha */
+    if(t.dataset.plat){ var pp=t.dataset.plat.split(":"); var rp=ponDatoPlatea(+pp[0],+pp[1],pp[2],t.value);
+      if(rp&&!rp.ok){ toast(rp.msg); render(); }
+      else if(rp)toast(t.value===""?"Vuelve lo calculado.":("Platea: h = "+(rp.h/100).toFixed(2)+" m, volado "+(+rp.v).toFixed(2)+" m."));
+      return; }
     if(t.dataset.relcol){ var pr4=t.dataset.relcol.split(":"); r3=ponRelCol(+pr4[0],+pr4[1],t.value,+pr4[2]);
       if(r3&&r3.ok)toast("Relación h/b = "+r3.rel.toFixed(2)+": "+r3.b+" × "+r3.h+" cm."); }
     if(r3&&!r3.ok){ toast(r3.msg); render(); }
@@ -18691,9 +19118,10 @@ var TT={script:performance.now()};
     /* Enter aplica sin salir de la casilla */
     var t=ev.target;
     if(ev.key==="Enter"&&campoTrib(t)){ ev.preventDefault(); t.blur(); }
+    if(ev.key==="Enter"&&t&&t.dataset&&t.dataset.plat&&t.tagName==="INPUT"){ ev.preventDefault(); t.blur(); }
   });
   $("#inspBody").addEventListener("click",function(ev){
-    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-zvcon],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol],[data-formacol],[data-largocol]"):null;
+    var b=ev.target&&ev.target.closest?ev.target.closest("[data-zunir],[data-zsep],[data-zlibre],[data-zcorr],[data-zcorrq],[data-zrestr],[data-zlado],[data-zvcon],[data-atauto],[data-trmodo],[data-trreset],[data-bvauto],[data-trvmodo],[data-trvreset],[data-selcol],[data-formacol],[data-largocol],[data-plaq],[data-selpla]"):null;
     if(!b)return;
     var r2;
     /* EL ANCHO DE LA VIGA: volver al automatico, el modo y el ↺ de un lado */
@@ -18716,6 +19144,8 @@ var TT={script:performance.now()};
       r2=ponLargoCol(+pl2[0],+pl2[1],pl2[3],+pl2[2]);
       if(r2&&!r2.ok)toast(r2.msg); else toast("Lado largo en "+pl2[3].toUpperCase()+": "+r2.b+" × "+r2.h+" cm.");
       return; }
+    if(b.dataset.plaq){ var pq2=b.dataset.plaq.split(":"); r2=quitaPlatea(+pq2[0],+pq2[1]); toast(r2.msg); return; }
+    if(b.dataset.selpla){ var psp=b.dataset.selpla.split(":"); S.sel={t:"platea",i:+psp[0],j:+psp[1]}; render(); return; }
     if(b.dataset.selcol){ var ps=b.dataset.selcol.split(":"); VIVO=null; EDIT_TRIB=null;
       S.sel={t:"col",i:+ps[0],j:+ps[1]}; render(); return; }
     if(b.dataset.atauto){ var pa3=b.dataset.atauto.split(":"); VIVO=null; EDIT_TRIB=null; r2=autoTrib(+pa3[0],+pa3[1],+pa3[2]);
@@ -18776,6 +19206,8 @@ var TT={script:performance.now()};
   });
   $("#zapTodas").onclick=function(){snap();S.act=0;zapatasEnTodas();render();
     toast("Zapata en todas las columnas del 1er piso.")};
+  $("#plaNinguna").onclick=function(){ snap(); S.act=0; plateasNinguna(); if(S.sel&&S.sel.t==="platea")S.sel=null;
+    render(); toast("Plateas quitadas. Ctrl+Z las recupera."); };
   $("#zapNinguna").onclick=function(){snap();S.act=0;zapatasNinguna();render();
     toast("Sin zapatas. Dibújalas donde apoyen en el terreno.")};
 
@@ -18791,7 +19223,8 @@ var TT={script:performance.now()};
       S.tipoViga=b.dataset.viga;
       document.querySelectorAll("[data-viga]").forEach(function(o){
         o.setAttribute("aria-pressed",o===b)});
-      $("#swViga").style.background=S.tipoViga==="chata"?"var(--chata)":"var(--viga)";
+      $("#swViga").style.background=S.tipoViga==="chata"?"var(--chata)":
+                                     (S.tipoViga==="invertida"?"var(--invert)":"var(--viga)");
       elegirTool("viga");});
   });
   document.querySelectorAll("[data-losa]").forEach(function(b){
@@ -18828,7 +19261,7 @@ var TT={script:performance.now()};
       bc.setAttribute("aria-current",enCim());bc.textContent="Cimentación";
       bc.title="Planta de cimentación: zapatas, combinadas y corridas bajo las columnas del 1er piso";
       bc.onclick=function(){S.cim=true;S.act=0;S.sel=null;S.vista="plano";
-        if(S.tool!=="sel"&&S.tool!=="zapata")elegirTool("zapata");
+        if(S.tool!=="sel"&&S.tool!=="zapata"&&S.tool!=="platea")elegirTool("zapata");
         render()};c.appendChild(bc);
     }
     S.niveles.forEach(function(n,k){
@@ -18836,7 +19269,7 @@ var TT={script:performance.now()};
       b.setAttribute("aria-current",S.vista==="plano"&&k===S.act&&!enCim());
       b.textContent=(ORD[k]||("N"+(k+1)))+" piso";
       b.onclick=function(){S.cim=false;S.act=k;S.sel=null;S.vista="plano";
-        if(S.tool==="zapata")elegirTool("sel");
+        if(S.tool==="zapata"||S.tool==="platea")elegirTool("sel");
         render()};c.appendChild(b);});
     /* en modo usos no se toca la estructura del edificio: solo se asignan usos */
     if(S.modo==="usos")return;
@@ -18936,6 +19369,19 @@ var TT={script:performance.now()};
       });
       m.zapatas=zp;
     }
+    /* LOS VACIOS Y LAS PLATEAS VAN POR PAÑO, como la losa: el paño partido lo es en sus dos mitades.  Los
+       datos de la platea (volado, peralte) se quedan en la primera: una pieza los lleva una sola vez */
+    [["vacios",false],["plateas",true]].forEach(function(par){
+      var src=m[par[0]]; if(!src||typeof src!=="object")return;
+      var dst={};
+      Object.keys(src).forEach(function(k2){
+        var p2=k2.split(":"), a=+p2[0], b=+p2[1], o=src[k2];
+        var cc=ejeX?a:b, lst=(dup===cc?[cc,cc+1]:[mapa(cc)]);
+        lst.forEach(function(z,n){ if(z===null||z===undefined)return;
+          dst[ejeX?key(z,b):key(a,z)]=(typeof o==="object")?((par[1]&&n>0)?{}:clon(o)):o; });
+      });
+      if(par[0]==="vacios"&&!Object.keys(dst).length)delete m.vacios; else m[par[0]]=dst;
+    });
     m.cols=c;m.vigas=v;m.losas=l;m.placas=pc;S.sel=null;
   }
   function partir(ejeX,t,comoPrima){var m=N(),arr=ejeX?m.dx:m.dy;
@@ -19354,6 +19800,77 @@ var TT={script:performance.now()};
       '<p class="calcnote">'+o.formula+'</p>'+
       '</div>';
   }
+  /* LA FICHA DE LA PLATEA (Victor, 26-09-2026): el mismo orden que la de la zapata -carga, suelo, area y
+     medidas-, y lo que es solo de la platea: el volado, el peralte por anclaje y el punzonamiento */
+  function fichaPlatea(pz,r){
+    var f2=function(v){return (+v).toFixed(2)}, f1=function(v){return (+v).toFixed(1)}, ij=pz.i+":"+pz.j, du=pz.dueno||{};
+    function fila(k,v,u){ return '<dt>'+k+'</dt><dd>'+v+(u?' <span class="zf-u">'+u+'</span>':'')+'</dd>'; }
+    function campo(c2,val,ph,et){ return '<input class="pl-in" type="text" inputmode="decimal" autocomplete="off" data-plat="'+ij+':'+c2+
+      '" value="'+(val!=null&&val!==""?val:"")+'" placeholder="'+ph+'" aria-label="'+et+'">'; }
+    function selBarra(c2,act,auto,et){
+      return '<select class="insp-sel" data-plat="'+ij+':'+c2+'" aria-label="'+et+'"><option value=""'+(act?"":" selected")+
+        '>Automático · '+auto+'</option>'+DISENO.LONGITUDINALES.map(function(n){
+          return '<option value="'+n.replace(/"/g,"&quot;")+'"'+(act===n?" selected":"")+'>'+n+'</option>'; }).join("")+'</select>'; }
+    var cab='<div class="zf-cab"><div class="name">'+pz.cod+'</div><span class="tag">Platea · '+pz.panos.length+
+      (pz.panos.length===1?" paño":" paños")+'</span></div>';
+    var acc='<h4 class="zf-t">Qué puedes hacer</h4><div class="zf-acc"><button class="mini" data-plaq="'+ij+'">Quitar la platea</button></div>';
+    if(!r||r.falta)return '<div class="zf">'+cab+'<p class="aviso">No se puede predimensionar: '+((r&&r.falta)||"falta el módulo de plateas")+
+      '.</p>'+acc+'</div>';
+    var br=r.barras||{}, A=r.anclaje, P=r.revision||r.punz, peor=P&&P.peor, pn=r.presion;
+    var Ccat=CRITERIOS.CATEGORIA[S.categoria]||{};
+    var lista=r.cols.map(function(c){
+      return '<li><span>'+escapa(c.cod)+(c.sinPunz?' <em style="color:var(--ink-3);border-color:var(--line)">placa</em>':'')+
+        '</span><b>'+f2(c.at)+' m²</b><b>'+f2(c.P)+' t</b></li>'; }).join("");
+    var dAdop=PLATEAS.peralteEfectivo(r.h,A.rec,A.dbMalla);
+    return '<div class="zf">'+cab+
+      '<div class="zf-dim">'+
+        '<div><span>Área colocada</span><b>'+f2(r.Acol)+' m²</b></div>'+
+        '<div><span>Peralte h · volado</span><b>'+f2(r.h/100)+' · '+f2(r.volado)+' m</b></div>'+
+        '<div class="zf-est '+(r.cumple?'ok':'no')+'">'+(r.cumple?'Cumple':'No cumple')+'</div>'+
+      '</div>'+
+      '<h4 class="zf-t">Lo que carga · '+r.nCol+(r.nCol===1?" columna":" columnas")+(r.nPla?(" y "+r.nPla+(r.nPla===1?" placa":" placas")):"")+'</h4>'+
+      '<ul class="zf-cols">'+lista+'</ul>'+
+      '<h4 class="zf-t">Carga</h4><dl class="kv">'+
+        fila("Pisos N",r.niveles)+
+        fila("Ps ("+(S.categoria||"")+")",Ccat.peso!=null?Ccat.peso:f1(r.peso),"kg/m²")+
+        fila("Σ área tributaria",f2(r.cols.reduce(function(a,c){return a+c.at},0)),"m²")+
+        fila("Pt = Σ N · at · Ps",f2(r.Pt),"t")+
+        fila("Pu (1,4 CM + 1,7 CV)",f2(r.Pu)+' <span class="zf-u">t</span> · ×'+r.factorU.toFixed(2))+'</dl>'+
+      '<h4 class="zf-t">Suelo</h4><dl class="kv">'+
+        fila("σs del estudio",f2(+S.sigma||3),"kg/cm²")+
+        (pn&&pn.manda==="neta"
+          ? fila("σn presión neta",f2(pn.neta),"t/m²")
+          : fila("Presión de cálculo",f2(r.sigma),"t/m²"))+'</dl>'+
+      '<h4 class="zf-t">Área</h4><dl class="kv">'+
+        fila("Huella de los paños",f2(r.Ahuella),"m²")+
+        fila("A = Pt / σ",f2(r.Areq),"m²")+
+        fila("Volado mínimo",f2(r.vCalc),"m")+
+        fila("Volado adoptado",campo("v",r.voladoPropio?f2(r.volado):"",f2(r.vCalc),"Volado adoptado, en metros")+
+          '<span class="pl-auto">'+(r.voladoPropio?"tuyo":"en blanco: el mínimo")+'</span>')+
+        fila("Área colocada",f2(r.Acol),"m²")+
+        fila("Holgura",(r.holgura*100).toFixed(1),"%")+
+        fila("q de servicio",f2(r.q),"t/m²")+'</dl>'+
+      '<h4 class="zf-t">Peralte</h4><dl class="kv">'+
+        fila("Barra de la columna",selBarra("dbc",du.dbc,br.propiaCol?"":(br.col||""),"Barra de la columna que se ancla"))+
+        fila("Barra de la malla",selBarra("dbm",du.dbm,br.propiaMalla?"":(br.malla||""),"Barra de la malla inferior"))+
+        fila("ℓdg (E.060 12.5.2)",f1(A.ldg),"cm")+
+        fila("ℓdg + r + 2ØVp",f1(A.porAnclaje),"cm")+
+        fila("30 cm + r (E.060 15.7)",f1(A.porNorma),"cm")+
+        fila("Por anclaje",A.h,"cm")+
+        fila("Por punzonamiento",r.punz.filas.length?((r.punz.alcanza?r.punz.h:"&gt; 300")+' <span class="zf-u">cm</span> · '+
+          (r.punz.peor?escapa(r.punz.peor.cod):"")):"sin columnas")+
+        fila("h calculado",r.hCalc+' <span class="zf-u">cm</span> · manda '+r.manda)+
+        fila("h adoptado",campo("H",r.hPropio?String(r.h):"",String(r.hCalc),"Peralte adoptado, en centímetros")+
+          '<span class="pl-auto">'+(r.hPropio?"tuyo":"en blanco: el calculado")+'</span>')+
+        fila("d = h − r − ØVp",f1(dAdop*100),"cm")+
+        (peor?fila("Punzonamiento, la peor",escapa(peor.cod)+" · Vu/φVc "+peor.ratio.toFixed(2)+" · "+peor.lados+" lados"):"")+'</dl>'+
+      (r.avisos.length?'<div class="zf-avisos">'+r.avisos.map(function(a){ return '<p class="aviso">'+escapa(a.t)+'.</p>'; }).join("")+'</div>':'')+
+      acc+
+      '<p class="calcnote">Oviedo, pág. 28 (Cap. II, «Losas de cimentación»; ej. 9 y 10, pág. 40-41): Pt = Ps · A · N, aquí columna por '+
+        'columna como en la zapata; A = Pt / σt, nunca menos que la huella; h &gt; ℓdg + r + 2ØVp. De la E.060: ℓdg 12.5.2, '+
+        '300 mm sobre el acero 15.7 y el punzonamiento de 11.12.2.1 (φ 0,85, αs 40 / 30 / 20 según los lados que quedan dentro).</p>'+
+      '</div>';
+  }
   function formulaComb(){
     return 'Harmsen 12.8 (p. 579): la zapata se centra en la resultante de las cargas de servicio -o termina en el límite-, '+
       'L cubre las columnas y B = Az / L, con Az = 1,10 · P · F / σ (Oviedo, pág. 122). H = (B − b)/4, nunca menos de 0,50 m '+
@@ -19484,6 +20001,11 @@ var TT={script:performance.now()};
               formula:'Oviedo, pág. 123 (la corrida va bajo una placa o muro, pág. 114): L = h + X, B = b + X y H = (L − h)/4, '+
                 'con X tanteado de 10 en 10 cm hasta que (h + X)(b + X) llegue a Az.'});
           }
+          /* SOBRE UNA PLATEA no lleva zapata: su carga es de la platea */
+          var pzC=plateaDeNudo(q.i,q.j,m);
+          if(pzC)return '<div class="rule" style="margin:10px 0"></div><p class="nota" style="margin:0">Va sobre la platea <b>'+
+            pzC.cod+'</b>: no lleva zapata, su carga la toma la platea.</p><div class="zf-acc" style="margin-top:6px">'+
+            '<button class="mini" data-selpla="'+pzC.i+':'+pzC.j+'">Ver la platea</button></div>';
           var z=predimZapata(q.i,q.j);
           /* LA OTRA COLUMNA DE UNA COMBINADA: la calcula su dueña, pero es la misma zapata.  Antes esta ficha decia
              «Sin zapata» al seleccionarla. */
@@ -19581,6 +20103,12 @@ var TT={script:performance.now()};
         html='<div class="name">'+nm.C[key(q.i,q.j)].cod+'</div><span class="tag" style="color:var(--ink-2)">Columna '+
           (pc.forma==="circular"?("Ø "+pc.D):(pc.b+" × "+pc.h))+' cm del 1er piso · '+d.tipo+'</span>'+fichaZ;
       }
+    }else if(q.t==="platea"){
+      var mpI=S.niveles[0], pzI=plateaDePano(q.i,q.j,mpI);
+      if(!pzI){T.textContent="Paño sin platea";
+        B.innerHTML='<p class="empty">Ese paño no tiene platea. Dibújala con la herramienta <b>Platea</b>.</p>';return}
+      T.textContent="Platea · Cimentación";
+      html=fichaPlatea(pzI,predimPlatea(pzI,mpI));
     }else if(q.t==="viga"){
       var kk=key(q.o,q.i,q.j);
       if(!m.vigas[kk]&&!m.placas[kk]){T.textContent="Tramo vacío";
@@ -19589,9 +20117,12 @@ var TT={script:performance.now()};
       html="";
       if(m.vigas[kk]){
         var v=medViga(q.o,q.i,q.j),pv=predimViga(q.o,q.i,q.j,m),
-            ch=(pv.tipo==="chata");
+            ch=(pv.tipo==="chata"), inv=esInvertida(m.vigas[kk]);
         html+='<div class="name">'+nm.V[kk].cod+'</div><span class="tag" style="color:var('+
-          (ch?"--chata":"--viga")+')">'+(ch?"Chata":"Principal")+"</span>"+
+          (ch?"--chata":(inv?"--invert":"--viga"))+')">'+(ch?"Chata":(inv?"Invertida":"Principal"))+"</span>"+
+          (inv?'<p class="nota" style="margin:6px 0 0">Va <b>por encima de la losa</b>. Su '+
+            'predimensionamiento y su diseño son los de una principal -mismo Ln/α, mismo B/20-: lo que '+
+            'cambia es dónde se construye. A ETABS va en el nivel de la losa, sin desfase vertical.</p>':"")+
           '<dl class="kv" style="margin-top:9px">'+kv("Eje",nm.V[kk].eje,1)+kv("Luz entre ejes",v.L.toFixed(2)+" m")+
           kv("Lado de columna",v.desc.toFixed(2)+" m"+
              (v.real?"  (calculado)":"  (supuesto: falta columna)"),1)+
@@ -20270,11 +20801,202 @@ var TT={script:performance.now()};
      porque la cimentacion esta debajo de todo. */
   var TIPO_ZAPATA={Interior:"centrada",Exterior:"medianera",Esquinera:"esquinera"};
 
+  /* =====================================================================
+     LAS PLATEAS (Victor, 26-09-2026).  Una platea son los paños de la planta de Cimentacion que marcaste,
+     y los que se tocan por un lado son UNA sola.  El calculo es el de Oviedo -Cap. II, «Losas de
+     cimentacion», p. 28- y vive en oviedo/plateas.js; aqui se arma con el modelo: las columnas y placas que
+     caen encima, su area tributaria, el suelo y las barras.
+     ===================================================================== */
+  function esPlatea(i,j,m){ m=m||S.niveles[0]; return !!(m&&m.plateas&&m.plateas[key(i,j)]); }
+  /* ¿el nudo (i,j) cae dentro de una platea?  Basta con que uno de sus cuatro paños lo sea */
+  function nudoEnPlatea(i,j,m){
+    m=m||S.niveles[0]; if(!m||!m.plateas)return false;
+    return esPlatea(i-1,j-1,m)||esPlatea(i,j-1,m)||esPlatea(i-1,j,m)||esPlatea(i,j,m);
+  }
+  /* las piezas: relleno por vecindad, numeradas por su paño dueño (menor i, y luego menor j) */
+  function plateasDelNivel(m){
+    m=m||S.niveles[0]; if(!m||!m.plateas)return [];
+    var ks=Object.keys(m.plateas).filter(function(k){ var q=k.split(":");
+      return +q[0]>=0&&+q[1]>=0&&+q[0]<m.dx.length&&+q[1]<m.dy.length; });
+    ks.sort(function(a,b){ var pa=a.split(":"),pb=b.split(":"); return (+pa[0]-+pb[0])||(+pa[1]-+pb[1]); });
+    var visto={}, piezas=[];
+    ks.forEach(function(k0){
+      if(visto[k0])return;
+      var pila=[k0], panos=[]; visto[k0]=1;
+      while(pila.length){
+        var k=pila.pop(), q=k.split(":"), i=+q[0], j=+q[1]; panos.push([i,j]);
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){ var kk=key(i+d[0],j+d[1]);
+          if(m.plateas[kk]&&!visto[kk]){ visto[kk]=1; pila.push(kk); } });
+      }
+      panos.sort(function(a,b){ return (a[0]-b[0])||(a[1]-b[1]); });
+      piezas.push({panos:panos});
+    });
+    piezas.sort(function(a,b){ return (a.panos[0][0]-b.panos[0][0])||(a.panos[0][1]-b.panos[0][1]); });
+    var niv=S.niveles.indexOf(m), pref="N"+((niv>=0?niv:0)+1);
+    piezas.forEach(function(pz,n){
+      pz.i=pz.panos[0][0]; pz.j=pz.panos[0][1]; pz.cod=pref+"-PT-"+nn(n+1);
+      var nod={};
+      pz.panos.forEach(function(q){ [[0,0],[1,0],[0,1],[1,1]].forEach(function(d){
+        nod[key(q[0]+d[0],q[1]+d[1])]=[q[0]+d[0],q[1]+d[1]]; }); });
+      pz.nodos=Object.keys(nod).map(function(k){ return nod[k]; });
+      pz.anillos=contornos(pz.panos.map(function(q){ return quadPano(q[0],q[1],m); }))
+        .map(function(r){ return r.map(function(v){ return [v.x,v.y]; }); });
+      pz.dueno=m.plateas[key(pz.i,pz.j)]||{};
+    });
+    return piezas;
+  }
+  function plateaDePano(i,j,m){
+    m=m||S.niveles[0]; if(!esPlatea(i,j,m))return null;
+    return plateasDelNivel(m).filter(function(pz){
+      return pz.panos.some(function(q){ return q[0]===i&&q[1]===j; }); })[0]||null;
+  }
+  function plateaDeNudo(i,j,m){
+    m=m||S.niveles[0]; if(!nudoEnPlatea(i,j,m))return null;
+    return plateasDelNivel(m).filter(function(pz){
+      return pz.nodos.some(function(q){ return q[0]===i&&q[1]===j; }); })[0]||null;
+  }
+  /* la barra que se toma para el anclaje y para la malla: la que elegiste en su ficha o, si no, la MAYOR que
+     Criterios deja usar -lo del lado seguro, que es lo que da el peralte mas grande- */
+  function barrasPlatea(pz){
+    var K=criteriosDiseno(), du=(pz&&pz.dueno)||{};
+    function mayor(l,def){ return (l&&l.length)?l[l.length-1]:def; }
+    var bc=du.dbc||mayor(K.barras&&K.barras.columna&&K.barras.columna.long,'1"'),
+        bm=du.dbm||mayor(K.barras&&K.barras.zapata&&K.barras.zapata.long,'3/4"');
+    return {col:bc, malla:bm, dbCol:(DISENO.barra(bc)||{}).d||2.54, dbMalla:(DISENO.barra(bm)||{}).d||1.905,
+            propiaCol:!!du.dbc, propiaMalla:!!du.dbm, K:K};
+  }
+  /* EL PREDIMENSIONAMIENTO de una pieza, con los datos del proyecto */
+  function predimPlatea(pz,m){
+    m=m||S.niveles[0]; if(!pz||!m||typeof PLATEAS==="undefined")return null;
+    var nm=nombres(0), cols=[];
+    pz.nodos.forEach(function(n){
+      var i=n[0], j=n[1], k=key(i,j), esCol=!!m.cols[k];
+      var esPla=!esCol&&!!(m.placas[key("h",i-1,j)]||m.placas[key("h",i,j)]||m.placas[key("v",i,j-1)]||m.placas[key("v",i,j)]);
+      if(!esCol&&!esPla)return;
+      var at=medCol(i,j,m).at; if(!(at>0))return;
+      var q={cod:esCol?((nm.C[k]||{}).cod||k):("placa "+ejeCol(i,j,m)), at:at, i:i, j:j, sinPunz:!esCol};
+      if(esCol){
+        var sc=seccionCol(i,j,m,0), circ=(sc.forma==="circular");
+        q.b=(circ?sc.D:sc.b)/100; q.h=(circ?sc.D:sc.h)/100;
+        q.borde={mx:!esPlatea(i-1,j-1,m)&&!esPlatea(i-1,j,m), px:!esPlatea(i,j-1,m)&&!esPlatea(i,j,m),
+                 my:!esPlatea(i-1,j-1,m)&&!esPlatea(i,j-1,m), py:!esPlatea(i-1,j,m)&&!esPlatea(i,j,m)};
+      }
+      cols.push(q);
+    });
+    var br=barrasPlatea(pz), K=br.K, du=pz.dueno||{};
+    var r=PLATEAS.predimensionar({niveles:S.niveles.length, peso:pesoCategoria(), sc:scDefecto(), sigma:sigmaDiseno(),
+      anillos:pz.anillos, cols:cols, volado:(du.v!=null&&du.v!=="")?+du.v:null, hAdopt:(du.H>0)?+du.H:null,
+      dbCol:br.dbCol, dbMalla:br.dbMalla, rec:(K.recub&&K.recub.zapata&&K.recub.zapata.cm)||7,
+      fc:fcZapata(), fy:K.fy});
+    r.cod=pz.cod; r.i=pz.i; r.j=pz.j; r.panos=pz.panos; r.nodos=pz.nodos; r.anillos=pz.anillos;
+    r.barras=br; r.presion=presionSuelo(); r.nCol=cols.filter(function(q){return !q.sinPunz}).length;
+    r.nPla=cols.filter(function(q){return q.sinPunz}).length;
+    return r;
+  }
+  /* LA PLATEA REEMPLAZA las zapatas que quedan debajo (Victor, 26-09-2026): se quitan, y la combinada o la
+     corrida que tuviera una columna aqui se deshace, para que las de fuera sigan con su zapata aislada */
+  var PLATEA_QUITADAS=[];
+  function quitaZapatasBajoPano(i,j,m){
+    var nm=nombres(0);
+    [[0,0],[1,0],[0,1],[1,1]].forEach(function(d){
+      var ni=i+d[0], nj=j+d[1], k=key(ni,nj);
+      if(!m.zapatas||!m.zapatas[k])return;
+      var t=corridaEn(ni,nj,m); if(t)soltarCorrida(t,m);
+      var pa=parejaZapata(ni,nj,m);
+      if(pa){ var zd=m.zapatas[key(pa.ai,pa.aj)]; if(zd)delete zd.con; }
+      delete m.zapatas[k];
+      var cod=(nm.C[k]||{}).cod||k; if(PLATEA_QUITADAS.indexOf(cod)<0)PLATEA_QUITADAS.push(cod);
+    });
+  }
+  /* los datos de la pieza viven en su paño dueño: al pintar o borrar paños el dueño puede cambiar, y sus
+     datos se mudan con el */
+  function mudaDatosPlatea(m){
+    if(!m||!m.plateas)return;
+    var piezas=plateasDelNivel(m);
+    piezas.forEach(function(pz){
+      var du=m.plateas[key(pz.i,pz.j)], dat=null;
+      pz.panos.forEach(function(q){ var o=m.plateas[key(q[0],q[1])];
+        if(o&&(o.v!=null||o.H!=null||o.dbc||o.dbm)&&!(q[0]===pz.i&&q[1]===pz.j)){ dat=dat||o; } });
+      if(dat&&du&&du.v==null&&du.H==null&&!du.dbc&&!du.dbm){
+        ["v","H","dbc","dbm"].forEach(function(c2){ if(dat[c2]!=null){ du[c2]=dat[c2]; delete dat[c2]; } });
+      }
+    });
+  }
+  function avisoQuitadas(l){
+    if(l.length===1)return "La platea reemplazó la zapata de "+l[0]+". Ctrl+Z la recupera.";
+    /* con muchas, los tres primeros y cuantas mas: el aviso se lee de un vistazo */
+    return "La platea reemplazó las zapatas de "+(l.length>4?l.slice(0,3).join(", ")+" y "+(l.length-3)+" más":l.join(", "))+
+           ". Ctrl+Z las recupera.";
+  }
+  /* un paño, con platea o sin ella: lo que hace el gesto en cada paño que toca */
+  function pintaPanoPlatea(i,j,on){
+    var mp=S.niveles[0]; if(!mp)return false;
+    if(!mp.plateas||typeof mp.plateas!=="object")mp.plateas={};
+    if(i<0||j<0||i>=mp.dx.length||j>=mp.dy.length)return false;
+    var kp=key(i,j);
+    if(on){ if(mp.plateas[kp])return false; mp.plateas[kp]={}; quitaZapatasBajoPano(i,j,mp); }
+    else{
+      var dat=mp.plateas[kp]; if(!dat)return false;
+      delete mp.plateas[kp];
+      /* si era el paño que guardaba los datos, pasan a la pieza que queda -a las dos, si se parte- */
+      if(dat.v!=null||dat.H!=null||dat.dbc||dat.dbm){
+        plateasDelNivel(mp).forEach(function(pz){
+          var toca=pz.panos.some(function(q){ return Math.abs(q[0]-i)+Math.abs(q[1]-j)===1; });
+          var du=mp.plateas[key(pz.i,pz.j)];
+          if(toca&&du&&du.v==null&&du.H==null&&!du.dbc&&!du.dbm)
+            ["v","H","dbc","dbm"].forEach(function(c2){ if(dat[c2]!=null)du[c2]=dat[c2]; });
+        });
+      }
+    }
+    mudaDatosPlatea(mp);
+    return true;
+  }
+  /* para las pruebas y la API: pinta varios paños como un solo arrastre, y dice que zapatas quito */
+  function pintaPlatea(lista,on){
+    snap(); PLATEA_QUITADAS=[];
+    var n=0; (lista||[]).forEach(function(q){ if(pintaPanoPlatea(q[0],q[1],on!==false))n++; });
+    guardar(); render();
+    return {ok:true, n:n, quitadas:PLATEA_QUITADAS.slice()};
+  }
+  function quitaPlatea(i,j){
+    var m=S.niveles[0], pz=plateaDePano(i,j,m);
+    if(!pz)return {ok:false,msg:"Ese paño no tiene platea."};
+    snap();
+    pz.panos.forEach(function(q){ delete m.plateas[key(q[0],q[1])]; });
+    if(S.sel&&S.sel.t==="platea")S.sel=null;
+    guardar(); render();
+    return {ok:true,msg:"Platea "+pz.cod+" quitada. Las zapatas que reemplazó no vuelven solas: Ctrl+Z las recupera."};
+  }
+  function plateasNinguna(){ var m=S.niveles[0]; if(!m)return; m.plateas={}; }
+  /* un dato de la platea, desde su ficha: volado (m), peralte H (cm) o la barra de la columna o de la malla */
+  function ponDatoPlatea(i,j,campo,valor){
+    var m=S.niveles[0], pz=plateaDePano(i,j,m);
+    if(!pz)return {ok:false,msg:"Ese paño no tiene platea."};
+    var du=m.plateas[key(pz.i,pz.j)];
+    if(["v","H","dbc","dbm"].indexOf(campo)<0)return {ok:false,msg:"Ese dato no es de la platea."};
+    snap();
+    if(valor===""||valor==null){ delete du[campo]; }
+    else if(campo==="dbc"||campo==="dbm"){
+      if(!DISENO.barra(valor)){ UNDO.pop(); return {ok:false,msg:"Esa barra no está en la lista."}; }
+      du[campo]=valor;
+    }else{
+      var v=leerNum(valor);
+      if(v===null||v<0){ UNDO.pop(); return {ok:false,msg:"Tiene que ser un número mayor o igual que cero."}; }
+      if(campo==="v"&&v>20){ UNDO.pop(); return {ok:false,msg:"El volado va en metros: 0,50 son cincuenta centímetros."}; }
+      if(campo==="H"&&(v<20||v>300)){ UNDO.pop(); return {ok:false,msg:"El peralte va en centímetros, entre 20 y 300."}; }
+      du[campo]=+v.toFixed(campo==="v"?2:0);
+    }
+    guardar(); render();
+    var q=predimPlatea(plateaDePano(i,j,m),m);
+    return {ok:true, h:q&&q.h, v:q&&q.volado};
+  }
+
   function predimZapata(i,j){
     var m=S.niveles[0];
     if(!m||!m.cols[key(i,j)])return null;
     if(!m.zapatas||!m.zapatas[key(i,j)])return null;   /* no la dibujaste */
     if(corridaEn(i,j,m))return null;                 /* va en una zapata corrida: la calcula la corrida */
+    if(nudoEnPlatea(i,j,m))return null;              /* va sobre una platea: la calcula la platea */
     /* ¿esta columna comparte zapata con una vecina?  Entonces no hay zapata
        aislada que calcular: la que manda es la combinada, y la calcula la
        columna dueña de la pareja. */
@@ -21210,7 +21932,7 @@ var TT={script:performance.now()};
        si los mandara con S/C 0, bajarian el promedio sin que se note. */
     /* Zapatas: solo en el nivel de cimentacion, y una por columna de ese
        nivel.  No dependen del nivel que se este mirando. */
-    var ZA=[],ZAC={};
+    var ZA=[],ZAC={},PT=[];
     if(niv===0){
       for(i=0;i<nX;i++)for(j=0;j<nY;j++)if(m.cols[i+":"+j]&&m.zapatas&&m.zapatas[i+":"+j]){
         var z=predimZapata(i,j),a2=nm.C[i+":"+j];
@@ -21240,6 +21962,16 @@ var TT={script:performance.now()};
                  (zc.col_b/100).toFixed(2),(zc.col_h/100).toFixed(2),(+zc.sep).toFixed(2),(zc.cods||[]).join(" + ")]);
         else ZA.push([codC,zc.tipoHoja,S.niveles.length,zc.at.toFixed(3),zc.F_sismo.toFixed(2),
                  zc.ancho.toFixed(2),zc.largo.toFixed(2),"0.00",(zc.cods||[]).join(" + ")]);
+      });
+      /* LAS PLATEAS: una fila por pieza, con lo que PRE_PLATEA necesita (el orden, en hojas_pre.js) */
+      plateasDelNivel(m).forEach(function(pz){
+        var q=predimPlatea(pz,m); if(!q||q.falta)return;
+        var br=q.barras||{}, A=q.anclaje;
+        ZAC[pz.cod]=[q.Pt.toFixed(2),q.Areq.toFixed(2),q.vCalc.toFixed(2),q.Acol.toFixed(2),q.h,q.cumple?"CUMPLE":"REVISAR"];
+        PT.push([pz.cod,S.niveles.length,q.cols.reduce(function(a,c){return a+c.at},0).toFixed(3),
+          q.Ahuella.toFixed(3),q.perimetro.toFixed(3),q.kEsq.toFixed(4),q.voladoPropio?q.volado.toFixed(2):"",
+          br.col,br.dbCol,br.malla,br.dbMalla,A.rec,fcZapata(),(br.K&&br.K.fy)||4200,
+          q.punz.alcanza?q.punz.h:"> 300",q.hPropio?q.h:"",q.nCol,q.nPla]);
       });
     }
     /* Lo YA CALCULADO de cada fila, para que la tabla del pie muestre
@@ -21290,7 +22022,7 @@ var TT={script:performance.now()};
       AMB.push([nm.nivel,d.uso,d.amb||"—",d.area.toFixed(2),w===null?"":w]);
     });
     for(var kz in ZAC)CA[kz]=ZAC[kz];
-    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB,Z:ZA,CA:CA};
+    return{C:C,V:V,VCH:VCH,L:LS,P:PL,M:MET,A:AMB,Z:ZA,PT:PT,CA:CA};
   }
   /* Todo el proyecto en un objeto, que es lo que necesitan las ocho hojas
      de predimensionamiento.  Va por localStorage, no por messageParent: el
@@ -22112,7 +22844,7 @@ var TT={script:performance.now()};
 
     paso("3","Predimensionamiento","decisiones","cuadro",vacio?"espera":"ok",
       vacio?"Sale del modelo.":"Secciones de "+inv.col+" columnas, "+nVig+" vigas, "+nLos+" losas, "+inv.placa+
-        " placas y "+inv.zapata+" zapatas","");
+        " placas y "+inv.zapata+" zapatas"+(inv.platea?" · "+inv.platea+(inv.platea===1?" platea":" plateas"):""),"");
 
     paso("4","Sismo E.030","sismo","",sinSismo?"falta":"ok",
       sinSismo?"Necesita los datos del paso 1.":
@@ -22862,7 +23594,7 @@ var TT={script:performance.now()};
     var out={nivel:k, lista:[], falta:null};
     if(typeof LOSAS==="undefined"){ out.falta="el módulo de losas no está cargado"; return out; }
     if(!m){ out.falta="no hay nivel"; return out; }
-    var K=DISENO.completar(datosDiseno()), rec=(K.recub&&K.recub.losa&&K.recub.losa.cm)||2;
+    var K=criteriosDiseno(), rec=(K.recub&&K.recub.losa&&K.recub.losa.cm)||2;
     var nm=nombres(k), barras=(K.barras&&K.barras.losa&&K.barras.losa.long)||['3/8"','1/2"','5/8"'];
     franjasLosa(m).forEach(function(f){
       /* LA VIGUETA ES LA DE LA LOSA, no la de siempre: si el proyectista cambio la separacion, el alma
@@ -24756,7 +25488,7 @@ var TT={script:performance.now()};
             var pv=predimViga(o,ii,jj,m),
                 va=(o==="h")?pt(m,tv.desde,jj):pt(m,ii,tv.desde),
                 vb=(o==="h")?pt(m,tv.hasta,jj):pt(m,ii,tv.hasta);
-            L.vigas.push({cod:nm.V[kk].cod, tipo:pv.tipo,
+            L.vigas.push({cod:nm.V[kk].cod, tipo:pv.tipo, inv:esInvertida(m.vigas[kk])||undefined,
               x1:va[0],y1:va[1],x2:vb[0],y2:vb[1], b:r4(pv.b), h:r4(pv.h)});
           }
           if(m.placas[kk]){
@@ -24806,12 +25538,12 @@ var TT={script:performance.now()};
   function paquete(){return conMemo(paqueteCalc)}
   function paqueteCalc(){
     PASADA++;                      /* se exporta con el modelo de AHORA */
-    var C=[],V=[],VCH=[],PL=[],M=[],A=[],Z=[],
+    var C=[],V=[],VCH=[],PL=[],M=[],A=[],Z=[],PT=[],
         L={aligerada:[],maciza:[],nervada:[]},area=0;
     S.niveles.forEach(function(m,k){
       var p=filas(k);
       C=C.concat(p.C); V=V.concat(p.V); VCH=VCH.concat(p.VCH); PL=PL.concat(p.P);
-      M=M.concat(p.M); A=A.concat(p.A); Z=Z.concat(p.Z||[]);
+      M=M.concat(p.M); A=A.concat(p.A); Z=Z.concat(p.Z||[]); PT=PT.concat(p.PT||[]);
       L.aligerada=L.aligerada.concat(p.L.aligerada);
       L.maciza=L.maciza.concat(p.L.maciza);
       L.nervada=L.nervada.concat(p.L.nervada);
@@ -24822,7 +25554,7 @@ var TT={script:performance.now()};
     pr.sc=scDefecto();
     return {categoria:S.categoria,fc:+S.fc||210,sigma:+S.sigma||3.0,
             niveles:S.niveles.length,
-            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z,
+            areaTechada:+area.toFixed(2),L:L,V:V,VCH:VCH,C:C,P:PL,M:M,A:A,Z:Z,PT:PT,
             proy:pr,cargas:cp,
             /* LA GEOMETRIA, para la hoja MODELO.  Hasta ahora el modelo solo
                viajaba como JSON a una hoja OCULTA: el panel sabia las luces
@@ -25082,6 +25814,9 @@ var TT={script:performance.now()};
     else if(S.tab==="zapata"){H=["Código","Tipo","N° pisos","A trib (m²)","F sismo","col b (m)","col h (m)"];
       CAL=["P (t)","Az (m²)","B (m)","L (m)","H (m)","Estado"];
       packs.forEach(function(p){R=R.concat(p.Z||[])});}
+    else if(S.tab==="platea"){H=["Código","N° pisos","Σ A trib (m²)","Huella (m²)","Perímetro (m)"];
+      CAL=["Pt (t)","A = Pt/σ (m²)","v mín (m)","Área (m²)","h (cm)","Estado"];
+      packs.forEach(function(p){R=R.concat((p.PT||[]).map(function(f){return [f[0],f[1],f[2],f[3],f[4]]}))});}
     else if(S.tab==="metrado"){H=["Nivel","S/C (kg/m²)","Área (m²)","Aligerada (m²)","Maciza (m²)","Nervada (m²)"];
       CAL=["CM (kg/m²)","P servicio (kg/m²)"];
       packs.forEach(function(p){R=R.concat(p.M)});}
@@ -25288,13 +26023,21 @@ var TT={script:performance.now()};
     (function(){
       var m0=S.niveles[0]; if(!m0)return;
       var sin=0,k0;
-      for(k0 in m0.cols)if(!m0.zapatas||!m0.zapatas[k0])sin++;
+      /* la que va sobre una platea no lleva zapata: la cimentacion es la platea */
+      for(k0 in m0.cols){ var pk0=k0.split(":");
+        if((!m0.zapatas||!m0.zapatas[k0])&&!nudoEnPlatea(+pk0[0],+pk0[1],m0))sin++; }
       if(sin)mete("cimentacion","blando",sin+" columna(s) del 1er piso sin zapata"+
                   " dibujada (correcto si nacen sobre una viga)",1,null);
       solapesZapata(zapatasDelNivel()).forEach(function(x){
         mete("cimentacion","grave","zapatas "+x.a.cod+" y "+x.b.cod+" se solapan "+
              x.area.toFixed(2)+" m²: piden zapata combinada",1,
              {t:"col",i:x.a.i,j:x.a.j});
+      });
+      /* LA PLATEA QUE NO CUMPLE: el area o el peralte que adoptaste no alcanzan */
+      plateasDelNivel(m0).forEach(function(pz){
+        var q=predimPlatea(pz,m0); if(!q||q.falta||q.cumple)return;
+        var g=(q.avisos[0]||{}).t||"no cumple";
+        mete("cimentacion","grave","platea "+pz.cod+": "+g,1,{t:"platea",i:pz.i,j:pz.j});
       });
     })();
     /* LOS AMBIENTES SIN CARGA VIVA.  faltanCargas() existe desde hace tiempo,
@@ -26297,9 +27040,10 @@ var TT={script:performance.now()};
      ausencia de una hoja es informacion: dice que no modelaste eso. */
   function inventario(){
     var c={losa:{aligerada:0,maciza:0,nervada:0,escalera:0},viga:{principal:0,chata:0},
-           col:0,placa:0,usos:0,zapata:0},k;
+           col:0,placa:0,usos:0,zapata:0,platea:0},k;
     /* las que HAYAS dibujado en el nivel de cimentacion */
     if(S.niveles[0]&&S.niveles[0].zapatas)for(k in S.niveles[0].zapatas)c.zapata++;
+    if(S.niveles[0])c.platea=plateasDelNivel(S.niveles[0]).length;
     S.niveles.forEach(function(m){
       for(k in m.losas){c.losa[m.losas[k].tipo||"aligerada"]++; if(m.losas[k].uso)c.usos++;}
       for(k in m.vigas){c.viga[tipoViga(m.vigas[k])]++;}
@@ -26333,6 +27077,7 @@ var TT={script:performance.now()};
     {n:"PRE_COLUMNA_CIRCULAR",tit:"Pre columna circular",t:"ele", q:function(c){return c.col}},
     {n:"PRE_PLACA",          tit:"Pre placa",          t:"ele", q:function(c){return c.placa}},
     {n:"PRE_ZAPATA",         tit:"Pre zapata",         t:"ele", q:function(c){return c.zapata}},
+    {n:"PRE_PLATEA",         tit:"Pre platea",         t:"ele", q:function(c){return c.platea}},
     /* METRADO_CARGAS ya no necesita usos asignados: lo que no tiene uso va con la S/C por
        defecto, igual que en el predimensionamiento.  Lo que necesita es que haya losas. */
     {n:"METRADO_CARGAS",     tit:"Metrado de cargas",  t:"met",
@@ -26368,7 +27113,7 @@ var TT={script:performance.now()};
     PRE_LOSA_ALIGERADA:true,PRE_LOSA_MACIZA:true,PRE_LOSA_NERVADA:true,
     PRE_VIGA_PRINCIPAL:true,PRE_VIGA_CHATA:true,PRE_COLUMNA:true,
     PRE_COLUMNA_CIRCULAR:true,
-    PRE_PLACA:true,PRE_ZAPATA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
+    PRE_PLACA:true,PRE_ZAPATA:true,PRE_PLATEA:true,METRADO_CARGAS:true,ANALISIS_SISMICO:true,
     VERIFICACION_SISMICA:true,FUERZAS_VIGAS:true,FUERZAS_COLUMNAS:true,FUERZAS_PLACAS:true,REACCIONES:true,
     CRITERIOS_DISENO:true,DISENO_LOSAS:true,DISENO_VIGAS:true,DISENO_COLUMNAS:true,DISENO_NUDOS:true,DISENO_PLACAS:true,DISENO_ZAPATAS:true};
 
@@ -26550,6 +27295,12 @@ var TT={script:performance.now()};
       if(!T.Z[k])T.Z[k]={clave:k,tam:z.B*z.L*1000+z.H,txt:secAc(z.B)+"x"+secAc(z.L)+" h="+secAc(z.H)+(z.arm?"":" (sin diseño)")}; });
     Object.keys(T.Z).map(function(k){return T.Z[k]}).sort(function(a,b){return b.tam-a.tam})
       .forEach(function(t,i){ t.nombre="Z-"+(i+1); });
+    /* PLATEAS: una por peralte y volado; la de mayor peralte es PT-1 */
+    T.PT={};
+    (ex.plateas||[]).forEach(function(q){ var k=clavePlatea(q);
+      if(!T.PT[k])T.PT[k]={clave:k,tam:q.H*1000+q.v,txt:"h="+secAc(q.H)+" v="+secAc(q.v)}; });
+    Object.keys(T.PT).map(function(k){return T.PT[k]}).sort(function(a,b){return b.tam-a.tam})
+      .forEach(function(t,i){ t.nombre="PT-"+(i+1); });
     return T;
   }
   /* LAS ZAPATAS PARA AUTOCAD: las del nivel de cimentacion, con lo adoptado, en las coordenadas del plano (x a la
@@ -26557,6 +27308,7 @@ var TT={script:performance.now()};
   /* el texto de una malla: «Ø1/2" @ .15» */
   function mallaAc(m){ if(!m||!(m.s>0))return "—"; var t=(m.s/100).toFixed(3).replace(/(\.\d\d)0$/,"$1").replace(/^0\./,".");
     return "Ø"+m.bar+" @ "+t; }
+  function clavePlatea(q){ return q.H+"|"+q.v; }
   /* la clave del tipo: la medida y, si esta diseñada, su acero */
   function claveZap(z){
     var a=z.arm, k=z.B+"x"+z.L+"x"+z.H;
@@ -26628,6 +27380,20 @@ var TT={script:performance.now()};
                 x0:r4(qx0+o.x), x1:r4(qx0+ax+o.x), y0:r4(-(qy0+ay+o.y)), y1:r4(-(qy0+o.y))});
     });
     return out;
+  }
+  /* LAS PLATEAS PARA AUTOCAD: su contorno con el volado -y los huecos que tenga dentro- en las coordenadas del
+     plano, como las zapatas.  En esta etapa es el predimensionamiento: el acero no va. */
+  function plateasAutocad(){
+    var m0=S.niveles[0]; if(!m0||typeof PLATEAS==="undefined")return [];
+    var o=origenNivel(m0);
+    function r4(v){return Math.round(v*10000)/10000+0}
+    function aP(q){ return [r4(q[0]+o.x), r4(-(q[1]+o.y))]; }
+    return plateasDelNivel(m0).map(function(pz){
+      var q=predimPlatea(pz,m0); if(!q||q.falta||!q.contorno||!q.contorno.length)return null;
+      var ord=pz.anillos.slice().sort(function(a,b){ return Math.abs(PLATEAS.areaPoli(b))-Math.abs(PLATEAS.areaPoli(a)); });
+      return {cod:pz.cod, H:+(q.h/100).toFixed(2), v:+(+q.volado).toFixed(2), A:+q.Acol.toFixed(2), cumple:!!q.cumple,
+              contorno:q.contorno.map(aP), huecos:ord.slice(1).map(function(r){ return r.map(aP); })};
+    }).filter(Boolean);
   }
   function plantaAutocad(L,numero,T,opc,ejesEdif,trib){
     function tam(mm){ return mm*opc.escala/1000; }
@@ -26849,7 +27615,8 @@ var TT={script:performance.now()};
     });
     vigas.forEach(function(v){
       var a=[v.x1,v.y1], b=[v.x2,v.y2]; if(lar(res(b,a))<1e-6)return;
-      var chata=v.tipo==="chata", capa=chata?"RET-VIGAS-CHATAS":"RET-VIGAS"; if(chata)chatas++;
+      var chata=v.tipo==="chata", inv=!!v.inv,
+          capa=chata?"RET-VIGAS-CHATAS":(inv?"RET-VIGAS-INV":"RET-VIGAS"); if(chata)chatas++;
       var hz=Math.abs(v.y2-v.y1)<=ORTO, vt=Math.abs(v.x2-v.x1)<=ORTO;
       if(hz||vt){
         var lo=hz?(v.x1<=v.x2?a:b):(v.y1<=v.y2?a:b), hi=(lo===a)?b:a, ml=medioEn(lo,v), mh=medioEn(hi,v);
@@ -26932,6 +27699,18 @@ var TT={script:performance.now()};
       P.push(texto("RET-TEXTOS",rotulo(t),sum(por(sum(a,b),0.5),por(nor(u),pl.t/2+tam(0.8))),H,Math.atan2(u[1],u[0]),13)); nRot++;
     });
 
+    /* PLATEAS (solo en la planta de cimentacion): su contorno con el volado, los huecos que tenga, y su tipo en la
+       esquina de abajo a la izquierda de su borde mas bajo -que siempre es una esquina hacia fuera- */
+    var nPla=0;
+    (L.plateas||[]).forEach(function(q){
+      P.push({k:"pol",capa:"RET-PLATEAS",p:q.contorno,cerrada:true});
+      (q.huecos||[]).forEach(function(hq){ P.push({k:"pol",capa:"RET-PLATEAS",p:hq,cerrada:true}); });
+      nPla++;
+      var t=usa("PT",clavePlatea(q)); if(!t)return;
+      var esq=q.contorno.slice().sort(function(a,b){ return (a[1]-b[1])||(a[0]-b[0]); })[0];
+      P.push(texto("RET-TEXTOS",rotulo(t),[esq[0]+tam(0.8),esq[1]+tam(0.8)],H,0,12)); nRot++;
+    });
+
     /* ZAPATAS (solo en la planta de cimentacion): su contorno a escala y su tipo en la esquina de abajo a la izquierda */
     var nZap=0;
     (L.zapatas||[]).forEach(function(z){
@@ -27007,7 +27786,8 @@ var TT={script:performance.now()};
     P.push(texto("RET-TITULOS",trib?("ÁREAS TRIBUTARIAS · "+trib.titulo+" · "+ordAcad(trib.piso)+" PISO")
                                    :(numero===0?"PLANTA DE CIMENTACIÓN":"PLANTA "+ordAcad(numero)+" PISO"),[cx,cj[1]-tam(24)],tam(5)));
     P.push(texto("RET-TITULOS",(trib?((L.nombre||"N"+trib.piso)+" · lo que carga cada elemento")
-                                    :(numero===0?"ZAPATAS":(L.nombre||"N"+numero)))+" · ESC. 1/"+opc.escala+" · cotas en metros",
+                                    :(numero===0?(nZap&&nPla?"ZAPATAS Y PLATEAS":(nPla?"PLATEAS":"ZAPATAS")):(L.nombre||"N"+numero)))+
+                 " · ESC. 1/"+opc.escala+" · cotas en metros",
                  [cx,cj[1]-tam(36)],tam(2.5)));
     /* EL CUADRO DE LA LAMINA DE AREAS: lo que alimenta la hoja PRE_COLUMNA */
     if(trib){
@@ -27039,24 +27819,25 @@ var TT={script:performance.now()};
       P.push(texto("RET-CUADRO","A cada apoyo le toca la losa que le queda más cerca que a cualquier otro.",[tx0,ty],tam(1.8),0,12));
       return {nombre:(L.nombre||("N"+trib.piso))+" · áreas tributarias", numero:numero, prims:P, caja:cajaAc(P),
               cuenta:{ejesX:X.length, ejesY:Y.length, burbujas:nBurb, cotas:cotas.length, rotulos:nTrib, tipos:0,
-                      columnas:cols.length, vigas:0, chatas:0, placas:placas.length, losas:0, escaleras:0, zapatas:0,
+                      columnas:cols.length, vigas:0, chatas:0, placas:placas.length, losas:0, escaleras:0, zapatas:0, plateas:0,
                       areas:nTrib, sueltos:(trib.sueltos||[]).length}};
     }
-    var ORDF={Z:-1,C:0,VP:1,VCH:2,PL:3,LA:4,LM:5,LN:6};
+    var ORDF={PT:-2,Z:-1,C:0,VP:1,VCH:2,PL:3,LA:4,LM:5,LN:6};
     var filas=Object.keys(usados).map(function(k){return usados[k]}).sort(function(a,b){
       return (ORDF[a.f]-ORDF[b.f])||(+a.t.nombre.split("-")[1]-(+b.t.nombre.split("-")[1])); });
     if(filas.length){
       var zc=(numero===0), x0=cj[2]+tam(15), y=cj[3], an=tam(zc?82:66), paso=tam(5.5),
           cols3=zc?[x0+tam(2),x0+tam(18),x0+tam(68)]:[x0+tam(2),x0+tam(22),x0+tam(52)];
-      P.push(texto("RET-CUADRO",zc?"CUADRO DE ZAPATAS":"CUADRO DE ELEMENTOS",[x0,y],tam(3),0,12));
+      P.push(texto("RET-CUADRO",zc?(nZap&&nPla?"CUADRO DE CIMENTACIÓN":(nPla?"CUADRO DE PLATEAS":"CUADRO DE ZAPATAS")):"CUADRO DE ELEMENTOS",
+                   [x0,y],tam(3),0,12));
       y-=tam(3);
       P.push({k:"linea",capa:"RET-CUADRO",p:[[x0,y],[x0+an,y]]});
       y-=paso;
-      (zc?["TIPO","B × L · PERALTE (m)","CANT."]:["TIPO","SECCIÓN","CANT."]).forEach(function(t,k){ P.push(texto("RET-CUADRO",t,[cols3[k],y],tam(2.2),0,12)); });
+      (zc?["TIPO",nZap?"B × L · PERALTE (m)":"PERALTE · VOLADO (m)","CANT."]:["TIPO","SECCIÓN","CANT."]).forEach(function(t,k){ P.push(texto("RET-CUADRO",t,[cols3[k],y],tam(2.2),0,12)); });
       y-=tam(2);
       P.push({k:"linea",capa:"RET-CUADRO",p:[[x0,y],[x0+an,y]]});
       /* POR GRUPOS: un subtitulo por familia y una linea fina entre grupos */
-      var GRUPO={Z:"ZAPATAS",C:"COLUMNAS",VP:"VIGAS PRINCIPALES",VCH:"VIGAS CHATAS",PL:"PLACAS",
+      var GRUPO={PT:"PLATEAS",Z:"ZAPATAS",C:"COLUMNAS",VP:"VIGAS PRINCIPALES",VCH:"VIGAS CHATAS",PL:"PLACAS",
                  LA:"LOSAS ALIGERADAS",LM:"LOSAS MACIZAS",LN:"LOSAS NERVADAS"}, fAnt=null;
       filas.forEach(function(f){
         if(f.f!==fAnt){
@@ -27087,6 +27868,7 @@ var TT={script:performance.now()};
         [[a,1],[b,-1]].forEach(function(q){ var bs=[q[0][0]+q[1]*pu,q[0][1]], al=[0,pu*0.35];
           P.push({k:"solido",capa:"RET-LOSAS",p:[q[0],sum(bs,al),res(bs,al),res(bs,al)]}); }); }});
       if(escs.length)LEY.push({t:"Escalera", f:function(xa,ya){ P.push({k:"pol",capa:"RET-ESCALERAS",p:caja(xa,ya),cerrada:true}); }});
+      if(nPla)LEY.push({t:"Platea (contorno con su volado)", f:function(xa,ya){ P.push({k:"pol",capa:"RET-PLATEAS",p:caja(xa,ya),cerrada:true}); }});
       if(nZap)LEY.push({t:"Zapata (contorno a escala)", f:function(xa,ya){ P.push({k:"pol",capa:"RET-ZAPATAS",p:caja(xa,ya),cerrada:true}); }});
       if(nVig)LEY.push({t:"Viga de cimentación (E.060 15.2.6)", f:function(xa,ya){ P.push({k:"pol",capa:"RET-VIGAS-CIM",p:caja(xa,ya),cerrada:true}); }});
       y-=tam(9);
@@ -27108,7 +27890,7 @@ var TT={script:performance.now()};
     return {nombre:L.nombre||"N"+numero, numero:numero, prims:P, caja:cajaAc(P),
             cuenta:{ejesX:X.length, ejesY:Y.length, burbujas:nBurb, cotas:cotas.length, rotulos:nRot, tipos:filas.length,
                     columnas:cols.length, vigas:vigas.length, chatas:chatas, placas:placas.length, losas:losas.length,
-                    escaleras:escs.length, zapatas:nZap, vigasCim:nVig}};
+                    escaleras:escs.length, zapatas:nZap, plateas:nPla, vigasCim:nVig}};
   }
   /* las capas del plano: color ACI y grosor en centesimas de mm (Victor: «lineas mas gruesas para diferenciar
      cada elemento» y la losa en negro, no en amarillo).  El .bat las crea tal cual. */
@@ -27118,18 +27900,21 @@ var TT={script:performance.now()};
     /* las viguetas en su capa, negro fino y discontinuo; la trama de la maciza en gris, para que no pese */
     {n:"RET-LOSAS-VIGUETAS",color:7,lw:9,lt:"OCULTA"}, {n:"RET-LOSAS-TRAMA",color:8,lw:9},
     {n:"RET-ESCALERAS",color:30,lw:25}, {n:"RET-VIGAS",color:4,lw:35},
-    {n:"RET-VIGAS-CHATAS",color:6,lw:25}, {n:"RET-PLACAS",color:5,lw:50}, {n:"RET-COLUMNAS",color:7,lw:50},
+    {n:"RET-VIGAS-CHATAS",color:6,lw:25}, {n:"RET-VIGAS-INV",color:211,lw:35},
+    {n:"RET-PLACAS",color:5,lw:50}, {n:"RET-COLUMNAS",color:7,lw:50},
     {n:"RET-RELLENO",color:8,lw:0}, {n:"RET-TEXTOS",color:7,lw:18}, {n:"RET-TITULOS",color:7,lw:35},
     {n:"RET-CUADRO",color:7,lw:25}, {n:"RET-CUADRO-FINO",color:8,lw:9},
     /* las zapatas: contorno continuo, verde oliva, mas delgado que las columnas que llevan encima */
     {n:"RET-ZAPATAS",color:94,lw:35},
+    /* las plateas: verde, continuo, algo mas grueso que la zapata -es el borde de toda la cimentacion- */
+    {n:"RET-PLATEAS",color:84,lw:50},
     {n:"RET-VIGAS-CIM",color:92,lw:35},
     /* el acero de las zapatas: rojo, fino, continuo */
     {n:"RET-ACERO",color:1,lw:25},
     /* la lamina de areas tributarias */
     {n:"RET-TRIB",color:1,lw:25}, {n:"RET-TRIB-PLACA",color:5,lw:18}, {n:"RET-TRIB-TRAMA",color:8,lw:9},
     {n:"RET-TRIB-TEXTO",color:1,lw:18}, {n:"RET-TRIB-SUELTO",color:1,lw:35}];
-  var ACI_HEX={94:"#556b2f",1:"#d32f2f",2:"#b8a100",3:"var(--ok)",4:"#0277bd",5:"#283593",6:"#8e24aa",7:"#111111",8:"#757575",30:"#e65100"};
+  var ACI_HEX={94:"#556b2f",84:"#4a7a2a",1:"#d32f2f",2:"#b8a100",3:"var(--ok)",4:"#0277bd",5:"#283593",6:"#8e24aa",7:"#111111",8:"#757575",30:"#e65100"};
   /* =====================================================================
      EL DETALLE DE ZAPATAS (una hoja, a 1/25): por cada tipo diseñado, su planta con la malla barra por barra y el
      corte A-A con el recubrimiento, el peralte, los ganchos y la columna con sus bastones; al lado, el cuadro con el
@@ -27290,12 +28075,14 @@ var TT={script:performance.now()};
   function planoAutocad(opc){
     opc=opc||opcAutocad();
     function tam(mm){ return mm*opc.escala/1000; }
-    var ex=exportaEtabs(), zaps=zapatasAutocad(), T=tiposAutocad({niveles:ex.niveles, zapatas:zaps}), plantas=[];
-    /* LA PLANTA DE CIMENTACION (numero 0): los ejes y las columnas del 1er piso y sus zapatas; nada de vigas ni losas */
-    if(zaps.length&&ex.niveles[0]&&opc.fuera.indexOf(0)<0){
+    var ex=exportaEtabs(), zaps=zapatasAutocad(), plts=plateasAutocad(),
+        T=tiposAutocad({niveles:ex.niveles, zapatas:zaps, plateas:plts}), plantas=[];
+    /* LA PLANTA DE CIMENTACION (numero 0): los ejes y las columnas del 1er piso, sus zapatas y sus plateas; nada de
+       vigas ni losas.  Con solo platea tambien sale */
+    if((zaps.length||plts.length)&&ex.niveles[0]&&opc.fuera.indexOf(0)<0){
       var L0=ex.niveles[0];
       plantas.push(plantaAutocad({nombre:"Cimentación", ejes:L0.ejes, columnas:L0.columnas, placas:L0.placas,
-                                  vigas:[], losas:[], escaleras:[], zapatas:zaps},0,T,opc,ex.ejes));
+                                  vigas:[], losas:[], escaleras:[], zapatas:zaps, plateas:plts},0,T,opc,ex.ejes));
     }
     /* EL DETALLE DE ZAPATAS (99), justo despues de la planta de cimentacion */
     if(zaps.length&&opc.fuera.indexOf(99)<0)plantas.push(detalleZapatasAutocad(opc,zaps,T));
@@ -27396,11 +28183,13 @@ var TT={script:performance.now()};
           return '<option value="'+e+'"'+(e===opc.escala?" selected":"")+'>1/'+e+'</option>'}).join("")+'</select></label>'+
       '</div>'+
       '<div class="acad-pisos">'+
-        ((S.niveles[0]&&S.niveles[0].zapatas&&Object.keys(S.niveles[0].zapatas).length)
+        ((S.niveles[0]&&((S.niveles[0].zapatas&&Object.keys(S.niveles[0].zapatas).length)||
+                          (S.niveles[0].plateas&&Object.keys(S.niveles[0].plateas).length)))
           ? '<span class="acad-piso'+(ver===0?" on":"")+'"><input type="checkbox" id="acIncl0" data-incl="0"'+
             (opc.fuera.indexOf(0)<0?" checked":"")+' aria-label="Dibujar la planta de cimentación en AutoCAD"><button class="btn" data-ver="0">'+
-            'Cimentación</button></span>'+
-            '<span class="acad-piso'+(ver===99?" on":"")+'"><input type="checkbox" id="acIncl99" data-incl="99"'+
+            'Cimentación</button></span>' : '')+
+        ((S.niveles[0]&&S.niveles[0].zapatas&&Object.keys(S.niveles[0].zapatas).length)
+          ? '<span class="acad-piso'+(ver===99?" on":"")+'"><input type="checkbox" id="acIncl99" data-incl="99"'+
             (opc.fuera.indexOf(99)<0?" checked":"")+' aria-label="Dibujar el detalle de zapatas en AutoCAD"><button class="btn" data-ver="99">'+
             'Detalle de zapatas</button></span>' : '')+
         S.niveles.map(function(m,k){
@@ -27422,7 +28211,7 @@ var TT={script:performance.now()};
       if(fuera){ try{ var o2=JSON.parse(JSON.stringify(opc)); o2.fuera=[]; planoAutocad(o2).plantas.forEach(function(x){ if(x.numero===ver)p=x; }); }catch(e){} }
       if(p){
         var c=p.cuenta;
-        h+='<p class="acad-cuenta">'+(fuera?'<b>Esta planta no se dibuja</b> (está desmarcada) · ':'')+(c.zapatas?c.zapatas+' zapatas · ':'')+c.burbujas+' burbujas · '+c.cotas+' cotas · '+
+        h+='<p class="acad-cuenta">'+(fuera?'<b>Esta planta no se dibuja</b> (está desmarcada) · ':'')+(c.plateas?c.plateas+(c.plateas===1?' platea · ':' plateas · '):'')+(c.zapatas?c.zapatas+' zapatas · ':'')+c.burbujas+' burbujas · '+c.cotas+' cotas · '+
            c.rotulos+' rótulos · '+c.tipos+' tipos en el cuadro · '+p.prims.length+' objetos</p>'+
            '<div class="acad-hoja">'+svgAutocad(p)+'</div>';
       }
@@ -27595,12 +28384,29 @@ var TT={script:performance.now()};
     return c.min[0]-1+V3D.corte*(c.max[0]-c.min[0]+2);
   }
   try{ window.addEventListener("resize",function(){ if(S.vista==="3d")dibuja3D(); }); }catch(e){}
+  /* LAS PLATEAS PARA EL 3D: sus paños y las franjas del volado -piezas convexas para las tapas- y sus bordes, en
+     las coordenadas de la planta, como las zapatas */
+  function plateas3D(){
+    var m0=S.niveles[0]; if(!m0||typeof PLATEAS==="undefined")return [];
+    return plateasDelNivel(m0).map(function(pz){
+      var q=predimPlatea(pz,m0); if(!q||q.falta)return null;
+      var ord=pz.anillos.slice().sort(function(a,b){ return Math.abs(PLATEAS.areaPoli(b))-Math.abs(PLATEAS.areaPoli(a)); });
+      var R0=ord[0], O=q.contorno||R0, piezas=pz.panos.map(function(p2){
+        return quadPano(p2[0],p2[1],m0).map(function(v){ return [v.x,v.y]; }); });
+      if(q.volado>0&&O.length===R0.length)R0.forEach(function(p2,i){ var j=(i+1)%R0.length;
+        piezas.push([R0[i],R0[j],O[j],O[i]]); });
+      return {cod:pz.cod, h:q.h/100, piezas:piezas, bordes:[O].concat(ord.slice(1)),
+              detalle:pz.panos.length+" paño(s) · h = "+(q.h/100).toFixed(2)+" m · volado "+(+q.volado).toFixed(2)+" m · "+
+                      q.Acol.toFixed(1)+" m²"+(q.cumple?"":" · por revisar")};
+    }).filter(Boolean);
+  }
   function colores3D(){
     var cs=null; try{ cs=getComputedStyle(document.documentElement); }catch(e){}
     function v(n,def){ var t=(cs&&cs.getPropertyValue)?String(cs.getPropertyValue(n)||"").trim():""; return t||def; }
     return {col:v("--col","#0F6E8C"), viga:v("--viga","#A85A2B"), chata:v("--chata","#D9A579"),
             aligerada:v("--alig","#7FA0AE"), maciza:v("--maci","#5B7686"), nervada:v("--nerv","#8FA8A0"),
-            placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"), escalera:v("--esc","#7C6FA8"),
+            placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"), platea:v("--platea","#5B7F3A"),
+            escalera:v("--esc","#7C6FA8"),
             fondo:v("--sheet","#FFFFFF"), tinta:v("--ink","#1A2029"),
             /* el terreno y lo que se dibuja sobre el: escena() acepta cualquier color de COLORES */
             suelo:v("--suelo3d","#E4EAEF"), rejilla:v("--rejilla3d","#C2CFD9"),
@@ -27617,7 +28423,7 @@ var TT={script:performance.now()};
       '<button type="button" class="mini" data-v3="alejar" aria-label="Alejar">−</button>'+
       '<button type="button" class="mini" data-v3="encuadrar">Encuadrar</button></div>'+
       '<div class="v3d-g" role="group" aria-label="Qué se ve">'+
-      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"],
+      [["col","Columnas"],["viga","Vigas"],["losa","Losas"],["placa","Placas"],["zapata","Zapatas"],["platea","Plateas"],
        ["escalera","Escaleras"],["eje","Ejes"]].map(function(f){
         return '<label class="v3d-ch"><input type="checkbox" id="f3'+f[0]+'" data-f3="'+f[0]+'"'+
           (V3D.filtro[f[0]]!==false?' checked':'')+'>'+f[1]+'</label>'}).join("")+'</div>'+
@@ -27860,12 +28666,12 @@ var TT={script:performance.now()};
       ex.niveles.forEach(function(L,k){ op+='<option value="solo:'+k+'">Solo '+escapa(L.nombre)+'</option>'; });
       sn.innerHTML=op; sn.value=V3D.niveles;
     }
-    ["col","viga","losa","placa","zapata","escalera","eje"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
+    ["col","viga","losa","placa","zapata","platea","escalera","eje"].forEach(function(f){ var c=$("#f3"+f); if(c)c.checked=V3D.filtro[f]!==false; });
     var ca=$("#a3d"); if(ca)ca.checked=!!V3D.avisar;
     /* LAS DISCONTINUIDADES se calculan sobre la exportacion -posiciones reales-, no sobre los nudos: los
        pisos no tienen por que compartir reticula.  Van como «marcar» para que la pieza se pinte de aviso. */
     V3D.disc=V3D.avisar?VISTA3D.discontinuidades(ex):null;
-    V3D.esc=VISTA3D.escena(ex,{zapatas:zs, colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles,
+    V3D.esc=VISTA3D.escena(ex,{zapatas:zs, plateas:plateas3D(), colores:colores3D(), filtro:V3D.filtro, niveles:V3D.niveles,
                                marcar:V3D.disc});
     if(!V3D.cam){
       var cv0=$("#c3d"), asp=(cv0&&cv0.clientWidth>0&&cv0.clientHeight>0)?cv0.clientWidth/cv0.clientHeight:1.4;
@@ -28016,7 +28822,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
 })();
 </script>
 

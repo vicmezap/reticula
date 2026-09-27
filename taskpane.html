@@ -4376,7 +4376,7 @@
 <script>
 /* ===== hojas_pre.js (inlinado) ===== */
 /* =====================================================================
-   hojas_pre.js — las OCHO hojas de predimensionamiento del proyecto.
+   hojas_pre.js — las hojas de predimensionamiento del proyecto.
 
    Se separan de hojas.js porque son de otra naturaleza: NORMA E020 y
    CRITERIOS_OVIEDO son referencia -salen solas-, y estas ocho son el
@@ -5563,12 +5563,54 @@
   function entreC(c) { return "OR(" + c + '="Corrida entre linderos",' + c + '="Corrida medianera entre linderos")'; }
   function medC(c) { return "OR(" + c + '="Corrida medianera",' + c + '="Corrida medianera entre linderos")'; }
 
+  /* 2 · LOS DATOS DEL EDIFICIO Y DEL SUELO: los mismos en la zapata y en la platea, escritos una vez.
+     «que» solo cambia las palabras de las observaciones.  Devuelve las filas que usan las formulas. */
+  function datosSuelo(h, r, P, que) {
+    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
+    var sigmaKg = (+P.sigma || 3.0), sigmaT = sigmaKg * 10;
+    r = h.seccion(r, "2. DATOS DEL EDIFICIO Y DEL SUELO");
+    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
+    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
+      "Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
+    var fPeso = r;
+    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
+      "Valor de la categoría según Oviedo."], { 1: "0" }, { alinear: D3 });
+    var fSigB = r;
+    r = h.fila(r, L_DATO, ["Capacidad portante σs  (t/m²)", sigmaT,
+      "Del estudio de suelos. Equivale a " + sigmaKg.toFixed(2)
+      + " kg/cm². 1 kg/cm² = 10 t/m²."], { 1: "0.0" }, { alinear: D3 });
+    /* LA PRESION NETA.  Con un desplante hondo, el relleno pesa: se le resta a σs
+       lo que ya hay encima, y el 1,10 queda para la propia zapata (Harmsen 12.5.1;
+       tesis UCSM 2022, ec. 35).  Sin Df, o con el EMS dando ya la neta, σn = σs y
+       la hoja da exactamente lo de Oviedo. */
+    var cim = (P.proy && P.proy.cim && typeof P.proy.cim === "object") ? P.proy.cim : {};
+    function dv(x, d) { return (x === "" || x === null || x === undefined || !isFinite(+x)) ? d : +x; }
+    var fDf = r;
+    r = h.fila(r, L_DATO, ["Profundidad de desplante Df  (m)", dv(cim.Df, 0),
+      "Del estudio de suelos. Con 0 no se resta nada."], { 1: "0.00" }, { alinear: D3 });
+    var fGam = r;
+    r = h.fila(r, L_DATO, ["Peso del relleno γ  (t/m³)", dv(cim.gamma, 1.8),
+      "Suelo compactado encima de la " + que + "."], { 1: "0.00" }, { alinear: D3 });
+    var fScT = r;
+    r = h.fila(r, L_DATO, ["Sobrecarga sobre el piso s/c  (t/m²)", dv(cim.sc, 0.25),
+      "La que carga el terreno encima de la " + que + "."], { 1: "0.00" }, { alinear: D3 });
+    var fHz = r;
+    r = h.fila(r, L_DATO, ["Peralte supuesto hz  (m)", dv(cim.hz, 0.60),
+      "Solo para saber cuánto relleno hay encima: Df − hz."], { 1: "0.00" }, { alinear: D3 });
+    var fNeta = r;
+    r = h.fila(r, L_DATO, ["¿El estudio da σs ya neta?", cim.esNeta ? "SÍ" : "NO",
+      "Si dice SÍ, no se resta nada."], null, { alinear: D3 });
+    var fSig = r;
+    r = h.fila(r, L_DATO, ["Presión de cálculo σn  (t/m²)",
+      '=IF(OR(F' + fNeta + '="SÍ",F' + fDf + '<=0),F' + fSigB + ',MAX(F' + fSigB + '-F' + fScT
+        + '-F' + fGam + '*MAX(F' + fDf + '-F' + fHz + ',0),0))',
+      "σn = σs − s/c − γ·(Df − hz). Es la que dimensiona."], { 1: "0.00" }, { alinear: D3 });
+    return { r: r, fPeso: fPeso, fSig: fSig };
+  }
+
   function zapata(P) {
     var fs = P.Z || [];
     vacio(fs.length, "zapatas");
-    var cat = C.CATEGORIA[P.categoria] || C.CATEGORIA.comun;
-    var sigmaKg = (+P.sigma || 3.0);
-    var sigmaT = sigmaKg * 10;
     var Z = C.ZAPATA;
     var h = F.hoja("PRE_ZAPATA"), r = 6;
     h.titulo("PREDIMENSIONAMIENTO DE ZAPATA");
@@ -5616,44 +5658,9 @@
     r = seccion(h, r, "1.3   Planta y corte de la zapata", "zapata",
                 mZ.medidas || [0, 0, 0, 0, 0], qZ && qZ[0]);
 
-    r = h.seccion(r, "2. DATOS DEL EDIFICIO Y DEL SUELO");
-    r = h.encabezado(r, L_DATO, ["Dato", "Valor", "Observación"], ALTO_LISTA);
-    r = h.fila(r, L_DATO, ["Categoría de la edificación", cap(P.categoria),
-      "Fija el peso/m² de la fila siguiente."], null, { alinear: D3 });
-    var fPeso = r;
-    r = h.fila(r, L_DATO, ["Peso en servicio  (kg/m²)", cat.peso,
-      "Valor de la categoría según Oviedo."], { 1: "0" }, { alinear: D3 });
-    var fSigB = r;
-    r = h.fila(r, L_DATO, ["Capacidad portante σs  (t/m²)", sigmaT,
-      "Del estudio de suelos. Equivale a " + sigmaKg.toFixed(2)
-      + " kg/cm². 1 kg/cm² = 10 t/m²."], { 1: "0.0" }, { alinear: D3 });
-    /* LA PRESION NETA.  Con un desplante hondo, el relleno pesa: se le resta a σs
-       lo que ya hay encima, y el 1,10 queda para la propia zapata (Harmsen 12.5.1;
-       tesis UCSM 2022, ec. 35).  Sin Df, o con el EMS dando ya la neta, σn = σs y
-       la hoja da exactamente lo de Oviedo. */
-    var cim = (P.proy && P.proy.cim && typeof P.proy.cim === "object") ? P.proy.cim : {};
-    function dv(x, d) { return (x === "" || x === null || x === undefined || !isFinite(+x)) ? d : +x; }
-    var fDf = r;
-    r = h.fila(r, L_DATO, ["Profundidad de desplante Df  (m)", dv(cim.Df, 0),
-      "Del estudio de suelos. Con 0 no se resta nada."], { 1: "0.00" }, { alinear: D3 });
-    var fGam = r;
-    r = h.fila(r, L_DATO, ["Peso del relleno γ  (t/m³)", dv(cim.gamma, 1.8),
-      "Suelo compactado encima de la zapata."], { 1: "0.00" }, { alinear: D3 });
-    var fScT = r;
-    r = h.fila(r, L_DATO, ["Sobrecarga sobre el piso s/c  (t/m²)", dv(cim.sc, 0.25),
-      "La que carga el terreno encima de la zapata."], { 1: "0.00" }, { alinear: D3 });
-    var fHz = r;
-    r = h.fila(r, L_DATO, ["Peralte supuesto hz  (m)", dv(cim.hz, 0.60),
-      "Solo para saber cuánto relleno hay encima: Df − hz."], { 1: "0.00" }, { alinear: D3 });
-    var fNeta = r;
-    r = h.fila(r, L_DATO, ["¿El estudio da σs ya neta?", cim.esNeta ? "SÍ" : "NO",
-      "Si dice SÍ, no se resta nada."], null, { alinear: D3 });
-    var fSig = r;
-    r = h.fila(r, L_DATO, ["Presión de cálculo σn  (t/m²)",
-      '=IF(OR(F' + fNeta + '="SÍ",F' + fDf + '<=0),F' + fSigB + ',MAX(F' + fSigB + '-F' + fScT
-        + '-F' + fGam + '*MAX(F' + fDf + '-F' + fHz + ',0),0))',
-      "σn = σs − s/c − γ·(Df − hz). Es la que dimensiona."], { 1: "0.00" }, { alinear: D3 });
-    r++;
+    var DS = datosSuelo(h, r, P, "zapata");
+    r = DS.r;
+    var fPeso = DS.fPeso, fSig = DS.fSig;
 
     /* ---- tabla 1: carga y area requerida ---- */
     r = h.seccion(r, "3. CARGA Y ÁREA REQUERIDA");
@@ -5762,8 +5769,139 @@
       + "col h su largo de cara a cara, y L = h + X, B = b + X, H = (L − h)/4, con X el mismo volado en los "
       + "dos sentidos, tanteado de 10 en 10 cm. Si corre por el lindero es «medianera»: excéntrica y con "
       + "F = 1,50, como la zapata medianera; si sus dos extremos están en el lindero va «entre linderos»: "
-      + "no vuela a lo largo, L = h, B = Az / h y H = (B − b)/4. Conectadas y plateas no están aquí: las "
-      + "conectadas las diseña el complemento en Diseño E.060 › Zapatas.");
+      + "no vuela a lo largo, L = h, B = Az / h y H = (B − b)/4. Las conectadas no están aquí: las diseña el "
+      + "complemento en Diseño E.060 › Zapatas. Las plateas tienen su hoja, PRE_PLATEA.");
+    return h.cerrar(r);
+  }
+
+  /* =====================================================================
+     PRE_PLATEA · LA LOSA DE CIMENTACION
+
+     El metodo es el de Oviedo, que la trata como una LOSA (2025, Cap. II,
+     5, p. 28; ejemplos 9 y 10, p. 40-41): Pt = Ps · A · N, A = Pt / σ -y
+     nunca menos que el area de techo- y h > ℓdg + r + 2ØVp.  Lo que el libro
+     no trae sale de la E.060: ℓdg (12.5.2), los 300 mm sobre el acero (15.7)
+     y el punzonamiento de cada columna (11.12.2.1).
+
+     Una fila por platea -los paños que se tocan en la planta de Cimentacion
+     son una sola-.  Todo es formula sobre sus datos salvo el peralte por
+     punzonamiento: es un tanteo columna por columna, lo hace el complemento
+     y llega como dato, diciendolo.
+
+     Fila de P.PT: [codigo, pisos, Σ area tributaria, huella, perimetro, k,
+                    volado adoptado o "", barra col, db col (cm), barra malla,
+                    db malla (cm), recubrimiento (cm), f'c, fy,
+                    h por punzonamiento (cm), h adoptado o "", n columnas,
+                    n placas]
+     ===================================================================== */
+  function platea(P) {
+    var fs = P.PT || [];
+    vacio(fs.length, "plateas");
+    var R0 = fs[0];
+    var h = F.hoja("PRE_PLATEA"), r = 6;
+    h.titulo("PREDIMENSIONAMIENTO DE PLATEA");
+
+    r = h.seccion(r, "1. CRITERIOS");
+    r = h.subtitulo(r, "1.1   Criterios de predimensionamiento");
+    r = h.tabla(r, [[3,4],[5,10]], ["Concepto", "Expresión"], [
+      ["Peso del edificio", "Pt = Σ N.º de pisos × área tributaria × peso/m²   (Oviedo: Pt = Ps · A · N)"],
+      ["Área de la platea", "A = Pt / σn, y nunca menos que la huella de sus paños"],
+      ["Volado", "el mínimo, igual en todo el borde, con el que la platea llega a A"],
+      ["Área con volado", "A(v) = huella + perímetro · v + k · v²   (k = 4 en una planta ortogonal)"],
+      ["Peralte (Oviedo)", "h > ℓdg + r + 2 ØVp: el anclaje con gancho de la barra de la columna"],
+      ["ℓdg (E.060 12.5.2)", "0,075 · fy · db / √f'c, no menos de 8 db ni de 15 cm"],
+      ["Mínimo (E.060 15.7)", "300 mm sobre el acero inferior: h ≥ 30 cm + r"],
+      ["Punzonamiento (E.060 11.12.2.1)", "Vu ≤ φ Vc en cada columna, φ = 0,85, αs 40 / 30 / 20"],
+      ["Redondeo", "volado y peralte, cada 5 cm hacia arriba"]
+    ], null, null, { alinear: DFIN });
+    r = h.nota(r, "Oviedo suma el peso del edificio entero sin el 1,10 de las zapatas: la platea es la "
+      + "cimentación de todo. Aquí se suma columna por columna -pisos × área tributaria × peso/m²-, la misma "
+      + "cuenta de la zapata: con la platea bajo todo el edificio las áreas tributarias suman el área de techo "
+      + "y sale el Ps · A · N del libro; con una platea parcial, carga lo que de verdad le baja.");
+    r = h.nota(r, "El libro no revisa el punzonamiento. La E.060 sí (15.5.1 → 11.12): el complemento tantea "
+      + "cada columna con Pu = 1,4 CM + 1,7 CV y la reacción del suelo ΣPu / A, y trae el peralte que pide como "
+      + "dato. Una columna en el borde pierde los lados de la sección crítica que no caben en el volado. Las "
+      + "placas cargan la platea pero no punzonan.");
+
+    var DS = datosSuelo(h, r, P, "platea");
+    r = DS.r;
+    var fPeso = DS.fPeso, fSig = DS.fSig;
+    var fFc = r;
+    r = h.fila(r, L_DATO, ["f'c de la cimentación  (kg/cm²)", +R0[12],
+      "El de la cimentación del proyecto."], { 1: "0" }, { alinear: D3 });
+    var fFy = r;
+    r = h.fila(r, L_DATO, ["fy  (kg/cm²)", +R0[13], "Grado 60."], { 1: "0" }, { alinear: D3 });
+    var fRec = r;
+    r = h.fila(r, L_DATO, ["Recubrimiento r  (cm)", +R0[11],
+      "Contra el suelo (E.060 7.7.1 a), el de Criterios de diseño."], { 1: "0.0" }, { alinear: D3 });
+    r++;
+
+    /* ---- tabla 1: la carga y el area que pide ---- */
+    r = h.seccion(r, "3. CARGA Y ÁREA REQUERIDA");
+    var T1 = lista(h, r, L8,
+      ["Código", "N.º pisos", "Σ A trib (m²)", "Pt (t)", "Huella (m²)", "Perímetro (m)", "k esquinas", "A = Pt/σn (m²)"],
+      fs,
+      function (f, i) {
+        return [f[0], +f[1], +f[2],
+          "=IFERROR(D" + i + "*E" + i + "*$F$" + fPeso + '/1000,"")',
+          +f[3], +f[4], +f[5],
+          "=IFERROR(F" + i + "/$F$" + fSig + ',"")'];
+      }, { 2: "0.00", 3: "0.00", 4: "0.00", 5: "0.00", 6: "0.000", 7: "0.00" });
+    r = T1.fin + 1;
+
+    /* ---- tabla 2: el area colocada, referida fila a fila a la primera ---- */
+    r = h.seccion(r, "4. VOLADO Y ÁREA");
+    var b1 = T1.primera, r2 = r + 1;
+    var T2 = lista(h, r, L8,
+      ["Código", "v mínimo (m)", "v adoptado (m)", "Área (m²)", "Holgura (%)", "q servicio (t/m²)", "σn (t/m²)", "Estado"],
+      fs,
+      function (f, i) {
+        var f1 = b1 + (i - r2), G = "$G$" + f1, H = "$H$" + f1, I = "$I$" + f1, J = "$J$" + f1;
+        /* el volado: la raiz de huella + P·v + k·v² = A, al multiplo de 5 cm de arriba */
+        var vmin = "=IF(" + J + "<=" + G + ",0,IF(" + I + "<=0,CEILING((" + J + "-" + G + ")/" + H + ",0.05),"
+          + "CEILING((-" + H + "+SQRT(" + H + "*" + H + "+4*" + I + "*(" + J + "-" + G + ")))/(2*" + I + "),0.05)))";
+        return ['=IF(C' + f1 + '="","",C' + f1 + ')', vmin,
+          (f[6] === "" || f[6] === null || f[6] === undefined) ? "=D" + i : +f[6],
+          "=" + G + "+" + H + "*E" + i + "+" + I + "*E" + i + "*E" + i,
+          "=IFERROR((F" + i + "/" + J + "-1)*100,\"\")",
+          "=IFERROR($F$" + f1 + "/F" + i + ',"")',
+          "=$F$" + fSig,
+          "=IF(F" + i + ">=" + J + '-0.0001,"CUMPLE","REVISAR")'];
+      }, { 1: "0.00", 2: "0.00", 3: "0.00", 4: "0.0", 5: "0.00", 6: "0.00" });
+    r = T2.fin + 1;
+
+    /* ---- tabla 3: el peralte ---- */
+    r = h.seccion(r, "5. PERALTE");
+    var b2 = T2.primera, r3 = r + 1;
+    var T3 = lista(h, r, L8,
+      ["Código", "db columna (cm)", "ØVp malla (cm)", "ℓdg (cm)", "h anclaje (cm)", "h punzonam. (cm)", "h adoptado (cm)", "Estado"],
+      fs,
+      function (f, i) {
+        var f1 = b1 + (i - r3), f2 = b2 + (i - r3);
+        var base = "MAX(F" + i + "+$F$" + fRec + "+2*E" + i + ",30+$F$" + fRec + ")";
+        return ['=IF(C' + f1 + '="","",C' + f1 + ')', +f[8], +f[10],
+          "=MAX(0.075*$F$" + fFy + "*D" + i + "/SQRT($F$" + fFc + "),8*D" + i + ",15)",
+          "=CEILING(" + base + ",5)",
+          /* «> 300»: ni con 3 m pasa el punzonamiento.  Es texto a proposito: la formula lo lee como
+             «no alcanza» -IFERROR- y la fila queda en REVISAR */
+          isFinite(+f[14]) && f[14] !== "" ? +f[14] : String(f[14]),
+          (f[15] === "" || f[15] === null || f[15] === undefined) ? "=MAX(G" + i + ",IFERROR(H" + i + "*1,300))" : +f[15],
+          "=IF(AND(I" + i + ">=" + base + "-0.0001,IFERROR(I" + i + ">=H" + i + "*1,0),$J$" + f2
+            + '="CUMPLE"),"CUMPLE","REVISAR")'];
+      }, { 1: "0.00", 2: "0.00", 3: "0.0", 4: "0", 5: "0", 6: "0" });
+    r = T3.fin + 1;
+
+    r = h.nota(r, "k es la suma de las esquinas del contorno: con el volado a inglete el área crece "
+      + "exactamente como huella + perímetro · v + k · v². En una planta ortogonal k = 4, tenga los "
+      + "entrantes que tenga; si los ejes van sesgados, k sale del contorno real y lo trae el complemento.");
+    r = h.nota(r, "La barra de la columna es la que se ancla con gancho en la platea, y la de la malla la "
+      + "de las dos capas inferiores. Si no las eliges en la ficha de la platea, van las mayores que "
+      + "permite Criterios de diseño: es lo del lado seguro, porque son las que piden más peralte.");
+    var nP = fs.reduce(function (a, f) { return a + (+f[17] || 0); }, 0);
+    r = h.nota(r, fs.length + " platea(s) en la planta de Cimentación"
+      + (nP ? ", con " + nP + " nudo(s) de placa que cargan sin punzonar" : "")
+      + ". Las zapatas de las columnas que van encima no están en PRE_ZAPATA: la platea las reemplaza. "
+      + "El acero de la platea y su diseño por franjas quedan para Diseño E.060.");
     return h.cerrar(r);
   }
 
@@ -5772,7 +5910,7 @@
     losaAligerada: losaAligerada, losaMaciza: losaMaciza, losaNervada: losaNervada,
     vigaPrincipal: vigaPrincipal, vigaChata: vigaChata,
     columna: columna, columnaCircular: columnaCircular,
-    placa: placa, zapata: zapata,
+    placa: placa, zapata: zapata, platea: platea,
     metradoCargas: metradoCargas
   };
 });
@@ -7596,7 +7734,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v401 · 26-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v413 · 26-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
@@ -8002,6 +8140,7 @@ var REGISTRO = {
   "PRE_COLUMNA_CIRCULAR": function(p){ return HOJAS_PRE.columnaCircular(p); },
   "PRE_PLACA":          function(p){ return HOJAS_PRE.placa(p); },
   "PRE_ZAPATA":         function(p){ return HOJAS_PRE.zapata(p); },
+  "PRE_PLATEA":         function(p){ return HOJAS_PRE.platea(p); },
   "METRADO_CARGAS":     function(p){ return HOJAS_PRE.metradoCargas(p); },
   "ANALISIS_SISMICO":   function(p){ return HOJAS.analisisSismico(p); },
   "VERIFICACION_SISMICA": function(p){ return HOJAS.verificacionSismica(p); },
