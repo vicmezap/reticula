@@ -7207,6 +7207,9 @@
                        PN.manda === "neta" ? ("σs − s/c − γ·(Df − hz): el relleno se come el " +
                                               Math.round((PN.fraccion || 0) * 100) + " %")
                                            : "igual a σs"], null, IZQ3);
+    if (DZ.escala)
+      r = h.fila(r, LD, ["Factor del sismo (E.030 Art. 44.2)", "X " + coma(DZ.escala.x, 3) + " · Y " + coma(DZ.escala.y, 3),
+                         "SDX y SDY escalados en servicio y en rotura: fuerzas sí, desplazamientos no"], null, IZQ3);
     r = h.fila(r, LD, ["Zapatas", RS.total || DZ.lista.length, (RS.cumplen || 0) + " cumplen tal cual · " +
                        (RS.cambian || 0) + " cambian de medida · " + (RS.no || 0) + " no cumplen"], null, IZQ3);
     r++;
@@ -7246,7 +7249,8 @@
     function pct(x) { return (x == null || !isFinite(x)) ? "—" : (x * 100).toFixed(3).replace(".", ",") + " %"; }
     var h = F.hoja("DISENO_PLACAS"), r = 6, sec = 2, RS = DP.resumen || {};
     h.titulo("DISEÑO DE PLACAS · E.060 CAP. 21.9");
-    r = origenFuerzas(h, r, FZ, "El muro se comprueba en la BASE DE CADA PISO, que es su sección crítica. El "
+    r = origenFuerzas(h, r, FZ, "El muro se comprueba en la BASE DE CADA PISO, que es su sección crítica. Con el "
+      + "espectro, máx y mín no son pares (P, M): se revisan Pu máx y Pu mín, cada una con el |M| y el |V| mayores. El "
       + "cortante de diseño no es el del análisis: se ajusta a la flexión que el muro tiene instalada, "
       + "Vu = Vua · Mn/Mua con Mn/Mua ≤ R (Art. 21.9.5.3), y se compara con Vc = αc √f'c·Acw —αc de 0,80 a 0,53 "
       + "según hm/lm (Art. 11.10.5)— más Vs = Acw·ρh·fy (Art. 11.10.10.1), con el tope de 2,6 √f'c·Acw del "
@@ -7440,7 +7444,11 @@
       + "dirección en la que actúa su momento. D/C ≤ 1 cumple. φ de compresión 0,70 con estribos y 0,75 con espiral, "
       + "subiendo hasta 0,90 según el Art. 9.3.2.2; φPn máx = 0,80 φPo (Art. 10.3.6.2). El cortante de diseño es el "
       + "mayor entre el de ETABS y el de capacidad con Mpr = 1,25 Mn (Art. 21.6.5.1) o, en edificios de muros y dual "
-      + "I, el menor de los dos caminos del Art. 21.4.3. La esbeltez se avisa, no se amplifica.");
+      + "I, el menor de los dos caminos del Art. 21.4.3. Esbeltez por los momentos amplificados (Art. 10.10.2 a "
+      + "10.13): Q de cada entrepiso (10.11.4.2), δs en los no arriostrados (10.13.4) y δns en cada columna esbelta "
+      + "(10.12.3), cada eje por separado (10.11.6). Con el espectro, "
+      + "ETABS da máx y mín de cada fuerza por separado: se revisan sus 8 esquinas G ± E (Pu máx o mín con ±M2 y ±M3), "
+      + "donde está el par que manda, la mayor compresión con el mayor momento.");
     if (K && K.recub && K.barras) {
       var LD = [[3, 5], [6, 7], [8, 10]], IZQ3 = { alinear: ["Left", "Center", "Left"] };
       r = h.seccion(r, (sec++) + ". CON QUÉ SE DISEÑA");
@@ -7464,6 +7472,29 @@
         al = { alinear: ["Left", "Center", "Center", "Center", "Center", "Center", "Center", "Center"] },
         LT = [[3, 4], [5, 10]], alT = { alinear: ["Left", "Left"], negrita: false },
         EST = { ok: "CUMPLE", revisar: "REVISAR", "no cumple": "NO CUMPLE", falta: "SIN DATOS" };
+    if (DC.estabilidad && DC.estabilidad.length) {
+      /* LA ESTABILIDAD DE CADA ENTREPISO (10.11.4.2): de aqui sale si se diseña arriostrado o no, y δs */
+      var pdM = DC.pdelta && DC.pdelta.metodo && DC.pdelta.metodo !== "None";
+      r = h.seccion(r, (sec++) + ". ESTABILIDAD DE LOS ENTREPISOS · Q = ΣPu·Δo/(Vus·he)");
+      r = h.encabezado(r, F8, ["Piso · dirección", "ΣPu (t)", "Δo·0,75R (m)", "Vus (t)", "he (m)", "Q", "δs", "Entrepiso"], 34.0);
+      DC.estabilidad.forEach(function (q) {
+        ["x", "y"].forEach(function (d) {
+          var e = q[d];
+          if (!e) { r = h.fila(r, LT, ["   " + q.piso + " · " + d.toUpperCase(), "sin cortante o deriva del espectro"], null, alT); return; }
+          r = h.fila(r, F8, ["   " + q.piso + " · " + d.toUpperCase(), q.sPu, e.DoR, e.Vus, q.he, e.Q,
+                             e.arriostrado ? "—" : (isFinite(e.deltaS) ? e.deltaS : "∞"),
+                             e.arriostrado ? "ARRIOSTRADO" : "NO ARRIOSTRADO"],
+                     { 1: "0.0", 2: "0.0000", 3: "0.0", 4: "0.00", 5: "0.000", 6: "0.000" }, al);
+        });
+      });
+      r = h.nota(r, "ΣPu = 1,25 · (CM + la fracción de CV del peso sísmico" + (DC.estabilidad[0].conMasa
+        ? ", la de la fuente de masa de ETABS" : ": sin la fuente de masa, el 25 %") + "). Δo: la deriva elástica PROMEDIO "
+        + "del piso con el espectro × 0,75 R (Art. 10.11.4.2). Vus: la cortante del espectro en el entrepiso. Con Q ≤ 0,06 "
+        + "se toma como arriostrado (Art. 10.12). En los no arriostrados la parte sísmica de los momentos va × δs = 1/(1 − Q) "
+        + "(Art. 10.13.4.2)" + (pdM ? "; ETABS corrió con P-Delta, pero sin las rigideces del 10.11.1 y con desplazamientos "
+        + "elásticos: δs va igual, del lado seguro." : "; ETABS corrió sin P-Delta."));
+      r++;
+    }
     nivelesDe(DC.lista).forEach(function (nv) {
       r = h.seccion(r, (sec++) + ". COLUMNAS DEL NIVEL " + (nv || "-"));
       r = h.encabezado(r, F8, ["Columna · combinación", "Pu (t)", "M2 (t·m)", "M3 (t·m)", "Mu (t·m)", "φMn (t·m)",
@@ -7490,6 +7521,8 @@
         if (d.cortante)
           r = h.fila(r, LT, ["   Cortante", "Vu " + coma(d.cortante.Vu) + " t (" + d.cortante.por + ") · Vc " +
                              coma(d.cortante.Vc) + " t · Vs " + coma(d.cortante.Vs) + " t"], null, alT);
+        if (d.luz)
+          r = h.fila(r, LT, ["   Luz libre", "ln = " + d.luz + " (la de Vu de capacidad, Lo y la esbeltez)"], null, alT);
         if (d.estribos)
           r = h.fila(r, LT, ["   Estribos", "φ" + d.armado.estribo + " · Lo " + coma(d.estribos.Lo, 0) +
                              " cm · dentro @ " + coma(d.estribos.so, 0) + " cm · fuera @ " +
@@ -7502,7 +7535,10 @@
         if (d.estribos && d.estribos.zuncho)
           r = h.fila(r, LT, ["   Zuncho", "ρs mínima " + coma(d.estribos.zuncho.rho * 100) + " % · paso ≤ " +
                              coma(d.estribos.zuncho.paso, 1) + " cm (" + d.estribos.zuncho.art + ")"], null, alT);
-        if (d.esbeltez)
+        if (d.esbeltez && (d.esbeltez.x || d.esbeltez.y)) {
+          if (d.esbeltez.x) r = h.fila(r, LT, ["   Esbeltez en X", d.esbeltez.x], null, alT);
+          if (d.esbeltez.y) r = h.fila(r, LT, ["   Esbeltez en Y", d.esbeltez.y], null, alT);
+        } else if (d.esbeltez)
           r = h.fila(r, LT, ["   Esbeltez", "k·lu/r = " + coma(d.esbeltez.lambda, 0) + " · límite " +
                              coma(d.esbeltez.limite, 0) + " (" + d.esbeltez.art + ") → " +
                              (d.esbeltez.despreciable ? "se puede despreciar" : "hay que amplificar los momentos")],
@@ -7523,7 +7559,8 @@
     r = origenFuerzas(h, r, FZ, "Cada combinación de resistencia en el pie y en la cabeza. Pu en t, positiva en "
       + "compresión; momentos en t·m. M3 y V2 van en la dirección X global y M2 y V3 en la Y (ejes locales de ETABS "
       + "sin girar). |V2| y |V3|: la mayor del pie y la cabeza. En las combinaciones con sismo, máx y mín son los "
-      + "extremos de cada fuerza por separado: no ocurren a la vez.");
+      + "extremos de cada fuerza por separado: no ocurren a la vez. El diseño (DISENO_COLUMNAS) revisa sus 8 esquinas "
+      + "G ± E, con G = (máx + mín)/2 y E = (máx − mín)/2.");
     nivelesDe(FZ.columnas).forEach(function (nv) {
       r = h.seccion(r, (sec++) + ". COLUMNAS DEL NIVEL " + (nv || "-"));
       r = h.encabezado(r, F8, ["Columna · combinación", "Pu (t)", "M2 pie (t·m)", "M3 pie (t·m)", "M2 cabeza (t·m)",
@@ -7704,9 +7741,12 @@
     var LC = [[3, 5], [6, 10]];
     r = h.encabezado(r, LC, ["Criterio", "Cómo se aplica"], 22.0);
     [["Peralte efectivo de vigas", "d = h − " + Math.round(K.convenciones.dMenos * 100) + " cm, el mismo de FUERZAS_VIGAS"],
-     ["Cortante cerca del apoyo", K.convenciones.vuAd ? "Vu a d de la cara del apoyo (Art. 11.1.3.1)"
-                                                     : "Vu en la cara del apoyo"],
-     ["Máximos y mínimos con sismo", "Por separado: ETABS los da para cada fuerza y no ocurren a la vez"],
+     ["Cortante cerca del apoyo", K.convenciones.vuAd
+        ? "Vu a d de la cara del apoyo donde se cumple el Art. 11.1.3 (a)-(c): no en invertidas ni con cargas " +
+          "concentradas entre la cara y d (Art. 11.1.3.1)"
+        : "Vu en la cara del apoyo"],
+     ["Máximos y mínimos con sismo", "ETABS los da para cada fuerza por separado y no ocurren a la vez: columnas y " +
+                                     "muros revisan sus esquinas G ± E"],
      ["Armado", "Lo propone el complemento con las barras de la sección 4, y se puede cambiar"],
      ["Unidades", "kg/cm², cm, t y t·m; 1 MPa = 10 kg/cm²"]
     ].forEach(function (f) { r = h.fila(r, LC, f, null, { alinear: ["Left", "Left"] }); });
@@ -7734,7 +7774,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v424 · 27-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v435 · 28-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel

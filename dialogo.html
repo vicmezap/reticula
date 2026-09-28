@@ -224,6 +224,22 @@
     color:var(--ink-2);border-radius:4px;cursor:pointer;padding:1px 7px;
     font:600 11px "IBM Plex Sans",sans-serif}
   #panelEjes li button:hover{background:var(--acc-soft);color:var(--acc-ink)}
+  /* COLUMNAS DESDE AUTOCAD: el mismo panel sobre la planta; nada se aplica sin «Aplicar» */
+  #panelColsCad{position:absolute;inset:10px;z-index:9;background:var(--sheet);
+    border:1px solid var(--line);border-radius:8px;overflow:auto;
+    box-shadow:0 10px 34px rgba(0,0,0,.20);padding:14px 16px;font-size:12px;color:var(--ink)}
+  #panelColsCad h3{margin:0;font:700 14px "IBM Plex Sans",sans-serif;color:var(--ink)}
+  #panelColsCad h4{margin:14px 0 4px;font:600 12px "IBM Plex Sans",sans-serif;color:var(--ink)}
+  #panelColsCad .cols{display:flex;gap:20px;flex-wrap:wrap;margin:10px 0 0}
+  #panelColsCad .cols>div{flex:1 1 200px;min-width:180px}
+  #panelColsCad ul{list-style:none;margin:4px 0 0;padding:0}
+  #panelColsCad li{display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--line-soft)}
+  #panelColsCad li .med{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  #panelColsCad li.no{color:var(--trib)}
+  #panelColsCad .prev{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+  #panelColsCad .prev figure{margin:0;flex:1 1 220px;max-width:340px}
+  #panelColsCad .prev figcaption{font-weight:600;margin-bottom:2px}
+  #panelColsCad .prev svg{width:100%;height:auto;border:1px solid var(--line-soft);border-radius:4px;background:var(--panel)}
   .ley .leyi.tot{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;color:var(--ink);
     padding-left:17px}
   /* las tablitas del panel de cargas: ambientes y niveles */
@@ -1011,6 +1027,9 @@ select.crit-in{width:auto;text-align:left}
       <input type="file" id="ejesCadFile" accept=".json" hidden>
       <button class="btn noCim" id="ejesCad" style="margin:4px 2px 0"
         title="El archivo que deja EJES AUTOCAD.bat: los ejes con su nombre de AutoCAD, sus luces exactas y los ejes prima">Traer ejes de AutoCAD…</button>
+      <input type="file" id="colsCadFile" accept=".json" multiple hidden>
+      <button class="btn noCim" id="colsCad" style="margin:4px 2px 0"
+        title="Los archivos que deja EJES AUTOCAD.bat, uno por piso: copia las columnas de las secciones que marques, cada una en su sitio exacto, y crea los ejes que hacen falta">Traer columnas de AutoCAD…</button>
       <div id="calcoCtl" class="noCim" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
@@ -1084,6 +1103,7 @@ select.crit-in{width:auto;text-align:left}
       <div class="edif" id="panelRes" hidden></div>
       <div class="edif" id="panelDis" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
+      <div id="panelColsCad" hidden role="dialog" aria-label="Columnas desde AutoCAD"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
     </div>
@@ -4617,7 +4637,7 @@ select.crit-in{width:auto;text-align:left}
         ["valor", "Max", "Min"].forEach(function (paso) {
           var q = c[cb] && c[cb][paso];
           if (!q || !q.pie || !q.cabeza) return;
-          filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso],
+          filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso], step: paso,
             Pu: neg(q.pie[0]), PuCabeza: neg(q.cabeza[0]),
             pie: { V2: num(q.pie[1]), V3: num(q.pie[2]), M2: num(q.pie[4]), M3: num(q.pie[5]) },
             cabeza: { V2: num(q.cabeza[1]), V3: num(q.cabeza[2]), M2: num(q.cabeza[4]), M3: num(q.cabeza[5]) },
@@ -4673,7 +4693,8 @@ select.crit-in{width:auto;text-align:left}
           ["valor", "Max", "Min"].forEach(function (paso) {
             var q = pisos[piso][cb] && pisos[piso][cb][paso];
             if (!q || (!q.Bottom && !q.Top)) return;
-            filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso], base: fuerzas(q.Bottom), arriba: fuerzas(q.Top) });
+            filas.push({ combo: cb, corto: corto(cb), paso: PASO[paso], step: paso,
+                         base: fuerzas(q.Bottom), arriba: fuerzas(q.Top) });
           });
         });
         lista.push({ piso: piso, orden: pp ? pp.orden : null, placas: cods, t: pp ? num(pp.p.t) : null,
@@ -4840,7 +4861,7 @@ select.crit-in{width:auto;text-align:left}
     phi: "Art. 9.3.2", recub: "Art. 7.7.1", Ec: "Art. 8.5", Es: "Art. 8.5.5", ecu: "Art. 10.2.3",
     bloque: "Art. 10.2.7.1", beta1: "Art. 10.2.7.3", estribo: "Art. 7.10.5.1", sistemas: "Art. 21.1",
     alcance: "Art. 21.2", noObligatorio: "Art. 21.2.11", fc: "Art. 21.3.2", acero: "Art. 21.3.3",
-    vuAd: "Art. 11.1.3.1"
+    vuAd: "Art. 11.1.3 (a)-(c) y 11.1.3.1", kArr: "Art. 10.12.1"
   };
 
   /* el peralte efectivo de las vigas: el MISMO de C3 (fuerzas.js, D_MENOS),
@@ -5023,7 +5044,7 @@ select.crit-in{width:auto;text-align:left}
 
   /* --- lo que el proyectista elige ------------------------------------------- */
   function defecto() {
-    var d = { recub: {}, barras: copia(BARRAS_DEFECTO), tipoDual: { x: "auto", y: "auto" }, vuAd: true };
+    var d = { recub: {}, barras: copia(BARRAS_DEFECTO), tipoDual: { x: "auto", y: "auto" }, vuAd: true, kArr: 1 };
     ELEMENTOS.forEach(function (e) { d.recub[e.k] = e.recub; });
     return d;
   }
@@ -5053,6 +5074,8 @@ select.crit-in{width:auto;text-align:left}
       if (["auto", "I", "II"].indexOf(d.tipoDual[k]) < 0) d.tipoDual[k] = "auto";
     });
     if (typeof d.vuAd !== "boolean") d.vuAd = true;
+    /* k de las columnas en entrepisos arriostrados: 1, salvo que un analisis justifique uno menor (10.12.1) */
+    if (!(isFinite(+d.kArr) && +d.kArr >= 0.5 && +d.kArr <= 1)) d.kArr = 1; else d.kArr = +d.kArr;
     return d;
   }
 
@@ -5102,7 +5125,7 @@ select.crit-in{width:auto;text-align:left}
       recub: recub, recubCasos: copia(RECUB_CASOS),
       barras: barras, barrasTabla: copia(BARRAS),
       regimen: reg, tipoDual: copia(d.tipoDual), obligatorio: oblig,
-      convenciones: { dMenos: D_MENOS, vuAd: d.vuAd, maxMin: "separados", armado: "propuesto" },
+      convenciones: { dMenos: D_MENOS, vuAd: d.vuAd, kArr: d.kArr, maxMin: "separados", armado: "propuesto" },
       orden: ELEMENTOS.map(function (e) { return e.k; }),
       diseno: d, avisos: av
     };
@@ -5641,8 +5664,33 @@ select.crit-in{width:auto;text-align:left}
     } else if (sismico)
       aviso("revisar", "Faltan los casos de gravedad de esta viga: la cortante por capacidad (" +
             (reg === "21.5" ? "Art. 21.5.4.1" : "Art. 21.4.3") + ") no se pudo calcular y va la de ETABS. Vuelve a traer los resultados.");
+    /* VU A d DE LA CARA (11.1.3.1), solo en el extremo donde se cumplen las tres condiciones del 11.1.3:
+       (a) el apoyo comprime las zonas extremas -en el modelo no hay vigas colgadas de un tirante-;
+       (b) la carga entra por arriba: en una invertida la losa cuelga de su fondo, y no (fig. 11.1.3.1.b);
+       (c) no hay cargas concentradas entre la cara y d: otra viga que llega o una columna que nace encima.
+       o.condAd = {invertida, puntuales: [{s: m desde el nudo I, que}]}; lo que no se cumple queda en noAd. */
+    var ca = o.condAd || {}, noAd = { izq: null, der: null }, xI = num(sI.x), xD = num(sD.x);
+    if (ca.invertida) noAd.izq = noAd.der = "viga invertida: la losa cuelga de su fondo (Art. 11.1.3 b)";
+    (ca.puntuales || []).forEach(function (p) {
+      var s = num(p.s);
+      if (s === null) return;
+      if (!noAd.izq && xI !== null && s >= xI - 1e-6 && s - xI <= dm + 1e-6)
+        noAd.izq = p.que + " a " + coma(Math.max(0, s - xI)) + " m de la cara izquierda, dentro de d (Art. 11.1.3 c)";
+      if (!noAd.der && xD !== null && s <= xD + 1e-6 && xD - s <= dm + 1e-6)
+        noAd.der = p.que + " a " + coma(Math.max(0, xD - s)) + " m de la cara derecha, dentro de d (Art. 11.1.3 c)";
+    });
+    var adI = o.vuAd !== false && !noAd.izq, adD = o.vuAd !== false && !noAd.der;
     var Vd = Vdes;
-    if (o.vuAd !== false) Vd = iso ? Math.max(0, Vdes - wu * dm) : (VenvD !== null && !sismico ? VenvD : Vdes);
+    if (iso) { if (adI && adD) Vd = Math.max(0, Vdes - wu * dm); }
+    else if (VenvD !== null && !sismico && (adI || adD)) {
+      var vI = (adI && num(sI.Vd) !== null) ? num(sI.Vd) : (num(sI.V) || 0),
+          vD = (adD && num(sD.Vd) !== null) ? num(sD.Vd) : (num(sD.V) || 0);
+      Vd = Math.max(vI, vD);
+    }
+    if (o.vuAd !== false && (noAd.izq || noAd.der))
+      aviso("nota", "Vu no se baja a d " + (noAd.izq && noAd.der && noAd.izq === noAd.der ? "en ningún extremo: " + noAd.izq
+            : [noAd.izq ? "a la izquierda: " + noAd.izq : null, noAd.der ? "a la derecha: " + noAd.der : null]
+                .filter(Boolean).join("; ")) + ".");
     var Av = 2 * barra(estB).a;
     function sPara(Vu) {
       var Vs = Math.max(0, Vu / PHI_V - Vc);
@@ -5681,6 +5729,7 @@ select.crit-in{width:auto;text-align:left}
     base.AsMin = AsMin; base.AsMax = AsMax; base.requerido = req; base.propuesto = prop; base.armado = arm; base.propio = propio;
     base.As = A; base.Mn = Mn; base.secciones = secciones; base.largos = largos; base.estribo = estB; base.dReal = dReal;
     base.cortante = { Venv: Venv, VenvD: VenvD, iso: iso, Vcap: Vcap, Vb: Vb, Vdes: Vdes, Vd: Vd, wu: wu, Vc: Vc, Vs: sd.Vs,
+                      noAd: (noAd.izq || noAd.der) ? noAd : null, aD: o.vuAd !== false && (adI || adD),
                       VsMax: VsMax, sReq: sd.s, sAvMin: sAvMin, conf: conf, sFuera: sFuera, Av: Av, texto: texto };
     base.texto = { arriba: tArriba, abajo: tAbajo, estribos: texto };
     base.avisos = av; base.estado = estado;
@@ -5776,7 +5825,9 @@ select.crit-in{width:auto;text-align:left}
   var ART = {
     phi: "Art. 9.3.2.2", pmax: "Art. 10.3.6", rho: "Art. 10.9.1", nBarras: "Art. 10.9.2",
     rhoSismo: "Art. 21.6.3.1", rho214: "Art. 21.4.5.1", esbeltezArr: "Art. 10.12.2",
-    esbeltezNo: "Art. 10.13.2", vc: "Art. 11.3.1.2", vs: "Art. 11.5.7.2", vsmax: "Art. 11.5.7.9",
+    esbeltezNo: "Art. 10.13.2", Q: "Art. 10.11.4.2", dns: "Art. 10.12.3", ds: "Art. 10.13.4.2",
+    dsPdelta: "Art. 10.13.4.1", sway135: "Art. 10.13.5", m2min: "Art. 10.12.3.2", k100: "Art. 10.11.5",
+    grav136: "Art. 10.13.6 (b)", vc: "Art. 11.3.1.2", vs: "Art. 11.5.7.2", vsmax: "Art. 11.5.7.9",
     smax: "Art. 11.5.5.1", smitad: "Art. 11.5.5.3",
     s216: "Art. 21.6.4.2", hx216: "Art. 21.6.4.3", lo216: "Art. 21.6.4.4", fuera216: "Art. 21.6.4.5",
     ash: "Art. 21.6.4.1 (b)", zuncho: "Art. 21.6.4.1 (a) y 10.9.3, ec. (10-5)", vu216: "Art. 21.6.5.1",
@@ -6109,6 +6160,192 @@ select.crit-in{width:auto;text-align:left}
     return { req: Math.max(a1, a2), e213: a1, e214: a2, art: ART.ash };
   }
 
+  /* ------------------------------------------ los pares simultáneos del espectro */
+  /* Una combinación con el espectro llega de ETABS en dos filas, Max = G + |E| y
+     Min = G − |E|, COMPONENTE POR COMPONENTE: la fila Max no es un par (P, M) que
+     ocurra junto, y el par que manda -la mayor compresión con el mayor momento- no
+     está en ninguna de las dos.  De cada par se saca G = (Max + Min)/2 y
+     |E| = (Max − Min)/2, y se arman las esquinas G ± E con los signos de cada grupo
+     combinados, como hace ETABS en su diseño (CFD-ACI 318-19).  Cortantes y
+     torsión, con el valor absoluto mayor de las dos filas.
+       a, b    las dos filas (da igual cuál es Max)
+       grupos  [{rutas: ["Pu", "PuCabeza"], etq: function (s) {...}}, ...]: las
+               rutas de un grupo comparten signo; con n grupos salen 2^n filas
+       absMax  rutas que van con su |valor| mayor
+     Si Max y Min coinciden en todo lo que se permuta, se devuelven tal cual. */
+  function simultaneas(a, b, grupos, absMax, factorE) {
+    function lee(o, r) { var p = r.split("."), i; for (i = 0; i < p.length && o; i++) o = o[p[i]]; return num(o); }
+    function pon(o, r, v) {
+      var p = r.split("."), i;
+      for (i = 0; i < p.length - 1; i++) { if (!o[p[i]]) return; o = o[p[i]]; }
+      o[p[p.length - 1]] = v;
+    }
+    var hayE = grupos.some(function (g) {
+      return g.rutas.some(function (r) {
+        var x = lee(a, r), y = lee(b, r);
+        return x !== null && y !== null && Math.abs(x - y) > 1e-9;
+      });
+    });
+    if (!hayE) return [a, b];
+    var n = grupos.length, out = [], k;
+    for (k = 0; k < (1 << n); k++) {
+      var f = JSON.parse(JSON.stringify(a)), etq = [], signos = [];
+      grupos.forEach(function (g, i) {
+        var s = ((k >> (n - 1 - i)) & 1) ? -1 : 1;
+        g.rutas.forEach(function (r) {
+          var x = lee(a, r), y = lee(b, r);
+          if (x === null || y === null) return;
+          pon(f, r, (x + y) / 2 + s * Math.abs(x - y) / 2 * ((factorE && factorE[r]) || 1));
+        });
+        etq.push(g.etq(s)); signos.push(s);
+      });
+      (absMax || []).forEach(function (r) {
+        var x = lee(a, r), y = lee(b, r);
+        if (x === null && y === null) return;
+        pon(f, r, (y === null || (x !== null && Math.abs(x) >= Math.abs(y))) ? x : y);
+      });
+      f.paso = etq.join(" "); f.signos = signos; f.simultanea = true;
+      out.push(f);
+    }
+    return out;
+  }
+  function signo(s) { return s > 0 ? "+" : "−"; }
+  /* en una columna: P, M2 y M3 en el pie y la cabeza -cada extremo se revisa por
+     separado, así que ve las 8 esquinas-; Pu en compresión positiva */
+  var GRUPOS_COL = [
+    { rutas: ["Pu", "PuCabeza"], etq: function (s) { return s > 0 ? "Pu máx" : "Pu mín"; } },
+    { rutas: ["pie.M2", "cabeza.M2"], etq: function (s) { return signo(s) + "M2"; } },
+    { rutas: ["pie.M3", "cabeza.M3"], etq: function (s) { return signo(s) + "M3"; } }
+  ];
+  var ABS_COL = ["V2", "V3", "T", "pie.V2", "pie.V3", "cabeza.V2", "cabeza.V3"];
+  /* en un muro el momento entra en valor absoluto -armado simétrico- y además
+     divide en la amplificación del cortante (21.9.5.3, Mn/Mua): una esquina con
+     el momento G − E la inflaría sin razón.  Así que solo se permuta P, y el
+     momento y el cortante van con su |valor| mayor: 2 esquinas */
+  var GRUPOS_MURO = [
+    { rutas: ["base.Pu", "arriba.Pu"], etq: function (s) { return s > 0 ? "Pu máx" : "Pu mín"; } }
+  ];
+  var ABS_MURO = ["base.M2", "base.M3", "base.V2", "base.V3", "base.T",
+                  "arriba.M2", "arriba.M3", "arriba.V2", "arriba.V3", "arriba.T"];
+  /* las filas de fuerzas.js con cada pareja Max/Min de una combinación cambiada
+     por sus esquinas (8 en una columna; en un muro, grupos y absMax de muro);
+     las demás, tal cual y en su orden */
+  function filasSimultaneas(filas, grupos, absMax, factorE) {
+    grupos = grupos || GRUPOS_COL; absMax = absMax || (grupos === GRUPOS_COL ? ABS_COL : []);
+    var par = {}, hecho = {}, out = [];
+    function paso(f) { return f.step || ({ "máx": "Max", "mín": "Min" })[f.paso] || null; }
+    (filas || []).forEach(function (f) {
+      var p = paso(f);
+      if (p === "Max" || p === "Min") (par[f.combo] = par[f.combo] || {})[p] = f;
+    });
+    (filas || []).forEach(function (f) {
+      var q = par[f.combo], p = paso(f);
+      if ((p !== "Max" && p !== "Min") || !q || !q.Max || !q.Min) { out.push(f); return; }
+      if (hecho[f.combo]) return;
+      hecho[f.combo] = true;
+      simultaneas(q.Max, q.Min, grupos, absMax, factorE).forEach(function (x) { out.push(x); });
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------ la esbeltez (fase 0.2) */
+  /* E.060 10.10.2: los momentos amplificados de 10.11 a 10.13, cada eje por separado (10.11.6): X con b y M3,
+     Y con h y M2 -la convencion de fuerzas.js-.
+
+     ESTABILIDAD DE CADA ENTREPISO (10.11.4.2).  Q = ΣPu·Δo/(Vus·he); con Q ≤ 0,06 el entrepiso se puede tomar
+     como arriostrado (10.12); si no, no arriostrado (10.13).
+       · ΣPu: las cargas de gravedad amplificadas que bajan por el entrepiso, con la MISMA fraccion de la CV que el
+         peso sismico -la fuente de masa de ETABS-: 1,25·Σ f·P, el factor de gravedad de las combinaciones con
+         sismo (9.2.3).  Sin la fuente de masa, 1·(Dead + CM) + 0,25·(CV + CVT), y se avisa.
+       · Δo: la deriva ELASTICA del entrepiso con el sismo, × 0,75 R como dice el propio 10.11.4.2.  Se toma la
+         PROMEDIO del piso (Avg Drift de ETABS): el ΣPu·Δo del entrepiso pesa la deriva de todas sus columnas, y
+         la maxima es la de una esquina con la torsion.
+       · Vus: la cortante del espectro en ese entrepiso, del mismo analisis que Δo (sin el factor del Art. 44:
+         el cociente no depende de el).  he: la altura de piso a piso.
+     Con Q > 0,06: δs = 1/(1 − Q) (10.13.4.2), valido hasta 1,5.  Y Q con 1,4 CM + 1,7 CV ≤ 0,60 (10.13.6 b).
+     AUNQUE ETABS HAYA CORRIDO CON P-DELTA, δs va igual (fase 0.2, medido en PUCALPA el 28-09-2026): el P-Delta de
+     ETABS subio la deriva un 1,3 % y el δs de este Q da 1,091, porque el Δo del 10.11.4.2 va × 0,75 R y el P-Delta
+     trabaja con los desplazamientos elasticos; y el 10.13.4.1 solo vale con las rigideces fisuradas del 10.11.1, que
+     el modelo no lleva.  Tomar δs = 1 seria del lado inseguro; contar las dos cosas, del seguro.
+     o = {pisos: [{piso, h, P: {Dead, CM, CV, CVT}, V: {x: {V}, y: {V}}}], deriva: {piso: {x, y}} (m),
+          R: {x, y}, masa: [[patron, f]], pdelta: {metodo}} */
+  var Q_ARR = 0.06, DS_MAX = 1.5, Q_GRAV = 0.60, K100 = 100;
+  function estabilidad(o) {
+    o = o || {};
+    var f = {}, conMasa = !!(o.masa && o.masa.length);
+    if (conMasa) o.masa.forEach(function (p) { f[p[0]] = num(p[1]) || 0; });
+    else f = { Dead: 1, CM: 1, CV: 0.25, CVT: 0.25 };
+    var pd = !!(o.pdelta && o.pdelta.metodo && o.pdelta.metodo !== "None");
+    return (o.pisos || []).map(function (q) {
+      var P = q.P || {}, he = num(q.h) || 0;
+      function a(c) { return Math.abs(num(P[c]) || 0); }
+      var sPu = GRAV * ["Dead", "CM", "CV", "CVT"].reduce(function (t, c) { return t + (f[c] || 0) * a(c); }, 0);
+      var sPuG = 1.4 * (a("Dead") + a("CM")) + 1.7 * (a("CV") + a("CVT"));
+      var out = { piso: q.piso, he: he, sPu: sPu, sPuG: sPuG, conMasa: conMasa, pdelta: pd };
+      ["x", "y"].forEach(function (d) {
+        var V = q.V && q.V[d] ? num(q.V[d].V) : null, Do = o.deriva && o.deriva[q.piso] ? num(o.deriva[q.piso][d]) : null;
+        var R = num(o.R && o.R[d]);
+        if (!(V > 0) || Do === null || !(R > 0) || !(he > 0)) { out[d] = null; return; }
+        var DoR = Math.abs(Do) * 0.75 * R, Q = sPu * DoR / (V * he), QG = sPuG * DoR / (V * he);
+        var r = { Vus: V, Do: Math.abs(Do), DoR: DoR, R: R, Q: Q, Qgrav: QG, arriostrado: Q <= Q_ARR + 1e-12 };
+        r.pdelta = pd;
+        if (r.arriostrado) { r.deltaS = 1; r.metodo = ART.esbeltezArr; }
+        else if (Q >= 1) { r.deltaS = Infinity; r.metodo = ART.ds; r.inestable = true; }
+        else {
+          r.deltaS = 1 / (1 - Q); r.metodo = ART.ds;
+          r.excede = r.deltaS > DS_MAX + 1e-12;
+          r.gravMal = QG > Q_GRAV + 1e-12;
+        }
+        out[d] = r;
+      });
+      return out;
+    });
+  }
+
+  /* LA ESBELTEZ DE UNA FILA (una combinacion, con su pie y su cabeza), en cada direccion.
+     Arriostrada (10.12): k de Criterios (1 por defecto, 10.12.1); se desprecia con k·lu/r ≤ 34 − 12 M1/M2 ≤ 40
+     (10.12.2).  No arriostrada: sus momentos ya van con δs; ademas, si lu/r > 35/√(Pu/(f'c·Ag)), δns con k = 1
+     (10.13.5).  δns = Cm/(1 − Pu/(0,75 Pc)) ≥ 1 (10-9), Pc = π²EI/(k·lu)² (10-10), EI = 0,4 Ec Ig/(1 + βd) (10-12),
+     βd = la axial sostenida amplificada entre la total (10.11.1), Cm = 0,6 + 0,4 M1/M2 ≥ 0,4 (10-13) y M2 no
+     menor que Pu (15 + 0,03 h) mm (10-14; con el minimo, Cm = 1).
+     En una esquina G ± E del espectro el signo relativo de los extremos no se conoce: M1/M2 = +1 (curvatura
+     simple, lo seguro) y Cm = 1.  Devuelve por direccion lo que se ve en la ficha, y Mc si hace falta. */
+  function esbeltaFila(f, g) {
+    var PuT = Math.max(num(f.Pu) || 0, num(f.PuCabeza) || 0);
+    var campo = { x: "M3", y: "M2" }, out = { Pu: PuT };
+    ["x", "y"].forEach(function (d) {
+      var st = g.segundo ? g.segundo[d] : null;
+      if (!st) { out[d] = null; return; }
+      var dim = g.circular ? g.D : (d === "x" ? g.b : g.h), r = g.circular ? 0.25 * g.D : 0.3 * dim;
+      var Ig = g.circular ? Math.PI * Math.pow(g.D, 4) / 64 : (d === "x" ? g.h * Math.pow(g.b, 3) / 12 : g.b * Math.pow(g.h, 3) / 12);
+      var mA = num((f.pie || {})[campo[d]]) || 0, mB = num((f.cabeza || {})[campo[d]]) || 0;
+      var big = Math.abs(mA) >= Math.abs(mB) ? mA : mB, small = Math.abs(mA) >= Math.abs(mB) ? mB : mA;
+      var ratio = (f.simultanea || Math.abs(big) < 1e-9) ? 1 : small / big;
+      var arr = !!st.arriostrado, k = arr ? g.k : 1, luCm = g.lu * 100;
+      var lam = k * luCm / r, q = { arriostrado: arr, k: k, r: r, lambda: lam, ratio: ratio, big: big, nec: false,
+                                    dns: 1, Cm: null, Pc: null, bd: null, M2min: null, Mc: big, minManda: false };
+      if (!(PuT > 0)) { out[d] = q; return; }
+      if (arr) { q.limite = Math.min(40, 34 - 12 * ratio); q.nec = lam > q.limite + 1e-9; q.art = ART.esbeltezArr; }
+      else { q.limite = 35 / Math.sqrt(PuT * 1000 / (g.fc * g.Ag)); q.lu_r = luCm / r; q.nec = q.lu_r > q.limite + 1e-9;
+             q.art = ART.sway135; }
+      if (q.nec) {
+        var sost = g.sostenida ? num(g.sostenida[f.combo]) : null;
+        q.bd = sost === null ? 1 : Math.max(0, Math.min(1, Math.abs(sost) / PuT));
+        q.bdSupuesto = sost === null;
+        var EI = 0.4 * g.Ec * Ig / (1 + q.bd);
+        q.Pc = Math.PI * Math.PI * EI / Math.pow(k * luCm, 2) / 1000;
+        q.M2min = PuT * (0.015 + 0.03 * dim / 100);
+        q.minManda = q.M2min > Math.abs(big) + 1e-12;
+        q.Cm = (f.simultanea || q.minManda) ? 1 : Math.max(0.4, 0.6 + 0.4 * ratio);
+        if (PuT >= 0.75 * q.Pc) { q.dns = Infinity; q.inestable = true; }
+        else q.dns = Math.max(1, q.Cm / (1 - PuT / (0.75 * q.Pc)));
+        q.Mc = (big < 0 ? -1 : 1) * q.dns * Math.max(Math.abs(big), q.M2min);
+      }
+      out[d] = q;
+    });
+    return out;
+  }
+
   /* ---------------------------------------------------------------- el diseño */
   /* col: lo que da fuerzas.js para una columna.  cri: DISENO.criterios().
      o: {regimen: "21.4"|"21.6", ln, arriostrado, k} */
@@ -6132,9 +6369,30 @@ select.crit-in{width:auto;text-align:left}
     var estriboNom = (cri.barras && cri.barras.columna && cri.barras.columna.estribo) || EST_DEF;
     var ln = num(o.ln) || 2.4;
 
-    /* las combinaciones, en kg y kg·cm */
+    /* LA ESBELTEZ (fase 0.2).  o.segundo = {x, y}: la estabilidad del entrepiso de esta columna (estabilidad());
+       sin ella -resultados de antes- queda el aviso de siempre.  En un entrepiso no arriostrado la parte sismica
+       E de cada esquina G ± E va × δs (10.13.3: M = Mns + δs·Ms); la de gravedad no. */
+    var SG = (o.segundo && (o.segundo.x || o.segundo.y)) ? o.segundo : null;
+    function ds(d) { var q = SG && SG[d]; return (q && isFinite(q.deltaS)) ? q.deltaS : 1; }
+    var fE = SG ? { "pie.M3": ds("x"), "cabeza.M3": ds("x"), "pie.M2": ds("y"), "cabeza.M2": ds("y") } : null;
+    var g2 = { segundo: SG, circular: circular, b: b, h: h, D: D, lu: num(o.lu) || ln, k: num(o.k) || 1, fc: fc,
+               Ag: circular ? Math.PI * D * D / 4 : b * h, Ec: num(o.Ec) || 15000 * Math.sqrt(fc), sostenida: o.sostenida || null };
+    var ESB = { x: null, y: null, filas: 0, inestable: false, bdSupuesto: false };
+    function guarda(d, q) {
+      if (!q) return;
+      var e = ESB[d];
+      if (!e) e = ESB[d] = { arriostrado: q.arriostrado, k: q.k, r: q.r, lambda: q.lambda, limite: q.limite, lu_r: q.lu_r,
+                             art: q.art, nec: false, dns: 1, Cm: null, Pc: null, bd: null, M2min: false };
+      if (q.limite < e.limite) e.limite = q.limite;              /* el limite mas exigente de sus filas */
+      if (q.nec) { e.nec = true; if (q.dns >= e.dns) { e.dns = q.dns; e.Cm = q.Cm; e.Pc = q.Pc; e.bd = q.bd; } }
+      if (q.minManda) e.M2min = true;
+      if (q.inestable) ESB.inestable = true;
+      if (q.nec && q.bdSupuesto) ESB.bdSupuesto = true;
+    }
+
+    /* las combinaciones, en kg y kg·cm; las del espectro, con sus 8 esquinas G ± E */
     var dem = [];
-    (col.filas || []).forEach(function (f) {
+    filasSimultaneas(col.filas, null, null, fE).forEach(function (f) {
       ["pie", "cabeza"].forEach(function (donde) {
         var q = f[donde] || {}, Pu = num(donde === "pie" ? f.Pu : f.PuCabeza);
         if (Pu === null) return;
@@ -6143,6 +6401,17 @@ select.crit-in{width:auto;text-align:left}
                    PuT: Pu, M2T: num(q.M2) || 0, M3T: num(q.M3) || 0,
                    V2: num(f.V2) || 0, V3: num(f.V3) || 0 });
       });
+      if (!SG) return;
+      /* la fila esbelta: Pu con Mc en la direccion que lo pide y el mayor de los extremos en la otra */
+      var e = esbeltaFila(f, g2);
+      guarda("x", e.x); guarda("y", e.y);
+      if (!((e.x && e.x.nec) || (e.y && e.y.nec))) return;
+      ESB.filas++;
+      var M3 = e.x ? (e.x.nec ? e.x.Mc : e.x.big) : 0, M2 = e.y ? (e.y.nec ? e.y.Mc : e.y.big) : 0;
+      if (!isFinite(M3)) M3 = 1e6;
+      if (!isFinite(M2)) M2 = 1e6;
+      dem.push({ combo: f.combo, corto: f.corto, paso: f.paso, donde: "esbeltez", Pu: e.Pu * 1000, M2: M2 * 1e5, M3: M3 * 1e5,
+                 PuT: e.Pu, M2T: M2, M3T: M3, V2: num(f.V2) || 0, V3: num(f.V3) || 0 });
     });
     if (!dem.length) {
       base.estado = "falta"; base.avisos.push("Esa columna no trae fuerzas de ETABS.");
@@ -6218,9 +6487,9 @@ select.crit-in{width:auto;text-align:left}
                  AshB: ramasDe(sec, "b") * barra(estriboNom).a, AshH: ramasDe(sec, "h") * barra(estriboNom).a };
     }
 
-    /* ESBELTEZ, solo aviso */
-    var esb = esbeltez({ lu: ln, bDir: circular ? D : Math.min(b, h), D: D, forma: base.forma,
-                         k: num(o.k) || 1, arriostrado: !!o.arriostrado, M1M2: null });
+    /* ESBELTEZ: sin la estabilidad del entrepiso, solo el aviso de antes */
+    var esb = SG ? null : esbeltez({ lu: ln, bDir: circular ? D : Math.min(b, h), D: D, forma: base.forma,
+                                     k: num(o.k) || 1, arriostrado: !!o.arriostrado, M1M2: null });
 
     /* AVISOS */
     var av = base.avisos;
@@ -6237,7 +6506,21 @@ select.crit-in{width:auto;text-align:left}
       av.push("La relación entre lados es menor que 0,25 (Art. 21.6.1.3).");
     if (esb && !esb.despreciable)
       av.push("Esbeltez k·lu/r = " + esb.lambda.toFixed(0) + " > " + esb.limite.toFixed(0) + " (" + esb.art +
-              "): hay que amplificar los momentos, o traerlos de un análisis con P-Δ.");
+              "): hay que amplificar los momentos. Trae de nuevo los resultados de ETABS para que se amplifiquen solos.");
+    ["x", "y"].forEach(function (d) {
+      var st = SG && SG[d], e = ESB[d], D2 = d.toUpperCase();
+      if (SG && !st) av.push("En " + D2 + " no hay Q del entrepiso (falta la cortante o la deriva del espectro, o el R): " +
+                             "la esbeltez en " + D2 + " no se revisó (" + ART.Q + ").");
+      if (!st) return;
+      if (st.inestable) av.push("En " + D2 + " el entrepiso es inestable: Q = " + st.Q.toFixed(2) + " ≥ 1 (" + ART.Q + ").");
+      else if (st.excede) av.push("En " + D2 + " δs = " + st.deltaS.toFixed(2) + " pasa de 1,5: el " + ART.ds + " ya no vale; " +
+                                  "hace falta el análisis con P-Delta (" + ART.dsPdelta + ") o el 10.13.4.3.");
+      if (st.gravMal) av.push("En " + D2 + " Q con 1,4 CM + 1,7 CV es " + st.Qgrav.toFixed(2) + " > 0,60 (" + ART.grav136 + ").");
+      if (e && e.lambda > K100) av.push("En " + D2 + " k·lu/r = " + e.lambda.toFixed(0) + " > 100: no se permite (" + ART.k100 + ").");
+    });
+    if (ESB.inestable) av.push("Pu ≥ 0,75 Pc en alguna combinación: la columna pandea (" + ART.dns + "). Aumenta la sección.");
+    if (ESB.bdSupuesto) av.push("Sin la carga de cada caso en esta columna, βd se tomó 1 (lo seguro) para la EI de la " +
+                                "esbeltez: trae de nuevo los resultados de ETABS.");
     if (hayTrac) av.push("Alguna combinación deja la columna en tracción: Vc se ha tomado con Nu = 0 (" + ART.vc + ").");
     if (Vs > VsM) av.push("Vs pasa el máximo de " + ART.vsmax + ": la sección no da para esa cortante.");
     if (peor && peor.ratio > 1) av.push("La combinación " + peor.corto + " (" + peor.donde + ") pide " +
@@ -6252,7 +6535,9 @@ select.crit-in{width:auto;text-align:left}
     }
 
     var estado = "ok";
-    if (!prop.cumple || (peor && peor.ratio > 1) || Vs > VsM || sec.rho > 0.06) estado = "no cumple";
+    var malEsb = ESB.inestable || ["x", "y"].some(function (d) { var st = SG && SG[d], e = ESB[d];
+      return (st && st.inestable) || (e && e.lambda > K100); });
+    if (!prop.cumple || (peor && peor.ratio > 1) || Vs > VsM || sec.rho > 0.06 || malEsb) estado = "no cumple";
     else if (av.length) estado = "revisar";
 
     base.sec = sec; base.superficie = sup; base.rho = sec.rho; base.Ast = sec.Ast;
@@ -6270,6 +6555,15 @@ select.crit-in{width:auto;text-align:left}
                       ramas: ramas, Av: Av, sReq: sReq, sMax: sMax, por: porV };
     base.estribos = { Lo: conf.Lo, so: redAbajo(sDentro, 1), sFuera: redAbajo(sFuera, 1),
                       art: conf.art, artFuera: conf.artFuera, ash: estAsh, zuncho: estZun };
+    if (SG) {
+      /* lo de siempre -lambda, limite, despreciable, art- con la direccion que mas pide, y cada direccion aparte */
+      var dm = ["x", "y"].filter(function (d) { return ESB[d]; })
+        .sort(function (a2, b2) { return (ESB[b2].nec - ESB[a2].nec) || (ESB[b2].dns - ESB[a2].dns); })[0];
+      var em = dm ? ESB[dm] : null;
+      esb = { lambda: em ? (em.arriostrado ? em.lambda : em.lu_r) : null, limite: em ? em.limite : null,
+              despreciable: !(ESB.x && ESB.x.nec) && !(ESB.y && ESB.y.nec), art: em ? em.art : ART.Q,
+              x: ESB.x, y: ESB.y, Q: { x: SG.x || null, y: SG.y || null }, filas: ESB.filas, lu: g2.lu };
+    }
     base.esbeltez = esb;
     base.estado = estado;
     return base;
@@ -6408,6 +6702,7 @@ select.crit-in{width:auto;text-align:left}
            curvaDe: curvaDe, momentoMinimo: momentoMinimo, pideColumnaFuerte: pideColumnaFuerte, verifica: verifica,
            bresler: bresler, pnConE: pnConE, esbeltez: esbeltez, vc: vc, vsMax: vsMax, confinamiento: confinamiento,
            ash: ash, zuncho: zuncho, ramasDe: ramasDe, propone: propone, momentoMaximo: momentoMaximo,
+           simultaneas: simultaneas, filasSimultaneas: filasSimultaneas, estabilidad: estabilidad, esbeltaFila: esbeltaFila, GRUPOS_MURO: GRUPOS_MURO, ABS_MURO: ABS_MURO,
            disenar: disenar, resumen: resumen };
 });
 </script>
@@ -7706,8 +8001,16 @@ select.crit-in{width:auto;text-align:left}
      La reaccion FZ hacia arriba es la compresion que baja por la columna;
      MY varia la presion a lo largo de X y MX a lo largo de Y.  Los sismos
      llegan como envolventes positivas: el signo lo pone la combinacion.
+     escala = {x, y}: el factor del Art. 44.2 de la E.030 -el mismo que el
+     puente escribe en las combinaciones de ETABS-.  Las reacciones son
+     fuerzas, asi que se escalan igual que las de vigas y columnas; sin
+     escala, 1.
      --------------------------------------------------------------- */
-  function cargasDe(casos) {
+  function factorSismo(escala, k) {
+    var v = escala ? +escala[k] : NaN;
+    return (v > 0 && isFinite(v)) ? v : 1;
+  }
+  function cargasDe(casos, escala) {
     casos = casos || {};
     function de(k) { var c = casos[k]; return c ? { P: num(c.FZ) || 0, Mx: num(c.MX) || 0, My: num(c.MY) || 0 } : null; }
     function suma(a, b) {
@@ -7715,9 +8018,15 @@ select.crit-in{width:auto;text-align:left}
       a = a || { P: 0, Mx: 0, My: 0 }; b = b || { P: 0, Mx: 0, My: 0 };
       return { P: a.P + b.P, Mx: a.Mx + b.Mx, My: a.My + b.My };
     }
-    function abs(a) { return a ? { P: Math.abs(a.P), Mx: Math.abs(a.Mx), My: Math.abs(a.My) } : null; }
+    function abs(a, f) { return a ? { P: f * Math.abs(a.P), Mx: f * Math.abs(a.Mx), My: f * Math.abs(a.My) } : null; }
+    var fx = factorSismo(escala, "x"), fy = factorSismo(escala, "y");
     return { D: suma(de("Dead"), de("CM")), L: suma(de("CV"), de("CVT")),
-             SX: abs(de("SDX")), SY: abs(de("SDY")) };
+             SX: abs(de("SDX"), fx), SY: abs(de("SDY"), fy), escala: { x: fx, y: fy } };
+  }
+  /* el factor que se uso, para la ficha y la hoja; null si los dos son 1 */
+  function escalaUsada(c) {
+    var e = c && c.escala;
+    return (e && (Math.abs(e.x - 1) > 1e-9 || Math.abs(e.y - 1) > 1e-9)) ? { x: e.x, y: e.y } : null;
   }
 
   /* ---------------------------------------------------------------
@@ -7921,14 +8230,15 @@ select.crit-in{width:auto;text-align:left}
   /* ---------------------------------------------------------------
      UNA ZAPATA AISLADA CENTRADA, de punta a punta
      o: {casos (de ETABS), Lx, Ly, H (m), b, h (col, m), fc, fy, rec (cm),
-         sn (t/m², la neta), alfaS, dbCol (mm), barras [..], propia}
+         sn (t/m², la neta), alfaS, dbCol (mm), barras [..], propia,
+         escala {x, y} del Art. 44.2 (lo mismo en las otras tres)}
      --------------------------------------------------------------- */
   function disenar(o) {
     o = o || {};
-    var c = cargasDe(o.casos);
+    var c = cargasDe(o.casos, o.escala);
     var fc = pos(o.fc) || 210, fy = pos(o.fy) || 4200, rec = pos(o.rec) || 7.5;
     var b = pos(o.b), h = pos(o.h), sn = pos(o.sn);
-    var out = { cargas: c, avisos: [], art: ART, fc: fc, fy: fy };
+    var out = { cargas: c, avisos: [], art: ART, fc: fc, fy: fy, escala: escalaUsada(c) };
     if (!(c.D.P + c.L.P > 0) || !(b > 0 && h > 0) || !(sn > 0)) { out.falta = true; return out; }
     var lista = o.barras;
     var dbZ = barra((lista && lista[0]) || '5/8"').d * 10;
@@ -8136,14 +8446,14 @@ select.crit-in{width:auto;text-align:left}
              en: function (x) { var k = Math.max(0, Math.min(N, Math.round(x / ds))); return { V: V[k], M: M[k] }; } };
   }
 
-  /* o: {col1:{casos,cl,ct}, col2:{...}, sep, L, B, H, fc, fy, rec, sn, barras} */
+  /* o: {col1:{casos,cl,ct}, col2:{...}, sep, L, B, H, fc, fy, rec, sn, barras, escala} */
   function disenarCombinada(o) {
     o = o || {};
     var fc = pos(o.fc) || 210, fy = pos(o.fy) || 4200, rec = pos(o.rec) || 7.5, sn = pos(o.sn);
-    var c1 = cargasDe((o.col1 || {}).casos), c2 = cargasDe((o.col2 || {}).casos);
+    var c1 = cargasDe((o.col1 || {}).casos, o.escala), c2 = cargasDe((o.col2 || {}).casos, o.escala);
     var cl1 = pos(o.col1 && o.col1.cl), ct1 = pos(o.col1 && o.col1.ct);
     var cl2 = pos(o.col2 && o.col2.cl), ct2 = pos(o.col2 && o.col2.ct);
-    var sep = pos(o.sep), out = { avisos: [], art: ART, combinada: true, c1: c1, c2: c2 };
+    var sep = pos(o.sep), out = { avisos: [], art: ART, combinada: true, c1: c1, c2: c2, escala: escalaUsada(c1) };
     if (!(c1.D.P + c2.D.P > 0) || !(sep > 0) || !(sn > 0)) { out.falta = true; return out; }
     var lista = o.barras, dbZ = barra((lista && lista[0]) || '5/8"').d * 10;
     var L = pos(o.L), B = pos(o.B), H = pos(o.H) || 0.6;
@@ -8380,10 +8690,10 @@ select.crit-in{width:auto;text-align:left}
 
   function disenarConectada(o) {
     o = o || {};
-    var c = cargasDe(o.casos);
+    var c = cargasDe(o.casos, o.escala);
     var fc = pos(o.fc) || 210, fy = pos(o.fy) || 4200, rec = pos(o.rec) || 7.5;
     var b = pos(o.b), h = pos(o.h), sn = pos(o.sn), vigas = o.vigas || [];
-    var out = { cargas: c, avisos: [], art: ART, conectada: true, fc: fc, fy: fy };
+    var out = { cargas: c, avisos: [], art: ART, conectada: true, fc: fc, fy: fy, escala: escalaUsada(c) };
     if (!(c.D.P + c.L.P > 0) || !(b > 0 && h > 0) || !(sn > 0) || !vigas.length) { out.falta = true; return out; }
     var lista = o.barras, dbZ = barra((lista && lista[0]) || '5/8"').d * 10;
     var Lx = pos(o.Lx) || b, Ly = pos(o.Ly) || h, H0 = pos(o.H) || 0.6;
@@ -8584,10 +8894,11 @@ select.crit-in{width:auto;text-align:left}
     o = o || {};
     var fc = pos(o.fc) || 210, fy = pos(o.fy) || 4200, rec = pos(o.rec) || 7.5, sn = pos(o.sn);
     var cols = (o.cols || []).map(function (c) {
-      return { c: cargasDe(c.casos), s: +c.s || 0, cl: pos(c.cl), ct: pos(c.ct), dbCol: +c.dbCol || 0 };
+      return { c: cargasDe(c.casos, o.escala), s: +c.s || 0, cl: pos(c.cl), ct: pos(c.ct), dbCol: +c.dbCol || 0 };
     });
     var borde = !!o.borde, vigas = (o.vigas || []).filter(function (v) { return v && v.l > 0 && cols[v.k]; });
-    var out = { avisos: [], art: ART, corrida: true, conectada: borde && vigas.length > 0, borde: borde };
+    var out = { avisos: [], art: ART, corrida: true, conectada: borde && vigas.length > 0, borde: borde,
+                escala: escalaUsada(cargasDe(null, o.escala)) };
     var Ptot = cols.reduce(function (a, x) { return a + x.c.D.P + x.c.L.P; }, 0);
     if (cols.length < 2 || !(Ptot > 0) || !(sn > 0)) { out.falta = true; return out; }
     var lista = o.barras, dbZ = barra((lista && lista[0]) || '5/8"').d * 10;
@@ -8831,7 +9142,7 @@ select.crit-in{width:auto;text-align:left}
   }
 
   return { ART: ART, DEF: DEF, PHI: PHI, presionNeta: presionNeta,
-           cargasDe: cargasDe, presion: presion, combosServicio: combosServicio, combosU: combosU,
+           cargasDe: cargasDe, escalaUsada: escalaUsada, presion: presion, combosServicio: combosServicio, combosU: combosU,
            revisaSuelo: revisaSuelo, punzonamiento: punzonamiento, cortanteViga: cortanteViga,
            peralteMinimo: peralteMinimo, flexion: flexion, malla: malla, franjaCorta: franjaCorta,
            anclajeZapata: anclajeZapata, aplastamiento: aplastamiento, disenar: disenar, resumen: resumen,
@@ -9585,6 +9896,255 @@ select.crit-in{width:auto;text-align:left}
            peralteEfectivo: peralteEfectivo, abiertosDe: abiertosDe,
            peralteParaPunzonamiento: peralteParaPunzonamiento, predimensionar: predimensionar };
 });
+</script>
+<script>
+/* ===== columnascad.js (inlinado) ===== */
+/* =====================================================================
+   COLUMNAS DESDE AUTOCAD (Victor, 27-09-2026)
+
+   «No tienes permiso de proponer o generar elementos estructurales sin
+   seguridad.  Si puedes copiar columnas con seguridad, genial.  Los ejes
+   que no están creados, créalos de la misma forma que yo.»  «Las columnas
+   son solo 25x50, 25x75 y 25x80, y a veces cambian de sentido.»  «Las
+   columnas deben estar en su eje exacto.»
+
+   Entra, por piso, lo que deja EJES AUTOCAD.bat de la planta marcada: los
+   rectangulos (capa, centro, ancho en X, alto en Y, en metros y con la Y
+   del dibujo hacia arriba) y los ejes del arquitecto (burbujas).
+
+   · COLUMNA = un rectangulo que mide exactamente una de las secciones que
+     marca el ingeniero (±1 cm, en cualquier sentido).  Lo demas no se copia:
+     se lista con su medida, para que lo revise el.
+   · Los ejes del ARQUITECTO solo alinean un piso con otro (por su nombre);
+     no son ejes del modelo.
+   · LOS EJES, como los hace el a mano: el cruce en una ESQUINA de la columna.
+     Por defecto su cara izquierda (X) y su cara inferior (Y); si su cara
+     opuesta ya es la cara preferida de otra columna y la suya no la comparte
+     nadie, cuelga de ese eje (asi hizo el eje G de PUCALPA).  Caras a menos
+     de 1,5 cm son el mismo eje: el ruido del dibujo.
+   · Nada se mueve: si dos ejes necesarios quedan a menos de 5 cm (el vano
+     minimo del complemento), se queda el que usan mas columnas; la otra
+     columna prueba su otra cara, y si tampoco cae en un eje, NO se copia y
+     se lista para revisarla a mano.
+   · Cada columna va a su cruce con su seccion del plano (b a lo largo de X,
+     h a lo largo de Y) y su posicion respecto al eje (la esquina que toca
+     el cruce), asi queda exactamente donde esta dibujada.
+
+   Puro: no toca el modelo.  Lo aplica reticula.html.
+   ===================================================================== */
+(function (raiz) {
+  "use strict";
+  var TOL_SEC = 0.011, TOL_CARA = 0.015, MIN_VANO = 0.05, TOL_ARQ = 0.02, TOL_DUP = 0.005, MAX_COL = 1.2;
+
+  function r4(v) { return Math.round(v * 1e4) / 1e4; }
+  function cm(v) { return Math.round(v * 100); }
+  function ordena(a, b) { return a - b; }
+  function mediana(L) { var s = L.slice().sort(ordena), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : 0; }
+  function clave(an, al) { var a = Math.min(an, al), b = Math.max(an, al); return cm(a) + "x" + cm(b); }
+
+  /* "25x50", "25 × 50", "50x25" -> [0.25, 0.50] (el menor primero) */
+  function leeSeccion(t) {
+    var m = /^\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*$/i.exec(String(t || ""));
+    if (!m) return null;
+    var a = parseFloat(m[1].replace(",", ".")) / 100, b = parseFloat(m[2].replace(",", ".")) / 100;
+    if (!(a > 0 && b > 0)) return null;
+    return [Math.min(a, b), Math.max(a, b)];
+  }
+  function nombreSec(s) { return cm(s[0]) + "×" + cm(s[1]); }
+
+  /* LAS MEDIDAS que hay en los planos, para que el ingeniero marque cuales son columnas: [{sec:"25x50", n, planos}] */
+  function medidas(pisos) {
+    var M = {};
+    (pisos || []).forEach(function (p, k) {
+      var vistos = [];
+      (p.rects || []).forEach(function (r) {
+        if (duplicado(vistos, r)) return;
+        vistos.push(r);
+        var c = clave(r[3], r[4]);
+        (M[c] = M[c] || { sec: c, n: 0, planos: [] }).n++;
+        if (M[c].planos.indexOf(k) < 0) M[c].planos.push(k);
+      });
+    });
+    return Object.keys(M).map(function (c) { return M[c]; }).sort(function (a, b) { return b.n - a.n || (a.sec < b.sec ? -1 : 1); });
+  }
+  function duplicado(vistos, r) {
+    return vistos.some(function (q) {
+      return Math.abs(q[1] - r[1]) <= TOL_DUP && Math.abs(q[2] - r[2]) <= TOL_DUP &&
+             Math.abs(q[3] - r[3]) <= TOL_DUP && Math.abs(q[4] - r[4]) <= TOL_DUP;
+    });
+  }
+
+  /* cuanto hay que correr un piso para que sus ejes del arquitecto caigan sobre los del primero, por su nombre */
+  function alinea(ref, p) {
+    var d = { v: [], h: [] };
+    (p.arq || []).forEach(function (e) {
+      var o = (ref.arq || []).filter(function (q) { return q.dir === e.dir && q.nombre === e.nombre; })[0];
+      if (o) d[e.dir].push(o.m - e.m);
+    });
+    function uno(L) {
+      if (!L.length) return { ok: false, n: 0 };
+      var m = mediana(L), dis = Math.max.apply(null, L.map(function (v) { return Math.abs(v - m); }));
+      return { ok: dis <= TOL_ARQ, v: m, n: L.length, dis: dis };
+    }
+    return { x: uno(d.v), y: uno(d.h) };
+  }
+
+  /* LOS EJES DE UNA DIRECCION.  pref[i], alt[i]: la cara preferida y la opuesta de cada columna.
+     Devuelve {ejes: [pos], asign: [{k, lado} | null], motivo: [texto | null]} */
+  function ejesDir(pref, alt, eje) {
+    var n = pref.length, v = [], lado = [], i, j;
+    for (i = 0; i < n; i++) {
+      var solo = true, otra = false;
+      for (j = 0; j < n; j++) {
+        if (j === i) continue;
+        if (Math.abs(pref[j] - pref[i]) <= TOL_CARA) solo = false;
+        if (Math.abs(pref[j] - alt[i]) <= TOL_CARA) otra = true;
+      }
+      if (solo && otra) { v[i] = alt[i]; lado[i] = "alt"; } else { v[i] = pref[i]; lado[i] = "pref"; }
+    }
+    /* agrupar: caras a menos de 1,5 cm son el mismo eje */
+    var orden = v.map(function (x, k) { return k; }).sort(function (a, b) { return v[a] - v[b]; });
+    var grupos = [];
+    orden.forEach(function (k) {
+      var g = grupos[grupos.length - 1];
+      if (g && v[k] - g.ult <= TOL_CARA) { g.idx.push(k); g.ult = v[k]; }
+      else grupos.push({ idx: [k], ult: v[k] });
+    });
+    var asign = [], motivo = [];
+    for (i = 0; i < n; i++) { asign[i] = null; motivo[i] = null; }
+    var ejes = grupos.map(function (g) {
+      return { m: g.idx.reduce(function (s, k) { return s + v[k]; }, 0) / g.idx.length, idx: g.idx.slice() };
+    });
+    /* nada se mueve: dos ejes a menos de 5 cm -> se queda el que usan mas columnas */
+    var cambio = true;
+    while (cambio) {
+      cambio = false;
+      for (var e = 0; e + 1 < ejes.length; e++) {
+        if (ejes[e + 1].m - ejes[e].m >= MIN_VANO) continue;
+        var queda = ejes[e].idx.length >= ejes[e + 1].idx.length ? e : e + 1, sale = queda === e ? e + 1 : e;
+        var sal = ejes[sale], dist = Math.abs(ejes[queda].m - sal.m);
+        ejes.splice(sale, 1);
+        sal.idx.forEach(function (k) {
+          var otraCara = lado[k] === "pref" ? alt[k] : pref[k];
+          var cae = null;
+          ejes.forEach(function (E, q) { if (Math.abs(E.m - otraCara) <= TOL_CARA) cae = q; });
+          if (cae !== null) { ejes[cae].idx.push(k); lado[k] = lado[k] === "pref" ? "alt" : "pref"; v[k] = otraCara; }
+          else motivo[k] = "su cara en " + eje + " queda a " + (Math.round(dist * 1000) / 10).toString().replace(".", ",") +
+                           " cm de otro eje: no se mueve, revísala a mano";
+        });
+        cambio = true;
+        break;
+      }
+    }
+    ejes.forEach(function (E, q) {
+      E.idx.forEach(function (k) { if (!motivo[k]) asign[k] = { k: q, lado: lado[k] }; });
+    });
+    return { ejes: ejes.map(function (E) { return E.m; }), asign: asign, motivo: motivo };
+  }
+
+  /* LA PROPUESTA.  pisos: [{nivel, nombre, arq: [{nombre, dir, m}], rects: [[capa, cx, cy, an, al]]}] (el primero
+     es la referencia); secciones: ["25x50", ...].  No toca nada. */
+  function propone(pisos, secciones) {
+    var SEC = (secciones || []).map(leeSeccion).filter(Boolean);
+    var res = { ok: false, ejesX: [], ejesY: [], dx: [], dy: [], niveles: [], avisos: [], alineacion: [] };
+    if (!pisos || !pisos.length) { res.avisos.push("No hay planos."); return res; }
+    if (!SEC.length) { res.avisos.push("Marca las secciones de columna del proyecto: solo esas se copian."); return res; }
+    var ref = pisos[0], todas = [];
+    pisos.forEach(function (p, k) {
+      var N = { nivel: p.nivel, nombre: p.nombre || ("plano " + (k + 1)), columnas: [], fuera: [], dobles: 0, largos: 0 };
+      res.niveles.push(N);
+      var off = { x: 0, y: 0 };
+      if (k > 0) {
+        var a = alinea(ref, p);
+        res.alineacion.push({ nombre: N.nombre, x: a.x, y: a.y });
+        if (!a.x.ok || !a.y.ok) {
+          N.sinAlinear = true;
+          res.avisos.push(N.nombre + ": no se pudo alinear con " + (ref.nombre || "el primer plano") + " por los ejes del arquitecto (" +
+            (!a.x.n || !a.y.n ? "no comparten ejes con el mismo nombre" : "sus ejes no coinciden entre sí, difieren " +
+              cm(Math.max(a.x.dis || 0, a.y.dis || 0)) + " cm") + "). Sus columnas no se copian.");
+          return;
+        }
+        off = { x: a.x.v, y: a.y.v };
+      }
+      var vistos = [];
+      (p.rects || []).forEach(function (r) {
+        if (duplicado(vistos, r)) { N.dobles++; return; }
+        vistos.push(r);
+        var an = +r[3], al = +r[4], lo = Math.min(an, al), hi = Math.max(an, al);
+        var s = SEC.filter(function (q) { return Math.abs(q[0] - lo) <= TOL_SEC && Math.abs(q[1] - hi) <= TOL_SEC; })[0];
+        var cx = +r[1] + off.x, cy = +r[2] + off.y;
+        if (!s) {
+          /* lo largo (vigas o muros dibujados como rectangulo) no se confunde con una columna: se cuenta, no se lista */
+          if (hi > MAX_COL) { N.largos++; return; }
+          N.fuera.push({ an: an, al: al, cx: cx, cy: cy, capa: r[0], motivo: "mide " + cm(an) + "×" + cm(al) + ": no es de tus secciones" });
+          return;
+        }
+        /* la seccion del plano, con los numeros de la seccion marcada: b a lo largo de X */
+        var b = an <= al ? s[0] : s[1], h = an <= al ? s[1] : s[0];
+        if (Math.abs(an - al) <= TOL_SEC) { b = s[0]; h = s[1]; }
+        todas.push({ N: N, cx: cx, cy: cy, an: an, al: al, b: cm(b), h: cm(h), capa: r[0] });
+      });
+    });
+    if (!todas.length) { res.avisos.push("Ningún rectángulo de los planos mide una de tus secciones."); return res; }
+    /* X: cara izquierda preferida; Y (hacia arriba en el dibujo): cara inferior preferida */
+    var X = ejesDir(todas.map(function (c) { return c.cx - c.an / 2; }), todas.map(function (c) { return c.cx + c.an / 2; }), "X");
+    var Y = ejesDir(todas.map(function (c) { return c.cy - c.al / 2; }), todas.map(function (c) { return c.cy + c.al / 2; }), "Y");
+    /* los ejes que quedaron con columna; en Y de arriba abajo, como el modelador */
+    var usX = [], usY = [];
+    todas.forEach(function (c, i) {
+      if (X.asign[i] && Y.asign[i]) { usX[X.asign[i].k] = true; usY[Y.asign[i].k] = true; }
+    });
+    var mapX = [], mapY = [], ex = [], ey = [];
+    X.ejes.forEach(function (m, q) { if (usX[q]) { mapX[q] = ex.length; ex.push(m); } });
+    var ordY = Y.ejes.map(function (m, q) { return q; }).filter(function (q) { return usY[q]; })
+                     .sort(function (a, b) { return Y.ejes[b] - Y.ejes[a]; });
+    ordY.forEach(function (q) { mapY[q] = ey.length; ey.push(Y.ejes[q]); });
+    var ocupado = {};
+    todas.forEach(function (c, i) {
+      var ax = X.asign[i], ay = Y.asign[i];
+      if (!ax || !ay) {
+        c.N.fuera.push({ an: c.an, al: c.al, cx: c.cx, cy: c.cy, capa: c.capa, motivo: X.motivo[i] || Y.motivo[i] || "sin eje" });
+        return;
+      }
+      var ii = mapX[ax.k], jj = mapY[ay.k], kk = c.N.nivel + "|" + ii + ":" + jj;
+      if (ocupado[kk]) {
+        c.N.fuera.push({ an: c.an, al: c.al, cx: c.cx, cy: c.cy, capa: c.capa, motivo: "otra columna ya ocupa ese cruce: revísala a mano" });
+        return;
+      }
+      ocupado[kk] = true;
+      /* la posicion respecto al eje: la esquina que toca el cruce.  x: cara izquierda en el eje -> la columna queda a
+         la derecha (+1).  y (el modelo va hacia abajo): cara inferior en el eje -> la columna queda arriba (-1) */
+      var al = { x: ax.lado === "pref" ? 1 : -1, y: ay.lado === "pref" ? -1 : 1 };
+      c.N.columnas.push({ i: ii, j: jj, b: c.b, h: c.h, al: al, cx: r4(c.cx), cy: r4(c.cy) });
+    });
+    res.ejesX = ex.map(r4);
+    res.ejesY = ey.map(r4);
+    for (var q = 1; q < ex.length; q++) res.dx.push(r4(ex[q] - ex[q - 1]));
+    for (q = 1; q < ey.length; q++) res.dy.push(r4(ey[q - 1] - ey[q]));
+    /* donde queda cada cosa que no se copia, con los nombres por defecto del modelador (A, B… / 1, 2…) */
+    var LET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    function cerca(f) {
+      function idx(L, v) { var b = 0; L.forEach(function (m, k) { if (Math.abs(m - v) < Math.abs(L[b] - v)) b = k; }); return b; }
+      if (!ex.length || !ey.length) return "";
+      var i = idx(ex, f.cx), j = idx(ey, f.cy);
+      return (i < 26 ? LET[i] : "X" + (i + 1)) + "-" + (j + 1);
+    }
+    res.niveles.forEach(function (N) {
+      N.fuera.forEach(function (f) { f.cerca = cerca(f); });
+      if (N.dobles) res.avisos.push(N.nombre + ": " + N.dobles + " rectángulo(s) dibujado(s) dos veces; se cuentan una vez.");
+      if (N.largos) res.avisos.push(N.nombre + ": " + N.largos + " rectángulo(s) de más de " + cm(MAX_COL) +
+                                    " cm de largo (vigas o muros dibujados así): no son columnas, no se copian.");
+    });
+    res.ok = ex.length >= 2 && ey.length >= 2;
+    if (!res.ok) res.avisos.push("Hacen falta al menos dos ejes en cada dirección: con estas columnas salen " + ex.length + " ↔ y " + ey.length + " ↕.");
+    return res;
+  }
+
+  var COLCAD = { propone: propone, medidas: medidas, leeSeccion: leeSeccion, nombreSec: nombreSec, alinea: alinea,
+                 TOL_SEC: TOL_SEC, TOL_CARA: TOL_CARA, MIN_VANO: MIN_VANO, MAX_COL: MAX_COL };
+  if (typeof module !== "undefined" && module.exports) module.exports = COLCAD;
+  raiz.COLCAD = COLCAD;
+})(typeof window !== "undefined" ? window : this);
 </script>
 <script>
 /* ===== ubicacion.js (inlinado) ===== */
@@ -11595,7 +12155,7 @@ select.crit-in{width:auto;text-align:left}
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", aligerada: "#7FA0AE", maciza: "#5B7686",
+  var COLORES = { col: "#0F6E8C", viga: "#A85A2B", chata: "#D9A579", invertida: "#7A4E86", aligerada: "#7FA0AE", maciza: "#5B7686",
                   nervada: "#8FA8A0", placa: "#3A4750", zapata: "#6B7B5A", platea: "#5B7F3A", escalera: "#7C6FA8",
                   /* los ejes en el suelo, del rojo de las burbujas del plano; y el aviso, mas encendido */
                   eje: "#C2443D", aviso: "#D23B2E",
@@ -11790,9 +12350,13 @@ select.crit-in{width:auto;text-align:left}
       if (mostrar("viga", k)) (L.vigas || []).forEach(function (v) {
         if (!(v.b > 0 && v.h > 0)) return;
         var chata = v.tipo === "chata", Lv = Math.sqrt(Math.pow(v.x2 - v.x1, 2) + Math.pow(v.y2 - v.y1, 2));
-        mete("viga", v.cod, k, (chata ? "Viga chata " : "Viga ") + v.cod,
-             cm(v.b) + " × " + cm(v.h) + " cm · " + m2(Lv) + " m de eje a eje · " + nombre,
-             chata ? C.chata : C.viga, prisma(tira(+v.x1 + (+v.dx || 0), +v.y1 + (+v.dy || 0), +v.x2 + (+v.dx || 0), +v.y2 + (+v.dy || 0), +v.b), z1 - v.h, z1 - BAJA_VIGA));
+        /* LA INVERTIDA sube: su fondo al ras del fondo de la losa que toca (tLosa), como la ve ETABS */
+        var inv = !!v.inv, tL = +v.tLosa || 0, zb = inv ? z1 - tL + BAJA_VIGA : z1 - v.h, zt = inv ? z1 - tL + (+v.h) : z1 - BAJA_VIGA;
+        mete("viga", v.cod, k, (chata ? "Viga chata " : (inv ? "Viga invertida " : "Viga ")) + v.cod,
+             cm(v.b) + " × " + cm(v.h) + " cm · " + m2(Lv) + " m de eje a eje · " + nombre +
+             (inv ? " · sube " + cm(v.h - tL) + " cm sobre la losa" : ""),
+             chata ? C.chata : (inv ? (C.invertida || C.viga) : C.viga),
+             prisma(tira(+v.x1 + (+v.dx || 0), +v.y1 + (+v.dy || 0), +v.x2 + (+v.dx || 0), +v.y2 + (+v.dy || 0), +v.b), zb, zt));
       });
       if (mostrar("losa", k)) (L.losas || []).forEach(function (l) {
         if (!(l.e > 0) || !l.xs || l.xs.length < 3) { avisos.losasSinEspesor++; return; }
@@ -13127,7 +13691,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v424 · 27-09-2026";
+  var BUILD="v435 · 28-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -13186,7 +13750,8 @@ var TT={script:performance.now()};
      que se lee de Excel. */
   function tipoViga(x){return (x&&x.t)?x.t:"principal"}
   /* LA INVERTIDA es una PRINCIPAL puesta por encima de la losa: mismo predimensionamiento y mismo
-     diseño, distinto sitio.  Solo el dibujo, la ficha y el plano la distinguen. */
+     diseño, distinto sitio.  La distinguen el dibujo, la ficha, el plano, el 3D y ETABS (opcion B, 27-09-2026):
+     alli se VE con su fondo al ras del fondo de la losa y se CALCULA en el nudo, como las peraltadas. */
   function esInvertida(x){ return tipoViga(x)==="invertida"; }
   function nombreTipoViga(x){ var t=tipoViga(x);
     return t==="chata"?"chata":(t==="invertida"?"invertida":"principal"); }
@@ -17916,26 +18481,40 @@ var TT={script:performance.now()};
      No es modelo: es una guia exacta, en la misma linea que se dibujo. */
   function ejesDeCad(cad){
     var X0=Infinity, Y0=Infinity, X1=-Infinity, Y1=-Infinity, segs=[], ejes=[];
+    /* LAS CAPAS RET-* son lo que dibuja el propio complemento: no cuentan (en PISO1 de PUCALPA estaban encima de los
+       ejes del arquitecto, 15 cm corridas y con otra numeracion).  Igual que leer_autocad.py. */
+    function nomCapa(i){ var c=cad.capas&&cad.capas[i]; return c?String(c.n||""):""; }
+    function propia(i){ return /^RET-/i.test(nomCapa(i)); }
+    var RE_EJE=/^([A-Za-z]{1,2}|[0-9]{1,3})['′´’″]*$/, RE_CAPA=/eje|axis|grid/i;
     cad.l.forEach(function(L){
       for(var k=2;k+1<L.length;k+=2){ X0=Math.min(X0,L[k]); X1=Math.max(X1,L[k]); Y0=Math.min(Y0,L[k+1]); Y1=Math.max(Y1,L[k+1]); }
-      for(k=2;k+3<L.length;k+=2)segs.push([L[k],L[k+1],L[k+2],L[k+3]]);
+      if(propia(L[0]))return;
+      for(k=2;k+3<L.length;k+=2)segs.push([L[k],L[k+1],L[k+2],L[k+3],L[0]]);
     });
     if(!(X1>X0||Y1>Y0))return ejes;
+    var textos=cad.t.filter(function(T){ return !propia(T[0])&&RE_EJE.test(T[6]); });
     cad.c.forEach(function(C){
-      var cx=C[2], cy=C[3], r=C[4], nombre=null, dir=null, pos=null, largo=0;
-      if(!(r>=0.1&&r<=1.0))return;
-      cad.t.forEach(function(T){
-        if(!nombre&&Math.hypot(T[2]-cx,T[3]-cy)<=1.3*r&&/^([A-Za-z]{1,2}|[0-9]{1,2})['′´]*$/.test(T[6]))nombre=T[6];
-      });
+      var cx=C[2], cy=C[3], r=C[4], nombre=null, dir=null, pos=null, mejor=null;
+      if(propia(C[0])||!(r>=0.1&&r<=1.0))return;
+      /* el nombre: el texto de eje MAS CERCANO al centro (con burbujas pegadas, el primero podia ser el de la vecina) */
+      var dmin=Infinity;
+      textos.forEach(function(T){ var d=Math.hypot(T[2]-cx,T[3]-cy); if(d<=1.3*r&&d<dmin){dmin=d;nombre=T[6];} });
       if(!nombre)return;
-      /* su tramo: recto, horizontal o vertical, por el centro y con un extremo en el circulo */
+      /* su tramo: recto, horizontal o vertical, por el centro, con un extremo en el circulo o a menos de un radio de
+         el; primero el de la capa de la burbuja o de una capa de ejes, y entre ellos el mas largo */
+      var hueco=Math.max(0.15*r+0.02,r);
       segs.forEach(function(s){
         var len=Math.hypot(s[2]-s[0],s[3]-s[1]); if(len<r)return;
         var d1=Math.hypot(s[0]-cx,s[1]-cy), d2=Math.hypot(s[2]-cx,s[3]-cy);
-        if(Math.min(Math.abs(d1-r),Math.abs(d2-r),d1,d2)>0.15*r+0.02)return;
-        if(Math.abs(s[2]-s[0])<=0.01*len&&Math.abs((s[0]+s[2])/2-cx)<=0.1*r&&len>largo){largo=len;dir="v";pos=(s[0]+s[2])/2;}
-        if(Math.abs(s[3]-s[1])<=0.01*len&&Math.abs((s[1]+s[3])/2-cy)<=0.1*r&&len>largo){largo=len;dir="h";pos=(s[1]+s[3])/2;}
+        if(Math.min(Math.abs(d1-r),Math.abs(d2-r),d1,d2)>hueco)return;
+        var dd=null, pp=null;
+        if(Math.abs(s[2]-s[0])<=0.01*len&&Math.abs((s[0]+s[2])/2-cx)<=0.1*r){dd="v";pp=(s[0]+s[2])/2;}
+        else if(Math.abs(s[3]-s[1])<=0.01*len&&Math.abs((s[1]+s[3])/2-cy)<=0.1*r){dd="h";pp=(s[1]+s[3])/2;}
+        if(!dd)return;
+        var pr=(s[4]===C[0]||RE_CAPA.test(nomCapa(s[4])))?0:1;
+        if(!mejor||pr<mejor.pr||(pr===mejor.pr&&len>mejor.len))mejor={pr:pr,len:len,dir:dd,pos:pp};
       });
+      if(mejor){ dir=mejor.dir; pos=mejor.pos; }
       /* sin tramo: la burbuja de arriba o de abajo es de un eje vertical; la de un costado, de uno horizontal */
       if(!dir){
         dir=Math.min(Math.abs(cy-Y0),Math.abs(cy-Y1))<Math.min(Math.abs(cx-X0),Math.abs(cx-X1))?"v":"h";
@@ -19530,6 +20109,152 @@ var TT={script:performance.now()};
       traeEjesCad(d);
     };
     r.readAsText(f);
+  });
+  /* =====================================================================
+     AUTOCAD › COLUMNAS (Victor, 27-09-2026: «no tienes permiso de proponer o generar elementos estructurales sin
+     seguridad… si puedes copiar columnas con seguridad, genial… las columnas deben estar en su eje exacto»).
+
+     Uno o varios archivos de EJES AUTOCAD.bat -uno por piso-, cada uno a su nivel.  El motor (oviedo/columnascad.js)
+     reconoce como columna SOLO lo que mide una de las secciones que marca el ingeniero, alinea los pisos por los ejes
+     del arquitecto y crea los ejes por la esquina de cada columna, como los hace el.  Aqui se ensena todo -lo que se
+     copia, lo que no y por que- y solo «Aplicar» lo pone en el modelo, con Ctrl+Z para volver.
+     ===================================================================== */
+  var COLS_CAD=null;
+  function llenaArr(n,v){ var a=[]; for(var i=0;i<n;i++)a.push(v); return a; }
+  function nivelDeArchivo(nombre,k){
+    var m=/(\d+)/.exec(String(nombre||"")), n=m?(+m[1]-1):k;
+    return (n>=0&&n<S.niveles.length)?n:Math.max(0,Math.min(k,S.niveles.length-1));
+  }
+  function pisosColsCad(){
+    return COLS_CAD.archivos.slice().sort(function(a,b){return a.nivel-b.nivel})
+      .map(function(a){ return {nivel:a.nivel, nombre:a.nombre, arq:a.d.arq||[], rects:a.d.rects||[]}; });
+  }
+  /* la planta de un nivel, en pequeno: los ejes, las columnas que se copian y, a trazos, lo que no */
+  function svgColsCad(r,N){
+    var X=r.ejesX, Y=r.ejesY; if(!X.length||!Y.length)return "";
+    var x0=X[0]-1, x1=X[X.length-1]+1, y0=Y[Y.length-1]-1, y1=Y[0]+1, W=x1-x0, H=y1-y0, E=300/Math.max(W,H);
+    function px(x){return ((x-x0)*E).toFixed(1)} function py(y){return ((y1-y)*E).toFixed(1)}
+    var s='<svg viewBox="0 0 '+(W*E).toFixed(0)+' '+(H*E).toFixed(0)+'" role="img" aria-label="Planta del nivel '+(N.nivel+1)+'">';
+    X.forEach(function(x){ s+='<line x1="'+px(x)+'" y1="0" x2="'+px(x)+'" y2="'+(H*E).toFixed(0)+'" stroke="var(--grid)" stroke-width=".6" stroke-dasharray="5 2 1 2"/>'; });
+    Y.forEach(function(y){ s+='<line x1="0" y1="'+py(y)+'" x2="'+(W*E).toFixed(0)+'" y2="'+py(y)+'" stroke="var(--grid)" stroke-width=".6" stroke-dasharray="5 2 1 2"/>'; });
+    N.columnas.forEach(function(c){
+      var b=c.b/100, h=c.h/100, xa=X[c.i]-(c.al.x<0?b:(c.al.x>0?0:b/2)), ya=Y[c.j]+(c.al.y<0?h:(c.al.y>0?0:h/2));
+      s+='<rect x="'+px(xa)+'" y="'+py(ya)+'" width="'+(b*E).toFixed(1)+'" height="'+(h*E).toFixed(1)+'" fill="var(--col)"/>';
+    });
+    N.fuera.forEach(function(f){
+      s+='<rect x="'+px(f.cx-f.an/2)+'" y="'+py(f.cy+f.al/2)+'" width="'+(f.an*E).toFixed(1)+'" height="'+(f.al*E).toFixed(1)+
+         '" fill="none" stroke="var(--trib)" stroke-width="1" stroke-dasharray="2 1.5"/>';
+    });
+    return s+'</svg>';
+  }
+  function pintaColsCad(){
+    var P=$("#panelColsCad"); if(!P)return;
+    if(!COLS_CAD){ ver(P,false); return; }
+    var pisos=pisosColsCad(), med=COLCAD.medidas(pisos).filter(function(m){
+          var s=COLCAD.leeSeccion(m.sec); return s&&s[1]<=COLCAD.MAX_COL; }),
+        r=COLS_CAD.secc.length?COLCAD.propone(pisos,COLS_CAD.secc):null;
+    COLS_CAD.r=r;
+    var h='<h3>Columnas desde AutoCAD</h3>'+
+      '<p class="calcnote">Solo se copian los rectángulos que miden una de las secciones que marques, cada uno en su '+
+      'sitio exacto y con su sección del plano. Los ejes son los que hacen falta para colgarlos, por la esquina de cada '+
+      'columna. Los ejes del arquitecto solo alinean un plano con otro. Lo que no es seguro no se copia: se lista abajo.</p>';
+    h+='<div class="cols"><div><h4>Planos</h4><ul>'+COLS_CAD.archivos.map(function(a,k){
+      return '<li><span>'+escapa(a.nombre)+'</span><select class="med" data-ccniv="'+k+'" aria-label="Nivel de '+escapa(a.nombre)+'">'+
+        S.niveles.map(function(m,n){ return '<option value="'+n+'"'+(n===a.nivel?" selected":"")+'>Nivel '+(n+1)+'</option>'; }).join("")+
+        '</select></li>';
+    }).join("")+'</ul></div>';
+    h+='<div><h4>Secciones de columna del proyecto</h4><ul>'+(med.length?med.map(function(m){
+      var on=COLS_CAD.secc.indexOf(m.sec)>=0;
+      return '<li><label><input type="checkbox" data-ccsec="'+m.sec+'"'+(on?" checked":"")+'> '+m.sec.replace("x","×")+
+             '</label><span class="med">'+m.n+' en los planos</span></li>';
+    }).join(""):'<li>Los planos no traen rectángulos del tamaño de una columna.</li>')+'</ul></div></div>';
+    if(!r) h+='<p class="empty" style="margin-top:12px">Marca las secciones que son columnas: solo esas se copian.</p>';
+    else{
+      h+='<h4>Resultado</h4><p><b>'+r.ejesX.length+' ejes en X y '+r.ejesY.length+' en Y</b> · '+
+         r.niveles.map(function(N){ return 'Nivel '+(N.nivel+1)+': <b>'+N.columnas.length+'</b> columnas'+
+           (N.fuera.length?', '+N.fuera.length+' no se copian':''); }).join(' · ')+'</p>';
+      if(r.avisos.length)h+='<ul>'+r.avisos.map(function(a){ return '<li class="no">'+escapa(a)+'</li>'; }).join("")+'</ul>';
+      h+='<div class="prev">'+r.niveles.filter(function(N){return !N.sinAlinear}).map(function(N){
+        return '<figure><figcaption>Nivel '+(N.nivel+1)+' · '+escapa(N.nombre)+'</figcaption>'+svgColsCad(r,N)+'</figure>'; }).join("")+'</div>';
+      var fu=[]; r.niveles.forEach(function(N){ N.fuera.forEach(function(f){ fu.push('<li class="no"><b>Nivel '+(N.nivel+1)+
+        ' · cerca de '+escapa(f.cerca)+'</b><span class="med">'+escapa(f.motivo)+'</span></li>'); }); });
+      if(fu.length)h+='<h4>No se copian (revísalos a mano)</h4><ul>'+fu.join("")+'</ul>';
+    }
+    h+='<div class="row" style="margin-top:14px;gap:8px"><button class="btn pri" id="ccAplicar"'+(r&&r.ok?"":" disabled")+
+       '>Aplicar</button><button class="btn" id="ccCancelar">Cancelar</button></div>'+
+       '<p class="calcnote">Aplicar crea los ejes en todos los niveles y pone las columnas en su nivel. Ctrl+Z lo deshace entero.</p>';
+    P.innerHTML=h; ver(P,true);
+    P.querySelectorAll("[data-ccniv]").forEach(function(s){ s.onchange=function(){
+      COLS_CAD.archivos[+this.dataset.ccniv].nivel=+this.value; pintaColsCad(); }; });
+    P.querySelectorAll("[data-ccsec]").forEach(function(c){ c.onchange=function(){
+      var k=this.dataset.ccsec, i=COLS_CAD.secc.indexOf(k);
+      if(this.checked&&i<0)COLS_CAD.secc.push(k); if(!this.checked&&i>=0)COLS_CAD.secc.splice(i,1);
+      S.proy.seccionesCol=COLS_CAD.secc.slice(); guardar(); pintaColsCad(); }; });
+    $("#ccCancelar").onclick=function(){ COLS_CAD=null; pintaColsCad(); };
+    $("#ccAplicar").onclick=function(){
+      var q=aplicaColsCad(COLS_CAD.r);
+      if(!q.ok)return toast(q.msg);
+      COLS_CAD=null; pintaColsCad();
+      toast("De AutoCAD: "+q.n+" columna(s) en su sitio y "+q.ex+" + "+q.ey+" ejes. Ctrl+Z lo deshace.");
+    };
+  }
+  /* PONERLO EN EL MODELO.  Los ejes son del edificio: cambian todos los niveles.  Por seguridad, solo sobre una planta
+     sin vigas, losas ni placas (se romperian), y sin columnas en un nivel al que no se le da plano (se perderian). */
+  function aplicaColsCad(r){
+    if(!r||!r.ok)return {ok:false,msg:"No hay nada seguro que aplicar."};
+    var trae={}; r.niveles.forEach(function(N){ if(!N.sinAlinear)trae[N.nivel]=true; });
+    var malo=null;
+    S.niveles.forEach(function(m,k){
+      var hay=Object.keys(m.vigas||{}).length+Object.keys(m.losas||{}).length+Object.keys(m.placas||{}).length;
+      if(hay)malo=malo||("El nivel "+(k+1)+" ya tiene vigas, losas o placas: los ejes nuevos los romperían. "+
+                         "Trae las columnas a una planta sin ellos.");
+      else if(!trae[k]&&Object.keys(m.cols||{}).length)
+        malo=malo||("El nivel "+(k+1)+" tiene columnas y no le asignaste plano: con los ejes nuevos se perderían.");
+    });
+    if(malo)return {ok:false,msg:malo};
+    snap();
+    var nx=r.dx.length+1, ny=r.dy.length+1, n=0;
+    S.niveles.forEach(function(m,k){
+      m.dx=r.dx.slice(); m.dy=r.dy.slice();
+      delete m.dx2; delete m.dy2; delete m.ox; delete m.oy;
+      m.primaX=llenaArr(nx,false); m.primaY=llenaArr(ny,false);
+      m.nomX=llenaArr(nx,null); m.nomY=llenaArr(ny,null);
+      m.zapatas=m.zapatas||{};
+      if(trae[k])m.cols={};
+    });
+    r.niveles.forEach(function(N){
+      var m=S.niveles[N.nivel]; if(!m||N.sinAlinear)return;
+      N.columnas.forEach(function(c){
+        var o={sec:{b:c.b,h:c.h}}; if(c.al.x||c.al.y)o.al={x:c.al.x,y:c.al.y};
+        m.cols[key(c.i,c.j)]=o; n++;
+      });
+    });
+    S.niveles.forEach(function(m){ podar(m); });
+    S.sel=null; PASADA++; guardar(); render();
+    return {ok:true,n:n,ex:nx,ey:ny};
+  }
+  function abreColsCad(archivos){
+    var mal=archivos.filter(function(a){ return !a.d||!Array.isArray(a.d.rects)||!Array.isArray(a.d.arq); });
+    if(mal.length)return toast(mal.map(function(a){return a.nombre}).join(", ")+
+      ": no trae los rectángulos. Vuelve a pasar EJES AUTOCAD.bat (la versión nueva).");
+    COLS_CAD={archivos:archivos.map(function(a,k){ return {nombre:a.nombre, d:a.d, nivel:nivelDeArchivo(a.nombre,k)}; }),
+              secc:((S.proy&&S.proy.seccionesCol)||[]).slice()};
+    pintaColsCad();
+  }
+  $("#colsCad").onclick=function(){ $("#colsCadFile").click() };
+  $("#colsCadFile").addEventListener("change",function(){
+    var fs=Array.prototype.slice.call(this.files||[]); this.value="";
+    if(!fs.length)return;
+    var hechos=[], faltan=fs.length;
+    fs.forEach(function(f,k){
+      var rd=new FileReader();
+      rd.onload=function(){
+        var d=null; try{ d=JSON.parse(rd.result); }catch(e){}
+        hechos[k]={nombre:String(f.name).replace(/_ejes\.json$/i,"").replace(/\.json$/i,""), d:d};
+        if(--faltan===0)abreColsCad(hechos);
+      };
+      rd.readAsText(f);
+    });
   });
   /* LIMPIAR · deja el nivel en blanco.
      Va en dos clics a proposito: borrar el nivel entero de un toque, con el
@@ -23174,7 +23899,8 @@ var TT={script:performance.now()};
         '</tbody></table></div>'+
         '<p class="nota">'+cs.length+' de '+FZ.columnas.length+' columnas. Pu positiva en compresión; momentos en t·m. M3 y V2 '+
         'van en la dirección X global y M2 y V3 en la Y (ejes locales de ETABS sin girar). |V2| y |V3|: la mayor del pie y '+
-        'la cabeza. Con sismo, máx y mín son los extremos de cada fuerza por separado: no ocurren a la vez.</p>'+
+        'la cabeza. Con sismo, máx y mín son los extremos de cada fuerza por separado: no ocurren a la vez. El diseño '+
+        'revisa sus 8 esquinas G ± E (Diseño E.060 › Columnas).</p>'+
         (FZ.girados&&FZ.girados.length?'<p class="aviso">Columnas con los ejes locales <b>girados en ETABS</b>: '+
           FZ.girados.map(function(g){return escapa(g.cod)+' ('+g.ang+'°)'}).join(", ")+'. En ellas M3 y V2 ya no van en X, '+
           'ni M2 y V3 en Y.</p>':'')+combos+'</section>';
@@ -23970,14 +24696,33 @@ var TT={script:performance.now()};
      D3 · EL DISEÑO DE LAS COLUMNAS.  La norma vive en oviedo/columnas.js;
      aqui se le da cada columna de Fuerzas con el regimen del Cap. 21 -el mas
      exigente de las dos direcciones, porque una columna es la misma en las
-     dos-, las barras y el recubrimiento de Criterios, y la luz libre del
-     entrepiso (la altura menos el peralte de la viga mas alta que llega).
+     dos-, las barras y el recubrimiento de Criterios, y la luz libre de
+     CADA columna (su entrepiso menos las vigas que llegan a ella).
 
      La flexocompresion biaxial se comprueba con la superficie de interaccion
      de la seccion real.  Contrastado con la plantilla de Mathcad de Victor:
      -1,6 % en la rectangular y -3,6 % en la circular.
      ===================================================================== */
   var DCC={p:-1,v:null};
+  /* «Q 0,083: no arriostrado, δs 1,091 (10.13.4.2) · lu/r 29 ≤ 62 (10.13.5): sin δns», para la ficha y la hoja */
+  function textoEsbeltez(e,q,f){
+    var t=q?("Q "+f(q.Q,3)+": "+(q.arriostrado?"arriostrado":"no arriostrado, δs "+(isFinite(q.deltaS)?f(q.deltaS,3):"∞")+
+      " ("+q.metodo+")")):"";
+    t+=(t?" · ":"")+(e.arriostrado?("k "+f(e.k)+" · k·lu/r "+f(e.lambda,1)+" "+(e.nec?">":"≤")+" "+f(e.limite,1)+
+      " (Art. 10.12.2)"):("lu/r "+f(e.lu_r,1)+" "+(e.nec?">":"≤")+" 35/√(Pu/f'c·Ag) = "+f(e.limite,1)+" (Art. 10.13.5)"));
+    if(!e.nec)return t+": se desprecia";
+    return t+": δns "+(isFinite(e.dns)?f(e.dns,3):"∞ (pandea)")+" con Cm "+f(e.Cm)+", βd "+f(e.bd)+
+      ", Pc "+f(e.Pc,1)+" t (Art. 10.12.3)"+(e.M2min?" · manda M2,min (Art. 10.12.3.2)":"");
+  }
+  /* «2,80 − 0,60 (N1-VP-01) = 2,20 m», para la ficha y la hoja */
+  function textoLuz(q,f){
+    var t=f(q.h);
+    if(q.arriba>0)t+=" − "+f(q.arriba)+" ("+q.vArriba+")";
+    if(q.abajo>0)t+=" − "+f(q.abajo)+" ("+q.vAbajo+")";
+    t+=" = "+f(q.ln)+" m";
+    if(q.suelo)t+=" (suelo de 1,20 m)";
+    return t;
+  }
   var ESTADO_COL={ok:["Cumple","dis-ok"],revisar:["Revisar","dis-luego"],"no cumple":["No cumple","dis-falta"],
                   falta:["Sin datos","dis-na"]};
 
@@ -23987,21 +24732,80 @@ var TT={script:performance.now()};
         out={lista:[], hay:!!(r&&!r.error&&r.R), alDia:!!(r&&r.alDia)};
     if(out.hay){ try{ FZ=fuerzasEtabs(); }catch(e){} try{ ex=exportaEtabs(); }catch(e){} }
     if(FZ&&ex&&typeof COLUMNAS!=="undefined"){
-      /* la luz libre de cada columna: la altura de su nivel menos la viga mas alta que llega a el */
-      var alt={}, viga={};
-      ex.niveles.forEach(function(L){
-        var hv=0;
-        (L.vigas||[]).forEach(function(v){ hv=Math.max(hv,+v.h||0); });
-        (L.columnas||[]).forEach(function(c){ alt[c.cod]=+L.h||0; viga[c.cod]=hv; });
+      /* LA LUZ LIBRE DE CADA COLUMNA (fase 0.4): la altura de su nivel menos lo que ocupan las vigas que llegan
+         A ELLA -antes, la mas peraltada de TODO el nivel, fuera o no suya-.  Llega la viga con un extremo en su
+         nudo.  Arriba, la mas peraltada de las de su nivel; una invertida va al ras del fondo de la losa (opcion B)
+         y solo baja el espesor de esa losa.  Abajo, lo que sube sobre el piso una invertida del nivel de abajo
+         (h − t).  Afecta a Vu de capacidad (Mn/ln), a Lo (ln/6) y a la esbeltez. */
+      function llega(v,c){
+        return (Math.abs(v.x1-c.x)<1e-3&&Math.abs(v.y1-c.y)<1e-3)||(Math.abs(v.x2-c.x)<1e-3&&Math.abs(v.y2-c.y)<1e-3);
+      }
+      var luz={};
+      ex.niveles.forEach(function(L,k){
+        var Lb=k>0?ex.niveles[k-1]:null;
+        (L.columnas||[]).forEach(function(c){
+          var q={h:+L.h||0, arriba:0, abajo:0, vArriba:null, vAbajo:null};
+          (L.vigas||[]).forEach(function(v){
+            if(!llega(v,c))return;
+            var o=v.inv?(+v.tLosa||0):(+v.h||0);
+            if(o>q.arriba){ q.arriba=o; q.vArriba=v.cod+(v.inv?" (invertida: el espesor de su losa)":""); }
+          });
+          if(Lb)(Lb.vigas||[]).forEach(function(v){
+            if(!v.inv||!llega(v,c))return;
+            var o=Math.max(0,(+v.h||0)-(+v.tLosa||0));
+            if(o>q.abajo){ q.abajo=o; q.vAbajo=v.cod+" (invertida del nivel de abajo)"; }
+          });
+          luz[c.cod]=q;
+        });
       });
+      /* LA ESBELTEZ (fase 0.2): la estabilidad de cada entrepiso (10.11.4.2) con lo que a_excel trae de ETABS -P de
+         cada caso y V del espectro por piso, la deriva PROMEDIO del piso con el espectro, la fuente de masa y si
+         corrio con P-Delta-, el R de cada direccion de la Verificacion E.030 y, por columna, la carga sostenida de
+         cada combinacion (CM, con su factor) para βd.  Sin segundoOrden -resultados de antes- queda el aviso. */
+      var RR=r.R, SO=RR.segundoOrden, estab=null, porPiso={};
+      if(SO&&SO.pisos&&SO.pisos.length){
+        var VS=null; try{ VS=verificacionSismica(); }catch(e){}
+        var Rdir={x:(VS&&VS.v&&VS.v.R&&VS.v.R.x)?VS.v.R.x.R:null, y:(VS&&VS.v&&VS.v.R&&VS.v.R.y)?VS.v.R.y.R:null};
+        var din={}, der={}, hPiso={};
+        (RR.sismo&&RR.sismo.dinamico||[]).forEach(function(d){ din[d.dir]=d.caso; });
+        SO.pisos.forEach(function(p){ hPiso[p.piso]=+p.h||0; });
+        (RR.sismo&&RR.sismo.torsion||[]).forEach(function(t){
+          if(t.caso===din[t.dir]&&t.prom!=null)(der[t.piso]=der[t.piso]||{})[t.dir]=+t.prom; });
+        (RR.sismo&&RR.sismo.derivas||[]).forEach(function(t){            /* sin la promedio, la maxima × h */
+          if(t.caso===din[t.dir]&&!(der[t.piso]&&der[t.piso][t.dir]!=null))
+            (der[t.piso]=der[t.piso]||{})[t.dir]=(+t.deriva||0)*(hPiso[t.piso]||0); });
+        estab=COLUMNAS.estabilidad({pisos:SO.pisos, deriva:der, R:Rdir,
+          masa:(RR.tablas&&RR.tablas.fuenteMasa&&RR.tablas.fuenteMasa.partes)||null, pdelta:SO.pdelta});
+        estab.forEach(function(q){ porPiso[q.piso]=q; });
+        out.estabilidad=estab; out.pdelta=SO.pdelta||null;
+      }
+      /* la carga sostenida amplificada de cada combinacion en cada columna: Σ factor · |P| de los patrones muertos */
+      var CBx=(ex.combinaciones&&ex.combinaciones.lista)||[], PT=(ex.cargas&&ex.cargas.patrones)||{},
+          muertos=[PT.pp||"Dead",PT.cm||"CM"], cc=RR.columnasCasos||null;
+      function sostenidas(cod){
+        var q=cc&&cc[cod]; if(!q)return null;
+        var o={};
+        CBx.forEach(function(c){ var t=0;
+          (c.partes||[]).forEach(function(pz){ if(muertos.indexOf(pz[0])>=0)t+=(+pz[1]||0)*Math.abs(+q[pz[0]]||0); });
+          o[c.nombre]=t; });
+        return o;
+      }
       /* una columna es la misma en las dos direcciones: manda el capitulo mas exigente */
       var rx=(K.regimen&&K.regimen.x&&K.regimen.x.columnas)||"21.6",
           ry=(K.regimen&&K.regimen.y&&K.regimen.y.columnas)||"21.6",
           reg=(rx==="21.4"||ry==="21.4")?"21.4":"21.6";
       out.regimen=reg;
       out.lista=(FZ.columnas||[]).map(function(col){
-        var h=alt[col.cod]||2.8, hv=viga[col.cod]||0;
-        return COLUMNAS.disenar(col, K, {regimen:reg, ln:Math.max(1.2,h-hv), arriostrado:false});
+        var q=luz[col.cod]||{h:0, arriba:0, abajo:0}, sinH=!(q.h>0), h=sinH?2.8:q.h;
+        var ln=Math.max(1.2,h-q.arriba-q.abajo);
+        var st=estab?porPiso[col.nivel]:null;
+        var d=COLUMNAS.disenar(col, K, {regimen:reg, ln:ln, arriostrado:false, lu:ln, k:K.convenciones.kArr, Ec:K.Ec,
+          segundo:st?{x:st.x, y:st.y}:null, sostenida:sostenidas(col.cod)});
+        d.luz={h:h, arriba:q.arriba, abajo:q.abajo, vArriba:q.vArriba||null, vAbajo:q.vAbajo||null, ln:ln,
+               suelo:ln>h-q.arriba-q.abajo+1e-9, sinH:sinH};
+        if(sinH&&d.avisos)d.avisos.push("No se encontró la altura de su nivel: la luz libre sale de 2,80 m.");
+        if(!q.vArriba&&!sinH&&d.avisos)d.avisos.push("Ninguna viga llega a su cabeza: la luz libre es la altura del nivel.");
+        return d;
       });
     }
     out.resumen=(typeof COLUMNAS!=="undefined")?COLUMNAS.resumen(out.lista):null;
@@ -24243,6 +25047,19 @@ var TT={script:performance.now()};
      solo en cuanto cuatro vigas cerraban un paño, y eso marcaba como hueco lo que solo era una losa
      que aun no habias dibujado.) */
   function esVacio(i,j,m){ m=m||N(); return !!(m.vacios&&m.vacios[key(i,j)]); }
+  /* LA LOSA DE UNA INVERTIDA: el espesor de la losa que toca a lo largo de su tramo, en m (la mas gruesa si toca
+     dos).  En ETABS su fondo va al ras del fondo de esa losa.  Sin losa al lado, 0: la viga se apoya en el piso. */
+  function tLosaInvertida(o,i,j,m){
+    m=m||N(); var t=tramoViga(o,i,j,m), e=0, a;
+    for(a=t.desde;a<t.hasta;a++){
+      ((o==="h")?[[a,j-1],[a,j]]:[[i-1,a],[i,a]]).forEach(function(p){
+        if(p[0]<0||p[1]<0||p[0]>=m.dx.length||p[1]>=m.dy.length)return;
+        var lo=m.losas[key(p[0],p[1])]; if(!lo||esEscalera(lo)||esVacio(p[0],p[1],m))return;
+        var pl=predimLosa(p[0],p[1],m); if(pl&&isFinite(pl.e))e=Math.max(e,pl.e/100);
+      });
+    }
+    return e;
+  }
   /* poner o quitar el vacio de un paño */
   function ponVacio(i,j,poner,niv){
     var m=(niv!=null&&S.niveles[niv])?S.niveles[niv]:N();
@@ -24393,6 +25210,11 @@ var TT={script:performance.now()};
     var rec=(K.recub&&K.recub.zapata&&K.recub.zapata.cm)||7;
     var pn=presionSuelo(), sn=(pn.neta>0)?pn.neta:sigmaTm2();
     out.presion=pn;
+    /* EL FACTOR DEL ART. 44.2 (E.030): el mismo que el puente escribe en las combinaciones de ETABS.  Vigas y
+       columnas lo traen ya dentro de sus combinaciones; las zapatas combinan aqui las reacciones de cada caso,
+       asi que se lo pasa a ZAPATAS, que escala SDX y SDY en servicio y en rotura. */
+    var escS=(r.R.sismo&&r.R.sismo.escala)||null;
+    out.escala=ZAPATAS.escalaUsada(ZAPATAS.cargasDe(null,escS));
     var m=S.niveles[0], nm=nombres(0);
     zapatasDelNivel().forEach(function(z){
       if(z.corrida){
@@ -24423,7 +25245,7 @@ var TT={script:performance.now()};
         regC.vigasCon=(z.vigasCon||[]).map(function(v){ return {dir:v.dir, l:v.l,
           desde:(nm.C[key(v.desde[0],v.desde[1])]||{}).cod, hacia:(nm.C[key(v.i,v.j)]||{}).cod}; });
         regC.r=ZAPATAS.disenarCorrida({cols:colsC, L:z.L, B:z.B, H:z.H, Hpropio:z.Hpropio, fc:fcZapata(), fcCol:K.fc, fy:K.fy,
-          rec:rec, sn:sn, barras:barras, borde:!!(z.q&&z.q.bordeT),
+          rec:rec, sn:sn, barras:barras, borde:!!(z.q&&z.q.bordeT), escala:escS,
           vigas:(z.vigasCon||[]).map(function(v){
             var k=-1; colsC.forEach(function(c,ii){ if(c.nodo[0]===v.desde[0]&&c.nodo[1]===v.desde[1])k=ii; });
             return {k:k, l:v.l}; }).filter(function(v){ return v.k>=0; })});
@@ -24462,11 +25284,11 @@ var TT={script:performance.now()};
           reg.vigasCon=z.vigasCon.map(function(v){ return {dir:v.dir, l:v.l, hacia:(nm.C[key(v.i,v.j)]||{}).cod}; });
           reg.r=ZAPATAS.disenarConectada({casos:rq.casos, Lx:z.ax, Ly:z.ay, H:z.H, b:sc.b/100, h:sc.h/100,
             fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn, dbCol:barCol[codC]||dbDef, barras:barras, Hpropio:z.Hpropio,
-            vigas:z.vigasCon.map(function(v){ return {dir:v.dir, l:v.l}; })});
+            escala:escS, vigas:z.vigasCon.map(function(v){ return {dir:v.dir, l:v.l}; })});
         }else
         reg.r=ZAPATAS.disenar({casos:rq.casos, Lx:z.ax, Ly:z.ay, H:z.H, b:sc.b/100, h:sc.h/100,
           fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn, alfaS:40, dbCol:barCol[codC]||dbDef, barras:barras,
-          Hpropio:z.Hpropio});
+          Hpropio:z.Hpropio, escala:escS});
       }else{
         var pa=parejaZapata(z.i,z.j,m);
         var codA=(nm.C[key(pa.ai,pa.aj)]||{}).cod, codB=(nm.C[key(pa.bi,pa.bj)]||{}).cod;
@@ -24493,7 +25315,7 @@ var TT={script:performance.now()};
           col1:{casos:orienta(ra.casos), cl:lg(sa), ct:tr(sa)},
           col2:{casos:orienta(rb.casos), cl:lg(sb), ct:tr(sb)},
           sep:pa.sep, L:z.L, B:z.B, H:z.H, fc:fcZapata(), fcCol:K.fc, fy:K.fy, rec:rec, sn:sn,
-          dbCol1:barCol[codA]||dbDef, dbCol2:barCol[codB]||dbDef, barras:barras});
+          dbCol1:barCol[codA]||dbDef, dbCol2:barCol[codB]||dbDef, barras:barras, escala:escS});
         reg.dir=pa.dir; reg.cols=[{cl:lg(sa),ct:tr(sa)},{cl:lg(sb),ct:tr(sb)}];
       }
       var q=reg.r;
@@ -24572,7 +25394,8 @@ var TT={script:performance.now()};
         var t=(g&&g.t>0)?g.t:((+ps.t>0)?+ps.t*100:0);
         var lm=(g&&g.lm>0)?g.lm:0;
         var combos=[];
-        (ps.filas||[]).forEach(function(f){
+        /* con el espectro, Max y Min no son pares (P, M): se revisan Pu máx y Pu mín, cada una con el |M| mayor */
+        COLUMNAS.filasSimultaneas(ps.filas||[],COLUMNAS.GRUPOS_MURO,COLUMNAS.ABS_MURO).forEach(function(f){
           if(!f.base)return;
           combos.push({corto:f.corto+(f.paso?" "+f.paso:""), donde:"base",
                        Pu:f.base.Pu, M3:f.base.M3, V2:f.base.V2});
@@ -25189,7 +26012,9 @@ var TT={script:performance.now()};
     h+='<p class="nota" style="margin:0 0 8px">'+q.total+' zapata(s) · '+q.cumplen+' cumplen tal cual'+
       (q.cambian?' · <b>'+q.cambian+' cambian de medida</b>':'')+(q.no?' · <b class="dis-falta">'+q.no+' no cumplen</b>':'')+
       '. Presión de cálculo σn = '+f(pn.neta)+' t/m²'+(pn.manda==="neta"?' (neta: el relleno se come el '+
-      Math.round(pn.fraccion*100)+' % de σs)':'')+'.</p>';
+      Math.round(pn.fraccion*100)+' % de σs)':'')+'.'+
+      (D.escala?' Sismo de ETABS con el factor del Art. 44.2 de la E.030: <b>SDX × '+f(D.escala.x,3)+' · SDY × '+
+        f(D.escala.y,3)+'</b>, en servicio y en rotura.':'')+'</p>';
     var EST={"cumple":["Cumple","dis-ok"],"cambia":["Cambia","dis-luego"],"no cumple":["No cumple","dis-falta"],
              "falta":["Sin datos","dis-falta"]};
     h+='<div class="etb-scroll"><table class="sis-t dis-todas"><thead><tr>'+
@@ -25235,6 +26060,9 @@ var TT={script:performance.now()};
       h+=fila("Presión en servicio", sp?("peor "+escapa(sp.n)+": σ = "+f(sp.max)+" t/m² contra "+f(sp.adm)+
             " t/m²"+(sp.sismo?" (σn + 30 % con sismo, sismo al 80 %)":"")+(sp.nucleo?"":" · fuera del núcleo: área efectiva")):"—",
             v.suelo?v.suelo.cumple:null, ZAPATAS.ART.area+", 15.2.4-5");
+      if(v.escala)h+=fila("Sismo escalado", "las reacciones de SDX × "+f(v.escala.x,3)+" y de SDY × "+f(v.escala.y,3)+
+            ": la cortante dinámica no llegaba al mínimo y se escalan las fuerzas, no los desplazamientos", null,
+            "E.030 Art. 44.2");
       if(v.corrida){
         h+=fila("Columnas", (sel.cols||[]).map(function(c){ return escapa(c.cod)+" a "+f(c.s)+" m"; }).join(" · ")+
               " · a lo largo, desde el extremo de la zapata", null, "Harmsen 12.8");
@@ -25355,13 +26183,38 @@ var TT={script:performance.now()};
     if(FZ&&ex){
       var geo={}, R=r.R, tuyo=(S.proy.diseno&&S.proy.diseno.vigas&&typeof S.proy.diseno.vigas==="object")?S.proy.diseno.vigas:{};
       ex.niveles.forEach(function(L){ L.vigas.forEach(function(v){ geo[v.cod]=v; }); });
+      /* LAS CONDICIONES DEL 11.1.3 para bajar Vu a d (fase 0.5): la invertida lleva la carga colgada de su fondo, y
+         una carga concentrada -otra viga que llega a su vano, o una columna que nace encima- entre la cara y d
+         tampoco lo permite.  Aqui se dice DONDE caen esas cargas (m desde el nudo I); vigas.js decide con su d. */
+      var cond={};
+      ex.niveles.forEach(function(L,k){
+        var Lsup=ex.niveles[k+1]||null;
+        L.vigas.forEach(function(v){
+          var dx=v.x2-v.x1, dy=v.y2-v.y1, lg=Math.sqrt(dx*dx+dy*dy), pts=[];
+          if(!(lg>0))return;
+          function sobre(x,y){               /* la distancia desde I si el punto cae DENTRO del vano de la viga */
+            var t=((x-v.x1)*dx+(y-v.y1)*dy)/lg, n=Math.abs((x-v.x1)*dy-(y-v.y1)*dx)/lg;
+            return (n<1e-3&&t>1e-3&&t<lg-1e-3)?t:null;
+          }
+          L.vigas.forEach(function(w){
+            if(w===v)return;
+            [[w.x1,w.y1],[w.x2,w.y2]].forEach(function(p){
+              var t=sobre(p[0],p[1]); if(t!==null)pts.push({s:t, que:"llega la viga "+w.cod});
+            });
+          });
+          if(Lsup)(Lsup.columnas||[]).forEach(function(c){
+            var t=sobre(c.x,c.y); if(t!==null)pts.push({s:t, que:"nace encima la columna "+c.cod});
+          });
+          cond[v.cod]={invertida:!!v.inv, puntuales:pts};
+        });
+      });
       out.lista=FZ.vigas.map(function(v){
         var gv=geo[v.cod]||{}, dir=Math.abs((+gv.x2||0)-(+gv.x1||0))>=Math.abs((+gv.y2||0)-(+gv.y1||0))?"x":"y";
         var g=K.regimen[dir], chata=(v.tipo==="chata"), reg=chata?null:g.vigas, falta=null;
         if(!chata&&!reg)falta=g.falta||("Dirección "+dir.toUpperCase()+": el sistema «"+(g.sistema||"sin sistema")+
           "» no tiene vigas del Capítulo 21 y se diseña sin él.");
         var d=VIGAS.disenar(v,{fc:K.fc, fy:K.fy, recub:K.recub.viga.cm, estribo:K.barras.viga.estribo,
-          lista:K.barras.viga.long, regimen:reg, falta:falta, vuAd:K.convenciones.vuAd,
+          lista:K.barras.viga.long, regimen:reg, falta:falta, vuAd:K.convenciones.vuAd, condAd:cond[v.cod]||null,
           estaciones:((R.vigas||{})[v.cod]||{}).estaciones, casos:(R.vigasCasos||{})[v.cod], armado:tuyo[v.cod]});
         d.dir=dir; d.chata=chata;
         return d;
@@ -25388,6 +26241,27 @@ var TT={script:performance.now()};
     h+='<p class="nota" style="margin:0 0 8px">Flexocompresión biaxial con la superficie de interacción de cada '+
        'sección · Cap. 21 aplicado: <b>'+escapa(DC.regimen||"21.6")+'</b> · '+
        (R.ok||0)+' cumplen · '+(R.revisar||0)+' por revisar · '+(R["no cumple"]||0)+' no cumplen.</p>';
+    if(DC.estabilidad&&DC.estabilidad.length){
+      var pdM=DC.pdelta&&DC.pdelta.metodo&&DC.pdelta.metodo!=="None";
+      h+='<details class="dis-todas" open><summary>Estabilidad de los entrepisos · Q = ΣPu·Δo/(Vus·he) (E.060 10.11.4.2)</summary>'+
+        '<div class="etb-scroll"><table class="sis-t"><thead><tr><th>Piso</th><th>Dir.</th><th>ΣPu (t)</th>'+
+        '<th>Δo·0,75R (m)</th><th>Vus (t)</th><th>he (m)</th><th>Q</th><th>Entrepiso</th><th>δs</th></tr></thead><tbody>'+
+        DC.estabilidad.map(function(q){ return ["x","y"].map(function(d){ var s=q[d];
+          if(!s)return '<tr><td>'+escapa(q.piso)+'</td><td>'+d.toUpperCase()+'</td><td colspan="7">sin cortante o deriva del espectro</td></tr>';
+          return '<tr><td>'+escapa(q.piso)+'</td><td>'+d.toUpperCase()+'</td><td class="sis-n">'+f(q.sPu,1)+'</td>'+
+            '<td class="sis-n">'+f(s.DoR,4)+'</td><td class="sis-n">'+f(s.Vus,1)+'</td><td class="sis-n">'+f(q.he)+'</td>'+
+            '<td class="sis-n'+(s.arriostrado?'':' fz-mal')+'">'+f(s.Q,3)+'</td>'+
+            '<td>'+(s.arriostrado?'arriostrado (10.12)':'no arriostrado (10.13)')+'</td>'+
+            '<td class="sis-n">'+(s.arriostrado?'—':(isFinite(s.deltaS)?f(s.deltaS,3):'∞')+' <small>'+escapa(s.metodo)+'</small>')+'</td></tr>';
+        }).join(""); }).join("")+'</tbody></table></div>'+
+        '<p class="nota">ΣPu = 1,25 · (CM + la fracción de CV del peso sísmico'+
+        (DC.estabilidad[0].conMasa?', la de la fuente de masa de ETABS':': sin la fuente de masa se toma el 25 %')+'); Δo, la deriva '+
+        'elástica PROMEDIO del piso con el espectro × 0,75 R; Vus, la cortante del espectro en el entrepiso. Con Q ≤ 0,06 '+
+        'el entrepiso se toma como arriostrado. En los no arriostrados la parte sísmica de los momentos va × δs = 1/(1 − Q) '+
+        '(10.13.4.2)'+(pdM?': ETABS corrió con P-Delta ('+escapa(DC.pdelta.metodo)+'), pero sin las rigideces del 10.11.1 y con '+
+        'desplazamientos elásticos, no los × 0,75 R del Q; δs va igual, del lado seguro':'; ETABS corrió sin P-Delta')+
+        '. Y en cada columna esbelta, δns (10.12.3).</p></details>';
+    }
     h+='<div class="sis-ct fz-filtro"><label class="sis-sel"><span>Nivel</span><select id="disNivelC">'+
        '<option value="">Todos</option>'+
        niveles.map(function(n){return '<option value="'+escapa(n)+'"'+(n===nivel?" selected":"")+'>'+escapa(n)+'</option>'}).join("")+
@@ -25424,6 +26298,7 @@ var TT={script:performance.now()};
              f(sel.peor.ratio)+'</b>'+(sel.peor.bresler!=null?' (Bresler '+f(sel.peor.bresler)+')':'')+'</td></tr>'+
          '<tr><td>Cortante</td><td class="sis-n">Vu '+f(sel.cortante.Vu)+' t ('+escapa(sel.cortante.por)+') · Vc '+
              f(sel.cortante.Vc)+' t · Vs '+f(sel.cortante.Vs)+' t</td></tr>'+
+         (sel.luz?'<tr><td>Luz libre</td><td class="sis-n">ln = '+escapa(textoLuz(sel.luz,f))+'</td></tr>':'')+
          '<tr><td>Estribos</td><td class="sis-n">φ'+escapa(sel.armado.estribo)+' · Lo '+f(sel.estribos.Lo,0)+
              ' cm ('+escapa(COLUMNAS.ART.lo216)+') · dentro @'+f(sel.estribos.so,0)+' cm ('+escapa(sel.estribos.art)+
              ') · fuera @'+f(sel.estribos.sFuera,0)+' cm ('+escapa(sel.estribos.artFuera)+')</td></tr>';
@@ -25434,7 +26309,13 @@ var TT={script:performance.now()};
       if(sel.estribos.zuncho)
         h+='<tr><td>Zuncho</td><td class="sis-n">ρs mínima '+f(sel.estribos.zuncho.rho*100)+
            ' % → paso ≤ '+f(sel.estribos.zuncho.paso,1)+' cm ('+escapa(sel.estribos.zuncho.art)+')</td></tr>';
-      if(sel.esbeltez)
+      if(sel.esbeltez&&(sel.esbeltez.x||sel.esbeltez.y))
+        ["x","y"].forEach(function(dd){
+          var e=sel.esbeltez[dd], q=sel.esbeltez.Q&&sel.esbeltez.Q[dd];
+          if(!e)return;
+          h+='<tr><td>Esbeltez en '+dd.toUpperCase()+'</td><td class="sis-n">'+escapa(textoEsbeltez(e,q,f))+'</td></tr>';
+        });
+      else if(sel.esbeltez)
         h+='<tr><td>Esbeltez</td><td class="sis-n">k·lu/r = '+f(sel.esbeltez.lambda,0)+' · límite '+
            f(sel.esbeltez.limite,0)+' ('+escapa(sel.esbeltez.art)+') → '+
            (sel.esbeltez.despreciable?"se puede despreciar":"<b>hay que amplificar los momentos</b>")+'</td></tr>';
@@ -25452,7 +26333,8 @@ var TT={script:performance.now()};
     }
     h+='<p class="nota">El armado lo propone el complemento (barras iguales en el perímetro, cuantía entre el 1 % y el '+
        '6 %). La biaxial se comprueba con la superficie de interacción de la sección; Bresler se enseña al lado solo '+
-       'como contraste.</p>';
+       'como contraste. Con el espectro, ETABS da máx y mín de cada fuerza por separado: se revisan sus 8 esquinas '+
+       'G ± E (Pu máx o mín con ±M2 y ±M3), donde está el par que manda.</p>';
     return h+'</section>';
   }
 
@@ -25637,7 +26519,8 @@ var TT={script:performance.now()};
       (C.Vcap!=null?kv(d.regimen==="21.5"?"Por capacidad, Mpr = 1,25 Mn (Art. 21.5.4.1)":"Por capacidad, con Mn (Art. 21.4.3 a)",f(C.Vcap)+" t"):"")+
       (C.Vb!=null?kv("Con el sismo × 2,5 (Art. 21.4.3 b)",f(C.Vb)+" t"):"")+
       kv("Vu de diseño","<b>"+f(C.Vdes)+" t</b>",1)+
-      kv(K.convenciones.vuAd?"Vu a d de la cara":"Vu en la cara",f(C.Vd)+" t")+
+      kv(C.aD?"Vu a d de la cara":"Vu en la cara",f(C.Vd)+" t"+
+         ((K.convenciones.vuAd&&C.noAd)?" · no se baja a d "+(C.aD?"en un extremo":"")+" (Art. 11.1.3)":""))+
       kv("φVc = 0,85 · 0,17 √f'c bw d",f(0.85*C.Vc)+" t")+
       kv("Vs = Vu/φ − Vc",f(C.Vs)+" t (máx. "+f(C.VsMax)+")")+
       kv("s que pide la cortante",isFinite(C.sReq)?f(C.sReq,1)+" cm":"no hace falta")+
@@ -25718,9 +26601,14 @@ var TT={script:performance.now()};
       h+='<section class="pbox"><h3>Convenciones del diseño</h3>'+
         fijo("Peralte efectivo de vigas","h − "+Math.round(K.convenciones.dMenos*100),"cm","el mismo de Fuerzas")+
         '<label class="etb-ch"><input id="dVuAd" type="checkbox"'+(K.convenciones.vuAd?" checked":"")+'><span>Diseñar '+
-        'la cortante con Vu a d de la cara del apoyo (E.060 '+A.vuAd+')</span></label>'+
-        '<p class="nota">Con sismo, el máximo y el mínimo de cada fuerza van por separado: ETABS los da así y no '+
-        'ocurren a la vez. El armado lo propone el complemento con las barras de abajo, y tú lo puedes cambiar.</p></section>';
+        'la cortante con Vu a d de la cara del apoyo donde se puede: apoyo que comprime, carga por arriba -no en '+
+        'las invertidas- y sin cargas concentradas entre la cara y d (E.060 '+A.vuAd+')</span></label>'+
+        '<label class="etb-ch"><span>k de las columnas en entrepisos arriostrados (E.060 '+A.kArr+': 1, salvo que un '+
+        'análisis justifique uno menor)</span> <input id="dKArr" type="number" min="0.5" max="1" step="0.05" value="'+
+        K.convenciones.kArr+'" style="width:5em"></label>'+
+        '<p class="nota">Con sismo, ETABS da el máximo y el mínimo de cada fuerza por separado y no ocurren a la vez: '+
+        'columnas y muros revisan sus esquinas G ± E. El armado lo propone el complemento con las barras de abajo, y tú lo '+
+        'puedes cambiar.</p></section>';
 
       h+='<section class="pbox sis-ancha"><h3>Barras de cada elemento</h3>'+
         '<div class="etb-scroll"><table class="sis-t dis-bar"><thead><tr><th>Elemento</th><th>Longitudinales que se pueden usar</th>'+
@@ -25815,6 +26703,7 @@ var TT={script:performance.now()};
     al("select[data-est]",function(){ disenoProy().barras[this.dataset.est].estribo=this.value; guardar(); render(); });
     al("select[data-dual]",function(){ disenoProy().tipoDual[this.dataset.dual]=this.value; guardar(); render(); });
     al("#dVuAd",function(){ disenoProy().vuAd=!!this.checked; guardar(); render(); });
+    al("#dKArr",function(){ disenoProy().kArr=+this.value; DISENO.completar(disenoProy()); guardar(); render(); });
     /* D2 · Vigas: el nivel, la viga que se mira y su armado */
     al("#disNivel",function(){ S.disNivel=this.value; render(); });
     /* D3 · Columnas: el nivel y la columna cuya ficha se enseña */
@@ -26219,6 +27108,8 @@ var TT={script:performance.now()};
             L.vigas.push({cod:nm.V[kk].cod, tipo:pv.tipo, inv:esInvertida(m.vigas[kk])||undefined,
               x1:va[0],y1:va[1],x2:vb[0],y2:vb[1], b:r4(pv.b), h:r4(pv.h)});
             var dsV=desfaseViga(o,ii,jj,m); if(dsV.x||dsV.y){ var vU=L.vigas[L.vigas.length-1]; vU.dx=r4(dsV.x); vU.dy=r4(-dsV.y); }
+            /* LA INVERTIDA: el espesor de la losa a cuyo fondo va al ras (opcion B) */
+            if(esInvertida(m.vigas[kk]))L.vigas[L.vigas.length-1].tLosa=r4(tLosaInvertida(o,ii,jj,m));
           }
           if(m.placas[kk]){
             var pp=predimPlaca(o,ii,jj,m);
@@ -26348,7 +27239,7 @@ var TT={script:performance.now()};
               var D=disenoZapatas();
               if(!D.hay||!D.lista.length)return null;
               function c2(x,n){ return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",","); }
-              return {resumen:D.resumen, presion:D.presion, lista:D.lista.map(function(z){
+              return {resumen:D.resumen, presion:D.presion, escala:D.escala, lista:D.lista.map(function(z){
                 var q=z.r||{};
                 if(z.estado==="falta"||q.falta)return {cod:z.cod, tipo:z.tipo, columna:z.columna, estado:"falta", porque:z.porque};
                 var com=!!z.combinada, ini=q.inicial||{}, L=[];
@@ -26504,7 +27395,12 @@ var TT={script:performance.now()};
             /* D3: el diseño de las columnas, para DISENO_COLUMNAS: solo lo que la hoja escribe */
             disenoColumnas:(function(){
               var D=disenoColumnas();
-              return {resumen:D.resumen, regimen:D.regimen, lista:D.lista.map(function(d){
+              function c2(x,n){ return (x==null||!isFinite(x))?"—":(+x).toFixed(n==null?2:n).replace(".",","); }
+              return {resumen:D.resumen, regimen:D.regimen, pdelta:D.pdelta||null,
+                estabilidad:(D.estabilidad||[]).map(function(q){ return {piso:q.piso, he:q.he, sPu:q.sPu, conMasa:q.conMasa,
+                  x:q.x?{Q:q.x.Q, DoR:q.x.DoR, Vus:q.x.Vus, arriostrado:q.x.arriostrado, deltaS:q.x.deltaS, metodo:q.x.metodo}:null,
+                  y:q.y?{Q:q.y.Q, DoR:q.y.DoR, Vus:q.y.Vus, arriostrado:q.y.arriostrado, deltaS:q.y.deltaS, metodo:q.y.metodo}:null}; }),
+                lista:D.lista.map(function(d){
                 return {cod:d.cod, nivel:d.nivel, eje:d.eje, forma:d.forma, b:d.b, h:d.h, D:d.D, estado:d.estado,
                         rho:d.rho, Ast:d.Ast, Po:d.Po, fPnMax:d.fPnMax, Mn:d.Mn,
                         armado:d.armado?{barras:d.armado.barras, bar:d.armado.bar, estribo:d.armado.estribo}:null,
@@ -26522,7 +27418,10 @@ var TT={script:performance.now()};
                                                                        paso:d.estribos.zuncho.paso,
                                                                        art:d.estribos.zuncho.art}:null}:null,
                         esbeltez:d.esbeltez?{lambda:d.esbeltez.lambda, limite:d.esbeltez.limite,
-                                             despreciable:d.esbeltez.despreciable, art:d.esbeltez.art}:null,
+                                             despreciable:d.esbeltez.despreciable, art:d.esbeltez.art,
+                                             x:d.esbeltez.x?textoEsbeltez(d.esbeltez.x,d.esbeltez.Q&&d.esbeltez.Q.x,c2):null,
+                                             y:d.esbeltez.y?textoEsbeltez(d.esbeltez.y,d.esbeltez.Q&&d.esbeltez.Q.y,c2):null}:null,
+                        luz:d.luz?textoLuz(d.luz,function(x){ return (x==null||!isFinite(x))?"—":(+x).toFixed(2).replace(".",","); }):null,
                         avisos:(d.avisos||[]).slice()};
               })};
             })()};
@@ -29158,7 +30057,7 @@ var TT={script:performance.now()};
   function colores3D(){
     var cs=null; try{ cs=getComputedStyle(document.documentElement); }catch(e){}
     function v(n,def){ var t=(cs&&cs.getPropertyValue)?String(cs.getPropertyValue(n)||"").trim():""; return t||def; }
-    return {col:v("--col","#0F6E8C"), viga:v("--viga","#A85A2B"), chata:v("--chata","#D9A579"),
+    return {col:v("--col","#0F6E8C"), viga:v("--viga","#A85A2B"), chata:v("--chata","#D9A579"), invertida:v("--invert","#7A4E86"),
             aligerada:v("--alig","#7FA0AE"), maciza:v("--maci","#5B7686"), nervada:v("--nerv","#8FA8A0"),
             placa:v("--placa","#3A4750"), zapata:v("--zapata","#6B7B5A"), platea:v("--platea","#5B7F3A"),
             escalera:v("--esc","#7C6FA8"),
@@ -29582,7 +30481,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},alineacion:{poner:ponAlineacion,col:alCol,viga:alViga,desfaseCol:desfaseCol,desfaseViga:desfaseViga,enCaja:eligeEnCaja},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},colsCad:{abrir:abreColsCad,aplicar:aplicaColsCad,estado:function(){return COLS_CAD}},alineacion:{poner:ponAlineacion,col:alCol,viga:alViga,desfaseCol:desfaseCol,desfaseViga:desfaseViga,enCaja:eligeEnCaja},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
 })();
 </script>
 
