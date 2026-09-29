@@ -11590,6 +11590,448 @@ select.crit-in{width:auto;text-align:left}
 })(typeof window !== "undefined" ? window : this);
 </script>
 <script>
+/* ===== deetabs_resultados.js (inlinado) ===== */
+/* =====================================================================
+   LOS RESULTADOS DE UN MODELO HECHO A MANO, COMO LOS DEL PUENTE · FASE 4b de FUTURO/PLAN_ETABS_A_COMPLEMENTO.md
+
+   RETICULA.bat [8] (de_etabs.py) deja en la hoja oculta RETICULA_RESULTADOS las fuerzas de ETABS POR CASO
+   ({origen: "etabs-mano", A, B}).  Aqui se convierten en los resultados que ya usan Fuerzas, Diseno E.060 y las hojas
+   -la misma forma que deja a_excel.py con un modelo del puente-, asi que los motores de diseno no cambian:
+
+   · el ADAPTADOR del diagrama: los casos del modelo pasan a las claves de los motores.  Dead = los de carga muerta de
+     tipo Dead; CM = el resto de la carga muerta; CV y CVT; SDX y SDY = el sismo confirmado de cada direccion
+     (envolvente de sus casos, en valor absoluto, con el 30 % de la otra por SRSS si la norma lo pide y el caso no lo
+     trae), SIN el factor del Art. 44: ese va en sismo.escala, como en el puente;
+   · las COMBINACIONES son las del complemento (ex.combinaciones: U1 a U5 de la E.060, D2), evaluadas como ETABS:
+     Max = G + E y Min = G - E;
+   · cada pieza del complemento se empareja con su objeto de ETABS por su POSICION (2 cm): columnas por su nudo, vigas
+     por su linea -una viga del complemento puede ser una o varias barras de ETABS, y al reves-, placas por su muro;
+   · decision 1 de Victor (28-09-2026): la viga sin brazo rigido se corta en la CARA del apoyo, interpolando M y V
+     entre estaciones, como da ETABS cuando el brazo existe; se avisa cuales.
+
+   Puro: node scripts/complemento/oviedo/probar_deetabs.js (la vuelta de PUCALPA: igual que el puente).
+   ===================================================================== */
+(function (raiz) {
+  "use strict";
+  var TOL = 0.02, STD = ["Dead", "CM", "CV", "CVT"];
+
+  function num(v) { var x = +v; return (v === null || v === undefined || v === "" || !isFinite(x)) ? null : x; }
+  function r5(v) { return v === null || v === undefined ? null : Math.round(v * 1e5) / 1e5; }
+  function filas(porCaso, caso) { return porCaso[caso] || porCaso[caso + "|Max"] || null; }
+
+  /* ------------------------------------------------------------------ los casos del modelo, en las claves de siempre */
+  /* grupos = {Dead: [casos], CM, CV, CVT}: los de CM de tipo Dead van a Dead, como el puente (Dead = peso propio) */
+  function grupos(A, conf) {
+    var tipo = {};
+    ((A && A.patrones) || []).forEach(function (p) { tipo[p.nombre] = p.tipo; });
+    var cm = conf.CM || [];
+    return { Dead: cm.filter(function (c) { return tipo[c] === "Dead"; }),
+             CM: cm.filter(function (c) { return tipo[c] !== "Dead"; }), CV: conf.CV || [], CVT: conf.CVT || [] };
+  }
+  /* Una familia de filas por caso -{caso: [[x?, v1, v2...]]}- en las claves de los motores.  con0 = cuantas columnas
+     del principio se copian (la estacion) y no se suman.  Devuelve {Dead, CM, CV, CVT, SDX, SDY} (null si no hay). */
+  function estandar(porCaso, G, conf, con0) {
+    var ref = null;
+    Object.keys(porCaso).some(function (k) { ref = porCaso[k]; return !!(ref && ref.length); });
+    if (!ref) return null;
+    var nF = ref.length, nC = ref[0].length, out = {}, falta = [];
+    function ceros() { return ref.map(function (r) { return r.map(function (v, c) { return c < con0 ? v : 0; }); }); }
+    function suma(lista) {
+      if (!lista.length) return null;
+      var S = ceros(), hay = false;
+      lista.forEach(function (caso) {
+        var F = filas(porCaso, caso);
+        if (!F || F.length !== nF) { falta.push(caso); return; }
+        hay = true;
+        for (var i = 0; i < nF; i++) for (var c = con0; c < nC; c++) S[i][c] += +F[i][c] || 0;
+      });
+      return hay ? S : null;
+    }
+    STD.forEach(function (g) { out[g] = suma(G[g] || []); });
+    var E = {};
+    ["x", "y"].forEach(function (d) {
+      var l = (conf.CS || {})[d] || [], S = ceros(), hay = false;
+      l.forEach(function (caso) {
+        var F = filas(porCaso, caso);
+        if (!F || F.length !== nF) { falta.push(caso); return; }
+        hay = true;
+        for (var i = 0; i < nF; i++) for (var c = con0; c < nC; c++) S[i][c] = Math.max(S[i][c], Math.abs(+F[i][c] || 0));
+      });
+      E[d] = hay ? S : null;
+    });
+    ["x", "y"].forEach(function (d) {
+      var o = d === "x" ? "y" : "x", Ed = E[d], Eo = E[o], k = d === "x" ? "SDX" : "SDY";
+      if (!Ed) { out[k] = null; return; }
+      if (conf.norma === "2018" || (conf.trae30 || {})[d] || !Eo) { out[k] = Ed; return; }
+      out[k] = Ed.map(function (r, i) { return r.map(function (v, c) {
+        return c < con0 ? v : Math.sqrt(v * v + Math.pow(0.3 * Eo[i][c], 2)); }); });
+    });
+    out.falta = falta;
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ las combinaciones del complemento */
+  var COMBOS_STD = [
+    { nombre: "U1 1.4CM+1.7CV", partes: [["Dead", 1.4], ["CM", 1.4], ["CV", 1.7], ["CVT", 1.7]], sismo: null },
+    { nombre: "U2 1.25(CM+CV)+-SDX", partes: [["Dead", 1.25], ["CM", 1.25], ["CV", 1.25], ["CVT", 1.25]], sismo: { caso: "SDX", dir: "x", escala: true } },
+    { nombre: "U3 1.25(CM+CV)+-SDY", partes: [["Dead", 1.25], ["CM", 1.25], ["CV", 1.25], ["CVT", 1.25]], sismo: { caso: "SDY", dir: "y", escala: true } },
+    { nombre: "U4 0.9CM+-SDX", partes: [["Dead", 0.9], ["CM", 0.9]], sismo: { caso: "SDX", dir: "x", escala: true } },
+    { nombre: "U5 0.9CM+-SDY", partes: [["Dead", 0.9], ["CM", 0.9]], sismo: { caso: "SDY", dir: "y", escala: true } }
+  ];
+  function combosDe(ex) {
+    var l = ex && ex.combinaciones && ex.combinaciones.lista;
+    l = (l || []).filter(function (c) { return c.tipo === "ultima"; });
+    return l.length ? l : COMBOS_STD;
+  }
+  /* {combo: {valor: filas} o {Max: filas, Min: filas}}, como ETABS: G + E y G - E */
+  function combinar(std, combos, factor, con0) {
+    var out = {}, ref = null;
+    ["Dead", "CM", "CV", "CVT", "SDX", "SDY"].some(function (k) { ref = std[k]; return !!ref; });
+    if (!ref) return out;
+    function ceros() { return ref.map(function (r) { return r.map(function (v, c) { return c < con0 ? v : 0; }); }); }
+    combos.forEach(function (cb) {
+      var G = ceros();
+      (cb.partes || []).forEach(function (p) {
+        var F = std[p[0]];
+        if (!F) return;
+        for (var i = 0; i < G.length; i++) for (var c = con0; c < G[i].length; c++) G[i][c] += p[1] * (+F[i][c] || 0);
+      });
+      if (!cb.sismo) { out[cb.nombre] = { valor: G }; return; }
+      var E = std[cb.sismo.caso], f = cb.sismo.escala ? (+((factor || {})[cb.sismo.dir]) || 1) : 1;
+      if (!E) { out[cb.nombre] = { valor: G }; return; }
+      out[cb.nombre] = {
+        Max: G.map(function (r, i) { return r.map(function (v, c) { return c < con0 ? v : v + f * E[i][c]; }); }),
+        Min: G.map(function (r, i) { return r.map(function (v, c) { return c < con0 ? v : v - f * E[i][c]; }); }) };
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ geometria */
+  function cerca(a, b, t) { return Math.abs(a - b) <= (t == null ? TOL : t); }
+  function interp(F, x) {
+    for (var i = 1; i < F.length; i++) {
+      if (x <= F[i][0] + 1e-9) {
+        var t = (x - F[i - 1][0]) / ((F[i][0] - F[i - 1][0]) || 1);
+        return F[i].map(function (v, c) { return c === 0 ? x : F[i - 1][c] + t * (v - F[i - 1][c]); });
+      }
+    }
+    return F[F.length - 1].slice();
+  }
+  /* columnas de ETABS con los ejes locales girados 90, 180 o 270: se llevan a los de una sin girar (M3 y V2 con la X
+     global, M2 y V3 con la Y), que es lo que suponen fuerzas.js y el diseno */
+  function aEjesSinGirar(f, ang) {
+    var a = ((Math.round((+ang || 0) / 90) % 4) + 4) % 4;
+    if (!a) return f;
+    var P = f[0], V2 = f[1], V3 = f[2], T = f[3], M2 = f[4], M3 = f[5];
+    if (a === 1) return [P, -V3, V2, T, -M3, M2];
+    if (a === 2) return [P, -V2, -V3, T, -M2, -M3];
+    return [P, V3, -V2, T, M3, -M2];
+  }
+
+  /* ------------------------------------------------------------------ el adaptador */
+  /* Rm: lo que dejo RETICULA.bat [8]; conf: S.proy.sismoEtabs; ex: exportaEtabs() del complemento.
+     o = {firma, build}.  Devuelve {R, avisos, faltan}: faltan no vacio = los resultados no son de este modelo. */
+  function adaptar(Rm, conf, ex, o) {
+    o = o || {};
+    var A = Rm.A || {}, B = Rm.B || {}, avisos = [], faltan = [];
+    var R = { v: 1, origen: "etabs-mano", leido: Rm.leido || null, etabs: Rm.etabs || {},
+              modelo: { origen: "ETABS a mano: " + (Rm.modelo || ""), firma: o.firma || null, build: o.build || null },
+              combinaciones: [], envolvente: "ENVOLVENTE E060", sismo: {}, vigas: {}, columnas: {}, placas: {}, muros: {},
+              reacciones: [], vigasCasos: {}, murosSismo: {}, segundoOrden: { pisos: [], pdelta: B.pdelta || null },
+              columnasCasos: {}, ejesLocales: {}, tablas: {} };
+    var niveles = (ex && ex.niveles) || [], pisos = A.pisos || [];
+    if (!B.barras) return { R: null, avisos: avisos, faltan: ["el archivo no trae las fuerzas por caso de ETABS"] };
+    if (pisos.length !== niveles.length)
+      return { R: null, avisos: avisos, faltan: ["ETABS tiene " + pisos.length + " pisos y el complemento " + niveles.length +
+                                                 " niveles: vuelve a traer el modelo con «Traer de ETABS…»"] };
+    var nivelDe = {}, pisoDe = {};
+    pisos.forEach(function (p, k) { nivelDe[p.nombre] = niveles[k].nombre; pisoDe[niveles[k].nombre] = p.nombre; });
+    var G = grupos(A, conf), combos = combosDe(ex), fac = conf.factor || {};
+    R.combinaciones = combos.map(function (c) { return c.nombre; });
+    var faltaCaso = {};
+    function std(porCaso, con0) {
+      var s = estandar(porCaso || {}, G, conf, con0);
+      if (s) s.falta.forEach(function (c) { faltaCaso[c] = true; });
+      return s;
+    }
+
+    /* ---- las barras de ETABS, por piso ---- */
+    var barrasPiso = {};
+    (A.barras || []).forEach(function (b) {
+      if (!B.barras[b.nombre]) return;
+      (barrasPiso[b.piso] = barrasPiso[b.piso] || []).push(b);
+    });
+    var secB = A.secBarra || {};
+
+    /* ---- COLUMNAS: por su nudo ---- */
+    niveles.forEach(function (L, k) {
+      var piso = pisos[k].nombre, cols = (barrasPiso[piso] || []).filter(function (b) { return b.orient === "Column"; });
+      (L.columnas || []).forEach(function (c) {
+        var e = cols.filter(function (b) { return cerca(b.i[0], c.x) && cerca(b.i[1], c.y); })[0];
+        if (!e) { faltan.push("la columna " + c.cod + " no está en ETABS (x " + c.x + ", y " + c.y + ")"); return; }
+        var s = secB[e.sec];
+        if (s && s.tipo === "Rectangular" && c.forma !== "circular") {
+          var a90 = Math.abs(((Math.round((+e.ang || 0) / 90) % 2) + 2) % 2) === 1;
+          var bx = a90 ? s.b : s.h, hy = a90 ? s.h : s.b;
+          if (!cerca(bx, c.b, 0.011) || !cerca(hy, c.h, 0.011))
+            faltan.push("la columna " + c.cod + " mide " + Math.round(c.b * 100) + "×" + Math.round(c.h * 100) +
+                        " en el complemento y " + Math.round(bx * 100) + "×" + Math.round(hy * 100) + " en ETABS");
+        }
+        var porCaso = {};
+        Object.keys(B.barras[e.nombre]).forEach(function (cs) {
+          porCaso[cs] = B.barras[e.nombre][cs].slice().sort(function (p, q) { return p[0] - q[0]; })
+            .map(function (f) { return [f[0]].concat(aEjesSinGirar(f.slice(1), e.ang)); });
+        });
+        var sd = std(porCaso, 1);
+        if (!sd) return;
+        var cb = combinar(sd, combos, fac, 1), out = {};
+        Object.keys(cb).forEach(function (n) {
+          out[n] = {};
+          Object.keys(cb[n]).forEach(function (paso) {
+            var F = cb[n][paso];
+            out[n][paso] = { pie: F[0].slice(1).map(r5), cabeza: F[F.length - 1].slice(1).map(r5) };
+          });
+        });
+        R.columnas[c.cod] = out;
+        var cc = {};
+        STD.forEach(function (g) { if (sd[g]) cc[g] = r5(sd[g][0][1]); });
+        R.columnasCasos[c.cod] = cc;
+        R.ejesLocales[c.cod] = 0;
+        if (Math.abs(+e.ang || 0) > 1e-6) avisos.push("la columna " + c.cod + " (" + (e.label || e.nombre) + ") tiene los ejes locales " +
+                                                  "girados " + e.ang + "° en ETABS: sus fuerzas se pasaron a los de una sin girar");
+      });
+    });
+
+    /* ---- VIGAS: por su linea, de cara a cara ---- */
+    var cortadas = [];
+    niveles.forEach(function (L, k) {
+      var piso = pisos[k].nombre, vs = (barrasPiso[piso] || []).filter(function (b) { return b.orient === "Beam"; });
+      (L.vigas || []).forEach(function (v) {
+        var ax = v.x1, ay = v.y1, dx = v.x2 - v.x1, dy = v.y2 - v.y1, Lv = Math.sqrt(dx * dx + dy * dy), ux = dx / Lv, uy = dy / Lv;
+        function t(p) { return (p[0] - ax) * ux + (p[1] - ay) * uy; }
+        function sobre(p) { return Math.abs((p[0] - ax) * uy - (p[1] - ay) * ux) <= TOL; }
+        var mias = vs.filter(function (b) {
+          if (!sobre(b.i) || !sobre(b.j)) return false;
+          var ti = t(b.i), tj = t(b.j);
+          return Math.min(ti, tj) < Lv - TOL && Math.max(ti, tj) > TOL;
+        });
+        if (!mias.length) { faltan.push("la viga " + v.cod + " no está en ETABS"); return; }
+        /* el sentido de la barra de ETABS, como el puente: si va al reves, la viga se recorre desde su otro extremo */
+        if (t(mias[0].j) < t(mias[0].i)) { ax = v.x2; ay = v.y2; ux = -ux; uy = -uy; v = { cod: v.cod, x1: v.x2, y1: v.y2, x2: v.x1, y2: v.y1 }; }
+        /* las estaciones de todas sus barras, en la coordenada de la viga del complemento; V2 cambia de signo si la
+           barra de ETABS va al reves */
+        var porCaso = {};
+        mias.forEach(function (b) {
+          var ti = t(b.i), tj = t(b.j), sg = tj >= ti ? 1 : -1;
+          Object.keys(B.barras[b.nombre]).forEach(function (cs) {
+            var l = porCaso[cs] = porCaso[cs] || [];
+            B.barras[b.nombre][cs].forEach(function (f) {
+              var x = ti + sg * f[0];
+              if (x < -TOL || x > Lv + TOL) return;
+              l.push([x, sg * f[2], f[6], f[4]]);            /* [x, V2, M3, T] */
+            });
+          });
+        });
+        Object.keys(porCaso).forEach(function (cs) {
+          /* orden estable: una estacion repetida (a cada lado de un nudo interior) queda en su sitio en todos los casos */
+          porCaso[cs] = porCaso[cs].sort(function (p, q) { return p[0] - q[0]; });
+        });
+        /* las caras de los apoyos: la columna del extremo (con su desplazamiento), la placa que lo cruza, o nada */
+        function cara(extremo) {
+          var P = extremo ? [v.x2, v.y2] : [v.x1, v.y1], h = 0;
+          (L.columnas || []).forEach(function (c) {
+            if (!cerca(c.x, P[0]) || !cerca(c.y, P[1])) return;
+            var cx = c.x + (c.dx || 0), cy = c.y + (c.dy || 0), med = c.forma === "circular" ? (c.D || c.b) / 2 :
+                Math.abs(ux) * c.b / 2 + Math.abs(uy) * c.h / 2, off = (cx - P[0]) * ux + (cy - P[1]) * uy;
+            h = Math.max(h, extremo ? med - off : med + off);
+          });
+          (L.placas || []).forEach(function (p) {
+            var qx = p.x2 - p.x1, qy = p.y2 - p.y1, lq = Math.sqrt(qx * qx + qy * qy) || 1;
+            var paralela = Math.abs((qx / lq) * uy - (qy / lq) * ux) < 1e-3;
+            var en = Math.abs((P[0] - p.x1) * (qy / lq) - (P[1] - p.y1) * (qx / lq)) <= TOL;
+            var tq = ((P[0] - p.x1) * qx + (P[1] - p.y1) * qy) / (lq * lq);
+            if (!paralela && en && tq >= -1e-3 && tq <= 1 + 1e-3) h = Math.max(h, (p.t || 0) / 2);
+          });
+          return h;
+        }
+        var fi = cara(false), fj = Lv - cara(true), corto = false;
+        Object.keys(porCaso).forEach(function (cs) {
+          var F = porCaso[cs];
+          if (!F.length) return;
+          var a = F[0][0] < fi - 1e-4 ? fi : F[0][0], b = F[F.length - 1][0] > fj + 1e-4 ? fj : F[F.length - 1][0];
+          if (a !== F[0][0] || b !== F[F.length - 1][0]) corto = true;
+          var dentro = F.filter(function (f) { return f[0] > a + 1e-4 && f[0] < b - 1e-4; });
+          porCaso[cs] = [interp(F, a)].concat(dentro, [interp(F, b)]);
+        });
+        if (corto) cortadas.push(v.cod);
+        var sd = std(porCaso, 1);
+        if (!sd) return;
+        var cb = combinar(sd, combos, fac, 1), est = null;
+        /* la ENVOLVENTE E060: en cada estacion el mayor y el menor de M3 y de V2 de todas las ultimas */
+        Object.keys(cb).forEach(function (n) {
+          Object.keys(cb[n]).forEach(function (paso) {
+            var F = cb[n][paso];
+            if (!est) est = F.map(function (f) { return [f[0], -Infinity, Infinity, -Infinity, Infinity, 0]; });
+            F.forEach(function (f, i) {
+              var e = est[i];
+              e[1] = Math.max(e[1], f[2]); e[2] = Math.min(e[2], f[2]);
+              e[3] = Math.max(e[3], f[1]); e[4] = Math.min(e[4], f[1]); e[5] = Math.max(e[5], Math.abs(f[3]));
+            });
+          });
+        });
+        if (!est) return;
+        /* las estaciones repetidas se juntan, como a_excel.leer_vigas: el mayor y el menor de las dos */
+        var junta = [];
+        est.forEach(function (e) {
+          var u = junta[junta.length - 1];
+          if (u && Math.abs(u[0] - e[0]) < 1e-4) {
+            u[1] = Math.max(u[1], e[1]); u[2] = Math.min(u[2], e[2]); u[3] = Math.max(u[3], e[3]);
+            u[4] = Math.min(u[4], e[4]); u[5] = Math.max(u[5], e[5]);
+          } else junta.push(e.slice());
+        });
+        est = junta;
+        var ei = est[0], ej = est[est.length - 1], pos = est.reduce(function (m, e) { return e[1] > m[1] ? e : m; }, est[0]);
+        R.vigas[v.cod] = { desde: r5(ei[0]), hasta: r5(ej[0]), Mneg_i: r5(ei[2]), Mneg_j: r5(ej[2]), Mpos: r5(pos[1]),
+                           x_Mpos: r5(pos[0]), V_i: r5(Math.max(Math.abs(ei[3]), Math.abs(ei[4]))),
+                           V_j: r5(Math.max(Math.abs(ej[3]), Math.abs(ej[4]))),
+                           T: r5(Math.max.apply(null, est.map(function (e) { return e[5]; }))),
+                           estaciones: est.map(function (e) { return [r5(e[0]), r5(e[1]), r5(e[2]), r5(e[3]), r5(e[4])]; }) };
+        var vc = {};
+        STD.forEach(function (g) { if (sd[g]) vc[g] = sd[g].map(function (f) { return [r5(f[0]), r5(f[1]), r5(f[2])]; }); });
+        R.vigasCasos[v.cod] = vc;
+      });
+    });
+    if (cortadas.length) avisos.push(cortadas.length + " viga(s) sin brazo rígido en algún extremo: sus fuerzas se tomaron en la " +
+                                     "cara del apoyo, interpolando entre estaciones: " + cortadas.slice(0, 10).join(", ") +
+                                     (cortadas.length > 10 ? "…" : ""));
+
+    /* ---- PLACAS: su muro (pier) ---- */
+    var muros = {};
+    (A.areas || []).filter(function (a) { return a.orient === "Wall"; }).forEach(function (a) {
+      (muros[a.piso] = muros[a.piso] || []).push(a);
+    });
+    niveles.forEach(function (L, k) {
+      var piso = pisos[k].nombre;
+      (L.placas || []).forEach(function (p) {
+        var qx = p.x2 - p.x1, qy = p.y2 - p.y1, lq = Math.sqrt(qx * qx + qy * qy) || 1;
+        function en(q) { return Math.abs((q[0] - p.x1) * (qy / lq) - (q[1] - p.y1) * (qx / lq)) <= TOL; }
+        /* el muro que va por su linea Y la cubre: en la misma linea puede haber otros tramos */
+        var w = (muros[piso] || []).filter(function (a) {
+          var z = Math.min.apply(null, a.pts.map(function (q) { return q[2]; }));
+          var base = a.pts.filter(function (q) { return cerca(q[2], z); });
+          if (!base.every(en)) return false;
+          var ts = base.map(function (q) { return ((q[0] - p.x1) * qx + (q[1] - p.y1) * qy) / (lq * lq); });
+          return Math.min.apply(null, ts) < 1 - 1e-3 && Math.max.apply(null, ts) > 1e-3;
+        })[0];
+        if (!w) { faltan.push("la placa " + p.cod + " no está en ETABS"); return; }
+        if (!w.pier) { avisos.push("la placa " + p.cod + " no tiene pier en ETABS: sin sus fuerzas de muro"); return; }
+        R.muros[p.cod] = w.pier;
+      });
+    });
+    Object.keys(B.piers || {}).forEach(function (pier) {
+      if (!Object.keys(R.muros).some(function (c) { return R.muros[c] === pier; })) return;
+      R.placas[pier] = {}; R.murosSismo[pier] = {};
+      Object.keys(B.piers[pier]).forEach(function (piso) {
+        var niv = nivelDe[piso]; if (!niv) return;
+        var porCaso = {};
+        Object.keys(B.piers[pier][piso]).forEach(function (cs) {
+          var q = B.piers[pier][piso][cs];
+          if (q.Bottom && q.Top) porCaso[cs] = [q.Bottom, q.Top];
+        });
+        var sd = std(porCaso, 0);
+        if (!sd) return;
+        var cb = combinar(sd, combos, fac, 0), res = {};
+        Object.keys(cb).forEach(function (n) {
+          res[n] = {};
+          Object.keys(cb[n]).forEach(function (paso) {
+            res[n][paso] = { Bottom: cb[n][paso][0].map(r5), Top: cb[n][paso][1].map(r5) };
+          });
+        });
+        R.placas[pier][niv] = res;
+        var ms = {};
+        ["SDX", "SDY"].forEach(function (k) { if (sd[k]) ms[k] = { Max: { Bottom: sd[k][0].map(r5), Top: sd[k][1].map(r5) } }; });
+        R.murosSismo[pier][niv] = ms;
+      });
+    });
+
+    /* ---- REACCIONES: en la base, con la pieza que apoya ---- */
+    var L0 = niveles[0] || {}, apoyos = [];
+    (L0.columnas || []).forEach(function (c) { apoyos.push([c.x, c.y, c.cod]); });
+    (L0.placas || []).forEach(function (p) { apoyos.push([p.x1, p.y1, p.cod], [p.x2, p.y2, p.cod]); });
+    Object.keys(B.reacciones || {}).forEach(function (n) {
+      var r = B.reacciones[n], xyz = r.xyz || [0, 0, 0], porCaso = {};
+      Object.keys(r.casos || {}).forEach(function (cs) { porCaso[cs] = [r.casos[cs]]; });
+      var sd = std(porCaso, 0);
+      if (!sd) return;
+      var casos = {};
+      STD.forEach(function (g) { if (sd[g]) casos[g] = sd[g][0].map(r5); });
+      if (sd.SDX) casos["SDX|Max"] = sd.SDX[0].map(r5);
+      if (sd.SDY) casos["SDY|Max"] = sd.SDY[0].map(r5);
+      var pz = apoyos.filter(function (a) { return cerca(a[0], xyz[0]) && cerca(a[1], xyz[1]); })[0];
+      R.reacciones.push({ nudo: n, x: xyz[0], y: xyz[1], pieza: pz ? pz[2] : null, casos: casos });
+    });
+
+    /* ---- EL SISMO Y EL SEGUNDO ORDEN, con los nombres de nivel del complemento ---- */
+    var CS = conf.CS || {}, corte = conf.cortante || {};
+    R.sismo = {
+      estatico: [], escala: { x: +fac.x || 1, y: +fac.y || 1 }, masa: [],
+      dinamico: ["x", "y"].filter(function (d) { return (CS[d] || []).length; }).map(function (d) {
+        return { caso: d === "x" ? "SDX" : "SDY", dir: d, V: corte[d] ? corte[d].Vdin : null }; }),
+      modal: (B.modal || []).filter(function (m, i, l) { return m.caso === l[0].caso; }),
+      pisos: pisos.map(function (p) { return { piso: nivelDe[p.nombre], cota: p.cota, h: p.h }; }),
+      derivas: [], torsion: [], rigidez: [] };
+    var der = {}, tor = {};
+    (B.derivas || []).forEach(function (q) {
+      ["x", "y"].forEach(function (d) {
+        if ((CS[d] || []).indexOf(q.caso) < 0) return;
+        var k = nivelDe[q.piso] + "|" + d + "|" + q.dir;
+        if (!der[k] || q.deriva > der[k].deriva)
+          der[k] = { piso: nivelDe[q.piso], caso: d === "x" ? "SDX" : "SDY", dir: q.dir, deriva: q.deriva };
+        if (q.maxDesp != null && q.promDesp != null && (!tor[k] || q.maxDesp > tor[k].max))
+          tor[k] = { piso: nivelDe[q.piso], caso: d === "x" ? "SDX" : "SDY", dir: q.dir, max: q.maxDesp, prom: q.promDesp,
+                     razon: q.promDesp ? r5(q.maxDesp / q.promDesp) : null };
+      });
+    });
+    R.sismo.derivas = Object.keys(der).map(function (k) { return der[k]; });
+    R.sismo.torsion = Object.keys(tor).map(function (k) { return tor[k]; });
+    pisos.forEach(function (p) {
+      var q = (B.pisos || {})[p.nombre] || {}, P = {}, V = {};
+      STD.forEach(function (g) {
+        var l = G[g] || [];
+        if (!l.length) return;
+        P[g] = r5(l.reduce(function (s, c) { return s + (+(q[c] || {}).P || 0); }, 0));
+      });
+      ["x", "y"].forEach(function (d) {
+        var Vd = 0;
+        (CS[d] || []).forEach(function (c) { var w = q[c] || q[c + "|Max"]; if (w) Vd = Math.max(Vd, Math.abs(+(d === "x" ? w.VX : w.VY) || 0)); });
+        if (Vd) V[d] = { caso: d === "x" ? "SDX" : "SDY", V: r5(Vd) };
+      });
+      R.segundoOrden.pisos.push({ piso: nivelDe[p.nombre], h: p.h, P: P, V: V });
+    });
+    /* la fuente de masa en las claves de siempre (la estabilidad arma con ella ΣPu) */
+    var ms = A.masa, partes = [];
+    if (ms && ms.partes) STD.forEach(function (g) {
+      var f = null;
+      (G[g] || []).forEach(function (c) {
+        var q = ms.partes.filter(function (p) { return p[0] === c; })[0];
+        if (q) { if (f !== null && Math.abs(f - q[1]) > 1e-6) avisos.push("la fuente de masa da factores distintos dentro de " + g); f = q[1]; }
+      });
+      if (f !== null) partes.push([g, f]);
+    });
+    R.tablas = { fuenteMasa: ms ? { cargas: !!ms.cargas, partes: partes } : null };
+
+    var fc = Object.keys(faltaCaso);
+    if (fc.length) avisos.push("sin resultados en ETABS de " + fc.join(", ") + ": no entran en las combinaciones");
+    return { R: R, avisos: avisos, faltan: faltan };
+  }
+
+  var DEETABS_RES = { adaptar: adaptar, estandar: estandar, combinar: combinar, grupos: grupos, aEjesSinGirar: aEjesSinGirar,
+                      COMBOS_STD: COMBOS_STD, TOL: TOL };
+  if (typeof module !== "undefined" && module.exports) module.exports = DEETABS_RES;
+  raiz.DEETABS_RES = DEETABS_RES;
+})(typeof window !== "undefined" ? window : this);
+</script>
+<script>
 /* ===== ubicacion.js (inlinado) ===== */
 /* =====================================================================
    ubicacion.js — ENCONTRAR EL DISTRITO.  Sin interfaz: lo usa Datos ›
@@ -15134,7 +15576,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v445 · 28-09-2026";
+  var BUILD="v447 · 28-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -25234,7 +25676,22 @@ var TT={script:performance.now()};
     if(!t)return null;
     try{ R=JSON.parse(t); }catch(e){ return {error:"Los resultados del libro no se pueden leer"}; }
     if(!R||R.v!==1)return {error:"Los resultados son de una versión que el complemento no conoce"};
+    if(R.origen==="etabs-mano")return resultadosDeMano(t,R);
     return {R:R, alDia:!!(R.modelo&&R.modelo.firma===firmaModelo())};
+  }
+  /* UN MODELO HECHO A MANO EN ETABS (fase 4b): RETICULA.bat [8] deja las fuerzas por caso y aqui se combinan con el
+     sismo confirmado (Verificacion E.030 › Sismo de ETABS) en la forma de siempre (oviedo/deetabs_resultados.js).
+     Al dia = cada pieza del complemento esta en ETABS con su seccion. */
+  var DE_RES_MEMO={k:null,v:null};
+  function resultadosDeMano(t,Rm){
+    var sc=S.proy&&S.proy.sismoEtabs;
+    if(!sc)return {error:"Son de un modelo hecho a mano en ETABS: confirma primero su sismo en Verificación E.030 › Sismo de ETABS"};
+    var ex=exportaEtabs(), f=firmaModelo(ex), k=t.length+"|"+t.slice(0,200)+"|"+f+"|"+JSON.stringify(sc);
+    if(DE_RES_MEMO.k===k)return DE_RES_MEMO.v;
+    var a=DEETABS_RES.adaptar(Rm,sc,ex,{firma:f,build:BUILD}),
+        v=a.R?{R:a.R, alDia:!a.faltan.length, mano:{avisos:a.avisos, faltan:a.faltan}}:{error:a.faltan.join("; ")};
+    DE_RES_MEMO={k:k,v:v};
+    return v;
   }
   /* De donde vienen los resultados y si siguen valiendo, con el boton para
      traerlos: la primera linea de cada sub-pestana de Resultados ETABS. */
@@ -25246,6 +25703,15 @@ var TT={script:performance.now()};
     if(r.error)return '<p class="aviso">'+escapa(r.error)+'. '+boton+'</p>';
     var R=r.R, archivo=String((R.etabs&&R.etabs.archivo)||"").split(/[\\/]/).pop(),
         leido=String(R.leido||"").replace("T"," ").slice(0,16);
+    if(r.mano){
+      var fm=r.mano.faltan, av=r.mano.avisos;
+      return '<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
+          ?'De tu modelo de ETABS <b>'+escapa(archivo)+'</b>, leídos el '+escapa(leido)+' con RETICULA.bat [8] y '+
+           'combinados con el sismo que confirmaste. '
+          :'<b>No son de este modelo:</b> '+escapa(fm.slice(0,3).join("; "))+(fm.length>3?" y "+(fm.length-3)+" más":"")+
+           '. Vuelve a traerlo con «Traer de ETABS…» o sus resultados con RETICULA.bat [8]. ')+boton+'</p>'+
+        (av.length?'<ul class="ds-lista">'+av.map(function(x){return '<li>'+escapa(x)+'</li>'}).join("")+'</ul>':'');
+    }
     return '<p class="'+(r.alDia?"nota":"aviso")+'">'+(r.alDia
         ?'Al día con el modelo: leídos de <b>'+escapa(archivo)+'</b> el '+escapa(leido)+'. '
         :'<b>Desactualizados:</b> el modelo cambió desde que se llevó a ETABS. Vuelve a llevarlo con '+
@@ -25877,6 +26343,12 @@ var TT={script:performance.now()};
      por que y que hacer.  Sale en Resultados ETABS y en Diseño E.060; en
      Diseño dice ademas que no se diseñe sobre una estructura que no pasa. */
   function avisoVeredicto(VS,donde){
+    /* un modelo hecho a mano (fase 4b): su verificacion E.030 aun no esta (decision de Victor, 28-09-2026); el factor
+       del Art. 44 ya va en las fuerzas, con lo confirmado en Sismo de ETABS */
+    var rM=resultadosEtabs();
+    if(rM&&rM.mano)return '<section class="sis-ancha vd vd-rev" role="status"><b>Modelo hecho a mano en ETABS.</b> '+
+      'Su verificación E.030 (derivas, irregularidades) todavía no se hace aquí: mírala con DE ETABS.bat [3]. Las fuerzas '+
+      'ya llevan el factor del Art. 44 que confirmaste en Verificación E.030 › Sismo de ETABS.</section>';
     if(!VS||!VS.veredicto)return "";
     var V=VS.veredicto, dis=(donde==="diseno");
     if(!VS.alDia)
