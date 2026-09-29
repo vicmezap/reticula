@@ -15576,7 +15576,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v447 · 28-09-2026";
+  var BUILD="v448 · 28-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -32373,6 +32373,11 @@ var TT={script:performance.now()};
     ver("#panelRes",res);
     ver("#panelInicio",ini);
     ver("#panelDis",dise);
+    /* los paneles de traer columnas de AutoCAD y el modelo de ETABS son de PLANTA (Victor, 28-09-2026: «cada seccion
+       esta creada para un proposito»): en otra pestana no se ven y, al volver, siguen donde estaban */
+    var enPlanta=(S.modo==="modelo")&&esPlano&&!S.cim;
+    ver("#panelColsCad",!!COLS_CAD&&enPlanta);
+    ver("#panelDeEtabs",!!(DE_ETABS&&DE_ETABS.estado())&&enPlanta);
     /* una hoja es del proyecto entero: la barra de niveles, la de altura y el
        inspector no pintan nada aqui */
     /* Proyecto y Hojas Excel no son el lienzo: fuera la barra de niveles, la
