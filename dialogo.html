@@ -240,6 +240,27 @@
   #panelColsCad .prev figure{margin:0;flex:1 1 220px;max-width:340px}
   #panelColsCad .prev figcaption{font-weight:600;margin-bottom:2px}
   #panelColsCad .prev svg{width:100%;height:auto;border:1px solid var(--line-soft);border-radius:4px;background:var(--panel)}
+  /* MODELO DESDE ETABS (fase 3): el mismo panel; el contenido lo pinta oviedo/deetabs_panel.js */
+  #panelDeEtabs{position:absolute;inset:10px;z-index:9;background:var(--sheet);
+    border:1px solid var(--line);border-radius:8px;overflow:auto;
+    box-shadow:0 10px 34px rgba(0,0,0,.20);padding:14px 16px;font-size:12px;color:var(--ink)}
+  #panelDeEtabs h3{margin:0;font:700 14px "IBM Plex Sans",sans-serif;color:var(--ink)}
+  #panelDeEtabs h4{margin:14px 0 4px;font:600 12px "IBM Plex Sans",sans-serif;color:var(--ink)}
+  #panelDeEtabs p{margin:4px 0}
+  #panelDeEtabs ul{list-style:none;margin:4px 0 0;padding:0}
+  #panelDeEtabs li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:3px 0;border-bottom:1px solid var(--line-soft)}
+  #panelDeEtabs li .med{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  #panelDeEtabs li.no{color:var(--trib)}
+  #panelDeEtabs .de-gen{columns:2 180px}
+  #panelDeEtabs .de-gen li{break-inside:avoid}
+  #panelDeEtabs .de-op{display:block;margin:6px 0 0}
+  #panelDeEtabs .de-scroll{overflow-x:auto}
+  #panelDeEtabs .prev{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+  #panelDeEtabs .prev figure{margin:0;flex:1 1 220px;max-width:340px}
+  #panelDeEtabs .prev figcaption{font-weight:600;margin-bottom:2px}
+  #panelDeEtabs .prev svg{width:100%;height:auto;border:1px solid var(--line-soft);border-radius:4px;background:var(--panel)}
+  /* SISMO DE ETABS (fase 4a): Verificacion E.030 › Sismo de ETABS, pintado por oviedo/deetabs_sismo.js */
+  .ds-lista{margin:6px 0 0;padding-left:18px;line-height:1.5}
   .ley .leyi.tot{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;color:var(--ink);
     padding-left:17px}
   /* las tablitas del panel de cargas: ambientes y niveles */
@@ -1030,6 +1051,9 @@ select.crit-in{width:auto;text-align:left}
       <input type="file" id="colsCadFile" accept=".json" multiple hidden>
       <button class="btn noCim" id="colsCad" style="margin:4px 2px 0"
         title="Los archivos que deja EJES AUTOCAD.bat, uno por piso: copia las columnas de las secciones que marques, cada una en su sitio exacto, y crea los ejes que hacen falta">Traer columnas de AutoCAD…</button>
+      <input type="file" id="deEtabsFile" accept=".json" hidden>
+      <button class="btn noCim" id="deEtabs" style="margin:4px 2px 0"
+        title="El archivo que deja DE ETABS.bat [1] (BAT\ETABS\LEIDOS): un modelo hecho a mano en ETABS, con sus niveles, ejes, columnas, vigas, losas y placas. Antes de aplicar ves lo que entra y lo que no">Traer de ETABS…</button>
       <div id="calcoCtl" class="noCim" hidden>
         <button class="btn" id="calcoCal" style="margin:4px 2px 0">1 · Calibrar escala</button>
         <button class="btn" id="calcoAncla" hidden style="margin:4px 2px 0"
@@ -1104,6 +1128,7 @@ select.crit-in{width:auto;text-align:left}
       <div class="edif" id="panelDis" hidden></div>
       <div id="panelEjes" hidden role="dialog" aria-label="Ejes leídos del plano"></div>
       <div id="panelColsCad" hidden role="dialog" aria-label="Columnas desde AutoCAD"></div>
+      <div id="panelDeEtabs" hidden role="dialog" aria-label="Modelo desde ETABS"></div>
       <div class="hint" id="hint">Clic en un elemento para ver sus medidas</div>
       <div class="aviso" id="avisoIrreg" hidden style="margin:6px 0 0"></div>
     </div>
@@ -10147,6 +10172,1424 @@ select.crit-in{width:auto;text-align:left}
 })(typeof window !== "undefined" ? window : this);
 </script>
 <script>
+/* ===== deetabs.js (inlinado) ===== */
+/* =====================================================================
+   DE ETABS A LA RETICULA · FASE 2 de FUTURO/PLAN_ETABS_A_COMPLEMENTO.md
+
+   Entra lo que deja BAT\ETABS\DE ETABS.bat [1] (scripts/etabs/de_etabs.py): el modelo que Victor hizo a mano en
+   ETABS, en t y m, con la geometria (A) y los resultados por caso (B).  Tres funciones puras, sin interfaz; las
+   usara el panel «Traer de ETABS» (fase 3) y el paso de los resultados a Excel (fase 4).
+
+   · encaje(D, o)            la geometria en el formato del modelador -un nivel por piso, con dx, dy, ox, oy,
+                             nombres de ejes, cols, vigas, losas y placas- y, aparte, lo que NO entra (con su
+                             porque) y lo que entra pero hay que CONFIRMAR (dudas).  Nada dudoso se aplica solo.
+   · identificarSismo(D, v)  la propuesta de patrones (CM, CV, CVT) y del caso de sismo de cada direccion, con el
+                             factor del Art. 44.  Solo propone: el caso lo elige Victor (el M1 tiene uno a 10 g).
+   · combinarE060(D, conf)   con lo confirmado, las combinaciones de la E.060 (9.2.1 y 9.2.3) armadas con los casos:
+                             el sismo x factor del Art. 44, la envolvente de Exc+ y Exc- (Art. 45), el 100 % + 30 %
+                             por SRSS si el caso no lo trae (Art. 43) o por valores absolutos si es estatico (33.3).
+                             Las combinaciones con sismo salen como ETABS: Max = G + E y Min = G - E.
+
+   CONVENCIONES (las del puente a_etabs.py, al reves):
+   · el modelador mide Y hacia abajo: y = -Y de ETABS.  Los ejes Y van de arriba abajo; ox, oy es donde cae el primer
+     eje respecto al cero del edificio, asi que la exportacion del complemento devuelve cada nudo a su sitio;
+   · columna: b a lo largo de X = T3, h a lo largo de Y = T2 (girada 90°, al reves); viga: b = T2, h = T3;
+   · al de una columna: +1 si su centro se corre media seccion hacia +X o hacia abajo en la planta (-Y);
+   · un punto esta en un eje a menos de 1 cm.
+
+   Puro: no toca el modelo.  node scripts/complemento/oviedo/probar_deetabs.js
+   ===================================================================== */
+(function (raiz) {
+  "use strict";
+  var TOL = 0.01, G = 9.80665;
+
+  function r4(v) { return Math.round(v * 1e4) / 1e4; }
+  function cm(v) { return Math.round(v * 1000) / 10; }
+  function num(v) { var x = +v; return (v === null || v === undefined || v === "" || !isFinite(x)) ? null : x; }
+  function cerca(a, b, t) { return Math.abs(a - b) <= (t == null ? TOL : t); }
+  function indice(v, lista) {
+    for (var k = 0; k < lista.length; k++) if (cerca(v, lista[k])) return k;
+    return -1;
+  }
+  function key() { return Array.prototype.join.call(arguments, ":"); }
+  function etiqueta(e) { return e.label || e.nombre; }
+
+  /* ------------------------------------------------------------------ LOS EJES */
+  /* De la primera grilla cartesiana sin girar: los ejes X e Y, POR POSICION (los nombres se repiten: el M1 tiene el
+     «7» tres veces).  Las lineas generales paralelas a X o a Y entran solo si Victor las marca (decision D9):
+     o.generales = true (todas) o la lista de sus indices en la grilla. */
+  function ejesDe(A, o) {
+    var gs = (A.grillas || []).filter(function (g) { return g.x; });
+    if (!gs.length) return { error: "el modelo no tiene grilla cartesiana" };
+    var g = gs[0], x0 = +g.x0 || 0, y0 = +g.y0 || 0;
+    if (Math.abs(+g.rz || 0) > 1e-6) return { error: "la grilla «" + g.nombre + "» esta girada " + g.rz + "°" };
+    var gen = o.generales === true ? (g.gen || []).map(function (_, k) { return k; }) : (o.generales || []);
+    function mete(lista, v, id, general) {
+      if (v === null) return;
+      var k = indice(v, lista.map(function (e) { return e.v; }));
+      if (k < 0) lista.push({ v: r4(v), id: String(id), general: general });
+    }
+    var X = [], Y = [];
+    (g.x || []).forEach(function (e) { mete(X, num(e[1]) === null ? null : x0 + num(e[1]), e[0], null); });
+    (g.y || []).forEach(function (e) { mete(Y, num(e[1]) === null ? null : y0 + num(e[1]), e[0], null); });
+    gen.forEach(function (k) {
+      var e = (g.gen || [])[k];
+      if (!e) return;
+      if (cerca(e[1], e[3])) mete(X, x0 + e[1], e[0], k);
+      else if (cerca(e[2], e[4])) mete(Y, y0 + e[2], e[0], k);
+    });
+    /* SIN EJES EN LA GRILLA (el ejemplo del curso tiene solo A y 1): con o.ejesDePiezas se proponen donde estan las
+       columnas, los extremos de las vigas y de los muros.  Es una propuesta: la fase 3 la ensena para confirmarla. */
+    if (o.ejesDePiezas) {
+      (A.barras || []).forEach(function (b) {
+        if (b.orient === "Column") { mete(X, b.i[0], "", "piezas"); mete(Y, b.i[1], "", "piezas"); }
+        else if (b.orient === "Beam") {
+          if (cerca(b.i[1], b.j[1])) { mete(Y, b.i[1], "", "piezas"); mete(X, b.i[0], "", "piezas"); mete(X, b.j[0], "", "piezas"); }
+          else if (cerca(b.i[0], b.j[0])) { mete(X, b.i[0], "", "piezas"); mete(Y, b.i[1], "", "piezas"); mete(Y, b.j[1], "", "piezas"); }
+        }
+      });
+    }
+    X.sort(function (a, b) { return a.v - b.v; });
+    Y.sort(function (a, b) { return b.v - a.v; });          /* de arriba abajo, como el modelador */
+    return { x: X, y: Y, grilla: g.nombre, generales: (g.gen || []).length };
+  }
+
+  /* dx, dy, ox, oy, primas y nombres de un nivel del modelador */
+  function ejesDelNivel(E, avisos) {
+    function lado(L, esX) {
+      var d = [], prima = [], nom = [], vistos = {};
+      for (var k = 1; k < L.length; k++) d.push(r4(esX ? L[k].v - L[k - 1].v : L[k - 1].v - L[k].v));
+      L.forEach(function (e, k) {
+        var borde = k === 0 || k === L.length - 1;
+        prima.push(e.general !== null && !borde);
+        var n = e.general !== null ? null : e.id;
+        if (n && vistos[n]) { avisos.push("dos ejes " + (esX ? "X" : "Y") + " se llaman «" + n + "»: el segundo queda con el " +
+                                          "nombre que le toque en el complemento"); n = null; }
+        if (n) vistos[n] = true;
+        nom.push(prima[k] ? null : n);
+      });
+      return { d: d, prima: prima, nom: nom };
+    }
+    var lx = lado(E.x, true), ly = lado(E.y, false);
+    return { dx: lx.d, dy: ly.d, ox: r4(E.x[0].v), oy: r4(-E.y[0].v), primaX: lx.prima, primaY: ly.prima,
+             nomX: lx.nom, nomY: ly.nom };
+  }
+
+  /* ------------------------------------------------------------------ EL ENCAJE */
+  function encaje(D, o) {
+    o = o || {};
+    var A = D.A, out = { v: 1, origen: "etabs", modelo: D.modelo, niveles: [], fuera: [], dudas: [], avisos: [],
+                         resumen: {} };
+    var E = ejesDe(A, o);
+    if (E.error) { out.error = E.error; return out; }
+    if (E.x.length < 2 || E.y.length < 2) {
+      out.error = "hacen falta al menos dos ejes en cada dirección y la grilla tiene " + E.x.length + " en X y " + E.y.length +
+        " en Y" + (E.generales ? ": el resto son " + E.generales + " líneas generales (así dibuja los ejes el puente); márcalas" :
+        ": se pueden proponer donde están las columnas y las vigas");
+      return out;
+    }
+    out.ejes = { x: E.x, y: E.y, grilla: E.grilla, generales: E.generales };
+    var xs = E.x.map(function (e) { return e.v; }), ys = E.y.map(function (e) { return e.v; });
+    var base = ejesDelNivel(E, out.avisos);
+    var porPiso = {};
+    (A.pisos || []).forEach(function (p, k) {
+      var m = { h: p.h, dx: base.dx.slice(), dy: base.dy.slice(), ox: base.ox, oy: base.oy,
+                primaX: base.primaX.slice(), primaY: base.primaY.slice(), nomX: base.nomX.slice(), nomY: base.nomY.slice(),
+                cols: {}, vigas: {}, losas: {}, placas: {}, zapatas: {}, etabs: { piso: p.nombre } };
+      out.niveles.push({ nombre: p.nombre, cota: p.cota, h: p.h, m: m, piezas: 0 });
+      porPiso[p.nombre] = k;
+    });
+    var secB = A.secBarra || {}, secA = A.secArea || {}, mats = A.materiales || {};
+    var cuenta = { columnas: [0, 0, 0], vigas: [0, 0, 0], losas: [0, 0, 0], placas: [0, 0, 0] };   /* entran, dudas, no */
+    function nivelDe(piso) { return porPiso.hasOwnProperty(piso) ? porPiso[piso] : -1; }
+    function fuera(fam, e, piso, por) {
+      out.fuera.push({ que: etiqueta(e), etabs: e.nombre, piso: piso, tipo: fam, por: por });
+      cuenta[fam][2]++;
+    }
+    function duda(fam, e, piso, k, clave, pieza, por) {
+      out.dudas.push({ que: etiqueta(e), etabs: e.nombre, piso: piso, nivel: k, tipo: fam, clave: clave, pieza: pieza,
+                       por: por });
+      cuenta[fam][1]++;
+    }
+    function acero(sec) { return ((mats[(sec || {}).mat] || {}).tipo) === "Steel"; }
+    function dePatron(nombre) { return ((A.patrones || []).filter(function (p) { return p.nombre === nombre; })[0] || {}).tipo; }
+
+    /* ---- COLUMNAS ---- */
+    (A.barras || []).filter(function (b) { return b.orient === "Column"; }).forEach(function (b) {
+      var k = nivelDe(b.piso), s = secB[b.sec] || {};
+      if (k < 0) return fuera("columnas", b, b.piso, "piso «" + b.piso + "» desconocido");
+      if (acero(s)) return fuera("columnas", b, b.piso, "perfil de acero (" + b.sec + ")");
+      if (s.tipo !== "Rectangular" && s.tipo !== "Circle") return fuera("columnas", b, b.piso, "sección " + (s.tipo || "?"));
+      if (!(cerca(b.i[0], b.j[0]) && cerca(b.i[1], b.j[1]))) return fuera("columnas", b, b.piso, "columna inclinada");
+      var i = indice(b.i[0], xs), j = indice(b.i[1], ys);
+      if (i < 0 || j < 0) return fuera("columnas", b, b.piso, "fuera de un cruce de ejes (x " + b.i[0] + ", y " + b.i[1] + ")");
+      var pieza, bx, hy;
+      if (s.tipo === "Circle") { pieza = { forma: "circular", sec: { D: cm(s.D) } }; bx = hy = s.D; }
+      else {
+        var ang = ((((+b.ang || 0) % 180) + 180) % 180);
+        if (cerca(ang, 0, 0.5) || cerca(ang, 180, 0.5)) { bx = s.h; hy = s.b; }
+        else if (cerca(ang, 90, 0.5)) { bx = s.b; hy = s.h; }
+        else return fuera("columnas", b, b.piso, "girada " + r4(ang) + "° (no es 0 ni 90)");
+        pieza = { sec: { b: cm(bx), h: cm(hy) } };
+      }
+      pieza.etabs = { nombre: b.nombre, label: b.label, sec: b.sec };
+      if (b.desfase) pieza.etabs.desfase = [b.desfase.LI, b.desfase.LJ];
+      var clave = key(i, j), m = out.niveles[k].m;
+      if (m.cols[clave]) return fuera("columnas", b, b.piso, "otra columna ya ocupa el cruce " + clave);
+      /* la posicion respecto al eje: centrada (cardinal 5 o 10 sin desplazamiento) o corrida media seccion con el
+         desplazamiento en global, como la deja el puente.  Otro punto cardinal no se adivina: se confirma. */
+      var ins = b.ins || { card: 10, o1: [0, 0, 0], o2: [0, 0, 0], sis: "Global" };
+      var o1 = ins.o1 || [0, 0, 0], o2 = ins.o2 || [0, 0, 0];
+      var corrida = Math.abs(o1[0]) + Math.abs(o1[1]) + Math.abs(o2[0]) + Math.abs(o2[1]) > 1e-6;
+      if (ins.card !== 5 && ins.card !== 10)
+        return duda("columnas", b, b.piso, k, clave, pieza, "punto cardinal " + ins.card + ": su posición respecto al eje se confirma");
+      if (corrida) {
+        if (ins.sis !== "Global" || !cerca(o1[0], o2[0], 1e-3) || !cerca(o1[1], o2[1], 1e-3))
+          return duda("columnas", b, b.piso, k, clave, pieza, "desplazada con otro criterio que el del puente");
+        var ax = o1[0] / (bx / 2), ay = -o1[1] / (hy / 2);
+        var bien = function (v) { return cerca(v, 0, 0.004) || cerca(Math.abs(v), 1, 0.004); };
+        if (!bien(ax) || !bien(ay))
+          return duda("columnas", b, b.piso, k, clave, pieza, "corrida " + cm(o1[0]) + " cm en X y " + cm(o1[1]) +
+                      " cm en Y: no es media sección");
+        pieza.al = { x: Math.round(ax), y: Math.round(ay) };
+      }
+      m.cols[clave] = pieza;
+      cuenta.columnas[0]++;
+    });
+
+    /* ---- LOSAS (antes que las vigas: la chata se reconoce por el espesor de su losa) ---- */
+    var eLosa = {}, macizas = 0;
+    (A.areas || []).filter(function (a) { return a.orient === "Floor"; }).forEach(function (a) {
+      var k = nivelDe(a.piso), s = secA[a.sec] || {}, pts = (a.pts || []).filter(Boolean);
+      if (k < 0) return fuera("losas", a, a.piso, "piso «" + a.piso + "» desconocido");
+      if (s.clase !== "losa") return fuera("losas", a, a.piso, "sección «" + a.sec + "» (" + (s.clase || "?") + ")");
+      var X = [], Y = [];
+      pts.forEach(function (p) { if (indice(p[0], X) < 0) X.push(p[0]); if (indice(p[1], Y) < 0) Y.push(p[1]); });
+      if (pts.length !== 4 || X.length !== 2 || Y.length !== 2)
+        return fuera("losas", a, a.piso, "no es un rectángulo con los lados en X e Y");
+      var ia = indice(Math.min.apply(null, X), xs), ib = indice(Math.max.apply(null, X), xs);
+      var ja = indice(Math.max.apply(null, Y), ys), jb = indice(Math.min.apply(null, Y), ys);
+      if (ia < 0 || ib < 0 || ja < 0 || jb < 0) return fuera("losas", a, a.piso, "sus bordes no caen en los ejes");
+      var tipo, dir, e, por = null, supuesta = false, lx = Math.max.apply(null, X) - Math.min.apply(null, X),
+          ly = Math.max.apply(null, Y) - Math.min.apply(null, Y);
+      if (s.tipo === "Ribbed" && s.nervios) {
+        tipo = "aligerada"; e = s.nervios.h; dir = s.nervios.paralelo === 2 ? "y" : "x";
+      } else if (s.tipo === "Slab" && s.shell !== "Membrane") {
+        /* ETABS no guarda hacia donde trabaja una maciza (el puente tampoco la escribe): se toma la luz corta y se
+           marca como supuesta, para confirmarla */
+        tipo = "maciza"; e = s.e; dir = lx <= ly ? "x" : "y"; supuesta = true;
+      } else if (s.tipo === "Slab" && s.shell === "Membrane") {
+        tipo = /ALIG/i.test(a.sec) ? "aligerada" : "maciza"; e = s.e; dir = lx <= ly ? "x" : "y";
+        por = "losa membrana (sin momentos en ETABS): ¿" + tipo + " de " + cm(e) + " cm?";
+      } else return fuera("losas", a, a.piso, "losa " + (s.tipo || "?"));
+      var n = /(\d{2})/.exec(a.sec || "");
+      if (n && +n[1] >= 12 && +n[1] <= 60 && Math.abs(+n[1] - cm(e)) > 0.5)
+        out.avisos.push("la losa «" + a.sec + "» tiene " + cm(e) + " cm de peralte en ETABS y su nombre dice " + n[1]);
+      var cargas = {};
+      (a.cargas || []).forEach(function (c) {
+        if (c[1] !== 10 && c[1] !== 6) return;                       /* gravedad o Z */
+        var t = dePatron(c[0]), g = (t === "Dead" || t === "SuperDead") ? "CM" : (t === "Live" || t === "ReduceLive") ? "CV" :
+          (/^roof/i.test(t || "")) ? "CVT" : c[0];
+        cargas[g] = r4((cargas[g] || 0) + Math.abs(c[2]));
+      });
+      if (a.hueco) out.avisos.push("la losa " + etiqueta(a) + " (" + a.piso + ") tiene un hueco: el complemento no lo dibuja");
+      var panos = [], mm = out.niveles[k].m;
+      for (var i = ia; i < ib; i++) for (var j = ja; j < jb; j++) {
+        var clave = key(i, j);
+        if (mm.losas[clave]) { out.avisos.push("dos losas en el paño " + clave + " de " + a.piso + ": queda la primera"); continue; }
+        panos.push(clave);
+      }
+      /* las cargas de ETABS van en la ficha «etabs» y no se aplican (Victor, 28-09-2026, opcion A): la viva del
+         complemento sale del uso E.020 de cada paño y la muerta adicional es una del proyecto */
+      var pieza = { tipo: tipo, dir: dir, sec: { e: cm(e) }, etabs: { nombre: a.nombre, label: a.label, sec: a.sec,
+                    cargas: cargas } };
+      if (supuesta) { pieza.etabs.dirSupuesta = true; macizas++; }
+      if (por) return duda("losas", a, a.piso, k, panos, pieza, por);
+      panos.forEach(function (c) {
+        var p = JSON.parse(JSON.stringify(pieza));
+        if (panos.length > 1) p.etabs.panos = panos.length;
+        mm.losas[c] = p; eLosa[k + "|" + c] = e;
+      });
+      if (panos.length) cuenta.losas[0]++;
+    });
+
+    /* ---- VIGAS ---- */
+    (A.barras || []).filter(function (b) { return b.orient === "Beam"; }).forEach(function (b) {
+      var k = nivelDe(b.piso), s = secB[b.sec] || {};
+      if (k < 0) return fuera("vigas", b, b.piso, "piso «" + b.piso + "» desconocido");
+      if (acero(s)) return fuera("vigas", b, b.piso, "perfil de acero (" + b.sec + ")");
+      if (s.tipo !== "Rectangular") return fuera("vigas", b, b.piso, "sección " + (s.tipo || "?"));
+      if (!cerca(b.i[2], b.j[2])) return fuera("vigas", b, b.piso, "viga inclinada");
+      var enX = cerca(b.i[1], b.j[1]), enY = cerca(b.i[0], b.j[0]), claves = [];
+      if (enX) {
+        var j = indice(b.i[1], ys), ia = indice(Math.min(b.i[0], b.j[0]), xs), ib = indice(Math.max(b.i[0], b.j[0]), xs);
+        if (j < 0 || ia < 0 || ib < 0) return fuera("vigas", b, b.piso, "no va de cruce a cruce de ejes");
+        for (var i = ia; i < ib; i++) claves.push(["h", i, j]);
+      } else if (enY) {
+        var ii = indice(b.i[0], xs), ja = indice(Math.max(b.i[1], b.j[1]), ys), jb = indice(Math.min(b.i[1], b.j[1]), ys);
+        if (ii < 0 || ja < 0 || jb < 0) return fuera("vigas", b, b.piso, "no va de cruce a cruce de ejes");
+        for (var jj = ja; jj < jb; jj++) claves.push(["v", ii, jj]);
+      } else return fuera("vigas", b, b.piso, "viga en diagonal");
+      var ins = b.ins || { card: 8, o1: [0, 0, 0], o2: [0, 0, 0] }, o1 = ins.o1 || [0, 0, 0];
+      var invertida = ins.card === 2 || (o1[2] || 0) < -1e-6;
+      var h = s.h, tipo = invertida ? "invertida" : "principal", m = out.niveles[k].m, dudaTipo = null;
+      /* EL TIPO.  La geometria no separa una chata de una principal: en el M1 «VCH3-(25 x40)» es una chata de 40 cm y
+         en PUCALPA del puente hay chatas de 5 y 10 cm junto a una maciza de 30 y principales de 25 junto a un aligerado
+         de 30.  Es una clasificacion del ingeniero, y va en el NOMBRE de la seccion (el complemento pone VP, VCH, VI).
+           1. invertida: por la geometria (punto cardinal 2 o bajada), como la opcion B del puente;
+           2. el nombre: VCH o CHATA -> chata; VP o V y un numero -> principal;
+           3. sin nombre que lo diga, chata solo si su peralte es el de la losa de al lado (seguro); si no, principal. */
+      var nom = String(b.sec || ""), porNombre = /^VCH|CHATA/i.test(nom) ? "chata" :
+        (/^VI(\d|[-_ (]|$)|INVERT/i.test(nom) ? "invertida" : (/^V(P|\d)|PRINCIPAL/i.test(nom) ? "principal" : null));
+      if (invertida) { if (porNombre && porNombre !== "invertida") out.avisos.push("la viga " + etiqueta(b) + " (" + b.piso +
+          ") es invertida en ETABS y su sección se llama «" + nom + "»"); }
+      else if (porNombre === "chata" || porNombre === "principal") tipo = porNombre;
+      else if (porNombre === "invertida") dudaTipo = "su sección se llama «" + nom + "» (invertida), pero en ETABS va con la " +
+        "cara superior en el piso";
+      else claves.forEach(function (c) {
+        var lados = c[0] === "h" ? [key(c[1], c[2] - 1), key(c[1], c[2])] : [key(c[1] - 1, c[2]), key(c[1], c[2])];
+        lados.forEach(function (p) { var e = eLosa[k + "|" + p]; if (e && cerca(e, h, 0.005)) tipo = "chata"; });
+      });
+      var pieza = { sec: { b: cm(s.b), h: cm(h) }, etabs: { nombre: b.nombre, label: b.label, sec: b.sec } };
+      if (tipo !== "principal") pieza.t = tipo;
+      /* EL PERALTE DE LA CHATA no se guarda en el complemento: es el espesor de la losa mas gruesa de sus dos lados
+         (20 cm sin losa; espesorParaChata en reticula.html).  Si ETABS le da otro -PUCALPA tiene chatas de 5 y 10 cm
+         junto a losas de 30-, se dice: al volver a ETABS saldra con el de la losa. */
+      if (tipo === "chata") {
+        var eMax = 0;
+        claves.forEach(function (c) {
+          var lados = c[0] === "h" ? [key(c[1], c[2] - 1), key(c[1], c[2])] : [key(c[1] - 1, c[2]), key(c[1], c[2])];
+          lados.forEach(function (p) { eMax = Math.max(eMax, eLosa[k + "|" + p] || 0); });
+        });
+        var eComp = eMax > 0 ? eMax : 0.20;
+        if (Math.abs(eComp - h) > 0.005) out.avisos.push("la chata " + etiqueta(b) + " (" + b.piso + ") mide " + cm(h) +
+          " cm en ETABS y el complemento le da " + cm(eComp) + " cm");
+      }
+      if (b.rotulas) out.avisos.push("la viga " + etiqueta(b) + " (" + b.piso + ") tiene rótulas: el complemento la toma continua");
+      if (b.cargas) out.avisos.push("la viga " + etiqueta(b) + " (" + b.piso + ") lleva cargas propias en ETABS: " +
+                                    b.cargas.map(function (c) { return c[0]; }).join(", ") + " (se listan, no se traen)");
+      var puesta = false;
+      claves.forEach(function (c, n) {
+        var clave = key(c[0], c[1], c[2]);
+        if (m.vigas[clave]) { out.avisos.push("dos vigas en el tramo " + clave + " de " + b.piso + ": queda la primera"); return; }
+        var p = JSON.parse(JSON.stringify(pieza));
+        if (claves.length > 1) p.etabs.tramo = [n + 1, claves.length];
+        if (ins.card !== 8 && ins.card !== 10 && ins.card !== 5 && !invertida) {
+          duda("vigas", b, b.piso, k, clave, p, "punto cardinal " + ins.card + ": su posición se confirma");
+          return;
+        }
+        if (dudaTipo) { duda("vigas", b, b.piso, k, clave, p, dudaTipo); return; }
+        m.vigas[clave] = p; puesta = true;
+      });
+      if (puesta) cuenta.vigas[0]++;
+    });
+
+    /* ---- PLACAS: solo de tramo completo entre ejes (D4); lo demas se lista ---- */
+    (A.areas || []).filter(function (a) { return a.orient === "Wall"; }).forEach(function (a) {
+      var k = nivelDe(a.piso), s = secA[a.sec] || {}, pts = (a.pts || []).filter(Boolean);
+      if (k < 0) return fuera("placas", a, a.piso, "piso «" + a.piso + "» desconocido");
+      if (!pts.length) return fuera("placas", a, a.piso, "sin puntos");
+      var z = Math.min.apply(null, pts.map(function (p) { return p[2]; }));
+      var bajo = pts.filter(function (p) { return cerca(p[2], z); });
+      if (bajo.length !== 2) return fuera("placas", a, a.piso, "no es un rectángulo vertical");
+      var p = bajo[0], q = bajo[1], claves = [];
+      if (cerca(p[1], q[1])) {
+        var j = indice(p[1], ys), ia = indice(Math.min(p[0], q[0]), xs), ib = indice(Math.max(p[0], q[0]), xs);
+        if (j < 0 || ia < 0 || ib < 0) return fuera("placas", a, a.piso, "muro parcial o fuera de eje (decisión D4)");
+        for (var i = ia; i < ib; i++) claves.push(key("h", i, j));
+      } else if (cerca(p[0], q[0])) {
+        var ii = indice(p[0], xs), ja = indice(Math.max(p[1], q[1]), ys), jb = indice(Math.min(p[1], q[1]), ys);
+        if (ii < 0 || ja < 0 || jb < 0) return fuera("placas", a, a.piso, "muro parcial o fuera de eje (decisión D4)");
+        for (var jj = ja; jj < jb; jj++) claves.push(key("v", ii, jj));
+      } else return fuera("placas", a, a.piso, "muro en diagonal");
+      var m = out.niveles[k].m;
+      claves.forEach(function (c) {
+        m.placas[c] = { t: cm(s.e), etabs: { nombre: a.nombre, label: a.label, pier: a.pier || null, sec: a.sec } };
+      });
+      if (!a.pier) out.avisos.push("el muro " + etiqueta(a) + " (" + a.piso + ") no tiene pier: ETABS no da sus fuerzas de muro");
+      cuenta.placas[0]++;
+    });
+
+    out.niveles.forEach(function (L) {
+      var m = L.m;
+      L.piezas = Object.keys(m.cols).length + Object.keys(m.vigas).length + Object.keys(m.losas).length +
+                 Object.keys(m.placas).length;
+      L.vacio = L.piezas === 0;
+    });
+    if (macizas) out.avisos.push(macizas + " losa(s) maciza(s): ETABS no dice hacia dónde trabajan; se tomó la luz corta: " +
+                                 "confírmalo en Planta");
+    /* los avisos, sin repetir; las vigas con cargas propias, en uno solo */
+    var vistos = {}, cargadas = [], rotulas = [], chatas = [];
+    out.avisos = out.avisos.filter(function (a) {
+      var r = /^la viga (.+) lleva cargas propias en ETABS/.exec(a), q = /^la viga (.+) tiene rótulas/.exec(a),
+          c = /^la chata (.+) mide (.+) cm en ETABS y el complemento le da (.+) cm$/.exec(a);
+      if (r) { cargadas.push(r[1]); return false; }
+      if (q) { rotulas.push(q[1]); return false; }
+      if (c) { chatas.push(c[1] + " " + c[2] + " → " + c[3]); return false; }
+      if (vistos[a]) return false;
+      vistos[a] = true; return true;
+    });
+    function lista(l) { return l.slice(0, 8).join(", ") + (l.length > 8 ? "…" : ""); }
+    if (cargadas.length) out.avisos.push(cargadas.length + " viga(s) llevan cargas propias en ETABS (se listan, no se traen): " +
+                                         lista(cargadas));
+    if (rotulas.length) out.avisos.push(rotulas.length + " viga(s) con rótulas en ETABS (el complemento las toma continuas): " +
+                                        lista(rotulas));
+    if (chatas.length) out.avisos.push(chatas.length + " chata(s) con otro peralte en ETABS: el complemento les da el espesor " +
+                                       "de su losa, y así volverían a ETABS (cm): " + lista(chatas));
+    var vacios = out.niveles.filter(function (L) { return L.vacio; }).map(function (L) { return L.nombre; });
+    if (vacios.length) out.avisos.push("pisos sin nada que traer: " + vacios.join(", "));
+    Object.keys(cuenta).forEach(function (f) {
+      var c = cuenta[f], t = c[0] + c[1] + c[2];
+      out.resumen[f] = { entran: c[0], dudas: c[1], no: c[2], total: t };
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ LO QUE SE APLICA (fase 3) */
+  /* Los niveles listos para el modelador: una copia de lo que entra mas las DUDAS que Victor marco una a una
+     (sel.dudas = {indice: true, o {tipo: "aligerada"|"maciza"} en una losa}).  Nada dudoso entra sin su marca.  Las
+     vigas llevan su tipo escrito, tambien «principal», como las de plantaLlena.  Se niega, sin tocar nada, si los ejes
+     no dejan un modelo que el complemento pueda dibujar. */
+  var MAX_NIVELES = 15, VANO_MIN = 0.05;
+  function aplicable(enc, sel) {
+    sel = sel || {};
+    if (!enc || enc.error) return { ok: false, msg: "No hay nada que aplicar" + (enc && enc.error ? ": " + enc.error : ".") };
+    if (!enc.niveles.length) return { ok: false, msg: "El modelo de ETABS no tiene pisos." };
+    if (enc.niveles.length > MAX_NIVELES)
+      return { ok: false, msg: "ETABS tiene " + enc.niveles.length + " pisos y el complemento admite " + MAX_NIVELES + "." };
+    var m0 = enc.niveles[0].m, corto = null;
+    [["X", m0.dx], ["Y", m0.dy]].forEach(function (d) {
+      d[1].forEach(function (v) { if (!(v >= VANO_MIN) && !corto) corto = "dos ejes en " + d[0] + " a " + cm(v) + " cm"; });
+    });
+    if (corto) return { ok: false, msg: "Hay " + corto + ": el complemento no dibuja vanos de menos de " + cm(VANO_MIN) +
+                                        " cm. Desmarca la línea general que lo crea." };
+    var niveles = enc.niveles.map(function (L) { return JSON.parse(JSON.stringify(L.m)); }), marcadas = 0;
+    var FAM = { columnas: "cols", vigas: "vigas", losas: "losas", placas: "placas" };
+    (enc.dudas || []).forEach(function (d, k) {
+      var s = (sel.dudas || {})[k], m = niveles[d.nivel];
+      if (!s || !m) return;
+      var p = JSON.parse(JSON.stringify(d.pieza));
+      if (d.tipo === "losas") {
+        if (s.tipo === "aligerada" || s.tipo === "maciza") p.tipo = s.tipo;
+        var panos = [].concat(d.clave);
+        if (panos.length > 1) p.etabs.panos = panos.length;
+        panos.forEach(function (c) { if (!m.losas[c]) m.losas[c] = JSON.parse(JSON.stringify(p)); });
+      } else if (!m[FAM[d.tipo]][d.clave]) m[FAM[d.tipo]][d.clave] = p;
+      marcadas++;
+    });
+    var n = { columnas: 0, vigas: 0, losas: 0, placas: 0 };
+    niveles.forEach(function (m) {
+      Object.keys(m.vigas).forEach(function (c) { if (!m.vigas[c].t) m.vigas[c].t = "principal"; });
+      n.columnas += Object.keys(m.cols).length; n.vigas += Object.keys(m.vigas).length;
+      n.losas += Object.keys(m.losas).length; n.placas += Object.keys(m.placas).length;
+    });
+    return { ok: true, niveles: niveles, n: n, dudas: marcadas };
+  }
+
+  /* ------------------------------------------------------------------ EL SISMO */
+  var RE_VARIANTE = /\s*\(\s*(?:exc)?\s*([+-])\s*[xy]?\s*\)\s*$/i;
+  function grupo(nombre) { return String(nombre).replace(RE_VARIANTE, ""); }
+  function variante(nombre) { var r = RE_VARIANTE.exec(String(nombre)); return r ? r[1] : null; }
+  function baseDe(B, caso) { return (B.base || {})[caso + "|Max"] || (B.base || {})[caso] || null; }
+
+  /* LA NORMA DEL PROYECTO (D12, Victor 28-09-2026).  La vigente es la E.030 modificada por la RM 183-2026, que
+     trae el sismo simultaneo en las dos direcciones (su literal c: 100 % + 30 %, Art. 43).  La RM 217-2026 deja que
+     un proyecto en curso siga «hasta su culminacion» con la norma antes de esa modificacion, la RM 355-2018: cada
+     direccion por separado (Art. 24.1), cortante minima en el 29.4 y excentricidad en el 29.5 (leido en el texto de
+     El Peruano, 7-12-2018). */
+  var ART = {
+    "2026": { nombre: "E.030 (RM 183-2026)", minimo: "Art. 44", exc: "Art. 45", dir: "Art. 43", estatico: "Art. 33.3" },
+    "2018": { nombre: "E.030-2018 (RM 355-2018)", minimo: "Art. 29.4", exc: "Art. 29.5", dir: "Art. 24.1", estatico: "Art. 24.1" }
+  };
+  function art(norma) { return ART[norma === "2018" ? "2018" : "2026"]; }
+
+  /* v = {Vest: {x, y} t (de la Verificacion E.030 del complemento: el M1 no tiene estatico), regular: {x, y}
+     (true, false o null si no se sabe), norma: "2026" | "2018"} */
+  function identificarSismo(D, v) {
+    v = v || {};
+    var A = D.A, B = D.B, N = art(v.norma), out = { patrones: { CM: [], CV: [], CVT: [], estaticos: [], preguntar: [], fuera: [] },
+                                  espectros: [], propuesta: { x: null, y: null }, factor: {}, vertical: [], avisos: [] };
+    if (!B) { out.avisos.push("el modelo no está analizado: sin resultados no hay sismo que identificar"); return out; }
+    var casos = {};
+    (B.casos || []).forEach(function (c) { casos[c.nombre] = c; });
+    var conCarga = {};
+    (A.areas || []).concat(A.barras || []).forEach(function (e) { (e.cargas || []).forEach(function (c) { conCarga[c[0]] = true; }); });
+    (A.conCarga || []).forEach(function (n) { conCarga[n] = true; });      /* el resumen guardado (resumenSismo) */
+    (A.patrones || []).forEach(function (p) {
+      if (/^~/.test(p.nombre)) return;
+      var t = p.tipo || "", g = null;
+      if (t === "Dead" || t === "SuperDead") g = "CM";
+      else if (t === "Live" || t === "ReduceLive") g = "CV";
+      else if (/^roof/i.test(t)) g = "CVT";
+      else if (t === "Quake") g = "estaticos";
+      if (g) {
+        out.patrones[g].push(p.nombre);
+        if (!casos[p.nombre]) out.avisos.push("el patrón " + p.nombre + " no tiene un caso con su mismo nombre");
+      } else if (conCarga[p.nombre] || (p.pp || 0) > 0)
+        out.patrones.preguntar.push({ nombre: p.nombre, tipo: t, porque: "tipo «" + t + "» con carga: ¿es CM, CV u otra cosa?" });
+      else out.patrones.fuera.push(p.nombre);
+    });
+    Object.keys(B.espectros || {}).forEach(function (n) {
+      var e = B.espectros[n], hor = e.cargas.filter(function (x) { return x[0] === "U1" || x[0] === "U2"; });
+      var ver = e.cargas.filter(function (x) { return x[0] === "U3"; });
+      if (!hor.length) { if (ver.length) out.vertical.push(n); return; }
+      var pr = hor.reduce(function (a, x) { return (x[3] || 0) > (a[3] || 0) ? x : a; });
+      var dir = pr[0] === "U1" ? "x" : "y", otro = hor.filter(function (x) { return x !== pr; })[0];
+      var b = baseDe(B, n), V = b ? Math.abs(dir === "x" ? b[0] : b[1]) : null;
+      out.espectros.push({ caso: n, dir: dir, g: pr[3], perp: otro ? otro[3] : 0, srss: !!(e.dirComb && e.dirComb[0] === 1),
+                           exc: e.exc || 0, modal: e.modal, V: V, grupo: grupo(n), variante: variante(n), funcion: pr[1] });
+      if (ver.length) out.vertical.push(n);
+    });
+    ["x", "y"].forEach(function (d) {
+      var todos = out.espectros.filter(function (e) { return e.dir === d; });
+      var buenos = todos.filter(function (e) { return e.g >= 0.95 && e.g <= 1.05; });
+      todos.filter(function (e) { return buenos.indexOf(e) < 0; }).forEach(function (e) {
+        var ref = buenos[0];
+        out.avisos.push("el caso " + e.caso + " tiene el espectro a " + r4(e.g) + " g" +
+                        (ref && ref.V && e.V ? " y da " + r4(e.V / ref.V) + " veces la cortante de " + ref.caso : "") +
+                        ": no se propone");
+      });
+      if (!buenos.length) { out.avisos.push("en " + d.toUpperCase() + " ningún espectro está a 1 g: el caso lo eliges tú"); return; }
+      var grupos = {};
+      buenos.forEach(function (e) { (grupos[e.grupo] = grupos[e.grupo] || []).push(e); });
+      var par = Object.keys(grupos).map(function (k) { return grupos[k]; }).filter(function (l) {
+        return l.some(function (e) { return e.variante === "+"; }) && l.some(function (e) { return e.variante === "-"; });
+      })[0];
+      var eleg, motivo;
+      if (par) { eleg = par; motivo = "envolvente de Exc+ y Exc− (" + N.exc + ": el signo más desfavorable)"; }
+      else {
+        var conE = buenos.filter(function (e) { return e.exc >= 0.049; })[0];
+        eleg = [conE || buenos[0]];
+        motivo = conE ? "con la excentricidad 0,05 en el mismo caso (" + N.exc + ")" :
+          "SIN excentricidad accidental: falta el " + N.exc;
+        if (!conE) out.avisos.push("en " + d.toUpperCase() + " el caso propuesto no tiene excentricidad accidental");
+      }
+      var trae30 = eleg.every(function (e) { return e.perp >= 0.29 && e.perp <= 0.31 && e.srss; });
+      out.propuesta[d] = { casos: eleg.map(function (e) { return e.caso; }), motivo: motivo, trae30: trae30,
+                           V: Math.max.apply(null, eleg.map(function (e) { return e.V || 0; })),
+                           nota: v.norma === "2018" ? (trae30 ? "trae el 30 % perpendicular, que la E.030-2018 no pide " +
+                             "(Art. 24.1): se usa tal cual, del lado seguro" : "cada dirección por separado (Art. 24.1)") :
+                             trae30 ? "trae el 100 % + 30 % por SRSS (Art. 43)" :
+                             "sin el 30 % perpendicular: se combina por SRSS con el de la otra dirección (Art. 43)" };
+      var Vest = v.Vest ? num(v.Vest[d]) : null, Vdin = out.propuesta[d].V;
+      if (Vest && Vdin) {
+        var reg = v.regular ? v.regular[d] : null, f = {};
+        [[0.8, "regular"], [0.9, "irregular"]].forEach(function (x) { f[x[1]] = Math.max(1, x[0] * Vest / Vdin); });
+        out.factor[d] = { Vest: Vest, Vdin: Vdin, razon: Vdin / Vest, regular: reg, siRegular: f.regular,
+                          siIrregular: f.irregular, factor: reg === true ? f.regular : reg === false ? f.irregular : null };
+      }
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ LO QUE SE GUARDA CON EL PROYECTO (fase 4a) */
+  /* Del archivo de DE ETABS.bat, solo lo que hace falta para confirmar el sismo y armar las combinaciones: unos
+     20 kB en el M1, frente a los MB de las fuerzas.  identificarSismo y comparar lo aceptan como si fuera D. */
+  function resumenSismo(D) {
+    var A = D.A || {}, B = D.B || {}, con = {};
+    (A.areas || []).concat(A.barras || []).forEach(function (e) { (e.cargas || []).forEach(function (c) { con[c[0]] = true; }); });
+    var b = {};
+    ["casos", "espectros", "base", "combos", "combosDiseno", "codigo", "pdelta", "modal"].forEach(function (k) {
+      if (B[k] !== undefined) b[k] = B[k];
+    });
+    return { v: 1, modelo: D.modelo || "", analizado: D.analizado !== false,
+             A: { patrones: A.patrones || [], masa: A.masa || null, conCarga: Object.keys(con),
+                  pisos: (A.pisos || []).map(function (p) { return { nombre: p.nombre, cota: p.cota, h: p.h }; }) },
+             B: D.B ? b : null };
+  }
+
+  /* EL PESO SISMICO DE ETABS: su fuente de masa aplicada a la reaccion vertical de cada caso (M1: Peso Propio + Carga
+     Muerta + 25 % de las vivas).  Si la masa sale de los elementos, no se reconstruye asi y se dice. */
+  function pesoEtabs(D) {
+    var ms = (D.A || {}).masa, base = (D.B || {}).base || {};
+    if (!ms) return { P: null, por: "el archivo no trae la fuente de masa" };
+    var partes = (ms.partes || []).filter(function (p) { return p[0]; });
+    if (!ms.cargas || !partes.length)
+      return { P: null, por: "la masa de ETABS sale de " + (ms.elementos ? "los elementos" : "") +
+               (ms.elementos && ms.adicional ? " y " : "") + (ms.adicional ? "la masa adicional" : "") + ", no de patrones de carga" };
+    var P = 0, falta = [];
+    partes.forEach(function (p) {
+      var r = base[p[0]] || base[p[0] + "|Max"];
+      if (!r) { falta.push(p[0]); return; }
+      P += p[1] * Math.abs(r[2]);
+    });
+    if (falta.length) return { P: null, por: "sin reacción en la base de " + falta.join(", ") };
+    return { P: r4(P), partes: partes, elementos: !!ms.elementos,
+             por: ms.elementos ? "la fuente de masa suma además los elementos: el peso puede quedar corto" : null };
+  }
+
+  /* LA CORTANTE DE LOS CASOS ESTATICOS DE ETABS (patrones Quake), por direccion: la mayor.  Es la que usa el puente
+     para el Art. 44 (a_etabs.comprobar_dinamico). */
+  function vEstaticaEtabs(D, patrones) {
+    var base = (D.B || {}).base || {}, out = {};
+    (patrones || []).forEach(function (n) {
+      var r = base[n] || base[n + "|Max"];
+      if (!r) return;
+      var d = Math.abs(r[0]) >= Math.abs(r[1]) ? "x" : "y", V = Math.abs(d === "x" ? r[0] : r[1]);
+      if (!(V > 0)) return;
+      if (!out[d] || V > out[d].V) out[d] = { V: r4(V), caso: n };
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ LAS COMBINACIONES */
+  /* conf = {CM: [casos], CV: [casos], CVT: [casos], CS: {x: [casos], y: [casos]}, factor: {x, y},
+             trae30: {x, y} (el caso ya tiene el 30 % perpendicular por SRSS), estatico: false (CS por fuerzas
+             equivalentes: 100 % + 30 % en valores absolutos, Art. 33.3)} */
+  var COMBOS = [
+    { nombre: "U1 1.4CM+1.7CV", g: [1.4, 1.7], sismo: null },
+    { nombre: "U2 1.25(CM+CV)+-CSX", g: [1.25, 1.25], sismo: "x" },
+    { nombre: "U3 1.25(CM+CV)+-CSY", g: [1.25, 1.25], sismo: "y" },
+    { nombre: "U4 0.9CM+-CSX", g: [0.9, 0], sismo: "x" },
+    { nombre: "U5 0.9CM+-CSY", g: [0.9, 0], sismo: "y" }
+  ];
+
+  /* Una familia de resultados de un elemento: {caso[|paso]: filas}.  Cada fila es [estacion?, valores...]; con
+     estacion = true la primera columna se copia y no se combina.  Devuelve {combo: {valor} o {Max, Min}}. */
+  function combinar(porCaso, conf, estacion) {
+    var f0 = estacion ? 1 : 0, avisos = [];
+    function filas(caso) {
+      return porCaso[caso] || porCaso[caso + "|Max"] || null;
+    }
+    var ref = null;
+    Object.keys(porCaso).some(function (k) { ref = porCaso[k]; return !!ref; });
+    if (!ref) return { combos: {}, avisos: ["sin resultados"] };
+    var nF = ref.length, nC = ref[0].length;
+    function ceros() { return ref.map(function (r) { return r.map(function (v, c) { return c < f0 ? v : 0; }); }); }
+    function suma(dest, lista, f) {
+      (lista || []).forEach(function (caso) {
+        var F = filas(caso);
+        if (!F) { avisos.push("falta el caso " + caso); return; }
+        if (F.length !== nF) { avisos.push("el caso " + caso + " tiene otras estaciones"); return; }
+        for (var i = 0; i < nF; i++) for (var c = f0; c < nC; c++) dest[i][c] += f * (F[i][c] || 0);
+      });
+      return dest;
+    }
+    /* el sismo de una direccion: la envolvente de sus casos (Exc+ y Exc-), en valor absoluto, × el factor */
+    function sismo(d) {
+      var E = ceros(), lista = (conf.CS || {})[d] || [], fac = +((conf.factor || {})[d]) || 1;
+      lista.forEach(function (caso) {
+        var F = filas(caso);
+        if (!F) { avisos.push("falta el caso " + caso); return; }
+        for (var i = 0; i < nF; i++) for (var c = f0; c < nC; c++) E[i][c] = Math.max(E[i][c], Math.abs(F[i][c] || 0) * fac);
+      });
+      return E;
+    }
+    var Ex = sismo("x"), Ey = sismo("y"), E = { x: Ex, y: Ey };
+    function direccional(d) {
+      var o = d === "x" ? "y" : "x", Ed = E[d], Eo = E[o];
+      if (conf.norma === "2018") return Ed;             /* E.030-2018, Art. 24.1: cada direccion por separado */
+      if (conf.estatico) return Ed.map(function (r, i) { return r.map(function (v, c) { return c < f0 ? v : v + 0.3 * Eo[i][c]; }); });
+      if ((conf.trae30 || {})[d]) return Ed;
+      return Ed.map(function (r, i) { return r.map(function (v, c) {
+        return c < f0 ? v : Math.sqrt(v * v + Math.pow(0.3 * Eo[i][c], 2)); }); });
+    }
+    var S = { x: direccional("x"), y: direccional("y") }, out = {};
+    COMBOS.forEach(function (cb) {
+      var Gd = suma(ceros(), conf.CM, cb.g[0]);
+      if (cb.g[1]) { suma(Gd, conf.CV, cb.g[1]); suma(Gd, conf.CVT, cb.g[1]); }
+      if (!cb.sismo) { out[cb.nombre] = { valor: Gd }; return; }
+      var Es = S[cb.sismo];
+      function mas(sg) { return Gd.map(function (r, i) { return r.map(function (v, c) { return c < f0 ? v : r4(v + sg * Es[i][c]); }); }); }
+      out[cb.nombre] = { Max: mas(1), Min: mas(-1) };
+    });
+    Object.keys(out).forEach(function (k) {
+      if (out[k].valor) out[k].valor = out[k].valor.map(function (r) { return r.map(r4); });
+    });
+    return { combos: out, avisos: avisos };
+  }
+
+  function combinarE060(D, conf) {
+    var B = D.B, out = { combinaciones: COMBOS.map(function (c) { return c.nombre; }), barras: {}, piers: {}, reacciones: {},
+                         comparacion: [], avisos: [] };
+    if (!B) { out.avisos.push("el modelo no está analizado"); return out; }
+    var faltan = {};
+    Object.keys(B.barras || {}).forEach(function (n) {
+      var r = combinar(B.barras[n], conf, true);
+      out.barras[n] = r.combos;
+      r.avisos.forEach(function (a) { faltan[a] = true; });
+    });
+    Object.keys(B.piers || {}).forEach(function (p) {
+      out.piers[p] = {};
+      Object.keys(B.piers[p]).forEach(function (piso) {
+        var porCaso = {};
+        Object.keys(B.piers[p][piso]).forEach(function (k) {
+          var q = B.piers[p][piso][k];
+          if (q.Bottom && q.Top) porCaso[k] = [q.Bottom, q.Top];
+        });
+        var r = combinar(porCaso, conf, false), res = {};
+        Object.keys(r.combos).forEach(function (cb) {
+          res[cb] = {};
+          Object.keys(r.combos[cb]).forEach(function (paso) { res[cb][paso] = { Bottom: r.combos[cb][paso][0], Top: r.combos[cb][paso][1] }; });
+        });
+        out.piers[p][piso] = res;
+      });
+    });
+    Object.keys(B.reacciones || {}).forEach(function (n) {
+      var porCaso = {};
+      Object.keys(B.reacciones[n].casos || {}).forEach(function (k) { porCaso[k] = [B.reacciones[n].casos[k]]; });
+      var r = combinar(porCaso, conf, false), res = {};
+      Object.keys(r.combos).forEach(function (cb) {
+        res[cb] = {};
+        Object.keys(r.combos[cb]).forEach(function (paso) { res[cb][paso] = r.combos[cb][paso][0]; });
+      });
+      out.reacciones[n] = { xyz: B.reacciones[n].xyz, combos: res };
+    });
+    Object.keys(faltan).forEach(function (a) { out.avisos.push(a); });
+    out.comparacion = comparar(B, conf);
+    return out;
+  }
+
+  /* Las combinaciones del modelo, ya expandidas, frente a las de la E.060 armadas con lo confirmado */
+  function comparar(B, conf) {
+    var grupoDe = {};
+    ["CM", "CV", "CVT"].forEach(function (g) { (conf[g] || []).forEach(function (c) { grupoDe[c] = g; }); });
+    ["x", "y"].forEach(function (d) { ((conf.CS || {})[d] || []).forEach(function (c) { grupoDe[c] = "CS" + d.toUpperCase(); }); });
+    var out = [];
+    (B.combos || []).forEach(function (cb) {
+      if (!cb.expandida || /^DCon/i.test(cb.nombre)) return;
+      var f = {}, otros = [];
+      cb.expandida.forEach(function (p) {
+        var g = grupoDe[p[0]];
+        if (!g) { if (Math.abs(p[1]) > 1e-9) otros.push(p[0]); return; }
+        f[g] = f[g] || [];
+        f[g].push([p[0], p[1]]);
+      });
+      function fac(g) { return f[g] ? f[g][0][1] : 0; }
+      var cm = fac("CM"), cv = f.CV ? fac("CV") : fac("CVT"), sx = f.CSX, sy = f.CSY, txt = [];
+      var gravedad = !sx && !sy;
+      if (gravedad) {
+        if (cm && Math.abs(cm - 1.4) < 1e-6 && Math.abs(cv - 1.7) < 1e-6) txt.push("coincide con la 9.2.1 (1,4 CM + 1,7 CV)");
+        else if (cm) txt.push("gravedad con " + r4(cm) + " CM + " + r4(cv) + " CV: no es la 9.2.1");
+      } else {
+        var d = sx ? "x" : "y", cs = sx || sy, fs = cs[0][1], fe = +((conf.factor || {})[d]) || 1;
+        var tipo = Math.abs(cm - 1.25) < 1e-6 && Math.abs(cv - 1.25) < 1e-6 ? "1,25 (CM + CV)" :
+          Math.abs(cm - 0.9) < 1e-6 && !cv ? "0,9 CM" : null;
+        txt.push(tipo ? "es la 9.2.3 con " + tipo : "no es de la 9.2.3 (" + r4(cm) + " CM, " + r4(cv) + " CV)");
+        if (Math.abs(Math.abs(fs) - fe) > 1e-3) txt.push("su sismo va × " + r4(Math.abs(fs)) + " y el " + art(conf.norma).minimo +
+                                                         " pide × " + r4(fe));
+        var todos = (conf.CS || {})[d] || [];
+        if (todos.length > 1 && cs.length < todos.length) txt.push("solo con " + cs.map(function (c) { return c[0]; }).join(", ") +
+                                                                   ": falta la envolvente de " + todos.join(" y ") + " (" +
+                                                                   art(conf.norma).exc + ")");
+      }
+      if (otros.length) txt.push("lleva además " + otros.join(", "));
+      if (txt.length) out.push({ nombre: cb.nombre, texto: txt.join("; ") });
+    });
+    return out;
+  }
+
+  var DEETABS = { encaje: encaje, aplicable: aplicable, MAX_NIVELES: MAX_NIVELES, resumenSismo: resumenSismo,
+                  pesoEtabs: pesoEtabs, vEstaticaEtabs: vEstaticaEtabs, comparar: comparar, ART: ART, art: art,
+                  identificarSismo: identificarSismo, combinarE060: combinarE060, combinar: combinar,
+                  ejesDe: ejesDe, grupo: grupo, variante: variante, COMBOS: COMBOS, TOL: TOL, G: G };
+  if (typeof module !== "undefined" && module.exports) module.exports = DEETABS;
+  raiz.DEETABS = DEETABS;
+})(typeof window !== "undefined" ? window : this);
+</script>
+<script>
+/* ===== deetabs_panel.js (inlinado) ===== */
+/* =====================================================================
+   EL PANEL «TRAER DE ETABS» · FASE 3 de FUTURO/PLAN_ETABS_A_COMPLEMENTO.md
+
+   Abre el archivo que deja BAT\ETABS\DE ETABS.bat [1] (<modelo>_etabs.json) y ensena, ANTES de tocar nada, lo que
+   el motor (deetabs.js) encaja en la reticula: los niveles, los ejes, lo que entra, lo que hay que CONFIRMAR -solo
+   entra lo que Victor marca, una a una- y lo que NO se trae, con su porque.  «Aplicar» reemplaza el edificio del
+   complemento por el de ETABS y Ctrl+Z lo devuelve entero.  En ETABS no cambia nada: solo se lee el archivo.
+
+   Lo decidido (plan, seccion 4, y Victor el 28-09-2026):
+   · D3: niveles, ejes, columnas, vigas y losas; placas solo de eje a eje (las parciales se listan: D4, fase 6);
+   · D9: las lineas generales de la grilla se listan y solo entran las que se marcan;
+   · cargas de las losas: se ensenan y no se aplican (opcion A).  La viva del complemento es la del uso E.020 de cada
+     paño y la muerta adicional es una del proyecto (Datos).
+
+   Va aparte de reticula.html a proposito: alli solo estan el boton, el panel vacio y el enganche, para que este
+   trabajo y el del chat de observaciones no se pisen.
+     ctx = { panel(), estado(), snap, podar, listo, toast, escapa }
+   ===================================================================== */
+(function (raiz) {
+  "use strict";
+  var DE = raiz.DEETABS || (typeof require === "function" ? require("./deetabs.js") : null);
+  var FAMILIAS = [["columnas", "Columnas", "cols"], ["vigas", "Vigas", "vigas"], ["losas", "Losas", "losas"],
+                  ["placas", "Placas", "placas"]];
+  var UNA = { columnas: "Columna", vigas: "Viga", losas: "Losa", placas: "Placa" };
+
+  function coma(v, d) { return (+v).toFixed(d == null ? 2 : d).replace(".", ","); }
+  function piezasDe(niveles) {
+    var n = 0;
+    (niveles || []).forEach(function (m) {
+      FAMILIAS.forEach(function (f) { n += Object.keys(m[f[2]] || {}).length; });
+    });
+    return n;
+  }
+  function malArchivo(D) {
+    if (!D || typeof D !== "object") return "Ese archivo no es JSON.";
+    if (D.origen !== "etabs" || !D.A || !Array.isArray(D.A.pisos))
+      return "Ese archivo no es el de DE ETABS.bat [1] (…_etabs.json en BAT\\ETABS\\LEIDOS).";
+    if (D.unidades && D.unidades !== "t-m") return "El archivo está en " + D.unidades + " y el complemento lo espera en t-m.";
+    return null;
+  }
+
+  function crear(ctx) {
+    var E = null;   /* {D, archivo, generales[], piezas, dudas{k:{tipo?}}, confirmar, enc, apl, idx} */
+    function esc(t) { return ctx.escapa(t); }
+
+    /* ---------------------------------------------------------------- estado */
+    function abrir(D, archivo) {
+      var mal = malArchivo(D);
+      if (mal) return { ok: false, msg: mal };
+      var idx = {};
+      (D.A.barras || []).forEach(function (b) { idx["b|" + b.nombre] = b; });
+      (D.A.areas || []).forEach(function (a) { idx["a|" + a.nombre] = a; });
+      E = { D: D, archivo: String(archivo || D.modelo || ""), generales: [], piezas: false, dudas: {}, confirmar: false,
+            idx: idx };
+      calcula(); pintar();
+      return { ok: true };
+    }
+    function calcula() {
+      E.enc = DE.encaje(E.D, { generales: E.generales.slice(), ejesDePiezas: E.piezas });
+      E.apl = DE.aplicable(E.enc, { dudas: E.dudas });
+      E.confirmar = false;
+    }
+    function cerrar() { E = null; pintar(); }
+    /* D9: una linea general a la vez (k = su indice en la grilla), o todas con true */
+    function general(k, si) {
+      if (!E) return;
+      var gen = ((E.D.A.grillas || [])[0] || {}).gen || [];
+      var lista = k === true ? gen.map(function (_, q) { return q; }) : [k];
+      lista.forEach(function (q) {
+        var i = E.generales.indexOf(q);
+        if (si && i < 0) E.generales.push(q);
+        if (!si && i >= 0) E.generales.splice(i, 1);
+      });
+      E.dudas = {};                      /* con otros ejes las dudas son otras: se vuelven a marcar */
+      calcula(); pintar();
+    }
+    function piezas(si) { if (!E) return; E.piezas = !!si; E.dudas = {}; calcula(); pintar(); }
+    /* una duda (k = su indice en enc.dudas) entra solo con su marca; la losa puede cambiar de tipo */
+    function duda(k, si, tipo) {
+      if (!E) return;
+      if (si) E.dudas[k] = tipo ? { tipo: tipo } : true; else delete E.dudas[k];
+      E.apl = DE.aplicable(E.enc, { dudas: E.dudas }); E.confirmar = false;
+      pintar();
+    }
+
+    /* ---------------------------------------------------------------- aplicar */
+    function aplicar(confirmado) {
+      if (!E) return { ok: false, msg: "No hay ningún modelo de ETABS abierto en el panel." };
+      var a = E.apl;
+      if (!a || !a.ok) return { ok: false, msg: (a && a.msg) || "No hay nada que aplicar." };
+      var S = ctx.estado(), hay = piezasDe(S.niveles);
+      /* el complemento nunca arranca vacio (trae una planta de ejemplo): si ya hay piezas, se pide un segundo clic,
+         como en «Limpiar», y se dice cuantas se reemplazan */
+      if (hay && !confirmado)
+        return { ok: false, confirmar: true, hay: hay,
+                 msg: "El complemento tiene " + hay + " pieza(s) en " + S.niveles.length + " nivel(es): se reemplazan por el " +
+                      "modelo de ETABS." };
+      ctx.snap();
+      S.niveles = JSON.parse(JSON.stringify(a.niveles));
+      S.niveles.forEach(function (m) { ctx.podar(m); });
+      S.act = 0;
+      var q = { ok: true, niveles: S.niveles.length, n: a.n, dudas: a.dudas, modelo: E.D.modelo };
+      /* el sismo del modelo queda para Verificacion E.030 › Sismo de ETABS (fase 4a) */
+      if (ctx.alAplicar) ctx.alAplicar(E.D, E.archivo);
+      E = null; pintar();
+      ctx.listo();
+      return q;
+    }
+
+    /* ---------------------------------------------------------------- la planta en pequeno */
+    /* en coordenadas de ETABS (Y hacia arriba): los ejes, lo que entra lleno, lo que se confirma a trazos ambar y lo
+       que no se trae a trazos rojos, cada cosa con la geometria que tiene en ETABS */
+    function svgNivel(k) {
+      var L = E.enc.niveles[k], m = (E.apl && E.apl.ok) ? E.apl.niveles[k] : L.m;
+      var xs = E.enc.ejes.x.map(function (e) { return e.v; }), ys = E.enc.ejes.y.map(function (e) { return e.v; });
+      var marcas = [];
+      E.enc.dudas.forEach(function (d, q) { if (d.piso === L.nombre && !E.dudas[q]) marcas.push([d, "var(--rev)"]); });
+      E.enc.fuera.forEach(function (d) { if (d.piso === L.nombre) marcas.push([d, "var(--no)"]); });
+      /* en ETABS una barra y un area pueden llamarse igual («12» y «12»): se busca en la familia que toca */
+      var geo = marcas.map(function (t) {
+        var area = t[0].tipo === "losas" || t[0].tipo === "placas";
+        return [E.idx[(area ? "a|" : "b|") + t[0].etabs], t[1]];
+      }).filter(function (t) { return t[0]; });
+      var X0 = xs[0], X1 = xs[xs.length - 1], Y0 = ys[ys.length - 1], Y1 = ys[0];
+      geo.forEach(function (t) {
+        var o = t[0], P = o.pts || [o.i, o.j];
+        P.forEach(function (p) { if (!p) return; X0 = Math.min(X0, p[0]); X1 = Math.max(X1, p[0]); Y0 = Math.min(Y0, p[1]);
+                                 Y1 = Math.max(Y1, p[1]); });
+      });
+      X0 -= 1; X1 += 1; Y0 -= 1; Y1 += 1;
+      var W = X1 - X0, H = Y1 - Y0, S = 300 / Math.max(W, H);
+      function px(x) { return ((x - X0) * S).toFixed(1); }
+      function py(y) { return ((Y1 - y) * S).toFixed(1); }
+      function linea(a, b, c, w, raya) {
+        return '<line x1="' + px(a[0]) + '" y1="' + py(a[1]) + '" x2="' + px(b[0]) + '" y2="' + py(b[1]) + '" stroke="' + c +
+               '" stroke-width="' + w.toFixed(1) + '"' + (raya ? ' stroke-dasharray="' + raya + '"' : "") + '/>';
+      }
+      var s = '<svg viewBox="0 0 ' + (W * S).toFixed(0) + " " + (H * S).toFixed(0) + '" role="img" aria-label="Planta de ' +
+              esc(L.nombre) + '">';
+      xs.forEach(function (x) { s += linea([x, Y0], [x, Y1], "var(--grid)", 0.6, "5 2 1 2"); });
+      ys.forEach(function (y) { s += linea([X0, y], [X1, y], "var(--grid)", 0.6, "5 2 1 2"); });
+      Object.keys(m.losas).forEach(function (c) {
+        var p = c.split(":").map(Number), l = m.losas[c];
+        s += '<rect x="' + px(xs[p[0]]) + '" y="' + py(ys[p[1]]) + '" width="' + ((xs[p[0] + 1] - xs[p[0]]) * S).toFixed(1) +
+             '" height="' + ((ys[p[1]] - ys[p[1] + 1]) * S).toFixed(1) + '" fill="' +
+             (l.tipo === "maciza" ? "var(--maci)" : "var(--alig)") + '" fill-opacity=".22"/>';
+      });
+      ["vigas", "placas"].forEach(function (f) {
+        Object.keys(m[f]).forEach(function (c) {
+          var p = c.split(":"), i = +p[1], j = +p[2], a = [xs[i], ys[j]], b = p[0] === "h" ? [xs[i + 1], ys[j]] : [xs[i], ys[j + 1]];
+          var o = m[f][c];
+          if (f === "placas") s += linea(a, b, "var(--placa)", Math.max(2.5, (o.t || 20) / 100 * S));
+          else s += linea(a, b, o.t === "chata" ? "var(--chata)" : o.t === "invertida" ? "var(--invert)" : "var(--viga)",
+                          Math.max(1.2, ((o.sec && o.sec.b) || 25) / 100 * S));
+        });
+      });
+      Object.keys(m.cols).forEach(function (c) {
+        var p = c.split(":").map(Number), o = m.cols[c], x = xs[p[0]], y = ys[p[1]];
+        if (o.forma === "circular") {
+          s += '<circle cx="' + px(x) + '" cy="' + py(y) + '" r="' + Math.max(1.5, o.sec.D / 200 * S).toFixed(1) +
+               '" fill="var(--col)"/>';
+          return;
+        }
+        var b = o.sec.b / 100, h = o.sec.h / 100, al = o.al || { x: 0, y: 0 };
+        var cx = x + al.x * b / 2, cy = y - al.y * h / 2;
+        s += '<rect x="' + px(cx - b / 2) + '" y="' + py(cy + h / 2) + '" width="' + Math.max(2, b * S).toFixed(1) + '" height="' +
+             Math.max(2, h * S).toFixed(1) + '" fill="var(--col)"/>';
+      });
+      geo.forEach(function (t) {
+        var o = t[0], c = t[1];
+        if (o.orient === "Column") {
+          s += '<rect x="' + px(o.i[0] - 0.2) + '" y="' + py(o.i[1] + 0.2) + '" width="' + (0.4 * S).toFixed(1) + '" height="' +
+               (0.4 * S).toFixed(1) + '" fill="none" stroke="' + c + '" stroke-width="1" stroke-dasharray="2 1.5"/>';
+        } else if (o.i) s += linea(o.i, o.j, c, 1.4, "3 2");
+        else if (o.pts) {
+          var z = Math.min.apply(null, o.pts.map(function (p) { return p[2]; }));
+          var P = o.orient === "Wall" ? o.pts.filter(function (p) { return Math.abs(p[2] - z) < 0.01; }) : o.pts;
+          s += '<polygon points="' + P.map(function (p) { return px(p[0]) + "," + py(p[1]); }).join(" ") +
+               '" fill="none" stroke="' + c + '" stroke-width="1.2" stroke-dasharray="3 2"/>';
+        }
+      });
+      return s + "</svg>";
+    }
+
+    /* ---------------------------------------------------------------- el panel */
+    function listaCorta(l, n) {
+      n = n || 12;
+      return l.slice(0, n).join(", ") + (l.length > n ? " y " + (l.length - n) + " más" : "");
+    }
+    function pintar() {
+      var P = ctx.panel();
+      if (!P) return;
+      if (!E) { P.innerHTML = ""; P.setAttribute("hidden", ""); return; }
+      var D = E.D, A = D.A, enc = E.enc, apl = E.apl, g0 = (A.grillas || [])[0] || {}, gen = g0.gen || [];
+      var h = '<h3>Modelo de ETABS · ' + esc(D.modelo || E.archivo) + '</h3>' +
+        '<p class="calcnote">Se trae lo que cae en la retícula del complemento: niveles, ejes, columnas, vigas, losas y ' +
+        'placas que van de eje a eje. Lo dudoso entra solo si lo marcas y lo que no cabe se lista con su motivo. En ETABS ' +
+        'no cambia nada: solo se lee el archivo de DE ETABS.bat.</p>';
+      if (D.analizado === false)
+        h += '<p class="aviso">El modelo no estaba analizado al leerlo: la geometría sirve; para los resultados habrá que ' +
+             'leerlo otra vez ya analizado.</p>';
+
+      /* ---- los ejes ---- */
+      h += '<h4>Ejes</h4>';
+      if (enc.error) h += '<p class="aviso">No se puede armar la retícula: ' + esc(enc.error) + '.</p>';
+      else h += '<p>' + enc.ejes.x.length + ' ejes en X (' + enc.ejes.x.map(function (e) { return esc(e.id || "·"); }).join(", ") +
+                ') y ' + enc.ejes.y.length + ' en Y (' + enc.ejes.y.map(function (e) { return esc(e.id || "·"); }).join(", ") + ').</p>';
+      if (gen.length) {
+        h += '<p class="nota">La grilla tiene ' + gen.length + ' línea(s) general(es): ejes de largo limitado, como los dibuja ' +
+             'el puente. Entran solo las que marques.</p><ul class="de-gen">' +
+             '<li><label><input type="checkbox" data-degen="todas"' + (E.generales.length === gen.length ? " checked" : "") +
+             '> <b>Todas</b></label></li>';
+        gen.forEach(function (e, k) {
+          var vert = Math.abs(e[1] - e[3]) < DE.TOL, hor = Math.abs(e[2] - e[4]) < DE.TOL;
+          var donde = vert ? "vertical en x = " + coma(e[1]) + " m" : hor ? "horizontal en y = " + coma(e[2]) + " m" : "inclinada";
+          h += '<li' + (vert || hor ? "" : ' class="no"') + '><label><input type="checkbox" data-degen="' + k + '"' +
+               (E.generales.indexOf(k) >= 0 ? " checked" : "") + (vert || hor ? "" : " disabled") + '> ' + esc(e[0]) +
+               '</label><span class="med">' + donde + (vert || hor ? "" : ": no se puede adoptar") + '</span></li>';
+        });
+        h += '</ul>';
+      }
+      var sinCruce = enc.fuera.some(function (f) { return /cruce/.test(f.por); });
+      if (enc.error || sinCruce || E.piezas)
+        h += '<label class="de-op"><input type="checkbox" id="dePiezas"' + (E.piezas ? " checked" : "") + '> Proponer ejes ' +
+             'donde están las columnas y los extremos de las vigas (salen sin nombre; los nombras luego en Planta)</label>';
+      if (enc.error) return fin(P, h, false);
+
+      /* ---- el resumen ---- */
+      h += '<h4>Resumen</h4><div class="de-scroll"><table class="sis-t"><thead><tr><th></th><th>Entran</th>' +
+           '<th>Por confirmar</th><th>No se traen</th><th>En ETABS</th></tr></thead><tbody>';
+      FAMILIAS.forEach(function (f) {
+        var r = enc.resumen[f[0]] || { entran: 0, dudas: 0, no: 0, total: 0 };
+        h += '<tr><th>' + f[1] + '</th><td>' + r.entran + '</td><td>' + r.dudas + '</td><td>' + r.no + '</td><td>' + r.total +
+             '</td></tr>';
+      });
+      h += '</tbody></table></div><p class="nota">Cuenta objetos de ETABS: una viga de ETABS que cruza varios ejes son ' +
+           'varios tramos en el complemento.</p>';
+
+      /* ---- los niveles y su planta ---- */
+      h += '<h4>Niveles</h4><ul>' + enc.niveles.map(function (L, k) {
+        var m = apl.ok ? apl.niveles[k] : L.m;
+        var c = Object.keys(m.cols).length + " columnas, " + Object.keys(m.vigas).length + " tramos de viga, " +
+                Object.keys(m.losas).length + " paños de losa, " + Object.keys(m.placas).length + " de placa";
+        return '<li><b>Nivel ' + (k + 1) + '</b><span>' + esc(L.nombre) + ' · h ' + coma(L.h) + ' m</span><span class="med">' +
+               (L.vacio && !piezasDe([m]) ? "nada que traer" : c) + '</span></li>';
+      }).join("") + '</ul>';
+      h += '<div class="prev">' + enc.niveles.map(function (L, k) {
+        if (L.vacio && !(apl.ok && piezasDe([apl.niveles[k]]))) return "";
+        return '<figure><figcaption>Nivel ' + (k + 1) + ' · ' + esc(L.nombre) + '</figcaption>' + svgNivel(k) + '</figure>';
+      }).join("") + '</div><p class="nota">Lleno: entra. A trazos ámbar: por confirmar. A trazos rojos: no se trae.</p>';
+
+      /* ---- las dudas: una casilla por objeto de ETABS ---- */
+      var grupos = [], porClave = {};
+      enc.dudas.forEach(function (d, k) {
+        var c = d.tipo + "|" + d.etabs + "|" + d.piso + "|" + d.por;
+        if (!porClave[c]) { porClave[c] = { d: d, ks: [] }; grupos.push(porClave[c]); }
+        porClave[c].ks.push(k);
+      });
+      if (grupos.length) {
+        var todas = enc.dudas.length && enc.dudas.every(function (d, k) { return E.dudas[k]; });
+        h += '<h4>Por confirmar (' + grupos.length + ') · entran solo las que marques</h4><ul>' +
+             (grupos.length > 1 ? '<li><label><input type="checkbox" data-deduda="todas"' + (todas ? " checked" : "") +
+                                  '> <b>Marcar todas</b></label></li>' : '') + grupos.map(function (G, q) {
+          var d = G.d, si = G.ks.every(function (k) { return E.dudas[k]; }), sel = "";
+          if (d.tipo === "losas") {
+            var t = (E.dudas[G.ks[0]] && E.dudas[G.ks[0]].tipo) || d.pieza.tipo;
+            sel = '<select data-detipo="' + q + '" aria-label="Tipo de la losa ' + esc(d.que) + '">' +
+                  ["aligerada", "maciza"].map(function (o) { return '<option' + (o === t ? " selected" : "") + '>' + o + '</option>'; })
+                    .join("") + '</select>';
+          }
+          return '<li><label><input type="checkbox" data-deduda="' + q + '"' + (si ? " checked" : "") + '> ' +
+                 UNA[d.tipo] + ' ' + esc(d.que) + ' · ' + esc(d.piso) +
+                 (G.ks.length > 1 ? ' (' + G.ks.length + ' tramos)' : '') + '</label>' + sel + '<span class="med">' + esc(d.por) +
+                 '</span></li>';
+        }).join("") + '</ul>';
+      }
+      E.grupos = grupos;
+
+      /* ---- lo que no se trae, agrupado por motivo ---- */
+      if (enc.fuera.length) {
+        var mot = [], porMot = {};
+        enc.fuera.forEach(function (f) {
+          var c = f.tipo + "|" + f.por;
+          if (!porMot[c]) { porMot[c] = { tipo: f.tipo, por: f.por, que: [] }; mot.push(porMot[c]); }
+          porMot[c].que.push(f.que + " (" + f.piso + ")");
+        });
+        h += '<h4>No se traen (' + enc.fuera.length + ') · revísalos a mano</h4><ul class="de-no">' + mot.map(function (M) {
+          return '<li class="no"><b>' + esc(M.tipo.charAt(0).toUpperCase() + M.tipo.slice(1)) + ' · ' + esc(M.por) + '</b>' +
+                 '<span class="med">' + esc(listaCorta(M.que)) + '</span></li>';
+        }).join("") + '</ul>';
+      }
+
+      /* ---- avisos ---- */
+      var av = enc.avisos.slice();
+      var sinBrazo = (A.barras || []).filter(function (b) {
+        return b.orient === "Beam" && (!b.desfase || !(+b.desfase.LI > 0) || !(+b.desfase.LJ > 0));
+      }).length;
+      if (sinBrazo) av.push(sinBrazo + " viga(s) sin brazo rígido en algún extremo: ahí ETABS da la fuerza en el nudo, no " +
+                            "en la cara (se tendrá en cuenta al traer los resultados)");
+      var pd = (D.B || {}).pdelta;
+      if (pd && pd.metodo === "None") av.push("el modelo no tiene P-Delta: la esbeltez va con el δs de la E.060, como en el puente");
+      var ms = A.masa || {}, pm = (ms.partes || []).filter(function (p) { return p[0]; });
+      if (pm.length) av.push("masa sísmica de ETABS: " + pm.map(function (p) { return p[0] + " × " + coma(p[1]); }).join(" + "));
+      else if (ms.elementos || ms.adicional)
+        av.push("masa sísmica de ETABS: " + [ms.elementos ? "la de los elementos" : "", ms.adicional ? "la masa adicional" : ""]
+          .filter(Boolean).join(" y ") + ", sin patrones de carga");
+      if (av.length) h += '<h4>Avisos</h4><ul>' + av.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join("") + '</ul>';
+
+      /* ---- lo que ETABS tiene y el complemento lleva de otra forma (opcion A) ---- */
+      var cargas = {};
+      (apl.ok ? apl.niveles : enc.niveles.map(function (L) { return L.m; })).forEach(function (m, k) {
+        Object.keys(m.losas).forEach(function (c) {
+          var q = (m.losas[c].etabs || {}).cargas || {}, t = Object.keys(q).sort().map(function (g) {
+            return g + " " + coma(q[g]); }).join(" · ");
+          if (t) (cargas[enc.niveles[k].nombre] = cargas[enc.niveles[k].nombre] || {})[t] = 1;
+        });
+      });
+      /* solo los que usan las secciones de las piezas: el M1 define un «f'c = 20» que nadie usa */
+      var usados = {};
+      (A.barras || []).forEach(function (b) { var s = (A.secBarra || {})[b.sec]; if (s && s.mat) usados[s.mat] = 1; });
+      (A.areas || []).forEach(function (a) { var s = (A.secArea || {})[a.sec]; if (s && s.mat) usados[s.mat] = 1; });
+      var fcs = Object.keys(A.materiales || {}).filter(function (n) { return usados[n]; }).map(function (n) { return A.materiales[n]; })
+        .filter(function (x) { return x.tipo === "Concrete" && x.fc; }).map(function (x) { return x.fc; })
+        .filter(function (v, i, l) { return l.indexOf(v) === i; }).sort(function (a, b) { return a - b; });
+      h += '<h4>Lo que no se aplica</h4><ul>';
+      var pisosC = Object.keys(cargas);
+      if (!pisosC.length) h += '<li><span>Cargas de las losas</span><span class="med">ninguna</span></li>';
+      pisosC.forEach(function (p) {
+        h += '<li><span>Cargas de las losas de ' + esc(p) + ' (t/m²)</span><span class="med">' +
+             esc(Object.keys(cargas[p]).join("  |  ")) + '</span></li>';
+      });
+      h += '<li><span>f\'c del concreto en ETABS</span><span class="med">' + (fcs.length ? fcs.map(function (v) {
+        return coma(v, v % 1 ? 1 : 0); }).join(", ") + " kg/cm²" : "—") +
+           '</span></li></ul><p class="nota">La carga viva del complemento sale del uso E.020 de cada paño (asígnalo en ' +
+           'Cargas) y la muerta adicional y el f\'c son los del proyecto (Datos).</p>';
+      return fin(P, h, true);
+    }
+    function fin(P, h, puede) {
+      var apl = E.apl, ok = puede && apl && apl.ok;
+      if (puede && apl && !apl.ok) h += '<p class="aviso">' + esc(apl.msg) + '</p>';
+      if (E.confirmar) {
+        var S = ctx.estado();
+        h += '<p class="aviso">El complemento tiene ' + piezasDe(S.niveles) + ' pieza(s) en ' + S.niveles.length + ' nivel(es). ' +
+             'Se reemplazan por el modelo de ETABS; Ctrl+Z lo devuelve.</p>';
+      }
+      h += '<div class="row" style="margin-top:14px;gap:8px"><button class="btn pri" id="deAplicar"' + (ok ? "" : " disabled") + '>' +
+           (E.confirmar ? "Sí, reemplazar el modelo" : "Aplicar") + '</button><button class="btn" id="deCancelar">Cancelar</button></div>' +
+           '<p class="calcnote">Aplicar crea ' + (ok ? apl.niveles.length : "los") + ' nivel(es) con sus ejes y pone cada pieza en su ' +
+           'sitio. Ctrl+Z lo deshace entero.</p>';
+      P.innerHTML = h; P.removeAttribute("hidden");
+      enganchar(P);
+    }
+    function enganchar(P) {
+      function todos(sel, fn) { Array.prototype.forEach.call(P.querySelectorAll(sel) || [], fn); }
+      todos("[data-degen]", function (c) {
+        c.onchange = function () { var v = this.dataset.degen; general(v === "todas" ? true : +v, !!this.checked); };
+      });
+      var pz = P.querySelector("#dePiezas");
+      if (pz) pz.onchange = function () { piezas(!!this.checked); };
+      todos("[data-deduda]", function (c) {
+        c.onchange = function () {
+          var q = this.dataset.deduda, si = !!this.checked;
+          var lista = q === "todas" ? E.grupos.map(function (_, n) { return n; }) : [+q];
+          lista.forEach(function (n) {
+            var G = E.grupos[n], s = P.querySelector('[data-detipo="' + n + '"]');
+            if (!G) return;
+            G.ks.forEach(function (k) { if (si) E.dudas[k] = (s && s.value) ? { tipo: s.value } : true; else delete E.dudas[k]; });
+          });
+          E.apl = DE.aplicable(E.enc, { dudas: E.dudas }); E.confirmar = false; pintar();
+        };
+      });
+      todos("[data-detipo]", function (s) {
+        s.onchange = function () {
+          var G = E.grupos[+this.dataset.detipo], v = this.value;
+          if (!G) return;
+          G.ks.forEach(function (k) { if (E.dudas[k]) E.dudas[k] = { tipo: v }; });
+          E.apl = DE.aplicable(E.enc, { dudas: E.dudas }); pintar();
+        };
+      });
+      var ca = P.querySelector("#deCancelar");
+      if (ca) ca.onclick = cerrar;
+      var ap = P.querySelector("#deAplicar");
+      if (ap) ap.onclick = function () {
+        var q = aplicar(E.confirmar);
+        if (q.confirmar) { E.confirmar = true; pintar(); return; }
+        if (!q.ok) return ctx.toast(q.msg);
+        ctx.toast("De ETABS: " + q.niveles + " nivel(es), " + q.n.columnas + " columnas, " + q.n.vigas + " tramos de viga, " +
+                  q.n.losas + " paños de losa y " + q.n.placas + " de placa. Asigna los usos en Cargas · Ctrl+Z lo deshace.");
+      };
+    }
+
+    return { abrir: abrir, cerrar: cerrar, general: general, piezas: piezas, duda: duda, aplicar: aplicar, pintar: pintar,
+             estado: function () { return E; } };
+  }
+
+  var DEETABS_PANEL = { crear: crear, piezasDe: piezasDe, malArchivo: malArchivo };
+  if (typeof module !== "undefined" && module.exports) module.exports = DEETABS_PANEL;
+  raiz.DEETABS_PANEL = DEETABS_PANEL;
+})(typeof window !== "undefined" ? window : this);
+</script>
+<script>
+/* ===== deetabs_sismo.js (inlinado) ===== */
+/* =====================================================================
+   SISMO DE ETABS · FASE 4a de FUTURO/PLAN_ETABS_A_COMPLEMENTO.md
+   Verificacion E.030 › Sismo de ETABS.
+
+   Con un modelo hecho a mano en ETABS, el sismo de diseno no se adivina: el motor (deetabs.identificarSismo)
+   PROPONE y Victor confirma.  Aqui se ve y se elige:
+   · la norma del proyecto (D12): la vigente o, para un proyecto en curso, la E.030-2018 (RM 217-2026);
+   · los patrones que van como CM, CV y CVT; los de tipo dudoso se asignan a mano;
+   · los casos espectrales de cada direccion (la propuesta: la envolvente de Exc+ y Exc-);
+   · la cortante minima (Art. 44 / 29.4): la dinamica frente a una estatica que se elige de donde sale;
+   · las combinaciones del modelo frente a las de la E.060 (D2: las arma el complemento).
+   «Confirmar» lo guarda en S.proy.sismoEtabs con la fecha; la fase 4b arma con eso las fuerzas de diseno.
+
+   Lo leido de ETABS va en S.proy.etabsLeido = {resumen (deetabs.resumenSismo), archivo, fecha}: lo deja «Traer de
+   ETABS…» al aplicar, o se lee aqui otro archivo sin tocar la planta (tras volver a analizar).
+
+   Va aparte de reticula.html, como el panel de la fase 3.
+     ctx = { estado(), guardar, toast, escapa, calculoSismo }
+   ===================================================================== */
+(function (raiz) {
+  "use strict";
+  var DE = raiz.DEETABS || (typeof require === "function" ? require("./deetabs.js") : null);
+  var GRUPOS = [["CM", "Carga muerta (CM)"], ["CV", "Carga viva (CV)"], ["CVT", "Viva de techo (CVT)"], ["no", "No se usa"]];
+
+  function coma(v, d) { return (v == null || !isFinite(v)) ? "—" : (+v).toFixed(d == null ? 2 : d).replace(".", ","); }
+  function copia(o) { return JSON.parse(JSON.stringify(o == null ? null : o)); }
+  function ahora() {
+    var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return p(d.getDate()) + "-" + p(d.getMonth() + 1) + "-" + d.getFullYear() + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
+  function crear(ctx) {
+    var W = null;            /* la eleccion en curso: {clave, norma, asignar{patron: grupo}, CS{x, y}, fuente{x, y}} */
+    function esc(t) { return ctx.escapa(t); }
+    function proy() { var S = ctx.estado(); S.proy = S.proy || {}; return S.proy; }
+    function leido() { return proy().etabsLeido || null; }
+    function clave(d) { return d ? String(d.archivo) + "|" + String(d.fecha) : ""; }
+    function norma() { return proy().normaE030 === "2018" ? "2018" : "2026"; }
+
+    /* ---------------------------------------------------------------- leer */
+    function leer(D, archivo, fecha) {
+      if (!D || D.origen !== "etabs" || !D.A) return { ok: false, msg: "Ese archivo no es el de DE ETABS.bat [1]." };
+      if (!D.B) return { ok: false, msg: "El archivo no trae resultados: léelo con el modelo ya analizado en ETABS." };
+      proy().etabsLeido = { resumen: DE.resumenSismo(D), archivo: String(archivo || D.modelo || "modelo"), fecha: fecha || ahora() };
+      W = null;
+      ctx.guardar();
+      return { ok: true };
+    }
+
+    /* ---------------------------------------------------------------- la eleccion */
+    function base() {
+      var d = leido();
+      if (!d) return null;
+      var sc = proy().sismoEtabs;
+      if (W && W.clave === clave(d)) return W;
+      var id = DE.identificarSismo(d.resumen, { norma: norma() });
+      if (sc && sc.clave === clave(d))
+        W = { clave: clave(d), asignar: copia(sc.asignar || {}), CS: copia(sc.CS), fuente: copia(sc.fuente || {}) };
+      else W = { clave: clave(d), asignar: {}, fuente: {},
+                 CS: { x: ((id.propuesta.x || {}).casos || []).slice(), y: ((id.propuesta.y || {}).casos || []).slice() } };
+      return W;
+    }
+    function regular() {
+      var c = ctx.calculoSismo && ctx.calculoSismo();
+      return c ? (c.Ia === 1 && c.Ip === 1) : null;
+    }
+    /* de donde sale la cortante estatica de cada direccion, en orden de preferencia */
+    function fuentes(d, R, id) {
+      var out = [], c = ctx.calculoSismo && ctx.calculoSismo(), pe = DE.pesoEtabs(R), vE = DE.vEstaticaEtabs(R, id.patrones.estaticos)[d];
+      if (vE) out.push({ k: "etabs", V: vE.V, texto: "caso estático " + vE.caso + " de ETABS" +
+        (pe.P ? " (V/P = " + coma(vE.V / pe.P, 4) + ")" : "") });
+      if (c && c.est && c.est[d] && pe.P) out.push({ k: "coef", V: c.est[d].Cb * pe.P, texto: "ZUCS/R del complemento (" +
+        coma(c.est[d].Cb, 4) + ") × peso de ETABS (" + coma(pe.P, 1) + " t)" });
+      if (c && c.est && c.est[d]) out.push({ k: "complemento", V: c.est[d].V, texto: "estático del complemento, con su propio " +
+        "metrado (P = " + coma(c.est.P, 1) + " t)" });
+      return out;
+    }
+    function calcula() {
+      var d = leido(), w = base();
+      if (!d || !w) return null;
+      var R = d.resumen, n = norma(), N = DE.art(n), id = DE.identificarSismo(R, { norma: n });
+      var g = { CM: id.patrones.CM.slice(), CV: id.patrones.CV.slice(), CVT: id.patrones.CVT.slice() }, faltan = [];
+      id.patrones.preguntar.forEach(function (p) {
+        var a = w.asignar[p.nombre];
+        if (!a) faltan.push(p.nombre); else if (g[a]) g[a].push(p.nombre);
+      });
+      var esp = {};
+      id.espectros.forEach(function (e) { esp[e.caso] = e; });
+      var reg = regular(), dir = {};
+      ["x", "y"].forEach(function (k) {
+        var cs = (w.CS[k] || []).filter(function (c) { return esp[c] && esp[c].dir === k; });
+        var Vdin = cs.length ? Math.max.apply(null, cs.map(function (c) { return esp[c].V || 0; })) : null;
+        var trae30 = cs.length > 0 && cs.every(function (c) { return esp[c].perp >= 0.29 && esp[c].perp <= 0.31 && esp[c].srss; });
+        var fu = fuentes(k, R, id), el = fu.filter(function (f) { return f.k === w.fuente[k]; })[0] || fu[0] || null;
+        var lim = reg === false ? 0.9 : 0.8;
+        var factor = (el && Vdin) ? Math.max(1, lim * el.V / Vdin) : null;
+        dir[k] = { cs: cs, Vdin: Vdin, trae30: trae30, fuentes: fu, fuente: el, lim: lim, factor: factor,
+                   razon: (el && Vdin) ? Vdin / el.V : null };
+      });
+      var conf = { norma: n, CM: g.CM, CV: g.CV, CVT: g.CVT, CS: { x: dir.x.cs, y: dir.y.cs },
+                   factor: { x: dir.x.factor, y: dir.y.factor }, trae30: { x: dir.x.trae30, y: dir.y.trae30 }, estatico: false };
+      var cmp = R.B ? DE.comparar(R.B, conf) : [];
+      var falta = [];
+      if (faltan.length) falta.push("asignar " + faltan.join(", "));
+      if (!g.CM.length) falta.push("al menos un patrón de carga muerta");
+      ["x", "y"].forEach(function (k) {
+        if (!dir[k].cs.length) falta.push("un caso espectral en " + k.toUpperCase());
+        else if (!dir[k].factor) falta.push("una cortante estática en " + k.toUpperCase() + " (completa Sismo E.030 en Datos o " +
+                                            "define un caso estático en ETABS)");
+      });
+      return { d: d, R: R, n: n, N: N, id: id, g: g, faltan: faltan, esp: esp, dir: dir, reg: reg, conf: conf, cmp: cmp,
+               falta: falta, puede: !falta.length };
+    }
+
+    /* ---------------------------------------------------------------- cambiar y confirmar */
+    function ponNorma(v) { proy().normaE030 = v === "2018" ? "2018" : "2026"; ctx.guardar(); }
+    function asignar(patron, grupo) { var w = base(); if (!w) return; if (grupo) w.asignar[patron] = grupo; else delete w.asignar[patron]; }
+    function caso(k, nombre, si) {
+      var w = base(); if (!w) return;
+      var l = w.CS[k] = (w.CS[k] || []).filter(function (c) { return c !== nombre; });
+      if (si) l.push(nombre);
+    }
+    function fuente(k, f) { var w = base(); if (w) w.fuente[k] = f; }
+    function confirmar() {
+      var r = calcula();
+      if (!r) return { ok: false, msg: "No hay sismo de ETABS leído." };
+      if (!r.puede) return { ok: false, msg: "Falta " + r.falta.join("; ") + "." };
+      var w = base();
+      proy().sismoEtabs = { clave: w.clave, fecha: ahora(), modelo: r.R.modelo, archivo: r.d.archivo, norma: r.n,
+        asignar: copia(w.asignar), fuente: { x: r.dir.x.fuente.k, y: r.dir.y.fuente.k },
+        CM: r.conf.CM, CV: r.conf.CV, CVT: r.conf.CVT, CS: r.conf.CS, factor: r.conf.factor, trae30: r.conf.trae30,
+        estatico: false,
+        cortante: { x: resumenDir(r.dir.x), y: resumenDir(r.dir.y) } };
+      ctx.guardar();
+      return { ok: true, conf: proy().sismoEtabs };
+    }
+    function resumenDir(q) {
+      return { Vdin: q.Vdin, Vest: q.fuente.V, fuente: q.fuente.texto, minimo: q.lim, factor: q.factor };
+    }
+    /* lo confirmado sigue valiendo si es del mismo archivo, con la misma norma y la misma eleccion */
+    function vigente() {
+      var sc = proy().sismoEtabs, d = leido();
+      if (!sc || !d || sc.clave !== clave(d) || sc.norma !== norma()) return false;
+      var r = calcula();
+      return !!r && r.puede && JSON.stringify([r.conf.CM, r.conf.CV, r.conf.CVT, r.conf.CS]) ===
+        JSON.stringify([sc.CM, sc.CV, sc.CVT, sc.CS]) && ["x", "y"].every(function (k) {
+          return Math.abs((r.conf.factor[k] || 0) - (sc.factor[k] || 0)) < 1e-6; });
+    }
+
+    /* ---------------------------------------------------------------- el panel */
+    function html() {
+      var d = leido(), h = '<div class="pgrid sis">';
+      var boton = '<input type="file" id="dsFile" accept=".json" hidden><button type="button" class="mini" id="dsLeer">' +
+                  (d ? "Leer otro archivo…" : "Leer el archivo de ETABS…") + '</button>';
+      if (!d) return h + '<section class="pbox sis-ancha"><h3>Sismo del modelo de ETABS</h3><p class="nota">Para un modelo ' +
+        'hecho a mano en ETABS. Tráelo con <b>Traer de ETABS…</b> en Planta, o lee aquí el archivo que deja <code>DE ETABS.bat</code> ' +
+        '[1] (<code>BAT\\ETABS\\LEIDOS</code>), con el modelo ya analizado. ' + boton + '</p></section></div>';
+      var r = calcula(), N = r.N, sc = proy().sismoEtabs, ok = vigente();
+      h += '<section class="pbox sis-ancha"><h3>Sismo del modelo de ETABS · ' + esc(r.R.modelo || d.archivo) + '</h3>' +
+        '<p class="nota">Leído de <b>' + esc(d.archivo) + '</b> el ' + esc(d.fecha) + '. El complemento propone y tú confirmas: ' +
+        'con lo confirmado se arman las combinaciones de la E.060 y las fuerzas de diseño. ' + boton + '</p>' +
+        (ok ? '<p class="nota"><b class="sis-ok">CONFIRMADO</b> el ' + esc(sc.fecha) + '.</p>'
+            : sc && sc.clave === clave(d) ? '<p class="aviso">Hay cambios sin confirmar: lo confirmado el ' + esc(sc.fecha) +
+                                            ' ya no es lo que se ve.</p>'
+            : '<p class="aviso">Todavía sin confirmar.</p>') + '</section>';
+
+      /* --- la norma (D12) --- */
+      h += '<section class="pbox sis-ancha"><h3>Norma del proyecto</h3>' +
+        '<label class="etb-ch"><input type="radio" name="dsNorma" value="2026"' + (r.n === "2026" ? " checked" : "") + '><span>' +
+        '<b>E.030 vigente</b> (RM 183-2026): el sismo de cada dirección lleva el 30 % del de la otra, por SRSS (Art. 43).</span></label>' +
+        '<label class="etb-ch"><input type="radio" name="dsNorma" value="2018"' + (r.n === "2018" ? " checked" : "") + '><span>' +
+        '<b>E.030-2018</b> (RM 355-2018): cada dirección por separado (Art. 24.1). Solo para un proyecto que ya estaba en curso ' +
+        '(expediente, licencia o anteproyecto): la RM 217-2026 le deja seguir con ella hasta terminarlo.</span></label></section>';
+
+      /* --- patrones --- */
+      var filas = [];
+      ["CM", "CV", "CVT"].forEach(function (k) {
+        r.id.patrones[k].forEach(function (p) { filas.push('<tr><td>' + esc(p) + '</td><td>' + k + '</td><td>por su tipo en ETABS</td></tr>'); });
+      });
+      r.id.patrones.preguntar.forEach(function (p) {
+        var a = W.asignar[p.nombre] || "";
+        filas.push('<tr><td>' + esc(p.nombre) + '</td><td><select data-dsasig="' + esc(p.nombre) + '" aria-label="Grupo de ' +
+          esc(p.nombre) + '"><option value=""' + (a ? "" : " selected") + '>— elige —</option>' + GRUPOS.map(function (g) {
+            return '<option value="' + g[0] + '"' + (a === g[0] ? " selected" : "") + '>' + g[1] + '</option>'; }).join("") +
+          '</select></td><td class="' + (a ? "" : "sis-no") + '">' + esc(p.porque) + '</td></tr>');
+      });
+      r.id.patrones.estaticos.forEach(function (p) {
+        filas.push('<tr><td>' + esc(p) + '</td><td>sismo estático</td><td>para la cortante mínima (' + N.minimo + ')</td></tr>'); });
+      h += '<section class="pbox sis-ancha"><h3>Patrones de carga</h3><div class="etb-scroll"><table class="sis-t"><thead><tr>' +
+        '<th>Patrón</th><th>Va como</th><th>Por qué</th></tr></thead><tbody>' + filas.join("") + '</tbody></table></div>' +
+        (r.id.patrones.fuera.length ? '<p class="nota">Sin carga, no se usan: ' + esc(r.id.patrones.fuera.join(", ")) + '.</p>' : '') +
+        '</section>';
+
+      /* --- casos espectrales --- */
+      var tabla = r.id.espectros.map(function (e) {
+        var si = (W.CS[e.dir] || []).indexOf(e.caso) >= 0, mal = !(e.g >= 0.95 && e.g <= 1.05);
+        return '<tr><td><input type="checkbox" data-dscaso="' + e.dir + '|' + esc(e.caso) + '"' + (si ? " checked" : "") +
+          ' aria-label="Usar ' + esc(e.caso) + '"></td><td>' + esc(e.caso) + '</td><td>' + e.dir.toUpperCase() + '</td><td' +
+          (mal ? ' class="sis-no"' : '') + '>' + coma(e.g, 3) + '</td><td>' + (e.perp ? coma(e.perp * 100, 0) + " %" : "—") +
+          '</td><td>' + (e.srss ? "SRSS" : "suma") + '</td><td>' + (e.exc ? coma(e.exc, 3) : (e.variante ? "Exc" + e.variante : "—")) +
+          '</td><td>' + coma(e.V, 2) + '</td></tr>';
+      }).join("");
+      h += '<section class="pbox sis-ancha"><h3>Casos espectrales · el sismo de diseño de cada dirección</h3>' +
+        '<div class="etb-scroll"><table class="sis-t"><thead><tr><th></th><th>Caso</th><th>Dir.</th><th>Escala (g)</th>' +
+        '<th>Perpendicular</th><th>Direcciones</th><th>Excentricidad</th><th>V en la base (t)</th></tr></thead><tbody>' + tabla +
+        '</tbody></table></div><ul class="ds-lista">' + ["x", "y"].map(function (k) {
+          var p = r.id.propuesta[k];
+          return '<li><b>' + k.toUpperCase() + ':</b> ' + (r.dir[k].cs.length ? esc(r.dir[k].cs.join(" y ")) : "ninguno") +
+            (p ? ' · propuesta: ' + esc(p.casos.join(" y ")) + ', ' + esc(p.motivo) + '. ' + esc(p.nota) : '') + '</li>';
+        }).join("") + '</ul>' + (r.id.avisos.length ? '<ul class="ds-lista">' + r.id.avisos.map(function (a) {
+          return '<li class="sis-no">' + esc(a) + '</li>'; }).join("") + '</ul>' : '') +
+        (r.id.vertical.length ? '<p class="nota">Con sismo vertical: ' + esc(r.id.vertical.join(", ")) + ' (no se usa todavía).</p>' : '') +
+        '</section>';
+
+      /* --- cortante minima --- */
+      h += '<section class="pbox sis-ancha"><h3>Cortante mínima · ' + N.minimo + '</h3><div class="etb-scroll"><table class="sis-t">' +
+        '<thead><tr><th>Dir.</th><th>V dinámica (t)</th><th>V estática (t)</th><th>De dónde sale</th><th>Din/Est</th>' +
+        '<th>Mínimo</th><th>Factor</th></tr></thead><tbody>' + ["x", "y"].map(function (k) {
+          var q = r.dir[k], sel = q.fuentes.length ? '<select data-dsfuente="' + k + '" aria-label="Cortante estática en ' +
+            k.toUpperCase() + '">' + q.fuentes.map(function (f) {
+              return '<option value="' + f.k + '"' + (q.fuente && q.fuente.k === f.k ? " selected" : "") + '>' + esc(f.texto) +
+                '</option>'; }).join("") + '</select>' : '<span class="sis-no">no hay de dónde sacarla</span>';
+          return '<tr><td>' + k.toUpperCase() + '</td><td>' + coma(q.Vdin) + '</td><td>' + coma(q.fuente && q.fuente.V) + '</td><td>' +
+            sel + '</td><td>' + (q.razon ? coma(q.razon * 100, 1) + " %" : "—") + '</td><td>' + coma(q.lim * 100, 0) + ' %</td><td>' +
+            (q.factor ? '<b>× ' + coma(q.factor, 3) + '</b>' : "—") + '</td></tr>';
+        }).join("") + '</tbody></table></div><p class="nota">' + (r.reg === false ? "Irregular" : "Regular") + ' según Sismo E.030 › ' +
+        'Parámetros (Ia · Ip' + (r.reg === false ? " < 1): 90 %" : " = 1): 80 %") + ' de la estática. Si la dinámica no llega, ' +
+        'sus fuerzas se multiplican por el factor; los desplazamientos no (' + (r.n === "2018" ? "Art. 29.4.2" : "Art. 44") + ').</p></section>';
+
+      /* --- las combinaciones --- */
+      var fx = coma(r.dir.x.factor, 3), fy = coma(r.dir.y.factor, 3);
+      h += '<section class="pbox sis-ancha"><h3>Combinaciones de la E.060 (9.2.1 y 9.2.3)</h3><ul class="ds-lista">' +
+        '<li>U1 = 1,4 CM + 1,7 CV</li><li>U2, U3 = 1,25 (CM + CV) ± CSX, CSY</li><li>U4, U5 = 0,9 CM ± CSX, CSY</li></ul>' +
+        '<p class="nota">CM = ' + esc(r.g.CM.join(" + ") || "—") + ' · CV = ' + esc(r.g.CV.concat(r.g.CVT).join(" + ") || "—") +
+        '. CSX = ' + (r.dir.x.cs.length > 1 ? "la envolvente de " : "") + esc(r.dir.x.cs.join(" y ") || "—") + ' × ' + fx +
+        '; CSY = ' + (r.dir.y.cs.length > 1 ? "la envolvente de " : "") + esc(r.dir.y.cs.join(" y ") || "—") + ' × ' + fy + '. ' +
+        (r.n === "2018" ? "Cada dirección por separado (Art. 24.1)." : ["x", "y"].map(function (k) {
+          return k.toUpperCase() + (r.dir[k].trae30 ? ": el caso ya trae el 30 %" : ": + 30 % de la otra por SRSS"); }).join("; ") +
+          " (Art. 43).") + '</p>';
+      /* las de resistencia arriba; servicio, masa, derivas y demas, plegadas (el M1 marca de diseno las DConS de ETABS,
+         no las U suyas: la marca no sirve para separarlas) */
+      function li(c) { return '<li><b>' + esc(c.nombre) + ':</b> ' + esc(c.texto) + '</li>'; }
+      var resist = r.cmp.filter(function (c) { return /^(coincide|es la 9\.2\.3)/.test(c.texto) || /^U\s*\d/i.test(c.nombre); }),
+          otras = r.cmp.filter(function (c) { return resist.indexOf(c) < 0; });
+      if (resist.length) h += '<h4>Las del modelo de ETABS, solo para comparar</h4><ul class="ds-lista">' + resist.map(li).join("") + '</ul>';
+      if (otras.length) h += '<details><summary>Otras ' + otras.length + ' del modelo (servicio, masa, derivas…): no son de ' +
+        'resistencia</summary><ul class="ds-lista">' + otras.map(li).join("") + '</ul></details>';
+      h += '<div class="row" style="margin-top:12px;gap:8px"><button type="button" class="btn pri" id="dsConfirmar"' +
+        (r.puede && !ok ? "" : " disabled") + '>' + (ok ? "Confirmado" : "Confirmar el sismo") + '</button></div>' +
+        (r.puede ? '' : '<p class="aviso">Para confirmar falta ' + esc(r.falta.join("; ")) + '.</p>') + '</section>';
+      return h + '</div>';
+    }
+    function pintar(el) {
+      if (!el) return;
+      el.innerHTML = html();
+      enganchar(el);
+    }
+    function enganchar(el) {
+      function todos(sel, fn) { Array.prototype.forEach.call(el.querySelectorAll(sel) || [], fn); }
+      function otra() { pintar(el); }
+      var bl = el.querySelector("#dsLeer"), fi = el.querySelector("#dsFile");
+      if (bl && fi) bl.onclick = function () { fi.click(); };
+      if (fi) fi.onchange = function () {
+        var f = this.files && this.files[0]; this.value = "";
+        if (!f || typeof FileReader === "undefined") return;
+        var rd = new FileReader();
+        rd.onload = function () {
+          var D = null; try { D = JSON.parse(rd.result); } catch (e) {}
+          var q = leer(D, String(f.name).replace(/_etabs\.json$/i, "").replace(/\.json$/i, ""));
+          ctx.toast(q.ok ? "Sismo de ETABS leído: revísalo y confírmalo." : q.msg);
+          otra();
+        };
+        rd.readAsText(f);
+      };
+      todos('[name="dsNorma"]', function (c) { c.onchange = function () { ponNorma(this.value); otra(); }; });
+      todos("[data-dsasig]", function (s) { s.onchange = function () { asignar(this.dataset.dsasig, this.value); otra(); }; });
+      todos("[data-dscaso]", function (c) {
+        c.onchange = function () { var p = String(this.dataset.dscaso).split("|"); caso(p[0], p.slice(1).join("|"), !!this.checked); otra(); };
+      });
+      todos("[data-dsfuente]", function (s) { s.onchange = function () { fuente(this.dataset.dsfuente, this.value); otra(); }; });
+      var bc = el.querySelector("#dsConfirmar");
+      if (bc) bc.onclick = function () {
+        var q = confirmar();
+        ctx.toast(q.ok ? "Sismo confirmado: CSX × " + coma(q.conf.factor.x, 3) + " y CSY × " + coma(q.conf.factor.y, 3) + "." : q.msg);
+        otra();
+      };
+    }
+
+    return { leer: leer, calcula: calcula, ponNorma: ponNorma, asignar: asignar, caso: caso, fuente: fuente,
+             confirmar: confirmar, vigente: vigente, html: html, pintar: pintar,
+             estado: function () { return { leido: leido(), eleccion: W, confirmado: proy().sismoEtabs || null }; } };
+  }
+
+  var DEETABS_SISMO = { crear: crear };
+  if (typeof module !== "undefined" && module.exports) module.exports = DEETABS_SISMO;
+  raiz.DEETABS_SISMO = DEETABS_SISMO;
+})(typeof window !== "undefined" ? window : this);
+</script>
+<script>
 /* ===== ubicacion.js (inlinado) ===== */
 /* =====================================================================
    ubicacion.js — ENCONTRAR EL DISTRITO.  Sin interfaz: lo usa Datos ›
@@ -13691,7 +15134,7 @@ var TT={script:performance.now()};
     else el.setAttribute("hidden","");
   }
   /* BUILD lo reemplaza gen_complemento.py en cada generacion */
-  var BUILD="v436 · 28-09-2026";
+  var BUILD="v445 · 28-09-2026";
   try{ $("#sello").textContent=BUILD; }catch(e){}
   /* el panel lee esta clave para saber si los dos archivos son de la misma build */
   try{ localStorage.setItem("reticula_build_dialogo",BUILD); }catch(e){}
@@ -13839,7 +15282,7 @@ var TT={script:performance.now()};
     etabs:[["pisos","Material y pisos"],["secciones","Secciones"],["cargas","Cargas y sismo"],
            ["combinaciones","Combinaciones"],["envio","Llevar y traer"],["tablas","Tablas del .bat"]],
     /* Paso 6: si cumple y, si no, como corregirla (C4); Paso 7, las fuerzas por familia */
-    verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"]],
+    verificacion:[["verificar","Verificación"],["corregir","Corregir la estructura"],["etabs","Sismo de ETABS"]],
     fuerzas:[["vigas","Vigas"],["columnas","Columnas"],["placas","Placas"],["reacciones","Reacciones"]],
     /* D0: la base comun.  Cada elemento suma la suya cuando se haga (D1-D7) */
     diseno:[["criterios","Criterios"],["datos","Datos para diseño"],["losas","Losas"],["vigas","Vigas"],
@@ -20256,6 +21699,27 @@ var TT={script:performance.now()};
       rd.readAsText(f);
     });
   });
+  /* =====================================================================
+     ETABS › UN MODELO HECHO A MANO (fase 3 de FUTURO/PLAN_ETABS_A_COMPLEMENTO.md).  El panel, lo que entra y lo que
+     no, viven en oviedo/deetabs_panel.js y oviedo/deetabs.js; aqui solo el boton y el enganche con el modelador.
+     ===================================================================== */
+  var DE_SISMO=DEETABS_SISMO.crear({estado:function(){return S}, guardar:guardar, toast:toast, escapa:escapa,
+    calculoSismo:calculoSismo});
+  var DE_ETABS=DEETABS_PANEL.crear({panel:function(){return $("#panelDeEtabs")}, estado:function(){return S},
+    snap:snap, podar:podar, listo:function(){ S.sel=null; PASADA++; guardar(); render(); }, toast:toast, escapa:escapa,
+    alAplicar:function(D,archivo){ DE_SISMO.leer(D,archivo); }});
+  $("#deEtabs").onclick=function(){ $("#deEtabsFile").click() };
+  $("#deEtabsFile").addEventListener("change",function(){
+    var f=this.files&&this.files[0]; this.value="";
+    if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var d=null; try{ d=JSON.parse(rd.result); }catch(e){}
+      var q=DE_ETABS.abrir(d,String(f.name).replace(/_etabs\.json$/i,"").replace(/\.json$/i,""));
+      if(!q.ok)toast(q.msg);
+    };
+    rd.readAsText(f);
+  });
   /* LIMPIAR · deja el nivel en blanco.
      Va en dos clics a proposito: borrar el nivel entero de un toque, con el
      raton pasando por encima de la barra, seria una forma nueva de perder
@@ -24608,6 +26072,8 @@ var TT={script:performance.now()};
      cumple, y las fuerzas de cada elemento.  Las dos pintan en #panelRes. */
   function pintaResultados(){
     var el=$("#panelRes"); if(!el)return;
+    /* un modelo hecho a mano en ETABS: su sismo se confirma aqui (fase 4a, oviedo/deetabs_sismo.js) */
+    if(S.modo==="verificacion"&&subDe("verificacion")==="etabs"){ DE_SISMO.pintar(el); return; }
     var h='<div class="pgrid sis">'+avisoVeredicto(verificacionSismica(),"resultados");
     if(S.modo==="verificacion"&&subDe("verificacion")==="corregir")h+=tarjetaCorregir();
     else if(S.modo==="verificacion"){
@@ -30481,7 +31947,7 @@ var TT={script:performance.now()};
   TT.antesRender=performance.now();
   render();
   TT.listo=performance.now();
-  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},colsCad:{abrir:abreColsCad,aplicar:aplicaColsCad,estado:function(){return COLS_CAD}},alineacion:{poner:ponAlineacion,col:alCol,viga:alViga,desfaseCol:desfaseCol,desfaseViga:desfaseViga,enCaja:eligeEnCaja},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
+  window.RET={sismo:calculoSismo,decidir:decidir,predim:{viga:predimViga,losa:predimLosa,placa:predimPlaca,zapata:predimZapata,platea:predimPlatea},unir:unirPar,unirSerie:unirSerie,revisar:revisarModelo,ejesEdit:{partir:partir,borrar:borrarEje},limpiar:limpiarSueltos,vacio:ponVacio,esVacio:esVacio,forma:{col:ponFormaCol,rel:ponRelCol,largo:ponLargoCol},trib:{area:ponAreaTrib,tipo:ponTipoCol,ancho:ponAnchoTrib,modo:ponModoTrib,auto:autoTrib,viga:{ancho:ponAnchoViga,B:ponBViga,modo:ponModoViga,auto:autoViga,mide:tribViga},zapata:nodosDeZapata},criticas:{grupos:gruposCriticos,adoptar:adoptarGrupos,calculadas:volverCalculadas,ponGrupo:ponSecGrupo,ponMiembro:ponSecMiembro,excepcion:excCrit,resaltar:resaltaGrupo,nombres:nombresSecciones,pesoSismo:pesoSismoCrit,resaltado:function(){return RESALTA}},colsCad:{abrir:abreColsCad,aplicar:aplicaColsCad,estado:function(){return COLS_CAD}},deEtabs:DE_ETABS,deSismo:DE_SISMO,alineacion:{poner:ponAlineacion,col:alCol,viga:alViga,desfaseCol:desfaseCol,desfaseViga:desfaseViga,enCaja:eligeEnCaja},autocad:planoAutocad,estado:function(){return S},filas:filas,niveles:function(){return S.niveles},recargar:function(){cargar();S.sel=null;render()},faltan:faltanCargas,disenoElem:{losas:disenoLosas,franjas:franjasLosa,viguetas:viguetasDeLosa,viguetasNivel:viguetasNivel,ponVigueta:ponVigueta,vigueta:viguetaDe,vigas:disenoVigas,columnas:disenoColumnas,nudos:disenoNudos,placas:disenoPlacas,zapatas:disenoZapatas,criterios:criteriosDiseno,datos:datosDiseno},render:render,paquete:paquete,plantas:plantasEnImagen,tema:{poner:ponTema,ahora:temaAhora},usos:{bloque:asignaEnBloque,aTodosLosPisos:copiaUsosATodos},seccion:seccionCol,ladoCol:ladoCol,nodo:nodo,etabs:exportaEtabs,resultados:resultadosEtabs,firma:firmaModelo,disenoVigas:disenoVigas,sub:elegirSub,subDe:subDe,verificacion:verificacionSismica,marcarMedidas:marcarIrregularidadesMedidas,fuerzas:fuerzasEtabs,diseno:criteriosDiseno,datosDiseno:datosDiseno,opciones:opcionesActuales,aplicar:aplicarOpcion,volverIntento:volverIntento,intentos:function(){return S.intentos},biblioteca:{leer:bibLeer,guardar:guardarEnBiblioteca,abrir:abrirProyecto,borrar:borrarDeBiblioteca,plantilla:guardarPlantillaActual,nuevo:nuevoDesdePlantilla,copiaEnLibro:copiaEnLibro,pid:function(){return S.pid}},bibDelLibro:bibDelLibro,vista3d:{escena:function(){return VISTA3D.escena(exportaEtabs(),{zapatas:zapatasDelNivel(),plateas:plateas3D(),colores:colores3D(),filtro:V3D.filtro,niveles:V3D.niveles})},estado:function(){return V3D},pintar:pinta3D},lienzo:function(){return LIENZO},medCol:medCol,medViga:medViga,medLosa:medLosa,areaPano:areaPano,repartoNivel:repartoNivel,guardar:guardarYa,toast:toast,plano:{vectores:vectoresDe,camino:caminoPDF,mat:matMul,enderezar:enderezar,leer:leerEjes,aplica:aplicaEjes,podar:podar,marca:{arranca:arrancaMarca,sig:marcaSiguiente,igual:marcaIgual,atras:marcaAtras,para:paraMarca,estado:function(){return MARCA},punto:function(x,y){if(!MARCA)return;var k=PASOS[MARCA.i].k;MARCA.pts[k].push({x:x,y:y});MARCA.igual[k]=false;pintaMarcaCtl()}},prop:function(p){if(p===undefined)return PROP;PROP=p;return PROP},vect:function(v){if(v===undefined)return VECT[S.act];VECT[S.act]=v},calco:calco,guardarCalco:guardarCalco,cad:ponCalcoCad,snapCad:snapCad,trazosCad:trazosCad,anclar:anclarEn,insertarEje:insertarEjeEn,insertarEjeInclinado:insertarEjeInclinado,ejeInclArrastre:ejeInclArrastre,copiarEjesAPisos:copiarEjesAPisos,ejesDe:ejesDe,ejesCad:traeEjesCad,compararEjes:compararEjesCad,adoptarEjes:adoptarEjesCad,sugerirEje:sugerirEje,desfaseEjes:desfaseEjesCad,nombresEje:nombresEje,ponNombreEje:ponNombreEje,anclarEje:anclarEje,desfaseNiveles:desfaseNiveles,alinearNivel:alinearNivel,origenNivel:origenNivel},zapatas:function(){var z=zapatasDelNivel();return {lista:z,solapes:solapesZapata(z),unir:unirZapatas,separar:separarZapatas,pareja:parejaZapata,vecinas:vecinasConZapata,libera:liberaZapata,lindero:limiteDe,corridas:function(){return corridasDelNivel().map(function(t){return piezaCorrida(t,S.niveles[0]);});},corridaPlaca:corridaBajoPlaca,corridaColumnas:corridaDeColumnas,arrastre:tramoArrastre,combinaArrastre:combinaArrastre,quitaCorrida:quitaCorrida,fila:filaDeColumnas,arrastre:tramoArrastre,ponCorrida:ponCorrida,restriccion:restriccionZapata,ladoRestriccion:ladoRestriccion,viga:vigaConexionZapata,vigasRestr:vigasDeRestriccion}},plateas:function(){return plateasDelNivel(S.niveles[0]).map(function(pz){return {pieza:pz,q:predimPlatea(pz,S.niveles[0])};});},platea:{pintar:pintaPlatea,pieza:plateaDePano,deNudo:plateaDeNudo,quitar:quitaPlatea,dato:ponDatoPlatea,ninguna:plateasNinguna}};
 })();
 </script>
 
