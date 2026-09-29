@@ -7745,6 +7745,9 @@
         ? "Vu a d de la cara del apoyo donde se cumple el Art. 11.1.3 (a)-(c): no en invertidas ni con cargas " +
           "concentradas entre la cara y d (Art. 11.1.3.1)"
         : "Vu en la cara del apoyo"],
+     ["Torsión de las vigas", K.convenciones.torsion === "equilibrio"
+        ? "De equilibrio: Tu entero de ETABS (Art. 11.6.2.1)"
+        : "De compatibilidad: Tu se topa en φ 0,33 √f'c Acp²/pcp (Art. 11.6.2.2); la de equilibrio se elige en Criterios"],
      ["Máximos y mínimos con sismo", "ETABS los da para cada fuerza por separado y no ocurren a la vez: columnas y " +
                                      "muros revisan sus esquinas G ± E"],
      ["Armado", "Lo propone el complemento con las barras de la sección 4, y se puede cambiar"],
@@ -7774,7 +7777,7 @@ var HOJA_ETABS = "RETICULA_ETABS";
 var HOJA_RES = "RETICULA_RESULTADOS";
 /* La copia de la biblioteca de proyectos y plantillas del modelador */
 var HOJA_BIB = "RETICULA_BIBLIOTECA";
-var BUILD = "v448 · 28-09-2026";                 /* lo sella gen_complemento.py */
+var BUILD = "v476 · 29-09-2026";                 /* lo sella gen_complemento.py */
 var dialogo = null;
 
 /* Ya no hay listas de destino ni lectura de vuelta.  Existian porque Excel
